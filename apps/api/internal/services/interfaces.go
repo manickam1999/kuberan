@@ -28,6 +28,7 @@ type TelegramUserAuth struct {
 	DefaultCurrency string `json:"default_currency"`
 }
 
+
 // TelegramServicer defines the contract for Telegram-related business logic.
 type TelegramServicer interface {
 	GetLinkByUserID(userID string) (*models.TelegramLink, error)
