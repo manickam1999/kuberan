@@ -48,6 +48,13 @@ export default function RootLayout({
       <head>
         {/* Apply the persisted chart theme before paint to avoid a flash. */}
         <script dangerouslySetInnerHTML={{ __html: CHART_THEME_INIT_SCRIPT }} />
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `window.__KUBERAN_CONFIG__=${JSON.stringify({
+              apiUrl: process.env.NEXT_PUBLIC_API_URL || "",
+            })}`,
+          }}
+        />
       </head>
       <body
         className={`${geistSans.variable} ${geistMono.variable} ${geistPixel.variable} antialiased`}

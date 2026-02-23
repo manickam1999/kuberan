@@ -2,34 +2,35 @@ import type { ApiError } from "@/types/api";
 import { clearAuthCookie } from "./auth-cookie";
 import { isTokenExpired } from "./token-utils";
 
+declare global {
+  interface Window {
+    __KUBERAN_CONFIG__?: { apiUrl?: string };
+  }
+}
+
 /**
  * Dynamically determine the API base URL based on the current environment.
- * - In production or when explicitly set: uses NEXT_PUBLIC_API_URL
- * - Server-side (SSR): defaults to localhost
- * - Client-side: detects hostname and protocol from window.location
- * 
- * This allows seamless API access from:
- * - Desktop: http://localhost:3000 → http://localhost:8080
- * - Mobile (internal IP): http://192.168.x.x:3000 → http://192.168.x.x:8080
- * - Production: https://domain.com → https://domain.com:8080 (or custom via env)
+ *
+ * Priority:
+ * 1. Server-side: API_URL env var (runtime, set in Docker), fallback to localhost
+ * 2. Client-side: runtime config injected by server component (window.__KUBERAN_CONFIG__)
+ * 3. Client-side fallback: auto-detect from window.location (same host, port 8080)
  */
 function getApiBaseUrl(): string {
-  // 1. Explicit override for production or special configurations
-  if (process.env.NEXT_PUBLIC_API_URL) {
-    return process.env.NEXT_PUBLIC_API_URL;
-  }
-  
-  // 2. Server-side rendering fallback
+  // 1. Server-side: use API_URL env var directly
   if (typeof window === "undefined") {
-    return "http://localhost:8080";
+    return process.env.NEXT_PUBLIC_API_URL || process.env.API_URL || "http://localhost:8080";
   }
-  
-  // 3. Dynamic client-side detection
-  const protocol = window.location.protocol; // Matches frontend (http: or https:)
-  const hostname = window.location.hostname; // localhost, 192.168.x.x, or domain
-  const port = "8080";
-  
-  return `${protocol}//${hostname}:${port}`;
+
+  // 2. Client-side: check runtime config injected by server component
+  if (window.__KUBERAN_CONFIG__?.apiUrl) {
+    return window.__KUBERAN_CONFIG__.apiUrl;
+  }
+
+  // 3. Fallback: dynamic detection (same hostname, port 8080)
+  const protocol = window.location.protocol;
+  const hostname = window.location.hostname;
+  return `${protocol}//${hostname}:8080`;
 }
 
 const API_BASE_URL = getApiBaseUrl();
