@@ -45,6 +45,9 @@ type Config struct {
 
 	// CORS
 	CORSOrigin string
+
+	// Bot
+	BotInternalSecret string
 }
 
 var appConfig *Config
@@ -80,6 +83,9 @@ func Load() (*Config, error) {
 
 		// CORS
 		CORSOrigin: getEnv("CORS_ORIGIN", "*"),
+
+		// Bot
+		BotInternalSecret: os.Getenv("BOT_INTERNAL_SECRET"),
 	}
 
 	// Parse JWT expiration duration

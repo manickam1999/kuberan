@@ -19,6 +19,7 @@ services:
       - DB_NAME=kuberan
       - DB_SSLMODE=disable
       - PIPELINE_API_KEY=${PIPELINE_API_KEY}
+      - BOT_INTERNAL_SECRET=${BOT_INTERNAL_SECRET}
     depends_on:
       postgres:
         condition: service_healthy
@@ -35,8 +36,27 @@ services:
       - "3000:3000"
     # NEXT_PUBLIC_API_URL is now auto-detected on the client side
     # Add it here only if you need to override the default behavior
+    environment:
+      - NEXT_PUBLIC_BOT_USERNAME=${NEXT_PUBLIC_BOT_USERNAME:-KuberanFinBot}
     depends_on:
       - api
+    restart: unless-stopped
+
+  bot:
+    build:
+      context: ./apps/bot
+      dockerfile: Dockerfile.dev
+    volumes:
+      - ./apps/bot:/app
+    environment:
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - API_BASE_URL=http://api:8080
+      - BOT_INTERNAL_SECRET=${BOT_INTERNAL_SECRET}
+      - LOG_LEVEL=INFO
+    depends_on:
+      - api
+    profiles:
+      - bot
     restart: unless-stopped
 
   oracle:

@@ -20,6 +20,18 @@ type UserServicer interface {
 	GetRefreshTokenHash(userID string) (string, error)
 }
 
+// TelegramServicer defines the contract for Telegram-related business logic.
+type TelegramServicer interface {
+	GetLinkByUserID(userID string) (*models.TelegramLink, error)
+	GetLinkByTelegramID(telegramUserID int64) (*models.TelegramLink, error)
+	GenerateLinkCode(userID string) (*models.TelegramLink, error)
+	CompleteLink(linkCode string, telegramUserID int64, username, firstName, defaultCurrency string) error
+	UnlinkAccount(userID string) error
+	RecordActivity(telegramUserID int64) error
+	IsLinked(userID string) (bool, error)
+	GetUserWithAuthToken(telegramUserID int64) (map[string]interface{}, error)
+}
+
 // AccountUpdateFields holds optional fields for updating an account.
 // Nil pointer means "don't change"; non-nil means "set to this value".
 type AccountUpdateFields struct {

@@ -100,3 +100,10 @@ var (
 	ErrSecurityNotFound  = &AppError{Code: "SECURITY_NOT_FOUND", Message: "Security not found", StatusCode: http.StatusNotFound}
 	ErrDuplicateSecurity = &AppError{Code: "DUPLICATE_SECURITY", Message: "A security with this symbol and exchange already exists", StatusCode: http.StatusConflict}
 )
+
+// Telegram errors.
+var (
+	ErrInvalidLinkCode       = &AppError{Code: "INVALID_LINK_CODE", Message: "Invalid or expired link code", StatusCode: http.StatusBadRequest}
+	ErrLinkCodeExpired       = &AppError{Code: "LINK_CODE_EXPIRED", Message: "Link code has expired", StatusCode: http.StatusBadRequest}
+	ErrTelegramAlreadyLinked = &AppError{Code: "TELEGRAM_ALREADY_LINKED", Message: "This Telegram account is already linked to another user", StatusCode: http.StatusConflict}
+)

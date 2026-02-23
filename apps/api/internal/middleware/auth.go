@@ -18,6 +18,7 @@ import (
 const (
 	accessTokenExpiry  = 15 * time.Minute
 	refreshTokenExpiry = 7 * 24 * time.Hour
+	botTokenExpiry     = 365 * 24 * time.Hour // 1 year for bot tokens
 )
 
 // getJWTKey returns the JWT key from configuration
@@ -60,6 +61,25 @@ func GenerateRefreshToken(user *models.User) (string, error) {
 		TokenType: "refresh",
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(refreshTokenExpiry)),
+			IssuedAt:  jwt.NewNumericDate(time.Now()),
+			NotBefore: jwt.NewNumericDate(time.Now()),
+			Issuer:    "kuberan-api",
+			Subject:   user.ID,
+		},
+	}
+
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	return token.SignedString(getJWTKey())
+}
+
+// GenerateBotToken generates a long-lived JWT token for bot service authentication.
+func GenerateBotToken(user *models.User) (string, error) {
+	claims := &JWTClaims{
+		UserID:    user.ID,
+		Email:     user.Email,
+		TokenType: "bot",
+		RegisteredClaims: jwt.RegisteredClaims{
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(botTokenExpiry)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
 			NotBefore: jwt.NewNumericDate(time.Now()),
 			Issuer:    "kuberan-api",

@@ -90,6 +90,7 @@ func run() error {
 	securityService := services.NewSecurityService(db)
 	snapshotService := services.NewPortfolioSnapshotService(db)
 	auditService := services.NewAuditService(db)
+	telegramService := services.NewTelegramService(db)
 
 	// Initialize handlers
 	authHandler := handlers.NewAuthHandler(userService, auditService)
@@ -100,6 +101,7 @@ func run() error {
 	investmentHandler := handlers.NewInvestmentHandler(investmentService, auditService)
 	securityHandler := handlers.NewSecurityHandler(securityService, auditService)
 	snapshotHandler := handlers.NewPortfolioSnapshotHandler(snapshotService, auditService)
+	telegramHandler := handlers.NewTelegramHandler(telegramService, auditService)
 
 	// Register custom validators before routes
 	validator.Register()
@@ -217,6 +219,19 @@ func run() error {
 	categories.GET("/:id", categoryHandler.GetCategoryByID)
 	categories.PUT("/:id", categoryHandler.UpdateCategory)
 	categories.DELETE("/:id", categoryHandler.DeleteCategory)
+
+	// Telegram routes
+	telegram := protected.Group("/telegram")
+	telegram.GET("/link", telegramHandler.GetLink)
+	telegram.POST("/generate-code", telegramHandler.GenerateCode)
+	telegram.DELETE("/unlink", telegramHandler.Unlink)
+
+	// Internal routes (for bot service communication)
+	internal := v1.Group("/internal")
+	internal.Use(middleware.InternalAuthMiddleware(appConfig.BotInternalSecret))
+	internal.POST("/telegram/complete-link", telegramHandler.CompleteLink)
+	internal.GET("/telegram/resolve/:telegram_user_id", telegramHandler.ResolveUser)
+	internal.POST("/telegram/activity/:telegram_user_id", telegramHandler.RecordActivity)
 
 	// Pipeline routes (API key auth, no JWT)
 	pipeline := v1.Group("/pipeline")
