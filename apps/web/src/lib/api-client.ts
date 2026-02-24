@@ -1,4 +1,6 @@
 import type { ApiError } from "@/types/api";
+import { clearAuthCookie } from "./auth-cookie";
+import { isTokenExpired } from "./token-utils";
 
 /**
  * Dynamically determine the API base URL based on the current environment.
@@ -138,7 +140,18 @@ async function request<T>(
     "Content-Type": "application/json",
   };
 
-  const token = getAccessToken();
+  let token = getAccessToken();
+
+  // Proactive refresh: if the token is expired (or about to expire within 30s),
+  // attempt a refresh before sending the request to avoid a wasted 401 round-trip.
+  if (token && isTokenExpired(token) && !NO_REFRESH_PATHS.includes(path)) {
+    const refreshed = await attemptTokenRefresh();
+    if (refreshed) {
+      token = getAccessToken();
+    }
+    // If refresh failed, proceed anyway — the 401 handler below will handle cleanup.
+  }
+
   if (token) {
     headers["Authorization"] = `Bearer ${token}`;
   }
@@ -161,6 +174,7 @@ async function request<T>(
       });
     } else {
       clearTokens();
+      clearAuthCookie(); // Prevent middleware redirect loop on expired sessions
       if (typeof window !== "undefined") {
         window.location.href = "/login";
       }
