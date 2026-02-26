@@ -22,18 +22,18 @@ func TestInvestmentFlow_FullLifecycle(t *testing.T) {
 	}
 	acctResult := parseJSON(t, rec)
 	account := acctResult["account"].(map[string]interface{})
-	accountID := account["id"].(float64)
+	accountID := account["id"].(string)
 
 	// Step 2: Add investment holding (10 shares of AAPL at $150/share = $1500 cost basis)
 	rec = app.request("POST", "/api/v1/investments",
-		fmt.Sprintf(`{"account_id":%.0f,"security_id":%.0f,"quantity":10,"purchase_price":15000}`,
+		fmt.Sprintf(`{"account_id":%q,"security_id":%q,"quantity":10,"purchase_price":15000}`,
 			accountID, securityID), token)
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("expected 201 adding investment, got %d: %s", rec.Code, rec.Body.String())
 	}
 	invResult := parseJSON(t, rec)
 	investment := invResult["investment"].(map[string]interface{})
-	investmentID := investment["id"].(float64)
+	investmentID := investment["id"].(string)
 
 	if investment["quantity"].(float64) != 10 {
 		t.Errorf("expected quantity 10, got %v", investment["quantity"])
@@ -45,14 +45,14 @@ func TestInvestmentFlow_FullLifecycle(t *testing.T) {
 
 	// Step 3: Record additional buy (5 shares at $160/share, $10 fee)
 	buyDate := time.Now().Format(time.RFC3339)
-	rec = app.request("POST", fmt.Sprintf("/api/v1/investments/%.0f/buy", investmentID),
+	rec = app.request("POST", fmt.Sprintf("/api/v1/investments/%s/buy", investmentID),
 		fmt.Sprintf(`{"date":%q,"quantity":5,"price_per_unit":16000,"fee":1000,"notes":"Additional buy"}`, buyDate), token)
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("expected 201 for buy, got %d: %s", rec.Code, rec.Body.String())
 	}
 
 	// Step 4: Verify investment after buy (15 shares, cost basis = 150000 + 5*16000 + 1000 = 231000)
-	rec = app.request("GET", fmt.Sprintf("/api/v1/investments/%.0f", investmentID), "", token)
+	rec = app.request("GET", fmt.Sprintf("/api/v1/investments/%s", investmentID), "", token)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
 	}
@@ -67,13 +67,13 @@ func TestInvestmentFlow_FullLifecycle(t *testing.T) {
 	// Step 5: Record live price via pipeline ($170/share)
 	now := time.Now().Format(time.RFC3339)
 	rec = app.pipelineRequest("POST", "/api/v1/pipeline/securities/prices",
-		fmt.Sprintf(`{"prices":[{"security_id":%.0f,"price":17000,"recorded_at":%q}]}`, securityID, now))
+		fmt.Sprintf(`{"prices":[{"security_id":%q,"price":17000,"recorded_at":%q}]}`, securityID, now))
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200 for pipeline price, got %d: %s", rec.Code, rec.Body.String())
 	}
 
 	// Step 6: Record sell (5 shares at $170/share, $10 fee)
-	rec = app.request("POST", fmt.Sprintf("/api/v1/investments/%.0f/sell", investmentID),
+	rec = app.request("POST", fmt.Sprintf("/api/v1/investments/%s/sell", investmentID),
 		fmt.Sprintf(`{"date":%q,"quantity":5,"price_per_unit":17000,"fee":1000}`, buyDate), token)
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("expected 201 for sell, got %d: %s", rec.Code, rec.Body.String())
@@ -81,7 +81,7 @@ func TestInvestmentFlow_FullLifecycle(t *testing.T) {
 
 	// Step 7: Verify investment after sell (10 shares, cost basis reduced proportionally)
 	// Cost basis reduction = 231000 * (5/15) = 77000; remaining = 231000 - 77000 = 154000
-	rec = app.request("GET", fmt.Sprintf("/api/v1/investments/%.0f", investmentID), "", token)
+	rec = app.request("GET", fmt.Sprintf("/api/v1/investments/%s", investmentID), "", token)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
 	}
@@ -112,7 +112,7 @@ func TestInvestmentFlow_FullLifecycle(t *testing.T) {
 	}
 
 	// Step 9: Verify investment transactions list
-	rec = app.request("GET", fmt.Sprintf("/api/v1/investments/%.0f/transactions", investmentID), "", token)
+	rec = app.request("GET", fmt.Sprintf("/api/v1/investments/%s/transactions", investmentID), "", token)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
 	}
@@ -133,15 +133,15 @@ func TestInvestmentFlow_DividendAndSplit(t *testing.T) {
 	// Create investment account and holding
 	rec := app.request("POST", "/api/v1/accounts/investment",
 		`{"name":"Dividend Account"}`, token)
-	accountID := parseJSON(t, rec)["account"].(map[string]interface{})["id"].(float64)
+	accountID := parseJSON(t, rec)["account"].(map[string]interface{})["id"].(string)
 
 	rec = app.request("POST", "/api/v1/investments",
-		fmt.Sprintf(`{"account_id":%.0f,"security_id":%.0f,"quantity":20,"purchase_price":30000}`,
+		fmt.Sprintf(`{"account_id":%q,"security_id":%q,"quantity":20,"purchase_price":30000}`,
 			accountID, securityID), token)
-	investmentID := parseJSON(t, rec)["investment"].(map[string]interface{})["id"].(float64)
+	investmentID := parseJSON(t, rec)["investment"].(map[string]interface{})["id"].(string)
 
 	// Verify initial state: 20 shares, cost basis = 20 * 30000 = 600000
-	rec = app.request("GET", fmt.Sprintf("/api/v1/investments/%.0f", investmentID), "", token)
+	rec = app.request("GET", fmt.Sprintf("/api/v1/investments/%s", investmentID), "", token)
 	inv := parseJSON(t, rec)["investment"].(map[string]interface{})
 	if inv["quantity"].(float64) != 20 {
 		t.Errorf("expected 20 shares, got %v", inv["quantity"])
@@ -152,14 +152,14 @@ func TestInvestmentFlow_DividendAndSplit(t *testing.T) {
 
 	// Record dividend ($2 per share = $40 total)
 	now := time.Now().Format(time.RFC3339)
-	rec = app.request("POST", fmt.Sprintf("/api/v1/investments/%.0f/dividend", investmentID),
+	rec = app.request("POST", fmt.Sprintf("/api/v1/investments/%s/dividend", investmentID),
 		fmt.Sprintf(`{"date":%q,"amount":4000,"dividend_type":"Cash","notes":"Quarterly dividend"}`, now), token)
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("expected 201 for dividend, got %d: %s", rec.Code, rec.Body.String())
 	}
 
 	// Verify quantity and cost basis unchanged after dividend
-	rec = app.request("GET", fmt.Sprintf("/api/v1/investments/%.0f", investmentID), "", token)
+	rec = app.request("GET", fmt.Sprintf("/api/v1/investments/%s", investmentID), "", token)
 	inv = parseJSON(t, rec)["investment"].(map[string]interface{})
 	if inv["quantity"].(float64) != 20 {
 		t.Errorf("expected 20 shares after dividend, got %v", inv["quantity"])
@@ -169,14 +169,14 @@ func TestInvestmentFlow_DividendAndSplit(t *testing.T) {
 	}
 
 	// Record 2:1 stock split
-	rec = app.request("POST", fmt.Sprintf("/api/v1/investments/%.0f/split", investmentID),
+	rec = app.request("POST", fmt.Sprintf("/api/v1/investments/%s/split", investmentID),
 		fmt.Sprintf(`{"date":%q,"split_ratio":2,"notes":"2-for-1 split"}`, now), token)
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("expected 201 for split, got %d: %s", rec.Code, rec.Body.String())
 	}
 
 	// Verify: quantity doubled (40), cost basis unchanged (600000)
-	rec = app.request("GET", fmt.Sprintf("/api/v1/investments/%.0f", investmentID), "", token)
+	rec = app.request("GET", fmt.Sprintf("/api/v1/investments/%s", investmentID), "", token)
 	inv = parseJSON(t, rec)["investment"].(map[string]interface{})
 	if inv["quantity"].(float64) != 40 {
 		t.Errorf("expected 40 shares after 2:1 split, got %v", inv["quantity"])
@@ -186,7 +186,7 @@ func TestInvestmentFlow_DividendAndSplit(t *testing.T) {
 	}
 
 	// Verify investment transactions: initial buy + dividend + split = 3
-	rec = app.request("GET", fmt.Sprintf("/api/v1/investments/%.0f/transactions", investmentID), "", token)
+	rec = app.request("GET", fmt.Sprintf("/api/v1/investments/%s/transactions", investmentID), "", token)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
 	}
@@ -203,16 +203,16 @@ func TestInvestmentFlow_SellInsufficientShares(t *testing.T) {
 
 	rec := app.request("POST", "/api/v1/accounts/investment",
 		`{"name":"Small Account"}`, token)
-	accountID := parseJSON(t, rec)["account"].(map[string]interface{})["id"].(float64)
+	accountID := parseJSON(t, rec)["account"].(map[string]interface{})["id"].(string)
 
 	rec = app.request("POST", "/api/v1/investments",
-		fmt.Sprintf(`{"account_id":%.0f,"security_id":%.0f,"quantity":5,"purchase_price":10000}`,
+		fmt.Sprintf(`{"account_id":%q,"security_id":%q,"quantity":5,"purchase_price":10000}`,
 			accountID, securityID), token)
-	investmentID := parseJSON(t, rec)["investment"].(map[string]interface{})["id"].(float64)
+	investmentID := parseJSON(t, rec)["investment"].(map[string]interface{})["id"].(string)
 
 	// Try to sell more shares than held
 	now := time.Now().Format(time.RFC3339)
-	rec = app.request("POST", fmt.Sprintf("/api/v1/investments/%.0f/sell", investmentID),
+	rec = app.request("POST", fmt.Sprintf("/api/v1/investments/%s/sell", investmentID),
 		fmt.Sprintf(`{"date":%q,"quantity":10,"price_per_unit":12000}`, now), token)
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400 for insufficient shares, got %d: %s", rec.Code, rec.Body.String())
@@ -223,7 +223,7 @@ func TestInvestmentFlow_SellInsufficientShares(t *testing.T) {
 	}
 
 	// Verify quantity unchanged
-	rec = app.request("GET", fmt.Sprintf("/api/v1/investments/%.0f", investmentID), "", token)
+	rec = app.request("GET", fmt.Sprintf("/api/v1/investments/%s", investmentID), "", token)
 	inv := parseJSON(t, rec)["investment"].(map[string]interface{})
 	if inv["quantity"].(float64) != 5 {
 		t.Errorf("expected 5 shares unchanged, got %v", inv["quantity"])
@@ -241,22 +241,22 @@ func TestInvestmentFlow_PortfolioMultipleHoldings(t *testing.T) {
 	// Create investment account
 	rec := app.request("POST", "/api/v1/accounts/investment",
 		`{"name":"Diversified"}`, token)
-	accountID := parseJSON(t, rec)["account"].(map[string]interface{})["id"].(float64)
+	accountID := parseJSON(t, rec)["account"].(map[string]interface{})["id"].(string)
 
 	// Add stock: 10 shares at $100
 	app.request("POST", "/api/v1/investments",
-		fmt.Sprintf(`{"account_id":%.0f,"security_id":%.0f,"quantity":10,"purchase_price":10000}`,
+		fmt.Sprintf(`{"account_id":%q,"security_id":%q,"quantity":10,"purchase_price":10000}`,
 			accountID, aaplID), token)
 
 	// Add ETF: 20 shares at $50
 	app.request("POST", "/api/v1/investments",
-		fmt.Sprintf(`{"account_id":%.0f,"security_id":%.0f,"quantity":20,"purchase_price":5000}`,
+		fmt.Sprintf(`{"account_id":%q,"security_id":%q,"quantity":20,"purchase_price":5000}`,
 			accountID, vooID), token)
 
 	// Record live prices via pipeline
 	now := time.Now().Format(time.RFC3339)
 	rec = app.pipelineRequest("POST", "/api/v1/pipeline/securities/prices",
-		fmt.Sprintf(`{"prices":[{"security_id":%.0f,"price":12000,"recorded_at":%q},{"security_id":%.0f,"price":5500,"recorded_at":%q}]}`,
+		fmt.Sprintf(`{"prices":[{"security_id":%q,"price":12000,"recorded_at":%q},{"security_id":%q,"price":5500,"recorded_at":%q}]}`,
 			aaplID, now, vooID, now))
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200 for pipeline prices, got %d: %s", rec.Code, rec.Body.String())

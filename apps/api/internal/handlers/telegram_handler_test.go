@@ -23,7 +23,8 @@ func init() {
 
 type mockTelegramAuditService struct{}
 
-func (m *mockTelegramAuditService) Log(_ string, _, _ string, _ string, _ string, _ map[string]interface{}) {}
+func (m *mockTelegramAuditService) Log(_, _, _, _, _ string, _ map[string]interface{}) {
+}
 
 var _ services.AuditServicer = (*mockTelegramAuditService)(nil)
 
@@ -56,14 +57,14 @@ func parseTelegramJSON(t *testing.T, rec *httptest.ResponseRecorder) map[string]
 // --- mock telegram service ---
 
 type mockTelegramService struct {
-	getLinkByUserIDFn       func(userID string) (*models.TelegramLink, error)
-	getLinkByTelegramIDFn   func(telegramUserID int64) (*models.TelegramLink, error)
-	generateLinkCodeFn      func(userID string) (*models.TelegramLink, error)
-	completeLinkFn          func(linkCode string, telegramUserID int64, username, firstName, defaultCurrency string) error
-	unlinkAccountFn         func(userID string) error
-	recordActivityFn        func(telegramUserID int64) error
-	isLinkedFn              func(userID string) (bool, error)
-	getUserWithAuthTokenFn  func(telegramUserID int64) (*services.TelegramUserAuth, error)
+	getLinkByUserIDFn      func(userID string) (*models.TelegramLink, error)
+	getLinkByTelegramIDFn  func(telegramUserID int64) (*models.TelegramLink, error)
+	generateLinkCodeFn     func(userID string) (*models.TelegramLink, error)
+	completeLinkFn         func(linkCode string, telegramUserID int64, username, firstName, defaultCurrency string) error
+	unlinkAccountFn        func(userID string) error
+	recordActivityFn       func(telegramUserID int64) error
+	isLinkedFn             func(userID string) (bool, error)
+	getUserWithAuthTokenFn func(telegramUserID int64) (*services.TelegramUserAuth, error)
 }
 
 func (m *mockTelegramService) GetLinkByUserID(userID string) (*models.TelegramLink, error) {
@@ -151,14 +152,14 @@ func TestTelegramHandler_GetLink(t *testing.T) {
 		telegramSvc := &mockTelegramService{
 			getLinkByUserIDFn: func(userID string) (*models.TelegramLink, error) {
 				return &models.TelegramLink{
-					Base:              models.Base{ID: "link-123"},
-					UserID:            userID,
-					TelegramUserID:    987654321,
-					TelegramUsername:  "testuser",
-					DefaultCurrency:   "MYR",
-					IsActive:          true,
-					LastMessageAt:     &now,
-					MessageCount:      5,
+					Base:             models.Base{ID: "link-123"},
+					UserID:           userID,
+					TelegramUserID:   987654321,
+					TelegramUsername: "testuser",
+					DefaultCurrency:  "MYR",
+					IsActive:         true,
+					LastMessageAt:    &now,
+					MessageCount:     5,
 				}, nil
 			},
 		}

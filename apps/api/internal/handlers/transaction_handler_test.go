@@ -121,9 +121,9 @@ func setupTransactionRouter(handler *TransactionHandler) *gin.Engine {
 func TestTransactionHandler_CreateTransaction(t *testing.T) {
 	t.Run("returns 201 on success", func(t *testing.T) {
 		txSvc := &mockTransactionService{
-			createTransactionFn: func(userID, accountID uint, _ *uint, txType models.TransactionType, amount int64, desc string, _ time.Time) (*models.Transaction, error) {
+			createTransactionFn: func(userID, accountID string, _ *string, txType models.TransactionType, amount int64, desc string, _ time.Time) (*models.Transaction, error) {
 				return &models.Transaction{
-					Base:      models.Base{ID: 1},
+					Base:      models.Base{ID: "1"},
 					UserID:    userID,
 					AccountID: accountID,
 					Type:      txType,
@@ -135,7 +135,7 @@ func TestTransactionHandler_CreateTransaction(t *testing.T) {
 		r := setupTransactionRouter(handler)
 
 		rec := doRequest(r, "POST", "/transactions",
-			`{"account_id":1,"type":"income","amount":5000,"description":"Salary"}`)
+			`{"account_id":"00000000-0000-0000-0000-000000000001","type":"income","amount":5000,"description":"Salary"}`)
 
 		if rec.Code != http.StatusCreated {
 			t.Fatalf("expected 201, got %d: %s", rec.Code, rec.Body.String())
@@ -164,7 +164,7 @@ func TestTransactionHandler_CreateTransaction(t *testing.T) {
 		r := setupTransactionRouter(handler)
 
 		rec := doRequest(r, "POST", "/transactions",
-			`{"account_id":1,"type":"expense","amount":0}`)
+			`{"account_id":"00000000-0000-0000-0000-000000000001","type":"expense","amount":0}`)
 
 		if rec.Code != http.StatusBadRequest {
 			t.Fatalf("expected 400, got %d", rec.Code)
@@ -176,7 +176,7 @@ func TestTransactionHandler_CreateTransaction(t *testing.T) {
 		r := setupTransactionRouter(handler)
 
 		rec := doRequest(r, "POST", "/transactions",
-			`{"account_id":1,"type":"invalid","amount":1000}`)
+			`{"account_id":"00000000-0000-0000-0000-000000000001","type":"invalid","amount":1000}`)
 
 		if rec.Code != http.StatusBadRequest {
 			t.Fatalf("expected 400, got %d", rec.Code)
@@ -185,7 +185,7 @@ func TestTransactionHandler_CreateTransaction(t *testing.T) {
 
 	t.Run("returns 404 when account not found", func(t *testing.T) {
 		txSvc := &mockTransactionService{
-			createTransactionFn: func(_, _ uint, _ *uint, _ models.TransactionType, _ int64, _ string, _ time.Time) (*models.Transaction, error) {
+			createTransactionFn: func(_, _ string, _ *string, _ models.TransactionType, _ int64, _ string, _ time.Time) (*models.Transaction, error) {
 				return nil, apperrors.ErrAccountNotFound
 			},
 		}
@@ -193,7 +193,7 @@ func TestTransactionHandler_CreateTransaction(t *testing.T) {
 		r := setupTransactionRouter(handler)
 
 		rec := doRequest(r, "POST", "/transactions",
-			`{"account_id":999,"type":"income","amount":1000}`)
+			`{"account_id":"00000000-0000-0000-0000-000000000999","type":"income","amount":1000}`)
 
 		if rec.Code != http.StatusNotFound {
 			t.Fatalf("expected 404, got %d", rec.Code)
@@ -206,7 +206,7 @@ func TestTransactionHandler_CreateTransaction(t *testing.T) {
 		r.POST("/transactions", handler.CreateTransaction)
 
 		rec := doRequest(r, "POST", "/transactions",
-			`{"account_id":1,"type":"income","amount":1000}`)
+			`{"account_id":"00000000-0000-0000-0000-000000000001","type":"income","amount":1000}`)
 
 		if rec.Code != http.StatusUnauthorized {
 			t.Fatalf("expected 401, got %d", rec.Code)
@@ -217,10 +217,10 @@ func TestTransactionHandler_CreateTransaction(t *testing.T) {
 func TestTransactionHandler_CreateTransfer(t *testing.T) {
 	t.Run("returns 201 on success", func(t *testing.T) {
 		txSvc := &mockTransactionService{
-			createTransferFn: func(userID, from, to uint, amount int64, _ string, _ time.Time) (*models.Transaction, error) {
+			createTransferFn: func(userID, from, to string, amount int64, _ string, _ time.Time) (*models.Transaction, error) {
 				toAcct := to
 				return &models.Transaction{
-					Base:        models.Base{ID: 1},
+					Base:        models.Base{ID: "1"},
 					UserID:      userID,
 					AccountID:   from,
 					ToAccountID: &toAcct,
@@ -233,7 +233,7 @@ func TestTransactionHandler_CreateTransfer(t *testing.T) {
 		r := setupTransactionRouter(handler)
 
 		rec := doRequest(r, "POST", "/transactions/transfer",
-			`{"from_account_id":1,"to_account_id":2,"amount":1000,"description":"Transfer"}`)
+			`{"from_account_id":"00000000-0000-0000-0000-000000000001","to_account_id":"00000000-0000-0000-0000-000000000002","amount":1000,"description":"Transfer"}`)
 
 		if rec.Code != http.StatusCreated {
 			t.Fatalf("expected 201, got %d: %s", rec.Code, rec.Body.String())
@@ -242,7 +242,7 @@ func TestTransactionHandler_CreateTransfer(t *testing.T) {
 
 	t.Run("returns 400 on same account", func(t *testing.T) {
 		txSvc := &mockTransactionService{
-			createTransferFn: func(_, _, _ uint, _ int64, _ string, _ time.Time) (*models.Transaction, error) {
+			createTransferFn: func(_, _, _ string, _ int64, _ string, _ time.Time) (*models.Transaction, error) {
 				return nil, apperrors.ErrSameAccountTransfer
 			},
 		}
@@ -250,7 +250,7 @@ func TestTransactionHandler_CreateTransfer(t *testing.T) {
 		r := setupTransactionRouter(handler)
 
 		rec := doRequest(r, "POST", "/transactions/transfer",
-			`{"from_account_id":1,"to_account_id":1,"amount":1000}`)
+			`{"from_account_id":"00000000-0000-0000-0000-000000000001","to_account_id":"00000000-0000-0000-0000-000000000001","amount":1000}`)
 
 		if rec.Code != http.StatusBadRequest {
 			t.Fatalf("expected 400, got %d", rec.Code)
@@ -260,7 +260,7 @@ func TestTransactionHandler_CreateTransfer(t *testing.T) {
 
 	t.Run("returns 400 on insufficient balance", func(t *testing.T) {
 		txSvc := &mockTransactionService{
-			createTransferFn: func(_, _, _ uint, _ int64, _ string, _ time.Time) (*models.Transaction, error) {
+			createTransferFn: func(_, _, _ string, _ int64, _ string, _ time.Time) (*models.Transaction, error) {
 				return nil, apperrors.ErrInsufficientBalance
 			},
 		}
@@ -268,7 +268,7 @@ func TestTransactionHandler_CreateTransfer(t *testing.T) {
 		r := setupTransactionRouter(handler)
 
 		rec := doRequest(r, "POST", "/transactions/transfer",
-			`{"from_account_id":1,"to_account_id":2,"amount":999999}`)
+			`{"from_account_id":"00000000-0000-0000-0000-000000000001","to_account_id":"00000000-0000-0000-0000-000000000002","amount":999999}`)
 
 		if rec.Code != http.StatusBadRequest {
 			t.Fatalf("expected 400, got %d", rec.Code)
@@ -292,9 +292,9 @@ func TestTransactionHandler_GetAccountTransactions(t *testing.T) {
 	t.Run("returns 200 with paginated transactions", func(t *testing.T) {
 		now := time.Now()
 		txSvc := &mockTransactionService{
-			getAccountTransactionsFn: func(_, _ uint, _ pagination.PageRequest, _ services.TransactionFilter) (*pagination.PageResponse[models.Transaction], error) {
+			getAccountTransactionsFn: func(_, _ string, _ pagination.PageRequest, _ services.TransactionFilter) (*pagination.PageResponse[models.Transaction], error) {
 				resp := pagination.NewPageResponse([]models.Transaction{
-					{Base: models.Base{ID: 1}, Amount: 5000, Type: "income", Date: now},
+					{Base: models.Base{ID: "1"}, Amount: 5000, Type: "income", Date: now},
 				}, 1, 20, 1)
 				return &resp, nil
 			},
@@ -302,7 +302,7 @@ func TestTransactionHandler_GetAccountTransactions(t *testing.T) {
 		handler := NewTransactionHandler(txSvc, &mockAuditService{})
 		r := setupTransactionRouter(handler)
 
-		rec := doRequest(r, "GET", "/accounts/1/transactions", "")
+		rec := doRequest(r, "GET", "/accounts/00000000-0000-0000-0000-000000000001/transactions", "")
 
 		if rec.Code != http.StatusOK {
 			t.Fatalf("expected 200, got %d", rec.Code)
@@ -317,7 +317,7 @@ func TestTransactionHandler_GetAccountTransactions(t *testing.T) {
 	t.Run("passes filter params to service", func(t *testing.T) {
 		var capturedFilter services.TransactionFilter
 		txSvc := &mockTransactionService{
-			getAccountTransactionsFn: func(_, _ uint, _ pagination.PageRequest, filter services.TransactionFilter) (*pagination.PageResponse[models.Transaction], error) {
+			getAccountTransactionsFn: func(_, _ string, _ pagination.PageRequest, filter services.TransactionFilter) (*pagination.PageResponse[models.Transaction], error) {
 				capturedFilter = filter
 				resp := pagination.NewPageResponse([]models.Transaction{}, 1, 20, 0)
 				return &resp, nil
@@ -326,7 +326,7 @@ func TestTransactionHandler_GetAccountTransactions(t *testing.T) {
 		handler := NewTransactionHandler(txSvc, &mockAuditService{})
 		r := setupTransactionRouter(handler)
 
-		doRequest(r, "GET", "/accounts/1/transactions?type=income&min_amount=100&max_amount=5000", "")
+		doRequest(r, "GET", "/accounts/00000000-0000-0000-0000-000000000001/transactions?type=income&min_amount=100&max_amount=5000", "")
 
 		if capturedFilter.Type == nil || *capturedFilter.Type != models.TransactionTypeIncome {
 			t.Errorf("expected type=income filter, got %v", capturedFilter.Type)
@@ -343,7 +343,7 @@ func TestTransactionHandler_GetAccountTransactions(t *testing.T) {
 		handler := NewTransactionHandler(&mockTransactionService{}, &mockAuditService{})
 		r := setupTransactionRouter(handler)
 
-		rec := doRequest(r, "GET", "/accounts/1/transactions?type=invalid", "")
+		rec := doRequest(r, "GET", "/accounts/00000000-0000-0000-0000-000000000001/transactions?type=invalid", "")
 
 		if rec.Code != http.StatusBadRequest {
 			t.Fatalf("expected 400, got %d", rec.Code)
@@ -354,7 +354,7 @@ func TestTransactionHandler_GetAccountTransactions(t *testing.T) {
 		handler := NewTransactionHandler(&mockTransactionService{}, &mockAuditService{})
 		r := setupTransactionRouter(handler)
 
-		rec := doRequest(r, "GET", "/accounts/1/transactions?from_date=not-a-date", "")
+		rec := doRequest(r, "GET", "/accounts/00000000-0000-0000-0000-000000000001/transactions?from_date=not-a-date", "")
 
 		if rec.Code != http.StatusBadRequest {
 			t.Fatalf("expected 400, got %d", rec.Code)
@@ -365,7 +365,7 @@ func TestTransactionHandler_GetAccountTransactions(t *testing.T) {
 		handler := NewTransactionHandler(&mockTransactionService{}, &mockAuditService{})
 		r := setupTransactionRouter(handler)
 
-		rec := doRequest(r, "GET", "/accounts/1/transactions?min_amount=abc", "")
+		rec := doRequest(r, "GET", "/accounts/00000000-0000-0000-0000-000000000001/transactions?min_amount=abc", "")
 
 		if rec.Code != http.StatusBadRequest {
 			t.Fatalf("expected 400, got %d", rec.Code)
@@ -388,10 +388,10 @@ func TestTransactionHandler_GetUserTransactions(t *testing.T) {
 	t.Run("returns_200_with_transactions", func(t *testing.T) {
 		now := time.Now()
 		txSvc := &mockTransactionService{
-			getUserTransactionsFn: func(_ uint, _ pagination.PageRequest, _ services.TransactionFilter) (*pagination.PageResponse[models.Transaction], error) {
+			getUserTransactionsFn: func(_ string, _ pagination.PageRequest, _ services.TransactionFilter) (*pagination.PageResponse[models.Transaction], error) {
 				resp := pagination.NewPageResponse([]models.Transaction{
-					{Base: models.Base{ID: 1}, Amount: 5000, Type: "income", Date: now},
-					{Base: models.Base{ID: 2}, Amount: 3000, Type: "expense", Date: now},
+					{Base: models.Base{ID: "1"}, Amount: 5000, Type: "income", Date: now},
+					{Base: models.Base{ID: "2"}, Amount: 3000, Type: "expense", Date: now},
 				}, 1, 20, 2)
 				return &resp, nil
 			},
@@ -413,7 +413,7 @@ func TestTransactionHandler_GetUserTransactions(t *testing.T) {
 
 	t.Run("returns_200_empty_when_no_transactions", func(t *testing.T) {
 		txSvc := &mockTransactionService{
-			getUserTransactionsFn: func(_ uint, _ pagination.PageRequest, _ services.TransactionFilter) (*pagination.PageResponse[models.Transaction], error) {
+			getUserTransactionsFn: func(_ string, _ pagination.PageRequest, _ services.TransactionFilter) (*pagination.PageResponse[models.Transaction], error) {
 				resp := pagination.NewPageResponse([]models.Transaction{}, 1, 20, 0)
 				return &resp, nil
 			},
@@ -436,7 +436,7 @@ func TestTransactionHandler_GetUserTransactions(t *testing.T) {
 	t.Run("passes_filters_to_service", func(t *testing.T) {
 		var capturedFilter services.TransactionFilter
 		txSvc := &mockTransactionService{
-			getUserTransactionsFn: func(_ uint, _ pagination.PageRequest, filter services.TransactionFilter) (*pagination.PageResponse[models.Transaction], error) {
+			getUserTransactionsFn: func(_ string, _ pagination.PageRequest, filter services.TransactionFilter) (*pagination.PageResponse[models.Transaction], error) {
 				capturedFilter = filter
 				resp := pagination.NewPageResponse([]models.Transaction{}, 1, 20, 0)
 				return &resp, nil
@@ -450,7 +450,7 @@ func TestTransactionHandler_GetUserTransactions(t *testing.T) {
 		if capturedFilter.Type == nil || *capturedFilter.Type != models.TransactionTypeIncome {
 			t.Errorf("expected type=income filter, got %v", capturedFilter.Type)
 		}
-		if capturedFilter.AccountID == nil || *capturedFilter.AccountID != 5 {
+		if capturedFilter.AccountID == nil || *capturedFilter.AccountID != "5" {
 			t.Errorf("expected account_id=5, got %v", capturedFilter.AccountID)
 		}
 		if capturedFilter.MinAmount == nil || *capturedFilter.MinAmount != 100 {
@@ -498,7 +498,7 @@ func TestTransactionHandler_GetUserTransactions(t *testing.T) {
 func TestTransactionHandler_GetTransactionByID(t *testing.T) {
 	t.Run("returns 200 on success", func(t *testing.T) {
 		txSvc := &mockTransactionService{
-			getTransactionByIDFn: func(_, txID uint) (*models.Transaction, error) {
+			getTransactionByIDFn: func(_, txID string) (*models.Transaction, error) {
 				return &models.Transaction{
 					Base:   models.Base{ID: txID},
 					Amount: 5000,
@@ -509,7 +509,7 @@ func TestTransactionHandler_GetTransactionByID(t *testing.T) {
 		handler := NewTransactionHandler(txSvc, &mockAuditService{})
 		r := setupTransactionRouter(handler)
 
-		rec := doRequest(r, "GET", "/transactions/1", "")
+		rec := doRequest(r, "GET", "/transactions/00000000-0000-0000-0000-000000000001", "")
 
 		if rec.Code != http.StatusOK {
 			t.Fatalf("expected 200, got %d", rec.Code)
@@ -518,14 +518,14 @@ func TestTransactionHandler_GetTransactionByID(t *testing.T) {
 
 	t.Run("returns 404 when not found", func(t *testing.T) {
 		txSvc := &mockTransactionService{
-			getTransactionByIDFn: func(_, _ uint) (*models.Transaction, error) {
+			getTransactionByIDFn: func(_, _ string) (*models.Transaction, error) {
 				return nil, apperrors.ErrTransactionNotFound
 			},
 		}
 		handler := NewTransactionHandler(txSvc, &mockAuditService{})
 		r := setupTransactionRouter(handler)
 
-		rec := doRequest(r, "GET", "/transactions/999", "")
+		rec := doRequest(r, "GET", "/transactions/00000000-0000-0000-0000-000000000999", "")
 
 		if rec.Code != http.StatusNotFound {
 			t.Fatalf("expected 404, got %d", rec.Code)
@@ -538,7 +538,7 @@ func TestTransactionHandler_DeleteTransaction(t *testing.T) {
 		handler := NewTransactionHandler(&mockTransactionService{}, &mockAuditService{})
 		r := setupTransactionRouter(handler)
 
-		rec := doRequest(r, "DELETE", "/transactions/1", "")
+		rec := doRequest(r, "DELETE", "/transactions/00000000-0000-0000-0000-000000000001", "")
 
 		if rec.Code != http.StatusOK {
 			t.Fatalf("expected 200, got %d", rec.Code)
@@ -551,14 +551,14 @@ func TestTransactionHandler_DeleteTransaction(t *testing.T) {
 
 	t.Run("returns 404 when not found", func(t *testing.T) {
 		txSvc := &mockTransactionService{
-			deleteTransactionFn: func(_, _ uint) error {
+			deleteTransactionFn: func(_, _ string) error {
 				return apperrors.ErrTransactionNotFound
 			},
 		}
 		handler := NewTransactionHandler(txSvc, &mockAuditService{})
 		r := setupTransactionRouter(handler)
 
-		rec := doRequest(r, "DELETE", "/transactions/999", "")
+		rec := doRequest(r, "DELETE", "/transactions/00000000-0000-0000-0000-000000000999", "")
 
 		if rec.Code != http.StatusNotFound {
 			t.Fatalf("expected 404, got %d", rec.Code)
@@ -580,11 +580,11 @@ func TestTransactionHandler_DeleteTransaction(t *testing.T) {
 func TestTransactionHandler_UpdateTransaction(t *testing.T) {
 	t.Run("returns_200_with_updated_transaction", func(t *testing.T) {
 		txSvc := &mockTransactionService{
-			updateTransactionFn: func(_, txID uint, _ services.TransactionUpdateFields) (*models.Transaction, error) {
+			updateTransactionFn: func(_, txID string, _ services.TransactionUpdateFields) (*models.Transaction, error) {
 				return &models.Transaction{
 					Base:      models.Base{ID: txID},
-					UserID:    1,
-					AccountID: 1,
+					UserID:    "1",
+					AccountID: "1",
 					Type:      models.TransactionTypeExpense,
 					Amount:    3000,
 				}, nil
@@ -593,7 +593,7 @@ func TestTransactionHandler_UpdateTransaction(t *testing.T) {
 		handler := NewTransactionHandler(txSvc, &mockAuditService{})
 		r := setupTransactionRouter(handler)
 
-		rec := doRequest(r, "PUT", "/transactions/1", `{"amount":3000}`)
+		rec := doRequest(r, "PUT", "/transactions/00000000-0000-0000-0000-000000000001", `{"amount":3000}`)
 
 		if rec.Code != http.StatusOK {
 			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
@@ -609,7 +609,7 @@ func TestTransactionHandler_UpdateTransaction(t *testing.T) {
 		handler := NewTransactionHandler(&mockTransactionService{}, &mockAuditService{})
 		r := setupTransactionRouter(handler)
 
-		rec := doRequest(r, "PUT", "/transactions/1", `{"amount":-1}`)
+		rec := doRequest(r, "PUT", "/transactions/00000000-0000-0000-0000-000000000001", `{"amount":-1}`)
 
 		if rec.Code != http.StatusBadRequest {
 			t.Fatalf("expected 400, got %d: %s", rec.Code, rec.Body.String())
@@ -620,7 +620,7 @@ func TestTransactionHandler_UpdateTransaction(t *testing.T) {
 		handler := NewTransactionHandler(&mockTransactionService{}, &mockAuditService{})
 		r := setupTransactionRouter(handler)
 
-		rec := doRequest(r, "PUT", "/transactions/1", `{"type":"invalid"}`)
+		rec := doRequest(r, "PUT", "/transactions/00000000-0000-0000-0000-000000000001", `{"type":"invalid"}`)
 
 		if rec.Code != http.StatusBadRequest {
 			t.Fatalf("expected 400, got %d: %s", rec.Code, rec.Body.String())
@@ -629,14 +629,14 @@ func TestTransactionHandler_UpdateTransaction(t *testing.T) {
 
 	t.Run("returns_404_for_nonexistent_transaction", func(t *testing.T) {
 		txSvc := &mockTransactionService{
-			updateTransactionFn: func(_, _ uint, _ services.TransactionUpdateFields) (*models.Transaction, error) {
+			updateTransactionFn: func(_, _ string, _ services.TransactionUpdateFields) (*models.Transaction, error) {
 				return nil, apperrors.ErrTransactionNotFound
 			},
 		}
 		handler := NewTransactionHandler(txSvc, &mockAuditService{})
 		r := setupTransactionRouter(handler)
 
-		rec := doRequest(r, "PUT", "/transactions/999", `{"amount":1000}`)
+		rec := doRequest(r, "PUT", "/transactions/00000000-0000-0000-0000-000000000999", `{"amount":1000}`)
 
 		if rec.Code != http.StatusNotFound {
 			t.Fatalf("expected 404, got %d", rec.Code)
@@ -645,14 +645,14 @@ func TestTransactionHandler_UpdateTransaction(t *testing.T) {
 
 	t.Run("returns_400_for_non_editable_type", func(t *testing.T) {
 		txSvc := &mockTransactionService{
-			updateTransactionFn: func(_, _ uint, _ services.TransactionUpdateFields) (*models.Transaction, error) {
+			updateTransactionFn: func(_, _ string, _ services.TransactionUpdateFields) (*models.Transaction, error) {
 				return nil, apperrors.ErrTransactionNotEditable
 			},
 		}
 		handler := NewTransactionHandler(txSvc, &mockAuditService{})
 		r := setupTransactionRouter(handler)
 
-		rec := doRequest(r, "PUT", "/transactions/1", `{"amount":1000}`)
+		rec := doRequest(r, "PUT", "/transactions/00000000-0000-0000-0000-000000000001", `{"amount":1000}`)
 
 		if rec.Code != http.StatusBadRequest {
 			t.Fatalf("expected 400, got %d", rec.Code)
@@ -663,15 +663,15 @@ func TestTransactionHandler_UpdateTransaction(t *testing.T) {
 	t.Run("passes_update_fields_to_service", func(t *testing.T) {
 		var captured services.TransactionUpdateFields
 		txSvc := &mockTransactionService{
-			updateTransactionFn: func(_, _ uint, updates services.TransactionUpdateFields) (*models.Transaction, error) {
+			updateTransactionFn: func(_, _ string, updates services.TransactionUpdateFields) (*models.Transaction, error) {
 				captured = updates
-				return &models.Transaction{Base: models.Base{ID: 1}}, nil
+				return &models.Transaction{Base: models.Base{ID: "1"}}, nil
 			},
 		}
 		handler := NewTransactionHandler(txSvc, &mockAuditService{})
 		r := setupTransactionRouter(handler)
 
-		doRequest(r, "PUT", "/transactions/1", `{"amount":5000,"type":"income","description":"Updated"}`)
+		doRequest(r, "PUT", "/transactions/00000000-0000-0000-0000-000000000001", `{"amount":5000,"type":"income","description":"Updated"}`)
 
 		if captured.Amount == nil || *captured.Amount != 5000 {
 			t.Errorf("expected amount=5000, got %v", captured.Amount)
@@ -687,9 +687,9 @@ func TestTransactionHandler_UpdateTransaction(t *testing.T) {
 
 func TestTransactionHandler_GetSpendingByCategory(t *testing.T) {
 	t.Run("returns_200_with_data", func(t *testing.T) {
-		catID := uint(3)
+		catID := "3"
 		txSvc := &mockTransactionService{
-			getSpendingByCategoryFn: func(_ uint, _, _ time.Time) (*services.SpendingByCategory, error) {
+			getSpendingByCategoryFn: func(_ string, _, _ time.Time) (*services.SpendingByCategory, error) {
 				return &services.SpendingByCategory{
 					Items: []services.SpendingByCategoryItem{
 						{CategoryID: &catID, CategoryName: "Groceries", CategoryColor: "#22C55E", Total: 5000},
@@ -741,7 +741,7 @@ func TestTransactionHandler_GetSpendingByCategory(t *testing.T) {
 
 	t.Run("returns_200_empty_items", func(t *testing.T) {
 		txSvc := &mockTransactionService{
-			getSpendingByCategoryFn: func(_ uint, _, _ time.Time) (*services.SpendingByCategory, error) {
+			getSpendingByCategoryFn: func(_ string, _, _ time.Time) (*services.SpendingByCategory, error) {
 				return &services.SpendingByCategory{
 					Items:      []services.SpendingByCategoryItem{},
 					TotalSpent: 0,
@@ -768,7 +768,7 @@ func TestTransactionHandler_GetMonthlySummary(t *testing.T) {
 	t.Run("returns_200_with_default_months", func(t *testing.T) {
 		var capturedMonths int
 		txSvc := &mockTransactionService{
-			getMonthlySummaryFn: func(_ uint, months int) ([]services.MonthlySummaryItem, error) {
+			getMonthlySummaryFn: func(_ string, months int) ([]services.MonthlySummaryItem, error) {
 				capturedMonths = months
 				return []services.MonthlySummaryItem{
 					{Month: "2025-09", Income: 500000, Expenses: 320000},
@@ -797,7 +797,7 @@ func TestTransactionHandler_GetMonthlySummary(t *testing.T) {
 	t.Run("returns_200_with_custom_months", func(t *testing.T) {
 		var capturedMonths int
 		txSvc := &mockTransactionService{
-			getMonthlySummaryFn: func(_ uint, months int) ([]services.MonthlySummaryItem, error) {
+			getMonthlySummaryFn: func(_ string, months int) ([]services.MonthlySummaryItem, error) {
 				capturedMonths = months
 				return []services.MonthlySummaryItem{}, nil
 			},
@@ -817,7 +817,7 @@ func TestTransactionHandler_GetMonthlySummary(t *testing.T) {
 
 	t.Run("returns_200_empty_data", func(t *testing.T) {
 		txSvc := &mockTransactionService{
-			getMonthlySummaryFn: func(_ uint, _ int) ([]services.MonthlySummaryItem, error) {
+			getMonthlySummaryFn: func(_ string, _ int) ([]services.MonthlySummaryItem, error) {
 				return []services.MonthlySummaryItem{}, nil
 			},
 		}
@@ -840,7 +840,7 @@ func TestTransactionHandler_GetMonthlySummary(t *testing.T) {
 func TestTransactionHandler_GetDailySpending(t *testing.T) {
 	t.Run("returns_200_with_data", func(t *testing.T) {
 		txSvc := &mockTransactionService{
-			getDailySpendingFn: func(_ uint, _, _ time.Time) ([]services.DailySpendingItem, error) {
+			getDailySpendingFn: func(_ string, _, _ time.Time) ([]services.DailySpendingItem, error) {
 				return []services.DailySpendingItem{
 					{Date: "2026-02-01", Total: 5000},
 					{Date: "2026-02-02", Total: 0},

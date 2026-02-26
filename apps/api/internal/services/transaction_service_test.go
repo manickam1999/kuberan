@@ -21,8 +21,8 @@ func TestCreateTransaction(t *testing.T) {
 		tx, err := txSvc.CreateTransaction(user.ID, account.ID, nil, models.TransactionTypeIncome, 5000, "Salary", time.Now())
 		testutil.AssertNoError(t, err)
 
-		if tx.ID == 0 {
-			t.Fatal("expected non-zero transaction ID")
+		if tx.ID == "" {
+			t.Fatal("expected non-empty transaction ID")
 		}
 		if tx.Amount != 5000 {
 			t.Errorf("expected amount 5000, got %d", tx.Amount)
@@ -84,7 +84,7 @@ func TestCreateTransaction(t *testing.T) {
 		acctSvc := NewAccountService(db)
 		txSvc := NewTransactionService(db, acctSvc)
 
-		_, err := txSvc.CreateTransaction(1, 0, nil, models.TransactionTypeIncome, 1000, "", time.Now())
+		_, err := txSvc.CreateTransaction("1", "", nil, models.TransactionTypeIncome, 1000, "", time.Now())
 		testutil.AssertAppError(t, err, "INVALID_INPUT")
 	})
 
@@ -95,7 +95,7 @@ func TestCreateTransaction(t *testing.T) {
 		txSvc := NewTransactionService(db, acctSvc)
 		user := testutil.CreateTestUser(t, db)
 
-		_, err := txSvc.CreateTransaction(user.ID, 99999, nil, models.TransactionTypeIncome, 1000, "", time.Now())
+		_, err := txSvc.CreateTransaction(user.ID, "99999", nil, models.TransactionTypeIncome, 1000, "", time.Now())
 		testutil.AssertAppError(t, err, "ACCOUNT_NOT_FOUND")
 	})
 
@@ -234,7 +234,7 @@ func TestCreateTransfer(t *testing.T) {
 		user := testutil.CreateTestUser(t, db)
 		to := testutil.CreateTestCashAccount(t, db, user.ID)
 
-		_, err := txSvc.CreateTransfer(user.ID, 99999, to.ID, 1000, "", time.Now())
+		_, err := txSvc.CreateTransfer(user.ID, "99999", to.ID, 1000, "", time.Now())
 		testutil.AssertAppError(t, err, "ACCOUNT_NOT_FOUND")
 	})
 
@@ -246,7 +246,7 @@ func TestCreateTransfer(t *testing.T) {
 		user := testutil.CreateTestUser(t, db)
 		from := testutil.CreateTestCashAccountWithBalance(t, db, user.ID, 10000)
 
-		_, err := txSvc.CreateTransfer(user.ID, from.ID, 99999, 1000, "", time.Now())
+		_, err := txSvc.CreateTransfer(user.ID, from.ID, "99999", 1000, "", time.Now())
 		testutil.AssertAppError(t, err, "ACCOUNT_NOT_FOUND")
 	})
 }
@@ -265,7 +265,7 @@ func TestGetTransactionByID(t *testing.T) {
 		testutil.AssertNoError(t, err)
 
 		if tx.ID != created.ID {
-			t.Errorf("expected transaction ID %d, got %d", created.ID, tx.ID)
+			t.Errorf("expected transaction ID %s, got %s", created.ID, tx.ID)
 		}
 		if tx.Amount != 1000 {
 			t.Errorf("expected amount 1000, got %d", tx.Amount)
@@ -279,7 +279,7 @@ func TestGetTransactionByID(t *testing.T) {
 		txSvc := NewTransactionService(db, acctSvc)
 		user := testutil.CreateTestUser(t, db)
 
-		_, err := txSvc.GetTransactionByID(user.ID, 99999)
+		_, err := txSvc.GetTransactionByID(user.ID, "99999")
 		testutil.AssertAppError(t, err, "TRANSACTION_NOT_FOUND")
 	})
 
@@ -434,7 +434,7 @@ func TestGetAccountTransactions(t *testing.T) {
 		user := testutil.CreateTestUser(t, db)
 
 		page := pagination.PageRequest{Page: 1, PageSize: 20}
-		_, err := txSvc.GetAccountTransactions(user.ID, 99999, page, TransactionFilter{})
+		_, err := txSvc.GetAccountTransactions(user.ID, "99999", page, TransactionFilter{})
 		testutil.AssertAppError(t, err, "ACCOUNT_NOT_FOUND")
 	})
 }
@@ -783,7 +783,7 @@ func TestDeleteTransaction(t *testing.T) {
 		txSvc := NewTransactionService(db, acctSvc)
 		user := testutil.CreateTestUser(t, db)
 
-		err := txSvc.DeleteTransaction(user.ID, 99999)
+		err := txSvc.DeleteTransaction(user.ID, "99999")
 		testutil.AssertAppError(t, err, "TRANSACTION_NOT_FOUND")
 	})
 
@@ -949,7 +949,7 @@ func TestUpdateTransaction(t *testing.T) {
 		testutil.AssertNoError(t, err)
 
 		if updated.CategoryID == nil || *updated.CategoryID != cat2.ID {
-			t.Errorf("expected category_id %d, got %v", cat2.ID, updated.CategoryID)
+			t.Errorf("expected category_id %s, got %v", cat2.ID, updated.CategoryID)
 		}
 	})
 
@@ -966,8 +966,8 @@ func TestUpdateTransaction(t *testing.T) {
 		testutil.AssertNoError(t, err)
 
 		// Clear category: double pointer with nil inner
-		var nilUint *uint
-		updated, err := txSvc.UpdateTransaction(user.ID, tx.ID, TransactionUpdateFields{CategoryID: &nilUint})
+		var nilStr *string
+		updated, err := txSvc.UpdateTransaction(user.ID, tx.ID, TransactionUpdateFields{CategoryID: &nilStr})
 		testutil.AssertNoError(t, err)
 
 		if updated.CategoryID != nil {
@@ -1288,7 +1288,7 @@ func TestGetSpendingByCategory(t *testing.T) {
 			t.Error("expected non-empty fallback color for colorless category")
 		}
 		// Should be a valid hex color from the palette
-		expectedColor := categoryColorPalette[cat.ID%uint(len(categoryColorPalette))]
+		expectedColor := getCategoryColorFromID(cat.ID)
 		if result.Items[0].CategoryColor != expectedColor {
 			t.Errorf("expected fallback color %q, got %q", expectedColor, result.Items[0].CategoryColor)
 		}

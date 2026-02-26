@@ -198,7 +198,7 @@ func TestGetBudgetByID(t *testing.T) {
 		testutil.AssertNoError(t, err)
 
 		if found.ID != budget.ID {
-			t.Errorf("expected budget ID %d, got %d", budget.ID, found.ID)
+			t.Errorf("expected budget ID %s, got %s", budget.ID, found.ID)
 		}
 	})
 
@@ -354,7 +354,7 @@ func TestGetBudgetProgress(t *testing.T) {
 		testutil.AssertNoError(t, err)
 
 		if progress.BudgetID != budget.ID {
-			t.Errorf("expected budget ID %d, got %d", budget.ID, progress.BudgetID)
+			t.Errorf("expected budget ID %s, got %s", budget.ID, progress.BudgetID)
 		}
 		if progress.Budgeted != 10000 {
 			t.Errorf("expected budgeted 10000, got %d", progress.Budgeted)

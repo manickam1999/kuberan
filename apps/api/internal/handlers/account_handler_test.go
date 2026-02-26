@@ -26,21 +26,21 @@ type mockAccountService struct {
 	updateAccountBalanceFn    func(tx *gorm.DB, account *models.Account, transactionType models.TransactionType, amount int64) error
 }
 
-func (m *mockAccountService) CreateCashAccount(userID string, name, description, currency string, initialBalance int64) (*models.Account, error) {
+func (m *mockAccountService) CreateCashAccount(userID, name, description, currency string, initialBalance int64) (*models.Account, error) {
 	if m.createCashAccountFn != nil {
 		return m.createCashAccountFn(userID, name, description, currency, initialBalance)
 	}
 	return &models.Account{}, nil
 }
 
-func (m *mockAccountService) CreateInvestmentAccount(userID string, name, description, currency, broker, accountNumber string) (*models.Account, error) {
+func (m *mockAccountService) CreateInvestmentAccount(userID, name, description, currency, broker, accountNumber string) (*models.Account, error) {
 	if m.createInvestmentAccountFn != nil {
 		return m.createInvestmentAccountFn(userID, name, description, currency, broker, accountNumber)
 	}
 	return &models.Account{}, nil
 }
 
-func (m *mockAccountService) CreateCreditCardAccount(userID string, name, description, currency string, creditLimit int64, interestRate float64, dueDate *time.Time) (*models.Account, error) {
+func (m *mockAccountService) CreateCreditCardAccount(userID, name, description, currency string, creditLimit int64, interestRate float64, dueDate *time.Time) (*models.Account, error) {
 	if m.createCreditCardAccountFn != nil {
 		return m.createCreditCardAccountFn(userID, name, description, currency, creditLimit, interestRate, dueDate)
 	}
@@ -262,7 +262,7 @@ func TestAccountHandler_GetAccountByID(t *testing.T) {
 		handler := NewAccountHandler(acctSvc, &mockAuditService{})
 		r := setupAccountRouter(handler)
 
-		rec := doRequest(r, "GET", "/accounts/1", "")
+		rec := doRequest(r, "GET", "/accounts/00000000-0000-0000-0000-000000000001", "")
 
 		if rec.Code != http.StatusOK {
 			t.Fatalf("expected 200, got %d", rec.Code)
@@ -283,7 +283,7 @@ func TestAccountHandler_GetAccountByID(t *testing.T) {
 		handler := NewAccountHandler(acctSvc, &mockAuditService{})
 		r := setupAccountRouter(handler)
 
-		rec := doRequest(r, "GET", "/accounts/999", "")
+		rec := doRequest(r, "GET", "/accounts/00000000-0000-0000-0000-000000000999", "")
 
 		if rec.Code != http.StatusNotFound {
 			t.Fatalf("expected 404, got %d", rec.Code)
@@ -306,7 +306,7 @@ func TestAccountHandler_GetAccountByID(t *testing.T) {
 func TestAccountHandler_UpdateAccount(t *testing.T) {
 	t.Run("returns_200_with_name_update", func(t *testing.T) {
 		acctSvc := &mockAccountService{
-			updateAccountFn: func(_, accountID uint, updates services.AccountUpdateFields) (*models.Account, error) {
+			updateAccountFn: func(_, accountID string, updates services.AccountUpdateFields) (*models.Account, error) {
 				name := ""
 				if updates.Name != nil {
 					name = *updates.Name
@@ -326,7 +326,7 @@ func TestAccountHandler_UpdateAccount(t *testing.T) {
 		handler := NewAccountHandler(acctSvc, &mockAuditService{})
 		r := setupAccountRouter(handler)
 
-		rec := doRequest(r, "PUT", "/accounts/1", `{"name":"Updated","description":"New desc"}`)
+		rec := doRequest(r, "PUT", "/accounts/00000000-0000-0000-0000-000000000001", `{"name":"Updated","description":"New desc"}`)
 
 		if rec.Code != http.StatusOK {
 			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
@@ -341,7 +341,7 @@ func TestAccountHandler_UpdateAccount(t *testing.T) {
 	t.Run("returns_200_with_investment_fields", func(t *testing.T) {
 		var captured services.AccountUpdateFields
 		acctSvc := &mockAccountService{
-			updateAccountFn: func(_, accountID uint, updates services.AccountUpdateFields) (*models.Account, error) {
+			updateAccountFn: func(_, accountID string, updates services.AccountUpdateFields) (*models.Account, error) {
 				captured = updates
 				return &models.Account{
 					Base: models.Base{ID: accountID},
@@ -352,7 +352,7 @@ func TestAccountHandler_UpdateAccount(t *testing.T) {
 		handler := NewAccountHandler(acctSvc, &mockAuditService{})
 		r := setupAccountRouter(handler)
 
-		rec := doRequest(r, "PUT", "/accounts/1", `{"broker":"Schwab","account_number":"XYZ"}`)
+		rec := doRequest(r, "PUT", "/accounts/00000000-0000-0000-0000-000000000001", `{"broker":"Schwab","account_number":"XYZ"}`)
 
 		if rec.Code != http.StatusOK {
 			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
@@ -368,7 +368,7 @@ func TestAccountHandler_UpdateAccount(t *testing.T) {
 	t.Run("returns_200_with_credit_card_fields", func(t *testing.T) {
 		var captured services.AccountUpdateFields
 		acctSvc := &mockAccountService{
-			updateAccountFn: func(_, accountID uint, updates services.AccountUpdateFields) (*models.Account, error) {
+			updateAccountFn: func(_, accountID string, updates services.AccountUpdateFields) (*models.Account, error) {
 				captured = updates
 				return &models.Account{
 					Base: models.Base{ID: accountID},
@@ -379,7 +379,7 @@ func TestAccountHandler_UpdateAccount(t *testing.T) {
 		handler := NewAccountHandler(acctSvc, &mockAuditService{})
 		r := setupAccountRouter(handler)
 
-		rec := doRequest(r, "PUT", "/accounts/1", `{"interest_rate":22.5,"credit_limit":1000000}`)
+		rec := doRequest(r, "PUT", "/accounts/00000000-0000-0000-0000-000000000001", `{"interest_rate":22.5,"credit_limit":1000000}`)
 
 		if rec.Code != http.StatusOK {
 			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
@@ -394,14 +394,14 @@ func TestAccountHandler_UpdateAccount(t *testing.T) {
 
 	t.Run("returns_404_when_not_found", func(t *testing.T) {
 		acctSvc := &mockAccountService{
-			updateAccountFn: func(_, _ uint, _ services.AccountUpdateFields) (*models.Account, error) {
+			updateAccountFn: func(_, _ string, _ services.AccountUpdateFields) (*models.Account, error) {
 				return nil, apperrors.ErrAccountNotFound
 			},
 		}
 		handler := NewAccountHandler(acctSvc, &mockAuditService{})
 		r := setupAccountRouter(handler)
 
-		rec := doRequest(r, "PUT", "/accounts/999", `{"name":"Updated"}`)
+		rec := doRequest(r, "PUT", "/accounts/00000000-0000-0000-0000-000000000999", `{"name":"Updated"}`)
 
 		if rec.Code != http.StatusNotFound {
 			t.Fatalf("expected 404, got %d", rec.Code)

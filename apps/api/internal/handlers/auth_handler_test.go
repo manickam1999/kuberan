@@ -21,11 +21,11 @@ import (
 type mockUserService struct {
 	createUserFn            func(email, password, firstName, lastName string) (*models.User, error)
 	getUserByEmailFn        func(email string) (*models.User, error)
-	getUserByIDFn           func(id uint) (*models.User, error)
+	getUserByIDFn           func(id string) (*models.User, error)
 	verifyPasswordFn        func(user *models.User, password string) bool
 	attemptLoginFn          func(email, password string) (*models.User, error)
-	storeRefreshTokenHashFn func(userID uint, tokenHash string) error
-	getRefreshTokenHashFn   func(userID uint) (string, error)
+	storeRefreshTokenHashFn func(userID string, tokenHash string) error
+	getRefreshTokenHashFn   func(userID string) (string, error)
 }
 
 func (m *mockUserService) CreateUser(email, password, firstName, lastName string) (*models.User, error) {
@@ -42,7 +42,7 @@ func (m *mockUserService) GetUserByEmail(email string) (*models.User, error) {
 	return &models.User{}, nil
 }
 
-func (m *mockUserService) GetUserByID(id uint) (*models.User, error) {
+func (m *mockUserService) GetUserByID(id string) (*models.User, error) {
 	if m.getUserByIDFn != nil {
 		return m.getUserByIDFn(id)
 	}
@@ -63,14 +63,14 @@ func (m *mockUserService) AttemptLogin(email, password string) (*models.User, er
 	return &models.User{}, nil
 }
 
-func (m *mockUserService) StoreRefreshTokenHash(userID uint, tokenHash string) error {
+func (m *mockUserService) StoreRefreshTokenHash(userID, tokenHash string) error {
 	if m.storeRefreshTokenHashFn != nil {
 		return m.storeRefreshTokenHashFn(userID, tokenHash)
 	}
 	return nil
 }
 
-func (m *mockUserService) GetRefreshTokenHash(userID uint) (string, error) {
+func (m *mockUserService) GetRefreshTokenHash(userID string) (string, error) {
 	if m.getRefreshTokenHashFn != nil {
 		return m.getRefreshTokenHashFn(userID)
 	}
@@ -79,7 +79,7 @@ func (m *mockUserService) GetRefreshTokenHash(userID uint) (string, error) {
 
 type mockAuditService struct{}
 
-func (m *mockAuditService) Log(_ string, _, _ string, _ string, _ string, _ map[string]interface{}) {}
+func (m *mockAuditService) Log(_, _, _, _, _ string, _ map[string]interface{}) {}
 
 // --- test helpers ---
 
@@ -138,7 +138,7 @@ func TestAuthHandler_Register(t *testing.T) {
 		userSvc := &mockUserService{
 			createUserFn: func(email, _, firstName, lastName string) (*models.User, error) {
 				return &models.User{
-					Base:      models.Base{ID: 1},
+					Base:      models.Base{ID: "1"},
 					Email:     email,
 					FirstName: firstName,
 					LastName:  lastName,
@@ -222,9 +222,9 @@ func TestAuthHandler_Register(t *testing.T) {
 		var storedHash string
 		userSvc := &mockUserService{
 			createUserFn: func(email, _, _, _ string) (*models.User, error) {
-				return &models.User{Base: models.Base{ID: 42}, Email: email}, nil
+				return &models.User{Base: models.Base{ID: "42"}, Email: email}, nil
 			},
-			storeRefreshTokenHashFn: func(_ uint, hash string) error {
+			storeRefreshTokenHashFn: func(_ string, hash string) error {
 				storedHash = hash
 				return nil
 			},
@@ -248,9 +248,9 @@ func TestAuthHandler_Register(t *testing.T) {
 	t.Run("returns 500 when token storage fails", func(t *testing.T) {
 		userSvc := &mockUserService{
 			createUserFn: func(email, _, _, _ string) (*models.User, error) {
-				return &models.User{Base: models.Base{ID: 1}, Email: email}, nil
+				return &models.User{Base: models.Base{ID: "1"}, Email: email}, nil
 			},
-			storeRefreshTokenHashFn: func(_ uint, _ string) error {
+			storeRefreshTokenHashFn: func(_ string, _ string) error {
 				return fmt.Errorf("db connection lost")
 			},
 		}
@@ -269,7 +269,7 @@ func TestAuthHandler_Login(t *testing.T) {
 	t.Run("returns 200 on success", func(t *testing.T) {
 		userSvc := &mockUserService{
 			attemptLoginFn: func(email, _ string) (*models.User, error) {
-				return &models.User{Base: models.Base{ID: 1}, Email: email, FirstName: "Test"}, nil
+				return &models.User{Base: models.Base{ID: "1"}, Email: email, FirstName: "Test"}, nil
 			},
 		}
 		handler := NewAuthHandler(userSvc, &mockAuditService{})
@@ -339,7 +339,7 @@ func TestAuthHandler_GetProfile(t *testing.T) {
 	t.Run("returns 200 with user profile", func(t *testing.T) {
 		now := time.Now()
 		userSvc := &mockUserService{
-			getUserByIDFn: func(id uint) (*models.User, error) {
+			getUserByIDFn: func(id string) (*models.User, error) {
 				return &models.User{
 					Base:        models.Base{ID: id},
 					Email:       "test@example.com",
@@ -381,7 +381,7 @@ func TestAuthHandler_GetProfile(t *testing.T) {
 
 	t.Run("returns 404 when user not found", func(t *testing.T) {
 		userSvc := &mockUserService{
-			getUserByIDFn: func(_ uint) (*models.User, error) {
+			getUserByIDFn: func(_ string) (*models.User, error) {
 				return nil, apperrors.ErrUserNotFound
 			},
 		}

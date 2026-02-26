@@ -19,7 +19,7 @@ func TestBudgetFlow_CreateAndCheckProgress(t *testing.T) {
 	}
 	catResult := parseJSON(t, rec)
 	category := catResult["category"].(map[string]interface{})
-	categoryID := category["id"].(float64)
+	categoryID := category["id"].(string)
 
 	// Step 2: Create a cash account with $500
 	rec = app.request("POST", "/api/v1/accounts/cash",
@@ -29,23 +29,23 @@ func TestBudgetFlow_CreateAndCheckProgress(t *testing.T) {
 	}
 	acctResult := parseJSON(t, rec)
 	account := acctResult["account"].(map[string]interface{})
-	accountID := account["id"].(float64)
+	accountID := account["id"].(string)
 
 	// Step 3: Create a monthly budget of $200 for the category
 	now := time.Now()
 	startDate := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)
 	rec = app.request("POST", "/api/v1/budgets",
-		fmt.Sprintf(`{"category_id":%.0f,"name":"Grocery Budget","amount":20000,"period":"monthly","start_date":%q}`,
+		fmt.Sprintf(`{"category_id":%q,"name":"Grocery Budget","amount":20000,"period":"monthly","start_date":%q}`,
 			categoryID, startDate.Format(time.RFC3339)), token)
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("expected 201 creating budget, got %d: %s", rec.Code, rec.Body.String())
 	}
 	budgetResult := parseJSON(t, rec)
 	budget := budgetResult["budget"].(map[string]interface{})
-	budgetID := budget["id"].(float64)
+	budgetID := budget["id"].(string)
 
 	// Step 4: Check progress before any spending (should be 0 spent)
-	rec = app.request("GET", fmt.Sprintf("/api/v1/budgets/%.0f/progress", budgetID), "", token)
+	rec = app.request("GET", fmt.Sprintf("/api/v1/budgets/%s/progress", budgetID), "", token)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
 	}
@@ -64,7 +64,7 @@ func TestBudgetFlow_CreateAndCheckProgress(t *testing.T) {
 	// Step 5: Add expense transactions in the current month for this category
 	// Expense 1: $80
 	rec = app.request("POST", "/api/v1/transactions",
-		fmt.Sprintf(`{"account_id":%.0f,"type":"expense","amount":8000,"category_id":%.0f,"description":"Weekly groceries","date":%q}`,
+		fmt.Sprintf(`{"account_id":%q,"type":"expense","amount":8000,"category_id":%q,"description":"Weekly groceries","date":%q}`,
 			accountID, categoryID, now.Format(time.RFC3339)), token)
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("expected 201, got %d: %s", rec.Code, rec.Body.String())
@@ -72,14 +72,14 @@ func TestBudgetFlow_CreateAndCheckProgress(t *testing.T) {
 
 	// Expense 2: $50
 	rec = app.request("POST", "/api/v1/transactions",
-		fmt.Sprintf(`{"account_id":%.0f,"type":"expense","amount":5000,"category_id":%.0f,"description":"More groceries","date":%q}`,
+		fmt.Sprintf(`{"account_id":%q,"type":"expense","amount":5000,"category_id":%q,"description":"More groceries","date":%q}`,
 			accountID, categoryID, now.Format(time.RFC3339)), token)
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("expected 201, got %d: %s", rec.Code, rec.Body.String())
 	}
 
 	// Step 6: Check progress (should be $130 spent out of $200)
-	rec = app.request("GET", fmt.Sprintf("/api/v1/budgets/%.0f/progress", budgetID), "", token)
+	rec = app.request("GET", fmt.Sprintf("/api/v1/budgets/%s/progress", budgetID), "", token)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
 	}
@@ -103,26 +103,26 @@ func TestBudgetFlow_OverBudget(t *testing.T) {
 	// Create category, account, budget
 	rec := app.request("POST", "/api/v1/categories",
 		`{"name":"Dining","type":"expense"}`, token)
-	catID := parseJSON(t, rec)["category"].(map[string]interface{})["id"].(float64)
+	catID := parseJSON(t, rec)["category"].(map[string]interface{})["id"].(string)
 
 	rec = app.request("POST", "/api/v1/accounts/cash",
 		`{"name":"Wallet","initial_balance":100000}`, token)
-	acctID := parseJSON(t, rec)["account"].(map[string]interface{})["id"].(float64)
+	acctID := parseJSON(t, rec)["account"].(map[string]interface{})["id"].(string)
 
 	now := time.Now()
 	startDate := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)
 	rec = app.request("POST", "/api/v1/budgets",
-		fmt.Sprintf(`{"category_id":%.0f,"name":"Dining Budget","amount":5000,"period":"monthly","start_date":%q}`,
+		fmt.Sprintf(`{"category_id":%q,"name":"Dining Budget","amount":5000,"period":"monthly","start_date":%q}`,
 			catID, startDate.Format(time.RFC3339)), token)
-	budgetID := parseJSON(t, rec)["budget"].(map[string]interface{})["id"].(float64)
+	budgetID := parseJSON(t, rec)["budget"].(map[string]interface{})["id"].(string)
 
 	// Spend $75 on a $50 budget (over budget)
 	app.request("POST", "/api/v1/transactions",
-		fmt.Sprintf(`{"account_id":%.0f,"type":"expense","amount":7500,"category_id":%.0f,"date":%q}`,
+		fmt.Sprintf(`{"account_id":%q,"type":"expense","amount":7500,"category_id":%q,"date":%q}`,
 			acctID, catID, now.Format(time.RFC3339)), token)
 
 	// Check progress: over budget
-	rec = app.request("GET", fmt.Sprintf("/api/v1/budgets/%.0f/progress", budgetID), "", token)
+	rec = app.request("GET", fmt.Sprintf("/api/v1/budgets/%s/progress", budgetID), "", token)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
 	}
@@ -145,22 +145,22 @@ func TestBudgetFlow_CRUDOperations(t *testing.T) {
 	// Create category
 	rec := app.request("POST", "/api/v1/categories",
 		`{"name":"Utilities","type":"expense"}`, token)
-	catID := parseJSON(t, rec)["category"].(map[string]interface{})["id"].(float64)
+	catID := parseJSON(t, rec)["category"].(map[string]interface{})["id"].(string)
 
 	now := time.Now()
 	startDate := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)
 
 	// Create budget
 	rec = app.request("POST", "/api/v1/budgets",
-		fmt.Sprintf(`{"category_id":%.0f,"name":"Utility Budget","amount":15000,"period":"monthly","start_date":%q}`,
+		fmt.Sprintf(`{"category_id":%q,"name":"Utility Budget","amount":15000,"period":"monthly","start_date":%q}`,
 			catID, startDate.Format(time.RFC3339)), token)
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("expected 201, got %d: %s", rec.Code, rec.Body.String())
 	}
-	budgetID := parseJSON(t, rec)["budget"].(map[string]interface{})["id"].(float64)
+	budgetID := parseJSON(t, rec)["budget"].(map[string]interface{})["id"].(string)
 
 	// Get budget
-	rec = app.request("GET", fmt.Sprintf("/api/v1/budgets/%.0f", budgetID), "", token)
+	rec = app.request("GET", fmt.Sprintf("/api/v1/budgets/%s", budgetID), "", token)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
 	}
@@ -170,7 +170,7 @@ func TestBudgetFlow_CRUDOperations(t *testing.T) {
 	}
 
 	// Update budget name and amount
-	rec = app.request("PUT", fmt.Sprintf("/api/v1/budgets/%.0f", budgetID),
+	rec = app.request("PUT", fmt.Sprintf("/api/v1/budgets/%s", budgetID),
 		`{"name":"Updated Utilities","amount":20000}`, token)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
@@ -194,13 +194,13 @@ func TestBudgetFlow_CRUDOperations(t *testing.T) {
 	}
 
 	// Delete budget
-	rec = app.request("DELETE", fmt.Sprintf("/api/v1/budgets/%.0f", budgetID), "", token)
+	rec = app.request("DELETE", fmt.Sprintf("/api/v1/budgets/%s", budgetID), "", token)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
 	}
 
 	// Verify deleted (should 404)
-	rec = app.request("GET", fmt.Sprintf("/api/v1/budgets/%.0f", budgetID), "", token)
+	rec = app.request("GET", fmt.Sprintf("/api/v1/budgets/%s", budgetID), "", token)
 	if rec.Code != http.StatusNotFound {
 		t.Errorf("expected 404 after deletion, got %d", rec.Code)
 	}
@@ -213,26 +213,26 @@ func TestBudgetFlow_IncomeIgnored(t *testing.T) {
 	// Create category, account, budget
 	rec := app.request("POST", "/api/v1/categories",
 		`{"name":"Side Income","type":"expense"}`, token)
-	catID := parseJSON(t, rec)["category"].(map[string]interface{})["id"].(float64)
+	catID := parseJSON(t, rec)["category"].(map[string]interface{})["id"].(string)
 
 	rec = app.request("POST", "/api/v1/accounts/cash",
 		`{"name":"Cash","initial_balance":50000}`, token)
-	acctID := parseJSON(t, rec)["account"].(map[string]interface{})["id"].(float64)
+	acctID := parseJSON(t, rec)["account"].(map[string]interface{})["id"].(string)
 
 	now := time.Now()
 	startDate := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)
 	rec = app.request("POST", "/api/v1/budgets",
-		fmt.Sprintf(`{"category_id":%.0f,"name":"Income Budget","amount":10000,"period":"monthly","start_date":%q}`,
+		fmt.Sprintf(`{"category_id":%q,"name":"Income Budget","amount":10000,"period":"monthly","start_date":%q}`,
 			catID, startDate.Format(time.RFC3339)), token)
-	budgetID := parseJSON(t, rec)["budget"].(map[string]interface{})["id"].(float64)
+	budgetID := parseJSON(t, rec)["budget"].(map[string]interface{})["id"].(string)
 
 	// Add income transaction with same category
 	app.request("POST", "/api/v1/transactions",
-		fmt.Sprintf(`{"account_id":%.0f,"type":"income","amount":5000,"category_id":%.0f,"date":%q}`,
+		fmt.Sprintf(`{"account_id":%q,"type":"income","amount":5000,"category_id":%q,"date":%q}`,
 			acctID, catID, now.Format(time.RFC3339)), token)
 
 	// Check progress: income should not count as spending
-	rec = app.request("GET", fmt.Sprintf("/api/v1/budgets/%.0f/progress", budgetID), "", token)
+	rec = app.request("GET", fmt.Sprintf("/api/v1/budgets/%s/progress", budgetID), "", token)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
 	}

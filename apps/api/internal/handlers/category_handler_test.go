@@ -23,7 +23,7 @@ type mockCategoryService struct {
 	deleteCategoryFn          func(userID, categoryID string) error
 }
 
-func (m *mockCategoryService) CreateCategory(userID string, name string, categoryType models.CategoryType, description, icon, color string, parentID *string) (*models.Category, error) {
+func (m *mockCategoryService) CreateCategory(userID, name string, categoryType models.CategoryType, description, icon, color string, parentID *string) (*models.Category, error) {
 	if m.createCategoryFn != nil {
 		return m.createCategoryFn(userID, name, categoryType, description, icon, color, parentID)
 	}
@@ -53,7 +53,7 @@ func (m *mockCategoryService) GetCategoryByID(userID, categoryID string) (*model
 	return &models.Category{}, nil
 }
 
-func (m *mockCategoryService) UpdateCategory(userID, categoryID string, name, description, icon, color string, parentID *string) (*models.Category, error) {
+func (m *mockCategoryService) UpdateCategory(userID, categoryID, name, description, icon, color string, parentID *string) (*models.Category, error) {
 	if m.updateCategoryFn != nil {
 		return m.updateCategoryFn(userID, categoryID, name, description, icon, color, parentID)
 	}
@@ -83,9 +83,9 @@ func setupCategoryRouter(handler *CategoryHandler) *gin.Engine {
 func TestCategoryHandler_CreateCategory(t *testing.T) {
 	t.Run("returns 201 on success", func(t *testing.T) {
 		catSvc := &mockCategoryService{
-			createCategoryFn: func(_ uint, name string, catType models.CategoryType, desc, icon, color string, _ *uint) (*models.Category, error) {
+			createCategoryFn: func(_ string, name string, catType models.CategoryType, desc, icon, color string, _ *string) (*models.Category, error) {
 				return &models.Category{
-					Base: models.Base{ID: 1},
+					Base: models.Base{ID: "1"},
 					Name: name,
 					Type: catType,
 					Icon: icon,
@@ -168,10 +168,10 @@ func TestCategoryHandler_CreateCategory(t *testing.T) {
 func TestCategoryHandler_GetUserCategories(t *testing.T) {
 	t.Run("returns 200 with all categories", func(t *testing.T) {
 		catSvc := &mockCategoryService{
-			getUserCategoriesFn: func(_ uint, _ pagination.PageRequest) (*pagination.PageResponse[models.Category], error) {
+			getUserCategoriesFn: func(_ string, _ pagination.PageRequest) (*pagination.PageResponse[models.Category], error) {
 				resp := pagination.NewPageResponse([]models.Category{
-					{Base: models.Base{ID: 1}, Name: "Food", Type: "expense"},
-					{Base: models.Base{ID: 2}, Name: "Salary", Type: "income"},
+					{Base: models.Base{ID: "1"}, Name: "Food", Type: "expense"},
+					{Base: models.Base{ID: "2"}, Name: "Salary", Type: "income"},
 				}, 1, 20, 2)
 				return &resp, nil
 			},
@@ -194,7 +194,7 @@ func TestCategoryHandler_GetUserCategories(t *testing.T) {
 	t.Run("filters by type", func(t *testing.T) {
 		var capturedType models.CategoryType
 		catSvc := &mockCategoryService{
-			getUserCategoriesByTypeFn: func(_ uint, catType models.CategoryType, _ pagination.PageRequest) (*pagination.PageResponse[models.Category], error) {
+			getUserCategoriesByTypeFn: func(_ string, catType models.CategoryType, _ pagination.PageRequest) (*pagination.PageResponse[models.Category], error) {
 				capturedType = catType
 				resp := pagination.NewPageResponse([]models.Category{}, 1, 20, 0)
 				return &resp, nil
@@ -226,14 +226,14 @@ func TestCategoryHandler_GetUserCategories(t *testing.T) {
 func TestCategoryHandler_GetCategoryByID(t *testing.T) {
 	t.Run("returns 200 on success", func(t *testing.T) {
 		catSvc := &mockCategoryService{
-			getCategoryByIDFn: func(_, catID uint) (*models.Category, error) {
+			getCategoryByIDFn: func(_, catID string) (*models.Category, error) {
 				return &models.Category{Base: models.Base{ID: catID}, Name: "Food"}, nil
 			},
 		}
 		handler := NewCategoryHandler(catSvc, &mockAuditService{})
 		r := setupCategoryRouter(handler)
 
-		rec := doRequest(r, "GET", "/categories/1", "")
+		rec := doRequest(r, "GET", "/categories/00000000-0000-0000-0000-000000000001", "")
 
 		if rec.Code != http.StatusOK {
 			t.Fatalf("expected 200, got %d", rec.Code)
@@ -242,14 +242,14 @@ func TestCategoryHandler_GetCategoryByID(t *testing.T) {
 
 	t.Run("returns 404 when not found", func(t *testing.T) {
 		catSvc := &mockCategoryService{
-			getCategoryByIDFn: func(_, _ uint) (*models.Category, error) {
+			getCategoryByIDFn: func(_, _ string) (*models.Category, error) {
 				return nil, apperrors.ErrCategoryNotFound
 			},
 		}
 		handler := NewCategoryHandler(catSvc, &mockAuditService{})
 		r := setupCategoryRouter(handler)
 
-		rec := doRequest(r, "GET", "/categories/999", "")
+		rec := doRequest(r, "GET", "/categories/00000000-0000-0000-0000-000000000999", "")
 
 		if rec.Code != http.StatusNotFound {
 			t.Fatalf("expected 404, got %d", rec.Code)
@@ -260,14 +260,14 @@ func TestCategoryHandler_GetCategoryByID(t *testing.T) {
 func TestCategoryHandler_UpdateCategory(t *testing.T) {
 	t.Run("returns 200 on success", func(t *testing.T) {
 		catSvc := &mockCategoryService{
-			updateCategoryFn: func(_, catID uint, name, _, _, _ string, _ *uint) (*models.Category, error) {
+			updateCategoryFn: func(_, catID string, name, _, _, _ string, _ *string) (*models.Category, error) {
 				return &models.Category{Base: models.Base{ID: catID}, Name: name}, nil
 			},
 		}
 		handler := NewCategoryHandler(catSvc, &mockAuditService{})
 		r := setupCategoryRouter(handler)
 
-		rec := doRequest(r, "PUT", "/categories/1", `{"name":"Updated Food"}`)
+		rec := doRequest(r, "PUT", "/categories/00000000-0000-0000-0000-000000000001", `{"name":"Updated Food"}`)
 
 		if rec.Code != http.StatusOK {
 			t.Fatalf("expected 200, got %d", rec.Code)
@@ -281,16 +281,16 @@ func TestCategoryHandler_UpdateCategory(t *testing.T) {
 
 	t.Run("returns 400 on self-parent", func(t *testing.T) {
 		catSvc := &mockCategoryService{
-			updateCategoryFn: func(_, _ uint, _, _, _, _ string, _ *uint) (*models.Category, error) {
+			updateCategoryFn: func(_, _ string, _, _, _, _ string, _ *string) (*models.Category, error) {
 				return nil, apperrors.ErrSelfParentCategory
 			},
 		}
 		handler := NewCategoryHandler(catSvc, &mockAuditService{})
 		r := setupCategoryRouter(handler)
 
-		parentID := uint(1)
+		parentID := "00000000-0000-0000-0000-000000000001"
 		_ = parentID
-		rec := doRequest(r, "PUT", "/categories/1", `{"parent_id":1}`)
+		rec := doRequest(r, "PUT", "/categories/00000000-0000-0000-0000-000000000001", `{"parent_id":"00000000-0000-0000-0000-000000000001"}`)
 
 		if rec.Code != http.StatusBadRequest {
 			t.Fatalf("expected 400, got %d", rec.Code)
@@ -304,7 +304,7 @@ func TestCategoryHandler_DeleteCategory(t *testing.T) {
 		handler := NewCategoryHandler(&mockCategoryService{}, &mockAuditService{})
 		r := setupCategoryRouter(handler)
 
-		rec := doRequest(r, "DELETE", "/categories/1", "")
+		rec := doRequest(r, "DELETE", "/categories/00000000-0000-0000-0000-000000000001", "")
 
 		if rec.Code != http.StatusOK {
 			t.Fatalf("expected 200, got %d", rec.Code)
@@ -317,14 +317,14 @@ func TestCategoryHandler_DeleteCategory(t *testing.T) {
 
 	t.Run("returns 409 when has children", func(t *testing.T) {
 		catSvc := &mockCategoryService{
-			deleteCategoryFn: func(_, _ uint) error {
+			deleteCategoryFn: func(_, _ string) error {
 				return apperrors.ErrCategoryHasChildren
 			},
 		}
 		handler := NewCategoryHandler(catSvc, &mockAuditService{})
 		r := setupCategoryRouter(handler)
 
-		rec := doRequest(r, "DELETE", "/categories/1", "")
+		rec := doRequest(r, "DELETE", "/categories/00000000-0000-0000-0000-000000000001", "")
 
 		if rec.Code != http.StatusConflict {
 			t.Fatalf("expected 409, got %d", rec.Code)
@@ -334,14 +334,14 @@ func TestCategoryHandler_DeleteCategory(t *testing.T) {
 
 	t.Run("returns 404 when not found", func(t *testing.T) {
 		catSvc := &mockCategoryService{
-			deleteCategoryFn: func(_, _ uint) error {
+			deleteCategoryFn: func(_, _ string) error {
 				return apperrors.ErrCategoryNotFound
 			},
 		}
 		handler := NewCategoryHandler(catSvc, &mockAuditService{})
 		r := setupCategoryRouter(handler)
 
-		rec := doRequest(r, "DELETE", "/categories/999", "")
+		rec := doRequest(r, "DELETE", "/categories/00000000-0000-0000-0000-000000000999", "")
 
 		if rec.Code != http.StatusNotFound {
 			t.Fatalf("expected 404, got %d", rec.Code)

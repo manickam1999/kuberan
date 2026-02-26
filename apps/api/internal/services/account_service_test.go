@@ -134,7 +134,7 @@ func TestGetUserAccounts(t *testing.T) {
 			t.Errorf("expected 1 active account, got %d", result.TotalItems)
 		}
 		if result.Data[0].ID != active.ID {
-			t.Errorf("expected active account ID %d, got %d", active.ID, result.Data[0].ID)
+			t.Errorf("expected active account ID %s, got %s", active.ID, result.Data[0].ID)
 		}
 	})
 }
@@ -151,7 +151,7 @@ func TestGetAccountByID(t *testing.T) {
 		testutil.AssertNoError(t, err)
 
 		if account.ID != created.ID {
-			t.Errorf("expected account ID %d, got %d", created.ID, account.ID)
+			t.Errorf("expected account ID %s, got %s", created.ID, account.ID)
 		}
 		if account.Name != created.Name {
 			t.Errorf("expected name %s, got %s", created.Name, account.Name)
@@ -347,7 +347,7 @@ func TestUpdateAccount(t *testing.T) {
 
 		// Verify in DB (GetAccountByID filters active=true, so query directly)
 		var dbAccount models.Account
-		db.First(&dbAccount, account.ID)
+		db.First(&dbAccount, "id = ?", account.ID)
 		if dbAccount.IsActive {
 			t.Error("expected account to be inactive")
 		}
@@ -399,7 +399,7 @@ func TestUpdateAccountBalance(t *testing.T) {
 
 		// Verify persisted to DB
 		var dbAccount models.Account
-		db.First(&dbAccount, account.ID)
+		db.First(&dbAccount, "id = ?", account.ID)
 		if dbAccount.Balance != 1500 {
 			t.Errorf("expected DB balance 1500, got %d", dbAccount.Balance)
 		}
@@ -421,7 +421,7 @@ func TestUpdateAccountBalance(t *testing.T) {
 
 		// Verify persisted to DB
 		var dbAccount models.Account
-		db.First(&dbAccount, account.ID)
+		db.First(&dbAccount, "id = ?", account.ID)
 		if dbAccount.Balance != 700 {
 			t.Errorf("expected DB balance 700, got %d", dbAccount.Balance)
 		}
@@ -676,7 +676,7 @@ func TestUpdateAccountBalance_CreditCard(t *testing.T) {
 		}
 
 		var dbAccount models.Account
-		db.First(&dbAccount, account.ID)
+		db.First(&dbAccount, "id = ?", account.ID)
 		if dbAccount.Balance != 5000 {
 			t.Errorf("expected DB balance 5000, got %d", dbAccount.Balance)
 		}
@@ -697,7 +697,7 @@ func TestUpdateAccountBalance_CreditCard(t *testing.T) {
 		}
 
 		var dbAccount models.Account
-		db.First(&dbAccount, account.ID)
+		db.First(&dbAccount, "id = ?", account.ID)
 		if dbAccount.Balance != 2000 {
 			t.Errorf("expected DB balance 2000, got %d", dbAccount.Balance)
 		}

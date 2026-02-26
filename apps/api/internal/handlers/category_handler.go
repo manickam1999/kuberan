@@ -29,16 +29,16 @@ type CreateCategoryRequest struct {
 	Description string              `json:"description" binding:"max=500"`
 	Icon        string              `json:"icon" binding:"max=50"`
 	Color       string              `json:"color" binding:"omitempty,hex_color"`
-	ParentID *string               `json:"parent_id"`
+	ParentID    *string             `json:"parent_id"`
 }
 
 // UpdateCategoryRequest represents the request payload for updating a category
 type UpdateCategoryRequest struct {
-	Name        string `json:"name" binding:"omitempty,min=1,max=100"`
-	Description string `json:"description" binding:"max=500"`
-	Icon        string `json:"icon" binding:"max=50"`
-	Color       string `json:"color" binding:"omitempty,hex_color"`
-	ParentID *string  `json:"parent_id"`
+	Name        string  `json:"name" binding:"omitempty,min=1,max=100"`
+	Description string  `json:"description" binding:"max=500"`
+	Icon        string  `json:"icon" binding:"max=50"`
+	Color       string  `json:"color" binding:"omitempty,hex_color"`
+	ParentID    *string `json:"parent_id"`
 }
 
 // CategoryResponse represents a category in the response
@@ -50,7 +50,7 @@ type CategoryResponse struct {
 	Description string              `json:"description"`
 	Icon        string              `json:"icon"`
 	Color       string              `json:"color"`
-	ParentID *string               `json:"parent_id,omitempty"`
+	ParentID    *string             `json:"parent_id,omitempty"`
 }
 
 // CreateCategory handles the creation of a new category

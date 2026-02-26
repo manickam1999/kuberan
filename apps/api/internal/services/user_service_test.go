@@ -18,8 +18,8 @@ func TestCreateUser(t *testing.T) {
 		user, err := svc.CreateUser("alice@example.com", "password123", "Alice", "Smith")
 		testutil.AssertNoError(t, err)
 
-		if user.ID == 0 {
-			t.Fatal("expected non-zero user ID")
+		if user.ID == "" {
+			t.Fatal("expected non-empty user ID")
 		}
 		if user.Email != "alice@example.com" {
 			t.Errorf("expected email alice@example.com, got %s", user.Email)
@@ -87,7 +87,7 @@ func TestGetUserByEmail(t *testing.T) {
 		testutil.AssertNoError(t, err)
 
 		if user.ID != created.ID {
-			t.Errorf("expected user ID %d, got %d", created.ID, user.ID)
+			t.Errorf("expected user ID %s, got %s", created.ID, user.ID)
 		}
 	})
 
@@ -133,7 +133,7 @@ func TestGetUserByID(t *testing.T) {
 		defer testutil.TeardownTestDB(t, db)
 		svc := NewUserService(db)
 
-		_, err := svc.GetUserByID(99999)
+		_, err := svc.GetUserByID("99999")
 		testutil.AssertAppError(t, err, "USER_NOT_FOUND")
 	})
 }

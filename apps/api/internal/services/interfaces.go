@@ -16,7 +16,7 @@ type UserServicer interface {
 	GetUserByID(id string) (*models.User, error)
 	VerifyPassword(user *models.User, password string) bool
 	AttemptLogin(email, password string) (*models.User, error)
-	StoreRefreshTokenHash(userID string, tokenHash string) error
+	StoreRefreshTokenHash(userID, tokenHash string) error
 	GetRefreshTokenHash(userID string) (string, error)
 }
 
@@ -55,9 +55,9 @@ type AccountUpdateFields struct {
 
 // AccountServicer defines the contract for account-related business logic.
 type AccountServicer interface {
-	CreateCashAccount(userID string, name, description, currency string, initialBalance int64) (*models.Account, error)
-	CreateInvestmentAccount(userID string, name, description, currency, broker, accountNumber string) (*models.Account, error)
-	CreateCreditCardAccount(userID string, name, description, currency string, creditLimit int64, interestRate float64, dueDate *time.Time) (*models.Account, error)
+	CreateCashAccount(userID, name, description, currency string, initialBalance int64) (*models.Account, error)
+	CreateInvestmentAccount(userID, name, description, currency, broker, accountNumber string) (*models.Account, error)
+	CreateCreditCardAccount(userID, name, description, currency string, creditLimit int64, interestRate float64, dueDate *time.Time) (*models.Account, error)
 	GetUserAccounts(userID string, page pagination.PageRequest) (*pagination.PageResponse[models.Account], error)
 	GetAccountByID(userID, accountID string) (*models.Account, error)
 	UpdateAccount(userID, accountID string, updates AccountUpdateFields) (*models.Account, error)
@@ -215,5 +215,5 @@ type PortfolioSnapshotServicer interface {
 
 // AuditServicer defines the contract for audit logging.
 type AuditServicer interface {
-	Log(userID string, action, resourceType string, resourceID string, ipAddress string, changes map[string]interface{})
+	Log(userID, action, resourceType, resourceID, ipAddress string, changes map[string]interface{})
 }
