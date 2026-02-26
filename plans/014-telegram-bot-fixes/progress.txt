@@ -168,3 +168,16 @@
 
 ## Known Limitation
 Full `./scripts/check-go.sh apps/api` cannot pass due to pre-existing UUID migration breakage in non-telegram test files. This is a branch-wide issue, not introduced by telegram bot fixes. All new telegram tests pass when run in isolation.
+
+
+## UUID Migration Fixes (2024-02-26) - IN PROGRESS
+- PRD ref: 3.6, 6.1
+- Systematically fixed pre-existing UUID migration test failures to unblock full verification
+- Changed mock service interfaces from uint to string for all ID parameters across 12 handler test files
+- Updated test helpers: injectUserID signature and all call sites (string instead of uint)
+- Fixed ID comparisons in test assertions: all ID == 0 checks changed to ID == "" checks
+- Fixed hard-coded numeric IDs in service tests: 99999 → "99999"
+- Fixed model construction in handler tests: Base{ID: 1} → Base{ID: "test-id-1"}
+- Files modified: 12 handler test files, 4 service test files, 2 testutil files
+- Status: go build PASSES, go vet has ~5 remaining minor issues
+- Impact: Majority of UUID migration test failures resolved
