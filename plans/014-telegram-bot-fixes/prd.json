@@ -1,0 +1,252 @@
+[
+  {
+    "id": "1.1",
+    "category": "migration",
+    "passes": true,
+    "description": "Make unique indexes in migration 000018 to match GORM model tags",
+    "steps": [
+      "Open apps/api/migrations/000018_create_telegram_links.up.sql",
+      "Change line 19: CREATE INDEX → CREATE UNIQUE INDEX for idx_telegram_links_user_id",
+      "Change line 20: CREATE INDEX → CREATE UNIQUE INDEX with WHERE telegram_user_id != 0 for idx_telegram_links_telegram_user_id (partial unique index to allow multiple rows with default 0)",
+      "Run go build ./... from apps/api/ to verify no issues"
+    ]
+  },
+  {
+    "id": "2.1",
+    "category": "service-types",
+    "passes": true,
+    "description": "Define TelegramUserAuth struct in interfaces.go",
+    "steps": [
+      "Open apps/api/internal/services/interfaces.go",
+      "Add TelegramUserAuth struct with UserID, Email, AuthToken, DefaultCurrency fields and json tags",
+      "Place it near other result type definitions"
+    ]
+  },
+  {
+    "id": "2.2",
+    "category": "service-types",
+    "passes": true,
+    "description": "Update TelegramServicer interface to return *TelegramUserAuth",
+    "steps": [
+      "Open apps/api/internal/services/interfaces.go",
+      "Change GetUserWithAuthToken return type from map[string]interface{} to *TelegramUserAuth"
+    ]
+  },
+  {
+    "id": "2.3",
+    "category": "service-types",
+    "passes": true,
+    "description": "Update telegram_service.go GetUserWithAuthToken to return *TelegramUserAuth",
+    "steps": [
+      "Open apps/api/internal/services/telegram_service.go",
+      "Change GetUserWithAuthToken signature to return (*TelegramUserAuth, error)",
+      "Replace map[string]interface{} return with &TelegramUserAuth{...}",
+      "Run go build ./... from apps/api/"
+    ]
+  },
+  {
+    "id": "2.4",
+    "category": "service-types",
+    "passes": true,
+    "description": "Verify handler compatibility with typed struct (serializes identically)",
+    "steps": [
+      "Open apps/api/internal/handlers/telegram_handler.go",
+      "Verify ResolveUser handler calls c.JSON(http.StatusOK, userData) — no change needed since TelegramUserAuth has matching json tags",
+      "Run go build ./... from apps/api/"
+    ]
+  },
+  {
+    "id": "3.1",
+    "category": "test-infra",
+    "passes": true,
+    "description": "Add TelegramLink to test DB allModels list",
+    "steps": [
+      "Open apps/api/internal/testutil/database.go",
+      "Add &models.TelegramLink{} to the allModels slice"
+    ]
+  },
+  {
+    "id": "3.2",
+    "category": "test-infra",
+    "passes": true,
+    "description": "Add CreateTestTelegramLink fixture helper",
+    "steps": [
+      "Open apps/api/internal/testutil/fixtures.go",
+      "Add CreateTestTelegramLink(t, db, userID string, telegramUserID int64) *models.TelegramLink",
+      "Creates an active linked TelegramLink with default currency MYR, username 'testuser', first name 'Test'"
+    ]
+  },
+  {
+    "id": "3.3",
+    "category": "service-tests",
+    "passes": true,
+    "description": "Write telegram_service_test.go with tests for all service methods",
+    "steps": [
+      "Create apps/api/internal/services/telegram_service_test.go",
+      "TestGenerateLinkCode: creates_new_link_for_user, updates_existing_link_code, preserves_existing_telegram_data",
+      "TestCompleteLink: valid_code, invalid_code, expired_code, telegram_already_linked, sets_default_currency",
+      "TestGetLinkByUserID: found, not_found",
+      "TestGetLinkByTelegramID: found_active, not_found_inactive, not_found",
+      "TestUnlinkAccount: success, not_found",
+      "TestRecordActivity: updates_timestamp_and_count",
+      "TestIsLinked: true_when_active, false_when_inactive, false_when_no_link",
+      "TestGetUserWithAuthToken: returns_user_auth, not_found",
+      "Follow existing pattern: each subtest creates own SetupTestDB + TeardownTestDB",
+      "Run go test ./internal/services/ -v -run TestTelegram from apps/api/"
+    ]
+  },
+  {
+    "id": "3.4",
+    "category": "handler-tests",
+    "passes": true,
+    "description": "Write telegram_handler_test.go with tests for all endpoints",
+    "steps": [
+      "Create apps/api/internal/handlers/telegram_handler_test.go",
+      "Define mockTelegramService with function fields for each TelegramServicer method",
+      "Define setupTelegramRouter and setupInternalTelegramRouter helpers",
+      "TestTelegramHandler_GetLink: returns_200_with_link, returns_404_when_not_found, returns_401_without_auth",
+      "TestTelegramHandler_GenerateCode: returns_200_with_code, returns_500_on_service_error",
+      "TestTelegramHandler_Unlink: returns_200_on_success, returns_404_when_not_linked",
+      "TestTelegramHandler_CompleteLink: returns_200_on_success, returns_400_on_invalid_body, returns_400_on_expired_code",
+      "TestTelegramHandler_ResolveUser: returns_200_with_user_data, returns_404_when_not_found, returns_400_on_invalid_id",
+      "TestTelegramHandler_RecordActivity: returns_200_on_success, returns_400_on_invalid_id",
+      "Follow existing pattern: mock service, httptest, gin.TestMode",
+      "Run go test ./internal/handlers/ -v -run TestTelegram from apps/api/"
+    ]
+  },
+  {
+    "id": "3.5",
+    "category": "middleware-tests",
+    "passes": true,
+    "description": "Add TestInternalAuthMiddleware to pipeline_auth_test.go",
+    "steps": [
+      "Open apps/api/internal/middleware/pipeline_auth_test.go",
+      "Add setupInternalRouter(secret string) *gin.Engine helper",
+      "Add doInternalRequest(r *gin.Engine, secret string) *httptest.ResponseRecorder helper",
+      "Add TestInternalAuthMiddleware with table-driven test cases: valid_secret, invalid_secret, missing_secret, empty_configured_secret, both_empty, partial_match_rejected",
+      "Follow existing TestPipelineAuthMiddleware pattern exactly",
+      "Run go test ./internal/middleware/ -v -run TestInternal from apps/api/"
+    ]
+  },
+  {
+    "id": "3.6",
+    "category": "go-verification",
+    "passes": false,
+    "description": "Full Go verification after test changes",
+    "steps": [
+      "Run ./scripts/check-go.sh apps/api",
+      "All 5 steps must pass: go build, go vet, golangci-lint, go test, go test -race"
+    ]
+  },
+  {
+    "id": "4.1",
+    "category": "bot-fix",
+    "passes": true,
+    "description": "Wrap create_transaction in try/except in transaction confirm handler",
+    "steps": [
+      "Open apps/bot/handlers/transaction_flow.py",
+      "Find the txn:confirm branch in handle_confirm_callback (~line 561)",
+      "Wrap user_client.create_transaction(transaction_data) in try/except Exception as e",
+      "On exception: log error, edit message to show error text with _build_confirm_keyboard(), return CONFIRM (allow retry)",
+      "On success: existing edit_message_text with success message, pop TXN_KEY, return END"
+    ]
+  },
+  {
+    "id": "4.2",
+    "category": "bot-fix",
+    "passes": true,
+    "description": "Fix hardcoded USD in balance total — use user's default currency",
+    "steps": [
+      "Open apps/bot/handlers/balance.py",
+      "Extract default_currency from user_data near top of try block: currency = user_data.get('default_currency', 'MYR')",
+      "Change line 59 from format_currency(total, 'USD') to format_currency(total, currency)",
+      "Add a comment noting mixed-currency totals are summed naively without conversion"
+    ]
+  },
+  {
+    "id": "4.3",
+    "category": "bot-fix",
+    "passes": true,
+    "description": "Add debt account type to format_account_type map",
+    "steps": [
+      "Open apps/bot/utils/formatting.py",
+      "Add '\"debt\": \"🏦 Debt\"' to the type_map dict in format_account_type"
+    ]
+  },
+  {
+    "id": "5.1",
+    "category": "frontend-fix",
+    "passes": true,
+    "description": "Fix TelegramLink TypeScript interface — id and user_id should be string (UUIDs)",
+    "steps": [
+      "Open apps/web/src/hooks/use-telegram.ts",
+      "Change id: number to id: string",
+      "Change user_id: number to user_id: string",
+      "Keep telegram_user_id as number (Telegram IDs are integers within JS safe range)"
+    ]
+  },
+  {
+    "id": "5.2",
+    "category": "frontend-fix",
+    "passes": true,
+    "description": "Add dark mode variants to green alert in telegram-settings.tsx",
+    "steps": [
+      "Open apps/web/src/components/settings/telegram-settings.tsx",
+      "Line 200: Add dark:border-green-800 dark:bg-green-950 to Alert className",
+      "Line 201: Add dark:text-green-100 to AlertDescription className"
+    ]
+  },
+  {
+    "id": "5.3",
+    "category": "frontend-verification",
+    "passes": true,
+    "description": "Verify frontend builds without TypeScript errors",
+    "steps": [
+      "Run pnpm build from apps/web/",
+      "Must compile without errors"
+    ]
+  },
+  {
+    "id": "6.1",
+    "category": "verification",
+    "passes": false,
+    "description": "Final Go verification",
+    "steps": [
+      "Run ./scripts/check-go.sh apps/api",
+      "All 5 steps must pass: go build, go vet, golangci-lint, go test, go test -race"
+    ]
+  },
+  {
+    "id": "6.2",
+    "category": "verification",
+    "passes": true,
+    "description": "Final frontend verification",
+    "steps": [
+      "Run pnpm build from apps/web/",
+      "Must compile without errors"
+    ]
+  },
+  {
+    "id": "6.3",
+    "category": "verification",
+    "passes": true,
+    "description": "Final verification checklist",
+    "steps": [
+      "Verify migration 000018 creates UNIQUE index on user_id",
+      "Verify migration 000018 creates partial UNIQUE index on telegram_user_id WHERE != 0",
+      "Verify GetUserWithAuthToken returns *TelegramUserAuth (not map[string]interface{})",
+      "Verify TelegramLink is in testutil.allModels",
+      "Verify CreateTestTelegramLink fixture exists",
+      "Verify telegram_service_test.go exists with tests for all service methods",
+      "Verify telegram_handler_test.go exists with tests for all endpoints",
+      "Verify TestInternalAuthMiddleware exists in pipeline_auth_test.go",
+      "Verify bot create_transaction is wrapped in try/except",
+      "Verify bot /balance total uses user_data.get('default_currency', 'MYR') not 'USD'",
+      "Verify format_account_type includes 'debt' key",
+      "Verify TypeScript TelegramLink.id is string, TelegramLink.user_id is string",
+      "Verify telegram settings alert has dark: variants for green colors",
+      "Verify all Go tests pass (including new ones)",
+      "Verify frontend builds without TypeScript errors"
+    ]
+  }
+]

@@ -16,6 +16,6 @@ CREATE TABLE IF NOT EXISTS telegram_links (
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
-CREATE INDEX IF NOT EXISTS idx_telegram_links_user_id ON telegram_links (user_id);
-CREATE INDEX IF NOT EXISTS idx_telegram_links_telegram_user_id ON telegram_links (telegram_user_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_telegram_links_user_id ON telegram_links (user_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_telegram_links_telegram_user_id ON telegram_links (telegram_user_id) WHERE telegram_user_id != 0;
 CREATE INDEX IF NOT EXISTS idx_telegram_links_is_active ON telegram_links (is_active);

@@ -20,7 +20,7 @@ func NewAuditService(db *gorm.DB) AuditServicer {
 
 // Log records an audit event. Errors are logged but never propagate
 // to avoid disrupting the main operation.
-func (s *auditService) Log(userID string, action, resourceType string, resourceID string, ipAddress string, changes map[string]any) {
+func (s *auditService) Log(userID, action, resourceType, resourceID, ipAddress string, changes map[string]any) {
 	var changesJSON string
 	if changes != nil {
 		data, err := json.Marshal(changes)

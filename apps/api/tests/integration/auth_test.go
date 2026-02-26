@@ -14,8 +14,8 @@ func TestAuthFlow_RegisterLoginProfileRefresh(t *testing.T) {
 	if accessToken == "" || refreshToken == "" {
 		t.Fatal("expected non-empty tokens from registration")
 	}
-	if userID == 0 {
-		t.Fatal("expected non-zero user ID")
+	if userID == "" {
+		t.Fatal("expected non-empty user ID")
 	}
 
 	// Step 2: Login with same credentials

@@ -182,7 +182,7 @@ func (s *telegramService) IsLinked(userID string) (bool, error) {
 }
 
 // GetUserWithAuthToken retrieves user info and generates a bot auth token
-func (s *telegramService) GetUserWithAuthToken(telegramUserID int64) (map[string]interface{}, error) {
+func (s *telegramService) GetUserWithAuthToken(telegramUserID int64) (*TelegramUserAuth, error) {
 	link, err := s.GetLinkByTelegramID(telegramUserID)
 	if err != nil {
 		return nil, err
@@ -203,11 +203,11 @@ func (s *telegramService) GetUserWithAuthToken(telegramUserID int64) (map[string
 		return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)
 	}
 
-	return map[string]interface{}{
-		"user_id":          user.ID,
-		"email":            user.Email,
-		"auth_token":       token,
-		"default_currency": link.DefaultCurrency,
+	return &TelegramUserAuth{
+		UserID:          user.ID,
+		Email:           user.Email,
+		AuthToken:       token,
+		DefaultCurrency: link.DefaultCurrency,
 	}, nil
 }
 

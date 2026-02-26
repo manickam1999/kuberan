@@ -2,8 +2,8 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiClient } from "@/lib/api-client";
 
 interface TelegramLink {
-  id: number;
-  user_id: number;
+  id: string;
+  user_id: string;
   telegram_user_id: number;
   telegram_username?: string;
   telegram_first_name?: string;

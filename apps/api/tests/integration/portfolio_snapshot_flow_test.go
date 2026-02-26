@@ -24,12 +24,12 @@ func TestPortfolioSnapshotFlow_ComputeAndQuery(t *testing.T) {
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("expected 201 creating investment account, got %d: %s", rec.Code, rec.Body.String())
 	}
-	accountID := parseJSON(t, rec)["account"].(map[string]interface{})["id"].(float64)
+	accountID := parseJSON(t, rec)["account"].(map[string]interface{})["id"].(string)
 
 	// Step 3: Create security and add investment (10 shares @ $150 = $1500)
 	securityID := app.createSecurity(t, "AAPL", "Apple Inc.", "stock")
 	rec = app.request("POST", "/api/v1/investments",
-		fmt.Sprintf(`{"account_id":%.0f,"security_id":%.0f,"quantity":10,"purchase_price":15000}`,
+		fmt.Sprintf(`{"account_id":%q,"security_id":%q,"quantity":10,"purchase_price":15000}`,
 			accountID, securityID), token)
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("expected 201 adding investment, got %d: %s", rec.Code, rec.Body.String())
@@ -38,7 +38,7 @@ func TestPortfolioSnapshotFlow_ComputeAndQuery(t *testing.T) {
 	// Step 4: Record live price via pipeline ($150/share)
 	priceTime := time.Now().UTC().Format(time.RFC3339)
 	rec = app.pipelineRequest("POST", "/api/v1/pipeline/securities/prices",
-		fmt.Sprintf(`{"prices":[{"security_id":%.0f,"price":15000,"recorded_at":%q}]}`, securityID, priceTime))
+		fmt.Sprintf(`{"prices":[{"security_id":%q,"price":15000,"recorded_at":%q}]}`, securityID, priceTime))
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200 for pipeline price, got %d: %s", rec.Code, rec.Body.String())
 	}

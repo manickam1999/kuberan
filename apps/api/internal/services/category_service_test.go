@@ -18,8 +18,8 @@ func TestCreateCategory(t *testing.T) {
 		cat, err := svc.CreateCategory(user.ID, "Groceries", models.CategoryTypeExpense, "Food shopping", "cart", "#FF0000", nil)
 		testutil.AssertNoError(t, err)
 
-		if cat.ID == 0 {
-			t.Fatal("expected non-zero category ID")
+		if cat.ID == "" {
+			t.Fatal("expected non-empty category ID")
 		}
 		if cat.Name != "Groceries" {
 			t.Errorf("expected name Groceries, got %s", cat.Name)
@@ -58,7 +58,7 @@ func TestCreateCategory(t *testing.T) {
 		testutil.AssertNoError(t, err)
 
 		if child.ParentID == nil || *child.ParentID != parent.ID {
-			t.Errorf("expected parent ID %d, got %v", parent.ID, child.ParentID)
+			t.Errorf("expected parent ID %s, got %v", parent.ID, child.ParentID)
 		}
 	})
 
@@ -68,7 +68,7 @@ func TestCreateCategory(t *testing.T) {
 		svc := NewCategoryService(db)
 		user := testutil.CreateTestUser(t, db)
 
-		nonexistent := uint(99999)
+		nonexistent := "99999"
 		_, err := svc.CreateCategory(user.ID, "Orphan", models.CategoryTypeExpense, "", "", "", &nonexistent)
 		testutil.AssertAppError(t, err, "CATEGORY_NOT_FOUND")
 	})
@@ -189,7 +189,7 @@ func TestGetCategoryByID(t *testing.T) {
 		testutil.AssertNoError(t, err)
 
 		if cat.ID != created.ID {
-			t.Errorf("expected category ID %d, got %d", created.ID, cat.ID)
+			t.Errorf("expected category ID %s, got %s", created.ID, cat.ID)
 		}
 	})
 
@@ -199,7 +199,7 @@ func TestGetCategoryByID(t *testing.T) {
 		svc := NewCategoryService(db)
 		user := testutil.CreateTestUser(t, db)
 
-		_, err := svc.GetCategoryByID(user.ID, 99999)
+		_, err := svc.GetCategoryByID(user.ID, "99999")
 		testutil.AssertAppError(t, err, "CATEGORY_NOT_FOUND")
 	})
 
@@ -259,7 +259,7 @@ func TestUpdateCategory(t *testing.T) {
 		svc := NewCategoryService(db)
 		user := testutil.CreateTestUser(t, db)
 
-		_, err := svc.UpdateCategory(user.ID, 99999, "Name", "", "", "", nil)
+		_, err := svc.UpdateCategory(user.ID, "99999", "Name", "", "", "", nil)
 		testutil.AssertAppError(t, err, "CATEGORY_NOT_FOUND")
 	})
 
@@ -276,7 +276,7 @@ func TestUpdateCategory(t *testing.T) {
 		testutil.AssertNoError(t, err)
 
 		if updated.ParentID == nil || *updated.ParentID != parent.ID {
-			t.Errorf("expected parent ID %d, got %v", parent.ID, updated.ParentID)
+			t.Errorf("expected parent ID %s, got %v", parent.ID, updated.ParentID)
 		}
 	})
 }
@@ -352,7 +352,7 @@ func TestDeleteCategory(t *testing.T) {
 
 		// Transaction should still reference the soft-deleted category
 		var storedTx models.Transaction
-		db.First(&storedTx, tx.ID)
+		db.First(&storedTx, "id = ?", tx.ID)
 		if storedTx.CategoryID == nil || *storedTx.CategoryID != cat.ID {
 			t.Error("expected transaction to still reference the soft-deleted category")
 		}
@@ -364,7 +364,7 @@ func TestDeleteCategory(t *testing.T) {
 		svc := NewCategoryService(db)
 		user := testutil.CreateTestUser(t, db)
 
-		err := svc.DeleteCategory(user.ID, 99999)
+		err := svc.DeleteCategory(user.ID, "99999")
 		testutil.AssertAppError(t, err, "CATEGORY_NOT_FOUND")
 	})
 

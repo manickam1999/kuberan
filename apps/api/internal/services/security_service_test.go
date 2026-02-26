@@ -18,8 +18,8 @@ func TestCreateSecurity(t *testing.T) {
 		sec, err := svc.CreateSecurity("AAPL", "Apple Inc", models.AssetTypeStock, "USD", "NASDAQ", nil)
 		testutil.AssertNoError(t, err)
 
-		if sec.ID == 0 {
-			t.Fatal("expected non-zero security ID")
+		if sec.ID == "" {
+			t.Fatal("expected non-empty security ID")
 		}
 		if sec.Symbol != "AAPL" {
 			t.Errorf("expected symbol AAPL, got %s", sec.Symbol)
@@ -114,7 +114,7 @@ func TestCreateSecurity(t *testing.T) {
 		sec2, err := svc.CreateSecurity("AAPL", "Apple NASDAQ", models.AssetTypeStock, "USD", "NASDAQ", nil)
 		testutil.AssertNoError(t, err)
 
-		if sec2.ID == 0 {
+		if sec2.ID == "" {
 			t.Fatal("expected second security to be created successfully")
 		}
 	})
@@ -163,7 +163,7 @@ func TestGetSecurityByID(t *testing.T) {
 		testutil.AssertNoError(t, err)
 
 		if sec.ID != created.ID {
-			t.Errorf("expected ID %d, got %d", created.ID, sec.ID)
+			t.Errorf("expected ID %s, got %s", created.ID, sec.ID)
 		}
 		if sec.Symbol != "AAPL" {
 			t.Errorf("expected symbol AAPL, got %s", sec.Symbol)
@@ -175,7 +175,7 @@ func TestGetSecurityByID(t *testing.T) {
 		defer testutil.TeardownTestDB(t, db)
 		svc := NewSecurityService(db)
 
-		_, err := svc.GetSecurityByID(9999)
+		_, err := svc.GetSecurityByID("9999")
 		testutil.AssertAppError(t, err, "SECURITY_NOT_FOUND")
 	})
 }
@@ -378,7 +378,7 @@ func TestListAllSecurities(t *testing.T) {
 			t.Fatalf("expected 1 security, got %d", len(securities))
 		}
 		if securities[0].ID != active.ID {
-			t.Errorf("expected security ID %d, got %d", active.ID, securities[0].ID)
+			t.Errorf("expected security ID %s, got %s", active.ID, securities[0].ID)
 		}
 	})
 }

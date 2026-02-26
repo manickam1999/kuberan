@@ -20,13 +20,13 @@ func TestAccountFlow_CreateWithInitialBalanceAndTransactions(t *testing.T) {
 	}
 	result := parseJSON(t, rec)
 	account := result["account"].(map[string]interface{})
-	accountID := account["id"].(float64)
+	accountID := account["id"].(string)
 	if account["balance"].(float64) != 10000 {
 		t.Errorf("expected initial balance 10000, got %v", account["balance"])
 	}
 
 	// Step 2: Verify initial transaction exists
-	rec = app.request("GET", fmt.Sprintf("/api/v1/accounts/%.0f/transactions", accountID), "", token)
+	rec = app.request("GET", fmt.Sprintf("/api/v1/accounts/%s/transactions", accountID), "", token)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
 	}
@@ -46,20 +46,20 @@ func TestAccountFlow_CreateWithInitialBalanceAndTransactions(t *testing.T) {
 
 	// Step 3: Create income of $50.00
 	rec = app.request("POST", "/api/v1/transactions",
-		fmt.Sprintf(`{"account_id":%.0f,"type":"income","amount":5000,"description":"Salary"}`, accountID), token)
+		fmt.Sprintf(`{"account_id":%q,"type":"income","amount":5000,"description":"Salary"}`, accountID), token)
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("expected 201, got %d: %s", rec.Code, rec.Body.String())
 	}
 
 	// Step 4: Create expense of $30.00
 	rec = app.request("POST", "/api/v1/transactions",
-		fmt.Sprintf(`{"account_id":%.0f,"type":"expense","amount":3000,"description":"Groceries"}`, accountID), token)
+		fmt.Sprintf(`{"account_id":%q,"type":"expense","amount":3000,"description":"Groceries"}`, accountID), token)
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("expected 201, got %d: %s", rec.Code, rec.Body.String())
 	}
 
 	// Step 5: Verify final balance = 10000 + 5000 - 3000 = 12000
-	rec = app.request("GET", fmt.Sprintf("/api/v1/accounts/%.0f", accountID), "", token)
+	rec = app.request("GET", fmt.Sprintf("/api/v1/accounts/%s", accountID), "", token)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
 	}
@@ -71,7 +71,7 @@ func TestAccountFlow_CreateWithInitialBalanceAndTransactions(t *testing.T) {
 	}
 
 	// Step 6: Verify 3 transactions total
-	rec = app.request("GET", fmt.Sprintf("/api/v1/accounts/%.0f/transactions", accountID), "", token)
+	rec = app.request("GET", fmt.Sprintf("/api/v1/accounts/%s/transactions", accountID), "", token)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
 	}
@@ -97,8 +97,8 @@ func TestAccountFlow_CreateWithZeroBalance(t *testing.T) {
 	}
 
 	// No initial transaction should exist
-	accountID := account["id"].(float64)
-	rec = app.request("GET", fmt.Sprintf("/api/v1/accounts/%.0f/transactions", accountID), "", token)
+	accountID := account["id"].(string)
+	rec = app.request("GET", fmt.Sprintf("/api/v1/accounts/%s/transactions", accountID), "", token)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
 	}
@@ -135,30 +135,30 @@ func TestAccountFlow_DeleteTransactionReversesBalance(t *testing.T) {
 		`{"name":"Delete Test","initial_balance":10000}`, token)
 	result := parseJSON(t, rec)
 	account := result["account"].(map[string]interface{})
-	accountID := account["id"].(float64)
+	accountID := account["id"].(string)
 
 	// Add expense of $30
 	rec = app.request("POST", "/api/v1/transactions",
-		fmt.Sprintf(`{"account_id":%.0f,"type":"expense","amount":3000}`, accountID), token)
+		fmt.Sprintf(`{"account_id":%q,"type":"expense","amount":3000}`, accountID), token)
 	txResult := parseJSON(t, rec)
 	tx := txResult["transaction"].(map[string]interface{})
-	txID := tx["id"].(float64)
+	txID := tx["id"].(string)
 
 	// Verify balance is $70
-	rec = app.request("GET", fmt.Sprintf("/api/v1/accounts/%.0f", accountID), "", token)
+	rec = app.request("GET", fmt.Sprintf("/api/v1/accounts/%s", accountID), "", token)
 	acct := parseJSON(t, rec)["account"].(map[string]interface{})
 	if acct["balance"].(float64) != 7000 {
 		t.Fatalf("expected 7000 after expense, got %.0f", acct["balance"].(float64))
 	}
 
 	// Delete the expense transaction
-	rec = app.request("DELETE", fmt.Sprintf("/api/v1/transactions/%.0f", txID), "", token)
+	rec = app.request("DELETE", fmt.Sprintf("/api/v1/transactions/%s", txID), "", token)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200 on delete, got %d: %s", rec.Code, rec.Body.String())
 	}
 
 	// Balance should be restored to $100
-	rec = app.request("GET", fmt.Sprintf("/api/v1/accounts/%.0f", accountID), "", token)
+	rec = app.request("GET", fmt.Sprintf("/api/v1/accounts/%s", accountID), "", token)
 	acct = parseJSON(t, rec)["account"].(map[string]interface{})
 	if acct["balance"].(float64) != 10000 {
 		t.Errorf("expected 10000 after delete, got %.0f", acct["balance"].(float64))

@@ -128,7 +128,7 @@ func (s *userService) AttemptLogin(email, password string) (*models.User, error)
 }
 
 // StoreRefreshTokenHash stores the hash of a refresh token for the given user.
-func (s *userService) StoreRefreshTokenHash(userID string, tokenHash string) error {
+func (s *userService) StoreRefreshTokenHash(userID, tokenHash string) error {
 	if err := s.db.Model(&models.User{}).Where("id = ?", userID).Update("refresh_token_hash", tokenHash).Error; err != nil {
 		return apperrors.Wrap(apperrors.ErrInternalServer, err)
 	}

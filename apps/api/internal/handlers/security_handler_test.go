@@ -18,11 +18,11 @@ import (
 
 type mockSecurityService struct {
 	createSecurityFn    func(symbol, name string, assetType models.AssetType, currency, exchange string, extraFields map[string]interface{}) (*models.Security, error)
-	getSecurityByIDFn   func(id uint) (*models.Security, error)
+	getSecurityByIDFn   func(id string) (*models.Security, error)
 	listSecuritiesFn    func(search string, page pagination.PageRequest) (*pagination.PageResponse[models.Security], error)
 	listAllSecuritiesFn func() ([]models.Security, error)
 	recordPricesFn      func(prices []services.SecurityPriceInput) (int, error)
-	getPriceHistoryFn   func(securityID uint, from, to time.Time, page pagination.PageRequest) (*pagination.PageResponse[models.SecurityPrice], error)
+	getPriceHistoryFn   func(securityID string, from, to time.Time, page pagination.PageRequest) (*pagination.PageResponse[models.SecurityPrice], error)
 }
 
 var _ services.SecurityServicer = (*mockSecurityService)(nil)
@@ -34,7 +34,7 @@ func (m *mockSecurityService) CreateSecurity(symbol, name string, assetType mode
 	return &models.Security{}, nil
 }
 
-func (m *mockSecurityService) GetSecurityByID(id uint) (*models.Security, error) {
+func (m *mockSecurityService) GetSecurityByID(id string) (*models.Security, error) {
 	if m.getSecurityByIDFn != nil {
 		return m.getSecurityByIDFn(id)
 	}
@@ -63,7 +63,7 @@ func (m *mockSecurityService) RecordPrices(prices []services.SecurityPriceInput)
 	return 0, nil
 }
 
-func (m *mockSecurityService) GetPriceHistory(securityID uint, from, to time.Time, page pagination.PageRequest) (*pagination.PageResponse[models.SecurityPrice], error) {
+func (m *mockSecurityService) GetPriceHistory(securityID string, from, to time.Time, page pagination.PageRequest) (*pagination.PageResponse[models.SecurityPrice], error) {
 	if m.getPriceHistoryFn != nil {
 		return m.getPriceHistoryFn(securityID, from, to, page)
 	}
@@ -80,7 +80,7 @@ func setupSecurityRouter(handler *SecurityHandler) *gin.Engine {
 	r.POST("/pipeline/securities", handler.CreateSecurity)
 	r.POST("/pipeline/securities/prices", handler.RecordPrices)
 	// User routes (with auth)
-	auth := r.Group("", injectUserID(1))
+	auth := r.Group("", injectUserID("test-user-1"))
 	auth.GET("/securities", handler.ListSecurities)
 	auth.GET("/securities/:id", handler.GetSecurity)
 	auth.GET("/securities/:id/prices", handler.GetPriceHistory)
@@ -94,7 +94,7 @@ func TestSecurityHandler_CreateSecurity(t *testing.T) {
 		svc := &mockSecurityService{
 			createSecurityFn: func(symbol, name string, assetType models.AssetType, currency, exchange string, _ map[string]interface{}) (*models.Security, error) {
 				return &models.Security{
-					Base:      models.Base{ID: 1},
+					Base:      models.Base{ID: "sec-1"},
 					Symbol:    symbol,
 					Name:      name,
 					AssetType: assetType,
@@ -167,7 +167,7 @@ func TestSecurityHandler_CreateSecurity(t *testing.T) {
 			createSecurityFn: func(symbol, name string, assetType models.AssetType, currency, exchange string, extraFields map[string]interface{}) (*models.Security, error) {
 				capturedExtraFields = extraFields
 				return &models.Security{
-					Base:           models.Base{ID: 1},
+					Base:           models.Base{ID: "sec-1"},
 					Symbol:         symbol,
 					Name:           name,
 					AssetType:      assetType,
@@ -220,8 +220,8 @@ func TestSecurityHandler_ListAllSecurities(t *testing.T) {
 		svc := &mockSecurityService{
 			listAllSecuritiesFn: func() ([]models.Security, error) {
 				return []models.Security{
-					{Base: models.Base{ID: 1}, Symbol: "AAPL", Name: "Apple Inc.", AssetType: models.AssetTypeStock, Currency: "USD", Exchange: "NASDAQ"},
-					{Base: models.Base{ID: 7}, Symbol: "BTC", Name: "Bitcoin", AssetType: models.AssetTypeCrypto, Currency: "USD", Network: "bitcoin"},
+					{Base: models.Base{ID: "sec-1"}, Symbol: "AAPL", Name: "Apple Inc.", AssetType: models.AssetTypeStock, Currency: "USD", Exchange: "NASDAQ"},
+					{Base: models.Base{ID: "sec-7"}, Symbol: "BTC", Name: "Bitcoin", AssetType: models.AssetTypeCrypto, Currency: "USD", Network: "bitcoin"},
 				}, nil
 			},
 		}
@@ -291,8 +291,8 @@ func TestSecurityHandler_ListSecurities(t *testing.T) {
 		svc := &mockSecurityService{
 			listSecuritiesFn: func(_ string, _ pagination.PageRequest) (*pagination.PageResponse[models.Security], error) {
 				resp := pagination.NewPageResponse([]models.Security{
-					{Base: models.Base{ID: 1}, Symbol: "AAPL", Name: "Apple Inc.", AssetType: models.AssetTypeStock},
-					{Base: models.Base{ID: 2}, Symbol: "GOOGL", Name: "Alphabet Inc.", AssetType: models.AssetTypeStock},
+					{Base: models.Base{ID: "sec-1"}, Symbol: "AAPL", Name: "Apple Inc.", AssetType: models.AssetTypeStock},
+					{Base: models.Base{ID: "sec-2"}, Symbol: "GOOGL", Name: "Alphabet Inc.", AssetType: models.AssetTypeStock},
 				}, 1, 20, 2)
 				return &resp, nil
 			},
@@ -366,7 +366,7 @@ func TestSecurityHandler_ListSecurities(t *testing.T) {
 func TestSecurityHandler_GetSecurity(t *testing.T) {
 	t.Run("returns_200_on_success", func(t *testing.T) {
 		svc := &mockSecurityService{
-			getSecurityByIDFn: func(id uint) (*models.Security, error) {
+			getSecurityByIDFn: func(id string) (*models.Security, error) {
 				return &models.Security{
 					Base:      models.Base{ID: id},
 					Symbol:    "AAPL",
@@ -380,7 +380,7 @@ func TestSecurityHandler_GetSecurity(t *testing.T) {
 		handler := NewSecurityHandler(svc, &mockAuditService{})
 		r := setupSecurityRouter(handler)
 
-		rec := doRequest(r, "GET", "/securities/1", "")
+		rec := doRequest(r, "GET", "/securities/00000000-0000-0000-0000-000000000001", "")
 
 		if rec.Code != http.StatusOK {
 			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
@@ -397,14 +397,14 @@ func TestSecurityHandler_GetSecurity(t *testing.T) {
 
 	t.Run("returns_404_not_found", func(t *testing.T) {
 		svc := &mockSecurityService{
-			getSecurityByIDFn: func(_ uint) (*models.Security, error) {
+			getSecurityByIDFn: func(_ string) (*models.Security, error) {
 				return nil, apperrors.ErrSecurityNotFound
 			},
 		}
 		handler := NewSecurityHandler(svc, &mockAuditService{})
 		r := setupSecurityRouter(handler)
 
-		rec := doRequest(r, "GET", "/securities/999", "")
+		rec := doRequest(r, "GET", "/securities/00000000-0000-0000-0000-000000000999", "")
 
 		if rec.Code != http.StatusNotFound {
 			t.Fatalf("expected 404, got %d: %s", rec.Code, rec.Body.String())
@@ -435,7 +435,7 @@ func TestSecurityHandler_RecordPrices(t *testing.T) {
 		r := setupSecurityRouter(handler)
 
 		rec := doRequest(r, "POST", "/pipeline/securities/prices",
-			`{"prices":[{"security_id":1,"price":17500,"recorded_at":"2026-02-09T12:00:00Z"},{"security_id":2,"price":4200,"recorded_at":"2026-02-09T12:00:00Z"}]}`)
+			`{"prices":[{"security_id":"00000000-0000-0000-0000-000000000001","price":17500,"recorded_at":"2026-02-09T12:00:00Z"},{"security_id":"00000000-0000-0000-0000-000000000002","price":4200,"recorded_at":"2026-02-09T12:00:00Z"}]}`)
 
 		if rec.Code != http.StatusOK {
 			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
@@ -464,7 +464,7 @@ func TestSecurityHandler_RecordPrices(t *testing.T) {
 		r := setupSecurityRouter(handler)
 
 		rec := doRequest(r, "POST", "/pipeline/securities/prices",
-			`{"prices":[{"security_id":1,"price":0,"recorded_at":"2026-02-09T12:00:00Z"}]}`)
+			`{"prices":[{"security_id":"00000000-0000-0000-0000-000000000001","price":0,"recorded_at":"2026-02-09T12:00:00Z"}]}`)
 
 		if rec.Code != http.StatusBadRequest {
 			t.Fatalf("expected 400, got %d: %s", rec.Code, rec.Body.String())
@@ -494,7 +494,7 @@ func TestSecurityHandler_RecordPrices(t *testing.T) {
 		r := setupSecurityRouter(handler)
 
 		rec := doRequest(r, "POST", "/pipeline/securities/prices",
-			`{"prices":[{"security_id":1,"price":17500,"recorded_at":"2026-02-09T12:00:00Z"}]}`)
+			`{"prices":[{"security_id":"00000000-0000-0000-0000-000000000001","price":17500,"recorded_at":"2026-02-09T12:00:00Z"}]}`)
 
 		if rec.Code != http.StatusInternalServerError {
 			t.Fatalf("expected 500, got %d: %s", rec.Code, rec.Body.String())
@@ -506,10 +506,10 @@ func TestSecurityHandler_GetPriceHistory(t *testing.T) {
 	t.Run("returns_200_with_data", func(t *testing.T) {
 		now := time.Now().UTC().Truncate(time.Second)
 		svc := &mockSecurityService{
-			getPriceHistoryFn: func(_ uint, _, _ time.Time, _ pagination.PageRequest) (*pagination.PageResponse[models.SecurityPrice], error) {
+			getPriceHistoryFn: func(_ string, _, _ time.Time, _ pagination.PageRequest) (*pagination.PageResponse[models.SecurityPrice], error) {
 				resp := pagination.NewPageResponse([]models.SecurityPrice{
-					{ID: 1, SecurityID: 1, Price: 17500, RecordedAt: now},
-					{ID: 2, SecurityID: 1, Price: 17600, RecordedAt: now.Add(-time.Hour)},
+					{ID: "price-1", SecurityID: "sec-1", Price: 17500, RecordedAt: now},
+					{ID: "price-2", SecurityID: "sec-1", Price: 17600, RecordedAt: now.Add(-time.Hour)},
 				}, 1, 20, 2)
 				return &resp, nil
 			},
@@ -517,7 +517,7 @@ func TestSecurityHandler_GetPriceHistory(t *testing.T) {
 		handler := NewSecurityHandler(svc, &mockAuditService{})
 		r := setupSecurityRouter(handler)
 
-		rec := doRequest(r, "GET", "/securities/1/prices?from_date=2026-01-01&to_date=2026-12-31", "")
+		rec := doRequest(r, "GET", "/securities/00000000-0000-0000-0000-000000000001/prices?from_date=2026-01-01&to_date=2026-12-31", "")
 
 		if rec.Code != http.StatusOK {
 			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
@@ -536,7 +536,7 @@ func TestSecurityHandler_GetPriceHistory(t *testing.T) {
 		handler := NewSecurityHandler(&mockSecurityService{}, &mockAuditService{})
 		r := setupSecurityRouter(handler)
 
-		rec := doRequest(r, "GET", "/securities/1/prices?to_date=2026-12-31", "")
+		rec := doRequest(r, "GET", "/securities/00000000-0000-0000-0000-000000000001/prices?to_date=2026-12-31", "")
 
 		if rec.Code != http.StatusBadRequest {
 			t.Fatalf("expected 400, got %d: %s", rec.Code, rec.Body.String())
@@ -548,7 +548,7 @@ func TestSecurityHandler_GetPriceHistory(t *testing.T) {
 		handler := NewSecurityHandler(&mockSecurityService{}, &mockAuditService{})
 		r := setupSecurityRouter(handler)
 
-		rec := doRequest(r, "GET", "/securities/1/prices?from_date=2026-01-01", "")
+		rec := doRequest(r, "GET", "/securities/00000000-0000-0000-0000-000000000001/prices?from_date=2026-01-01", "")
 
 		if rec.Code != http.StatusBadRequest {
 			t.Fatalf("expected 400, got %d: %s", rec.Code, rec.Body.String())
@@ -568,10 +568,10 @@ func TestSecurityHandler_GetPriceHistory(t *testing.T) {
 	})
 
 	t.Run("passes_date_range_and_pagination_to_service", func(t *testing.T) {
-		var capturedSecID uint
+		var capturedSecID string
 		var capturedPage pagination.PageRequest
 		svc := &mockSecurityService{
-			getPriceHistoryFn: func(securityID uint, _, _ time.Time, page pagination.PageRequest) (*pagination.PageResponse[models.SecurityPrice], error) {
+			getPriceHistoryFn: func(securityID string, _, _ time.Time, page pagination.PageRequest) (*pagination.PageResponse[models.SecurityPrice], error) {
 				capturedSecID = securityID
 				capturedPage = page
 				resp := pagination.NewPageResponse([]models.SecurityPrice{}, 3, 10, 25)
@@ -581,13 +581,13 @@ func TestSecurityHandler_GetPriceHistory(t *testing.T) {
 		handler := NewSecurityHandler(svc, &mockAuditService{})
 		r := setupSecurityRouter(handler)
 
-		rec := doRequest(r, "GET", "/securities/5/prices?from_date=2026-01-01&to_date=2026-12-31&page=3&page_size=10", "")
+		rec := doRequest(r, "GET", "/securities/00000000-0000-0000-0000-000000000005/prices?from_date=2026-01-01&to_date=2026-12-31&page=3&page_size=10", "")
 
 		if rec.Code != http.StatusOK {
 			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
 		}
-		if capturedSecID != 5 {
-			t.Errorf("expected securityID=5, got %d", capturedSecID)
+		if capturedSecID != "00000000-0000-0000-0000-000000000005" {
+			t.Errorf("expected securityID=00000000-0000-0000-0000-000000000005, got %s", capturedSecID)
 		}
 		if capturedPage.Page != 3 {
 			t.Errorf("expected page=3, got %d", capturedPage.Page)

@@ -197,8 +197,8 @@ export function TelegramSettings() {
 
           {isLinked && (
             <div className="space-y-4">
-              <Alert className="border-green-200 bg-green-50">
-                <AlertDescription className="text-green-900">
+              <Alert className="border-green-200 bg-green-50 dark:border-green-800 dark:bg-green-950">
+                <AlertDescription className="text-green-900 dark:text-green-100">
                   <strong>✅ Linked successfully!</strong>
                   <div className="mt-2 text-sm">
                     <p>Telegram: <strong>@{link.telegram_username || "Unknown"}</strong></p>

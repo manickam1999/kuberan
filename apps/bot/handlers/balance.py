@@ -35,6 +35,9 @@ def handle(api_client: KuberanAPIClient):
                 )
                 return
 
+            # Extract user's default currency from resolved user data
+            currency = user_data.get('default_currency', 'MYR')
+
             message = "💰 *Your Accounts*\n\n"
             total = 0
 
@@ -43,10 +46,10 @@ def handle(api_client: KuberanAPIClient):
                     continue
 
                 balance = acc.get('balance', 0)
-                currency = acc.get('currency', 'USD')
+                acc_currency = acc.get('currency', currency)
                 account_type = acc.get('type', 'cash')
 
-                balance_str = format_currency(balance, currency)
+                balance_str = format_currency(balance, acc_currency)
                 type_emoji = format_account_type(account_type)
 
                 message += f"{type_emoji}\n"
@@ -56,7 +59,8 @@ def handle(api_client: KuberanAPIClient):
                 total += balance
 
             message += f"━━━━━━━━━━━━━━━━\n"
-            message += f"*Total:* {format_currency(total, 'USD')}"
+            # Note: mixed-currency totals are summed naively without conversion
+            message += f"*Total:* {format_currency(total, currency)}"
 
             await update.message.reply_text(message, parse_mode='Markdown')
 

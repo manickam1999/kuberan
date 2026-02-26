@@ -26,8 +26,8 @@ func TestFixtures(t *testing.T) {
 	defer testutil.TeardownTestDB(t, db)
 
 	user := testutil.CreateTestUser(t, db)
-	if user.ID == 0 {
-		t.Fatal("user should have a non-zero ID")
+	if user.ID == "" {
+		t.Fatal("user should have a non-empty ID")
 	}
 
 	account := testutil.CreateTestCashAccountWithBalance(t, db, user.ID, 5000)
@@ -56,8 +56,8 @@ func TestFixtures(t *testing.T) {
 	}
 
 	sec := testutil.CreateTestSecurity(t, db)
-	if sec.ID == 0 {
-		t.Fatal("security should have a non-zero ID")
+	if sec.ID == "" {
+		t.Fatal("security should have a non-empty ID")
 	}
 
 	inv := testutil.CreateTestInvestment(t, db, invAccount.ID, sec.ID)

@@ -25,8 +25,8 @@ func NewInvestmentHandler(investmentService services.InvestmentServicer, auditSe
 
 // AddInvestmentRequest represents the request payload for adding an investment.
 type AddInvestmentRequest struct {
-	AccountID string       `json:"account_id" binding:"required"`
-	SecurityID string       `json:"security_id" binding:"required"`
+	AccountID     string     `json:"account_id" binding:"required"`
+	SecurityID    string     `json:"security_id" binding:"required"`
 	Quantity      float64    `json:"quantity" binding:"required,gt=0"`
 	PurchasePrice int64      `json:"purchase_price" binding:"required,gt=0"`
 	WalletAddress string     `json:"wallet_address,omitempty"`

@@ -17,7 +17,7 @@ import (
 
 type mockPortfolioSnapshotService struct {
 	computeAndRecordSnapshotsFn func(recordedAt time.Time) (int, error)
-	getSnapshotsFn              func(userID uint, from, to time.Time, page pagination.PageRequest) (*pagination.PageResponse[models.PortfolioSnapshot], error)
+	getSnapshotsFn              func(userID string, from, to time.Time, page pagination.PageRequest) (*pagination.PageResponse[models.PortfolioSnapshot], error)
 }
 
 var _ services.PortfolioSnapshotServicer = (*mockPortfolioSnapshotService)(nil)
@@ -29,7 +29,7 @@ func (m *mockPortfolioSnapshotService) ComputeAndRecordSnapshots(recordedAt time
 	return 0, nil
 }
 
-func (m *mockPortfolioSnapshotService) GetSnapshots(userID uint, from, to time.Time, page pagination.PageRequest) (*pagination.PageResponse[models.PortfolioSnapshot], error) {
+func (m *mockPortfolioSnapshotService) GetSnapshots(userID string, from, to time.Time, page pagination.PageRequest) (*pagination.PageResponse[models.PortfolioSnapshot], error) {
 	if m.getSnapshotsFn != nil {
 		return m.getSnapshotsFn(userID, from, to, page)
 	}
@@ -44,7 +44,7 @@ func setupSnapshotRouter(handler *PortfolioSnapshotHandler) *gin.Engine {
 	// Pipeline route (no user auth)
 	r.POST("/pipeline/snapshots/compute", handler.ComputeSnapshots)
 	// User route (with auth)
-	auth := r.Group("", injectUserID(1))
+	auth := r.Group("", injectUserID("test-user-1"))
 	auth.GET("/portfolio/snapshots", handler.GetSnapshots)
 	return r
 }
@@ -107,9 +107,9 @@ func TestPortfolioSnapshotHandler_GetSnapshots(t *testing.T) {
 	t.Run("returns_200_with_data", func(t *testing.T) {
 		now := time.Now().UTC().Truncate(time.Second)
 		svc := &mockPortfolioSnapshotService{
-			getSnapshotsFn: func(_ uint, _, _ time.Time, _ pagination.PageRequest) (*pagination.PageResponse[models.PortfolioSnapshot], error) {
+			getSnapshotsFn: func(_ string, _, _ time.Time, _ pagination.PageRequest) (*pagination.PageResponse[models.PortfolioSnapshot], error) {
 				resp := pagination.NewPageResponse([]models.PortfolioSnapshot{
-					{ID: 1, UserID: 1, RecordedAt: now, TotalNetWorth: 15500000, CashBalance: 5000000, InvestmentValue: 11000000, DebtBalance: 500000},
+					{ID: "snap-1", UserID: "test-user-1", RecordedAt: now, TotalNetWorth: 15500000, CashBalance: 5000000, InvestmentValue: 11000000, DebtBalance: 500000},
 				}, 1, 20, 1)
 				return &resp, nil
 			},
@@ -159,7 +159,7 @@ func TestPortfolioSnapshotHandler_GetSnapshots(t *testing.T) {
 
 	t.Run("returns_200_empty_data", func(t *testing.T) {
 		svc := &mockPortfolioSnapshotService{
-			getSnapshotsFn: func(_ uint, _, _ time.Time, _ pagination.PageRequest) (*pagination.PageResponse[models.PortfolioSnapshot], error) {
+			getSnapshotsFn: func(_ string, _, _ time.Time, _ pagination.PageRequest) (*pagination.PageResponse[models.PortfolioSnapshot], error) {
 				resp := pagination.NewPageResponse([]models.PortfolioSnapshot{}, 1, 20, 0)
 				return &resp, nil
 			},
@@ -195,10 +195,10 @@ func TestPortfolioSnapshotHandler_GetSnapshots(t *testing.T) {
 	})
 
 	t.Run("passes_user_id_and_pagination_to_service", func(t *testing.T) {
-		var capturedUserID uint
+		var capturedUserID string
 		var capturedPage pagination.PageRequest
 		svc := &mockPortfolioSnapshotService{
-			getSnapshotsFn: func(userID uint, _, _ time.Time, page pagination.PageRequest) (*pagination.PageResponse[models.PortfolioSnapshot], error) {
+			getSnapshotsFn: func(userID string, _, _ time.Time, page pagination.PageRequest) (*pagination.PageResponse[models.PortfolioSnapshot], error) {
 				capturedUserID = userID
 				capturedPage = page
 				resp := pagination.NewPageResponse([]models.PortfolioSnapshot{}, 2, 5, 10)
@@ -213,8 +213,8 @@ func TestPortfolioSnapshotHandler_GetSnapshots(t *testing.T) {
 		if rec.Code != http.StatusOK {
 			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
 		}
-		if capturedUserID != 1 {
-			t.Errorf("expected userID=1, got %d", capturedUserID)
+		if capturedUserID != "test-user-1" {
+			t.Errorf("expected userID=test-user-1, got %s", capturedUserID)
 		}
 		if capturedPage.Page != 2 {
 			t.Errorf("expected page=2, got %d", capturedPage.Page)

@@ -89,7 +89,7 @@ func (h *TelegramHandler) GenerateCode(c *gin.Context) {
 	h.auditService.Log(userID, "GENERATE_TELEGRAM_CODE", "telegram_link", link.ID, c.ClientIP(), nil)
 
 	c.JSON(http.StatusOK, gin.H{
-		"link_code": link.LinkCode,
+		"link_code":  link.LinkCode,
 		"expires_at": link.LinkCodeExpiresAt,
 	})
 }

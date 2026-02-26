@@ -191,7 +191,7 @@ func (app *testApp) pipelineRequest(method, path, body string) *httptest.Respons
 }
 
 // createSecurity creates a security via the pipeline API and returns the security ID.
-func (app *testApp) createSecurity(t *testing.T, symbol, name, assetType string) float64 {
+func (app *testApp) createSecurity(t *testing.T, symbol, name, assetType string) string {
 	t.Helper()
 	body := fmt.Sprintf(`{"symbol":%q,"name":%q,"asset_type":%q}`, symbol, name, assetType)
 	rec := app.pipelineRequest("POST", "/api/v1/pipeline/securities", body)
@@ -200,7 +200,7 @@ func (app *testApp) createSecurity(t *testing.T, symbol, name, assetType string)
 	}
 	result := parseJSON(t, rec)
 	sec := result["security"].(map[string]interface{})
-	return sec["id"].(float64)
+	return sec["id"].(string)
 }
 
 // parseJSON parses the response body into a map.
@@ -214,7 +214,7 @@ func parseJSON(t *testing.T, rec *httptest.ResponseRecorder) map[string]interfac
 }
 
 // registerUser registers a new user and returns the access token, refresh token, and user ID.
-func (app *testApp) registerUser(t *testing.T, email, password string) (accessToken, refreshToken string, userID float64) {
+func (app *testApp) registerUser(t *testing.T, email, password string) (accessToken, refreshToken, userID string) {
 	t.Helper()
 	body := fmt.Sprintf(`{"email":%q,"password":%q,"first_name":"Test","last_name":"User"}`, email, password)
 	rec := app.request("POST", "/api/v1/auth/register", body, "")
@@ -223,7 +223,7 @@ func (app *testApp) registerUser(t *testing.T, email, password string) (accessTo
 	}
 	result := parseJSON(t, rec)
 	user := result["user"].(map[string]interface{})
-	return result["access_token"].(string), result["refresh_token"].(string), user["id"].(float64)
+	return result["access_token"].(string), result["refresh_token"].(string), user["id"].(string)
 }
 
 // loginUser logs in and returns the access and refresh tokens.
