@@ -176,7 +176,7 @@
   {
     "id": "5.1",
     "category": "frontend-fix",
-    "passes": false,
+    "passes": true,
     "description": "Fix TelegramLink TypeScript interface — id and user_id should be string (UUIDs)",
     "steps": [
       "Open apps/web/src/hooks/use-telegram.ts",
@@ -188,7 +188,7 @@
   {
     "id": "5.2",
     "category": "frontend-fix",
-    "passes": false,
+    "passes": true,
     "description": "Add dark mode variants to green alert in telegram-settings.tsx",
     "steps": [
       "Open apps/web/src/components/settings/telegram-settings.tsx",
@@ -199,7 +199,7 @@
   {
     "id": "5.3",
     "category": "frontend-verification",
-    "passes": false,
+    "passes": true,
     "description": "Verify frontend builds without TypeScript errors",
     "steps": [
       "Run pnpm build from apps/web/",

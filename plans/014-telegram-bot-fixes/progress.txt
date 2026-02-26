@@ -97,3 +97,25 @@
 - Added "debt": "🏦 Debt" to type_map dict in format_account_type function
 - Files: apps/bot/utils/formatting.py
 - Rationale: Debt is a supported account type but was missing from formatting map, would fall back to "Debt" (title case) without emoji
+
+## Task 5.1 - Fix TelegramLink TypeScript interface (COMPLETE)
+- PRD ref: 5.1
+- Changed id: number to id: string in TelegramLink interface
+- Changed user_id: number to user_id: string in TelegramLink interface
+- Kept telegram_user_id as number (Telegram IDs are integers within JS safe integer range)
+- Files: apps/web/src/hooks/use-telegram.ts
+- Rationale: Backend returns UUIDs (strings) for id and user_id fields, not numbers
+
+## Task 5.2 - Add dark mode variants to telegram settings alert (COMPLETE)
+- PRD ref: 5.2
+- Line 200: Added dark:border-green-800 dark:bg-green-950 to Alert className
+- Line 201: Added dark:text-green-100 to AlertDescription className
+- Files: apps/web/src/components/settings/telegram-settings.tsx
+- Rationale: Linked status alert was using light-mode-only green colors, breaking dark mode visibility
+
+## Task 5.3 - Frontend build verification (COMPLETE)
+- PRD ref: 5.3
+- Ran pnpm build from apps/web/
+- Build succeeded with no TypeScript errors
+- Only warning: ESLint exhaustive-deps in investments page (pre-existing, not related to telegram fixes)
+- All 14 routes compiled successfully
