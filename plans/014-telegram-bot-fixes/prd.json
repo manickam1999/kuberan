@@ -219,7 +219,7 @@
   {
     "id": "6.2",
     "category": "verification",
-    "passes": false,
+    "passes": true,
     "description": "Final frontend verification",
     "steps": [
       "Run pnpm build from apps/web/",
@@ -229,7 +229,7 @@
   {
     "id": "6.3",
     "category": "verification",
-    "passes": false,
+    "passes": true,
     "description": "Final verification checklist",
     "steps": [
       "Verify migration 000018 creates UNIQUE index on user_id",
