@@ -18,11 +18,11 @@ import (
 
 type mockSecurityService struct {
 	createSecurityFn    func(symbol, name string, assetType models.AssetType, currency, exchange string, extraFields map[string]interface{}) (*models.Security, error)
-	getSecurityByIDFn   func(id uint) (*models.Security, error)
+	getSecurityByIDFn   func(id string) (*models.Security, error)
 	listSecuritiesFn    func(search string, page pagination.PageRequest) (*pagination.PageResponse[models.Security], error)
 	listAllSecuritiesFn func() ([]models.Security, error)
 	recordPricesFn      func(prices []services.SecurityPriceInput) (int, error)
-	getPriceHistoryFn   func(securityID uint, from, to time.Time, page pagination.PageRequest) (*pagination.PageResponse[models.SecurityPrice], error)
+	getPriceHistoryFn   func(securityID string, from, to time.Time, page pagination.PageRequest) (*pagination.PageResponse[models.SecurityPrice], error)
 }
 
 var _ services.SecurityServicer = (*mockSecurityService)(nil)
@@ -34,7 +34,7 @@ func (m *mockSecurityService) CreateSecurity(symbol, name string, assetType mode
 	return &models.Security{}, nil
 }
 
-func (m *mockSecurityService) GetSecurityByID(id uint) (*models.Security, error) {
+func (m *mockSecurityService) GetSecurityByID(id string) (*models.Security, error) {
 	if m.getSecurityByIDFn != nil {
 		return m.getSecurityByIDFn(id)
 	}
@@ -63,7 +63,7 @@ func (m *mockSecurityService) RecordPrices(prices []services.SecurityPriceInput)
 	return 0, nil
 }
 
-func (m *mockSecurityService) GetPriceHistory(securityID uint, from, to time.Time, page pagination.PageRequest) (*pagination.PageResponse[models.SecurityPrice], error) {
+func (m *mockSecurityService) GetPriceHistory(securityID string, from, to time.Time, page pagination.PageRequest) (*pagination.PageResponse[models.SecurityPrice], error) {
 	if m.getPriceHistoryFn != nil {
 		return m.getPriceHistoryFn(securityID, from, to, page)
 	}
@@ -80,7 +80,7 @@ func setupSecurityRouter(handler *SecurityHandler) *gin.Engine {
 	r.POST("/pipeline/securities", handler.CreateSecurity)
 	r.POST("/pipeline/securities/prices", handler.RecordPrices)
 	// User routes (with auth)
-	auth := r.Group("", injectUserID(1))
+	auth := r.Group("", injectUserID("test-user-1"))
 	auth.GET("/securities", handler.ListSecurities)
 	auth.GET("/securities/:id", handler.GetSecurity)
 	auth.GET("/securities/:id/prices", handler.GetPriceHistory)

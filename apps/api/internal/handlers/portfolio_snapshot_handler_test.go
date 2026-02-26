@@ -17,7 +17,7 @@ import (
 
 type mockPortfolioSnapshotService struct {
 	computeAndRecordSnapshotsFn func(recordedAt time.Time) (int, error)
-	getSnapshotsFn              func(userID uint, from, to time.Time, page pagination.PageRequest) (*pagination.PageResponse[models.PortfolioSnapshot], error)
+	getSnapshotsFn              func(userID string, from, to time.Time, page pagination.PageRequest) (*pagination.PageResponse[models.PortfolioSnapshot], error)
 }
 
 var _ services.PortfolioSnapshotServicer = (*mockPortfolioSnapshotService)(nil)
@@ -29,7 +29,7 @@ func (m *mockPortfolioSnapshotService) ComputeAndRecordSnapshots(recordedAt time
 	return 0, nil
 }
 
-func (m *mockPortfolioSnapshotService) GetSnapshots(userID uint, from, to time.Time, page pagination.PageRequest) (*pagination.PageResponse[models.PortfolioSnapshot], error) {
+func (m *mockPortfolioSnapshotService) GetSnapshots(userID string, from, to time.Time, page pagination.PageRequest) (*pagination.PageResponse[models.PortfolioSnapshot], error) {
 	if m.getSnapshotsFn != nil {
 		return m.getSnapshotsFn(userID, from, to, page)
 	}
@@ -44,7 +44,7 @@ func setupSnapshotRouter(handler *PortfolioSnapshotHandler) *gin.Engine {
 	// Pipeline route (no user auth)
 	r.POST("/pipeline/snapshots/compute", handler.ComputeSnapshots)
 	// User route (with auth)
-	auth := r.Group("", injectUserID(1))
+	auth := r.Group("", injectUserID("test-user-1"))
 	auth.GET("/portfolio/snapshots", handler.GetSnapshots)
 	return r
 }

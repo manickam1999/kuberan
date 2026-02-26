@@ -79,7 +79,7 @@ func (m *mockUserService) GetRefreshTokenHash(userID uint) (string, error) {
 
 type mockAuditService struct{}
 
-func (m *mockAuditService) Log(_ uint, _, _ string, _ uint, _ string, _ map[string]interface{}) {}
+func (m *mockAuditService) Log(_ string, _, _ string, _ string, _ string, _ map[string]interface{}) {}
 
 // --- test helpers ---
 
@@ -92,11 +92,11 @@ func setupAuthRouter(handler *AuthHandler) *gin.Engine {
 	r := gin.New()
 	r.POST("/auth/register", handler.Register)
 	r.POST("/auth/login", handler.Login)
-	r.GET("/profile", injectUserID(1), handler.GetProfile)
+	r.GET("/profile", injectUserID("test-user-1"), handler.GetProfile)
 	return r
 }
 
-func injectUserID(uid uint) gin.HandlerFunc {
+func injectUserID(uid string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		c.Set("userID", uid)
 		c.Next()

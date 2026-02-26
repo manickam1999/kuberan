@@ -16,26 +16,26 @@ import (
 // --- mock investment service ---
 
 type mockInvestmentService struct {
-	addInvestmentFn             func(userID, accountID, securityID uint, quantity float64, purchasePrice int64, walletAddress string, date *time.Time, fee int64, notes string) (*models.Investment, error)
-	getAllInvestmentsFn         func(userID uint, page pagination.PageRequest) (*pagination.PageResponse[models.Investment], error)
-	getAccountInvestmentsFn     func(userID, accountID uint, page pagination.PageRequest) (*pagination.PageResponse[models.Investment], error)
-	getInvestmentByIDFn         func(userID, investmentID uint) (*models.Investment, error)
-	getPortfolioFn              func(userID uint) (*services.PortfolioSummary, error)
-	recordBuyFn                 func(userID, investmentID uint, date time.Time, quantity float64, pricePerUnit int64, fee int64, notes string) (*models.InvestmentTransaction, error)
-	recordSellFn                func(userID, investmentID uint, date time.Time, quantity float64, pricePerUnit int64, fee int64, notes string) (*models.InvestmentTransaction, error)
-	recordDividendFn            func(userID, investmentID uint, date time.Time, amount int64, dividendType, notes string) (*models.InvestmentTransaction, error)
-	recordSplitFn               func(userID, investmentID uint, date time.Time, splitRatio float64, notes string) (*models.InvestmentTransaction, error)
-	getInvestmentTransactionsFn func(userID, investmentID uint, page pagination.PageRequest) (*pagination.PageResponse[models.InvestmentTransaction], error)
+	addInvestmentFn             func(userID, accountID, securityID string, quantity float64, purchasePrice int64, walletAddress string, date *time.Time, fee int64, notes string) (*models.Investment, error)
+	getAllInvestmentsFn         func(userID string, page pagination.PageRequest) (*pagination.PageResponse[models.Investment], error)
+	getAccountInvestmentsFn     func(userID, accountID string, page pagination.PageRequest) (*pagination.PageResponse[models.Investment], error)
+	getInvestmentByIDFn         func(userID, investmentID string) (*models.Investment, error)
+	getPortfolioFn              func(userID string) (*services.PortfolioSummary, error)
+	recordBuyFn                 func(userID, investmentID string, date time.Time, quantity float64, pricePerUnit int64, fee int64, notes string) (*models.InvestmentTransaction, error)
+	recordSellFn                func(userID, investmentID string, date time.Time, quantity float64, pricePerUnit int64, fee int64, notes string) (*models.InvestmentTransaction, error)
+	recordDividendFn            func(userID, investmentID string, date time.Time, amount int64, dividendType, notes string) (*models.InvestmentTransaction, error)
+	recordSplitFn               func(userID, investmentID string, date time.Time, splitRatio float64, notes string) (*models.InvestmentTransaction, error)
+	getInvestmentTransactionsFn func(userID, investmentID string, page pagination.PageRequest) (*pagination.PageResponse[models.InvestmentTransaction], error)
 }
 
-func (m *mockInvestmentService) AddInvestment(userID, accountID, securityID uint, quantity float64, purchasePrice int64, walletAddress string, date *time.Time, fee int64, notes string) (*models.Investment, error) {
+func (m *mockInvestmentService) AddInvestment(userID, accountID, securityID string, quantity float64, purchasePrice int64, walletAddress string, date *time.Time, fee int64, notes string) (*models.Investment, error) {
 	if m.addInvestmentFn != nil {
 		return m.addInvestmentFn(userID, accountID, securityID, quantity, purchasePrice, walletAddress, date, fee, notes)
 	}
 	return &models.Investment{}, nil
 }
 
-func (m *mockInvestmentService) GetAllInvestments(userID uint, page pagination.PageRequest) (*pagination.PageResponse[models.Investment], error) {
+func (m *mockInvestmentService) GetAllInvestments(userID string, page pagination.PageRequest) (*pagination.PageResponse[models.Investment], error) {
 	if m.getAllInvestmentsFn != nil {
 		return m.getAllInvestmentsFn(userID, page)
 	}
@@ -43,7 +43,7 @@ func (m *mockInvestmentService) GetAllInvestments(userID uint, page pagination.P
 	return &resp, nil
 }
 
-func (m *mockInvestmentService) GetAccountInvestments(userID, accountID uint, page pagination.PageRequest) (*pagination.PageResponse[models.Investment], error) {
+func (m *mockInvestmentService) GetAccountInvestments(userID, accountID string, page pagination.PageRequest) (*pagination.PageResponse[models.Investment], error) {
 	if m.getAccountInvestmentsFn != nil {
 		return m.getAccountInvestmentsFn(userID, accountID, page)
 	}
@@ -51,49 +51,49 @@ func (m *mockInvestmentService) GetAccountInvestments(userID, accountID uint, pa
 	return &resp, nil
 }
 
-func (m *mockInvestmentService) GetInvestmentByID(userID, investmentID uint) (*models.Investment, error) {
+func (m *mockInvestmentService) GetInvestmentByID(userID, investmentID string) (*models.Investment, error) {
 	if m.getInvestmentByIDFn != nil {
 		return m.getInvestmentByIDFn(userID, investmentID)
 	}
 	return &models.Investment{}, nil
 }
 
-func (m *mockInvestmentService) GetPortfolio(userID uint) (*services.PortfolioSummary, error) {
+func (m *mockInvestmentService) GetPortfolio(userID string) (*services.PortfolioSummary, error) {
 	if m.getPortfolioFn != nil {
 		return m.getPortfolioFn(userID)
 	}
 	return &services.PortfolioSummary{HoldingsByType: map[models.AssetType]services.TypeSummary{}}, nil
 }
 
-func (m *mockInvestmentService) RecordBuy(userID, investmentID uint, date time.Time, quantity float64, pricePerUnit, fee int64, notes string) (*models.InvestmentTransaction, error) {
+func (m *mockInvestmentService) RecordBuy(userID, investmentID string, date time.Time, quantity float64, pricePerUnit, fee int64, notes string) (*models.InvestmentTransaction, error) {
 	if m.recordBuyFn != nil {
 		return m.recordBuyFn(userID, investmentID, date, quantity, pricePerUnit, fee, notes)
 	}
 	return &models.InvestmentTransaction{}, nil
 }
 
-func (m *mockInvestmentService) RecordSell(userID, investmentID uint, date time.Time, quantity float64, pricePerUnit, fee int64, notes string) (*models.InvestmentTransaction, error) {
+func (m *mockInvestmentService) RecordSell(userID, investmentID string, date time.Time, quantity float64, pricePerUnit, fee int64, notes string) (*models.InvestmentTransaction, error) {
 	if m.recordSellFn != nil {
 		return m.recordSellFn(userID, investmentID, date, quantity, pricePerUnit, fee, notes)
 	}
 	return &models.InvestmentTransaction{}, nil
 }
 
-func (m *mockInvestmentService) RecordDividend(userID, investmentID uint, date time.Time, amount int64, dividendType, notes string) (*models.InvestmentTransaction, error) {
+func (m *mockInvestmentService) RecordDividend(userID, investmentID string, date time.Time, amount int64, dividendType, notes string) (*models.InvestmentTransaction, error) {
 	if m.recordDividendFn != nil {
 		return m.recordDividendFn(userID, investmentID, date, amount, dividendType, notes)
 	}
 	return &models.InvestmentTransaction{}, nil
 }
 
-func (m *mockInvestmentService) RecordSplit(userID, investmentID uint, date time.Time, splitRatio float64, notes string) (*models.InvestmentTransaction, error) {
+func (m *mockInvestmentService) RecordSplit(userID, investmentID string, date time.Time, splitRatio float64, notes string) (*models.InvestmentTransaction, error) {
 	if m.recordSplitFn != nil {
 		return m.recordSplitFn(userID, investmentID, date, splitRatio, notes)
 	}
 	return &models.InvestmentTransaction{}, nil
 }
 
-func (m *mockInvestmentService) GetInvestmentTransactions(userID, investmentID uint, page pagination.PageRequest) (*pagination.PageResponse[models.InvestmentTransaction], error) {
+func (m *mockInvestmentService) GetInvestmentTransactions(userID, investmentID string, page pagination.PageRequest) (*pagination.PageResponse[models.InvestmentTransaction], error) {
 	if m.getInvestmentTransactionsFn != nil {
 		return m.getInvestmentTransactionsFn(userID, investmentID, page)
 	}
@@ -105,7 +105,7 @@ var _ services.InvestmentServicer = (*mockInvestmentService)(nil)
 
 func setupInvestmentRouter(handler *InvestmentHandler) *gin.Engine {
 	r := gin.New()
-	auth := r.Group("", injectUserID(1))
+	auth := r.Group("", injectUserID("test-user-1"))
 	auth.POST("/investments", handler.AddInvestment)
 	auth.GET("/investments", handler.GetAllInvestments)
 	auth.GET("/investments/portfolio", handler.GetPortfolio)

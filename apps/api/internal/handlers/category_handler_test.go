@@ -15,22 +15,22 @@ import (
 // --- mock category service ---
 
 type mockCategoryService struct {
-	createCategoryFn          func(userID uint, name string, categoryType models.CategoryType, description, icon, color string, parentID *uint) (*models.Category, error)
-	getUserCategoriesFn       func(userID uint, page pagination.PageRequest) (*pagination.PageResponse[models.Category], error)
-	getUserCategoriesByTypeFn func(userID uint, categoryType models.CategoryType, page pagination.PageRequest) (*pagination.PageResponse[models.Category], error)
-	getCategoryByIDFn         func(userID, categoryID uint) (*models.Category, error)
-	updateCategoryFn          func(userID, categoryID uint, name, description, icon, color string, parentID *uint) (*models.Category, error)
-	deleteCategoryFn          func(userID, categoryID uint) error
+	createCategoryFn          func(userID string, name string, categoryType models.CategoryType, description, icon, color string, parentID *string) (*models.Category, error)
+	getUserCategoriesFn       func(userID string, page pagination.PageRequest) (*pagination.PageResponse[models.Category], error)
+	getUserCategoriesByTypeFn func(userID string, categoryType models.CategoryType, page pagination.PageRequest) (*pagination.PageResponse[models.Category], error)
+	getCategoryByIDFn         func(userID, categoryID string) (*models.Category, error)
+	updateCategoryFn          func(userID, categoryID string, name, description, icon, color string, parentID *string) (*models.Category, error)
+	deleteCategoryFn          func(userID, categoryID string) error
 }
 
-func (m *mockCategoryService) CreateCategory(userID uint, name string, categoryType models.CategoryType, description, icon, color string, parentID *uint) (*models.Category, error) {
+func (m *mockCategoryService) CreateCategory(userID string, name string, categoryType models.CategoryType, description, icon, color string, parentID *string) (*models.Category, error) {
 	if m.createCategoryFn != nil {
 		return m.createCategoryFn(userID, name, categoryType, description, icon, color, parentID)
 	}
 	return &models.Category{}, nil
 }
 
-func (m *mockCategoryService) GetUserCategories(userID uint, page pagination.PageRequest) (*pagination.PageResponse[models.Category], error) {
+func (m *mockCategoryService) GetUserCategories(userID string, page pagination.PageRequest) (*pagination.PageResponse[models.Category], error) {
 	if m.getUserCategoriesFn != nil {
 		return m.getUserCategoriesFn(userID, page)
 	}
@@ -38,7 +38,7 @@ func (m *mockCategoryService) GetUserCategories(userID uint, page pagination.Pag
 	return &resp, nil
 }
 
-func (m *mockCategoryService) GetUserCategoriesByType(userID uint, categoryType models.CategoryType, page pagination.PageRequest) (*pagination.PageResponse[models.Category], error) {
+func (m *mockCategoryService) GetUserCategoriesByType(userID string, categoryType models.CategoryType, page pagination.PageRequest) (*pagination.PageResponse[models.Category], error) {
 	if m.getUserCategoriesByTypeFn != nil {
 		return m.getUserCategoriesByTypeFn(userID, categoryType, page)
 	}
@@ -46,21 +46,21 @@ func (m *mockCategoryService) GetUserCategoriesByType(userID uint, categoryType 
 	return &resp, nil
 }
 
-func (m *mockCategoryService) GetCategoryByID(userID, categoryID uint) (*models.Category, error) {
+func (m *mockCategoryService) GetCategoryByID(userID, categoryID string) (*models.Category, error) {
 	if m.getCategoryByIDFn != nil {
 		return m.getCategoryByIDFn(userID, categoryID)
 	}
 	return &models.Category{}, nil
 }
 
-func (m *mockCategoryService) UpdateCategory(userID, categoryID uint, name, description, icon, color string, parentID *uint) (*models.Category, error) {
+func (m *mockCategoryService) UpdateCategory(userID, categoryID string, name, description, icon, color string, parentID *string) (*models.Category, error) {
 	if m.updateCategoryFn != nil {
 		return m.updateCategoryFn(userID, categoryID, name, description, icon, color, parentID)
 	}
 	return &models.Category{}, nil
 }
 
-func (m *mockCategoryService) DeleteCategory(userID, categoryID uint) error {
+func (m *mockCategoryService) DeleteCategory(userID, categoryID string) error {
 	if m.deleteCategoryFn != nil {
 		return m.deleteCategoryFn(userID, categoryID)
 	}
@@ -71,7 +71,7 @@ var _ services.CategoryServicer = (*mockCategoryService)(nil)
 
 func setupCategoryRouter(handler *CategoryHandler) *gin.Engine {
 	r := gin.New()
-	auth := r.Group("", injectUserID(1))
+	auth := r.Group("", injectUserID("test-user-1"))
 	auth.POST("/categories", handler.CreateCategory)
 	auth.GET("/categories", handler.GetUserCategories)
 	auth.GET("/categories/:id", handler.GetCategoryByID)

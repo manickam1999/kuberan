@@ -16,33 +16,33 @@ import (
 // --- mock transaction service ---
 
 type mockTransactionService struct {
-	createTransactionFn      func(userID, accountID uint, categoryID *uint, transactionType models.TransactionType, amount int64, description string, date time.Time) (*models.Transaction, error)
-	createTransferFn         func(userID, fromAccountID, toAccountID uint, amount int64, description string, date time.Time) (*models.Transaction, error)
-	getAccountTransactionsFn func(userID, accountID uint, page pagination.PageRequest, filter services.TransactionFilter) (*pagination.PageResponse[models.Transaction], error)
-	getUserTransactionsFn    func(userID uint, page pagination.PageRequest, filter services.TransactionFilter) (*pagination.PageResponse[models.Transaction], error)
-	getTransactionByIDFn     func(userID, transactionID uint) (*models.Transaction, error)
-	updateTransactionFn      func(userID, transactionID uint, updates services.TransactionUpdateFields) (*models.Transaction, error)
-	deleteTransactionFn      func(userID, transactionID uint) error
-	getSpendingByCategoryFn  func(userID uint, from, to time.Time) (*services.SpendingByCategory, error)
-	getMonthlySummaryFn      func(userID uint, months int) ([]services.MonthlySummaryItem, error)
-	getDailySpendingFn       func(userID uint, from, to time.Time) ([]services.DailySpendingItem, error)
+	createTransactionFn      func(userID, accountID string, categoryID *string, transactionType models.TransactionType, amount int64, description string, date time.Time) (*models.Transaction, error)
+	createTransferFn         func(userID, fromAccountID, toAccountID string, amount int64, description string, date time.Time) (*models.Transaction, error)
+	getAccountTransactionsFn func(userID, accountID string, page pagination.PageRequest, filter services.TransactionFilter) (*pagination.PageResponse[models.Transaction], error)
+	getUserTransactionsFn    func(userID string, page pagination.PageRequest, filter services.TransactionFilter) (*pagination.PageResponse[models.Transaction], error)
+	getTransactionByIDFn     func(userID, transactionID string) (*models.Transaction, error)
+	updateTransactionFn      func(userID, transactionID string, updates services.TransactionUpdateFields) (*models.Transaction, error)
+	deleteTransactionFn      func(userID, transactionID string) error
+	getSpendingByCategoryFn  func(userID string, from, to time.Time) (*services.SpendingByCategory, error)
+	getMonthlySummaryFn      func(userID string, months int) ([]services.MonthlySummaryItem, error)
+	getDailySpendingFn       func(userID string, from, to time.Time) ([]services.DailySpendingItem, error)
 }
 
-func (m *mockTransactionService) CreateTransaction(userID, accountID uint, categoryID *uint, transactionType models.TransactionType, amount int64, description string, date time.Time) (*models.Transaction, error) {
+func (m *mockTransactionService) CreateTransaction(userID, accountID string, categoryID *string, transactionType models.TransactionType, amount int64, description string, date time.Time) (*models.Transaction, error) {
 	if m.createTransactionFn != nil {
 		return m.createTransactionFn(userID, accountID, categoryID, transactionType, amount, description, date)
 	}
 	return &models.Transaction{}, nil
 }
 
-func (m *mockTransactionService) CreateTransfer(userID, fromAccountID, toAccountID uint, amount int64, description string, date time.Time) (*models.Transaction, error) {
+func (m *mockTransactionService) CreateTransfer(userID, fromAccountID, toAccountID string, amount int64, description string, date time.Time) (*models.Transaction, error) {
 	if m.createTransferFn != nil {
 		return m.createTransferFn(userID, fromAccountID, toAccountID, amount, description, date)
 	}
 	return &models.Transaction{}, nil
 }
 
-func (m *mockTransactionService) GetAccountTransactions(userID, accountID uint, page pagination.PageRequest, filter services.TransactionFilter) (*pagination.PageResponse[models.Transaction], error) {
+func (m *mockTransactionService) GetAccountTransactions(userID, accountID string, page pagination.PageRequest, filter services.TransactionFilter) (*pagination.PageResponse[models.Transaction], error) {
 	if m.getAccountTransactionsFn != nil {
 		return m.getAccountTransactionsFn(userID, accountID, page, filter)
 	}
@@ -50,7 +50,7 @@ func (m *mockTransactionService) GetAccountTransactions(userID, accountID uint, 
 	return &resp, nil
 }
 
-func (m *mockTransactionService) GetUserTransactions(userID uint, page pagination.PageRequest, filter services.TransactionFilter) (*pagination.PageResponse[models.Transaction], error) {
+func (m *mockTransactionService) GetUserTransactions(userID string, page pagination.PageRequest, filter services.TransactionFilter) (*pagination.PageResponse[models.Transaction], error) {
 	if m.getUserTransactionsFn != nil {
 		return m.getUserTransactionsFn(userID, page, filter)
 	}
@@ -58,42 +58,42 @@ func (m *mockTransactionService) GetUserTransactions(userID uint, page paginatio
 	return &resp, nil
 }
 
-func (m *mockTransactionService) GetTransactionByID(userID, transactionID uint) (*models.Transaction, error) {
+func (m *mockTransactionService) GetTransactionByID(userID, transactionID string) (*models.Transaction, error) {
 	if m.getTransactionByIDFn != nil {
 		return m.getTransactionByIDFn(userID, transactionID)
 	}
 	return &models.Transaction{}, nil
 }
 
-func (m *mockTransactionService) UpdateTransaction(userID, transactionID uint, updates services.TransactionUpdateFields) (*models.Transaction, error) {
+func (m *mockTransactionService) UpdateTransaction(userID, transactionID string, updates services.TransactionUpdateFields) (*models.Transaction, error) {
 	if m.updateTransactionFn != nil {
 		return m.updateTransactionFn(userID, transactionID, updates)
 	}
 	return &models.Transaction{}, nil
 }
 
-func (m *mockTransactionService) DeleteTransaction(userID, transactionID uint) error {
+func (m *mockTransactionService) DeleteTransaction(userID, transactionID string) error {
 	if m.deleteTransactionFn != nil {
 		return m.deleteTransactionFn(userID, transactionID)
 	}
 	return nil
 }
 
-func (m *mockTransactionService) GetSpendingByCategory(userID uint, from, to time.Time) (*services.SpendingByCategory, error) {
+func (m *mockTransactionService) GetSpendingByCategory(userID string, from, to time.Time) (*services.SpendingByCategory, error) {
 	if m.getSpendingByCategoryFn != nil {
 		return m.getSpendingByCategoryFn(userID, from, to)
 	}
 	return &services.SpendingByCategory{Items: []services.SpendingByCategoryItem{}}, nil
 }
 
-func (m *mockTransactionService) GetMonthlySummary(userID uint, months int) ([]services.MonthlySummaryItem, error) {
+func (m *mockTransactionService) GetMonthlySummary(userID string, months int) ([]services.MonthlySummaryItem, error) {
 	if m.getMonthlySummaryFn != nil {
 		return m.getMonthlySummaryFn(userID, months)
 	}
 	return []services.MonthlySummaryItem{}, nil
 }
 
-func (m *mockTransactionService) GetDailySpending(userID uint, from, to time.Time) ([]services.DailySpendingItem, error) {
+func (m *mockTransactionService) GetDailySpending(userID string, from, to time.Time) ([]services.DailySpendingItem, error) {
 	if m.getDailySpendingFn != nil {
 		return m.getDailySpendingFn(userID, from, to)
 	}
@@ -104,7 +104,7 @@ var _ services.TransactionServicer = (*mockTransactionService)(nil)
 
 func setupTransactionRouter(handler *TransactionHandler) *gin.Engine {
 	r := gin.New()
-	auth := r.Group("", injectUserID(1))
+	auth := r.Group("", injectUserID("test-user-1"))
 	auth.GET("/transactions", handler.GetUserTransactions)
 	auth.POST("/transactions", handler.CreateTransaction)
 	auth.POST("/transactions/transfer", handler.CreateTransfer)

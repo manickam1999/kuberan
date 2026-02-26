@@ -16,22 +16,22 @@ import (
 // --- mock budget service ---
 
 type mockBudgetService struct {
-	createBudgetFn      func(userID, categoryID uint, name string, amount int64, period models.BudgetPeriod, startDate time.Time, endDate *time.Time) (*models.Budget, error)
-	getUserBudgetsFn    func(userID uint, page pagination.PageRequest, isActive *bool, period *models.BudgetPeriod) (*pagination.PageResponse[models.Budget], error)
-	getBudgetByIDFn     func(userID, budgetID uint) (*models.Budget, error)
-	updateBudgetFn      func(userID, budgetID uint, name string, amount *int64, period *models.BudgetPeriod, endDate *time.Time) (*models.Budget, error)
-	deleteBudgetFn      func(userID, budgetID uint) error
-	getBudgetProgressFn func(userID, budgetID uint) (*services.BudgetProgress, error)
+	createBudgetFn      func(userID, categoryID string, name string, amount int64, period models.BudgetPeriod, startDate time.Time, endDate *time.Time) (*models.Budget, error)
+	getUserBudgetsFn    func(userID string, page pagination.PageRequest, isActive *bool, period *models.BudgetPeriod) (*pagination.PageResponse[models.Budget], error)
+	getBudgetByIDFn     func(userID, budgetID string) (*models.Budget, error)
+	updateBudgetFn      func(userID, budgetID string, name string, amount *int64, period *models.BudgetPeriod, endDate *time.Time) (*models.Budget, error)
+	deleteBudgetFn      func(userID, budgetID string) error
+	getBudgetProgressFn func(userID, budgetID string) (*services.BudgetProgress, error)
 }
 
-func (m *mockBudgetService) CreateBudget(userID, categoryID uint, name string, amount int64, period models.BudgetPeriod, startDate time.Time, endDate *time.Time) (*models.Budget, error) {
+func (m *mockBudgetService) CreateBudget(userID, categoryID string, name string, amount int64, period models.BudgetPeriod, startDate time.Time, endDate *time.Time) (*models.Budget, error) {
 	if m.createBudgetFn != nil {
 		return m.createBudgetFn(userID, categoryID, name, amount, period, startDate, endDate)
 	}
 	return &models.Budget{}, nil
 }
 
-func (m *mockBudgetService) GetUserBudgets(userID uint, page pagination.PageRequest, isActive *bool, period *models.BudgetPeriod) (*pagination.PageResponse[models.Budget], error) {
+func (m *mockBudgetService) GetUserBudgets(userID string, page pagination.PageRequest, isActive *bool, period *models.BudgetPeriod) (*pagination.PageResponse[models.Budget], error) {
 	if m.getUserBudgetsFn != nil {
 		return m.getUserBudgetsFn(userID, page, isActive, period)
 	}
@@ -39,28 +39,28 @@ func (m *mockBudgetService) GetUserBudgets(userID uint, page pagination.PageRequ
 	return &resp, nil
 }
 
-func (m *mockBudgetService) GetBudgetByID(userID, budgetID uint) (*models.Budget, error) {
+func (m *mockBudgetService) GetBudgetByID(userID, budgetID string) (*models.Budget, error) {
 	if m.getBudgetByIDFn != nil {
 		return m.getBudgetByIDFn(userID, budgetID)
 	}
 	return &models.Budget{}, nil
 }
 
-func (m *mockBudgetService) UpdateBudget(userID, budgetID uint, name string, amount *int64, period *models.BudgetPeriod, endDate *time.Time) (*models.Budget, error) {
+func (m *mockBudgetService) UpdateBudget(userID, budgetID string, name string, amount *int64, period *models.BudgetPeriod, endDate *time.Time) (*models.Budget, error) {
 	if m.updateBudgetFn != nil {
 		return m.updateBudgetFn(userID, budgetID, name, amount, period, endDate)
 	}
 	return &models.Budget{}, nil
 }
 
-func (m *mockBudgetService) DeleteBudget(userID, budgetID uint) error {
+func (m *mockBudgetService) DeleteBudget(userID, budgetID string) error {
 	if m.deleteBudgetFn != nil {
 		return m.deleteBudgetFn(userID, budgetID)
 	}
 	return nil
 }
 
-func (m *mockBudgetService) GetBudgetProgress(userID, budgetID uint) (*services.BudgetProgress, error) {
+func (m *mockBudgetService) GetBudgetProgress(userID, budgetID string) (*services.BudgetProgress, error) {
 	if m.getBudgetProgressFn != nil {
 		return m.getBudgetProgressFn(userID, budgetID)
 	}
@@ -71,7 +71,7 @@ var _ services.BudgetServicer = (*mockBudgetService)(nil)
 
 func setupBudgetRouter(handler *BudgetHandler) *gin.Engine {
 	r := gin.New()
-	auth := r.Group("", injectUserID(1))
+	auth := r.Group("", injectUserID("test-user-1"))
 	auth.POST("/budgets", handler.CreateBudget)
 	auth.GET("/budgets", handler.GetBudgets)
 	auth.GET("/budgets/:id", handler.GetBudget)

@@ -17,37 +17,37 @@ import (
 // --- mock account service ---
 
 type mockAccountService struct {
-	createCashAccountFn       func(userID uint, name, description, currency string, initialBalance int64) (*models.Account, error)
-	createInvestmentAccountFn func(userID uint, name, description, currency, broker, accountNumber string) (*models.Account, error)
-	createCreditCardAccountFn func(userID uint, name, description, currency string, creditLimit int64, interestRate float64, dueDate *time.Time) (*models.Account, error)
-	getUserAccountsFn         func(userID uint, page pagination.PageRequest) (*pagination.PageResponse[models.Account], error)
-	getAccountByIDFn          func(userID, accountID uint) (*models.Account, error)
-	updateAccountFn           func(userID, accountID uint, updates services.AccountUpdateFields) (*models.Account, error)
+	createCashAccountFn       func(userID string, name, description, currency string, initialBalance int64) (*models.Account, error)
+	createInvestmentAccountFn func(userID string, name, description, currency, broker, accountNumber string) (*models.Account, error)
+	createCreditCardAccountFn func(userID string, name, description, currency string, creditLimit int64, interestRate float64, dueDate *time.Time) (*models.Account, error)
+	getUserAccountsFn         func(userID string, page pagination.PageRequest) (*pagination.PageResponse[models.Account], error)
+	getAccountByIDFn          func(userID, accountID string) (*models.Account, error)
+	updateAccountFn           func(userID, accountID string, updates services.AccountUpdateFields) (*models.Account, error)
 	updateAccountBalanceFn    func(tx *gorm.DB, account *models.Account, transactionType models.TransactionType, amount int64) error
 }
 
-func (m *mockAccountService) CreateCashAccount(userID uint, name, description, currency string, initialBalance int64) (*models.Account, error) {
+func (m *mockAccountService) CreateCashAccount(userID string, name, description, currency string, initialBalance int64) (*models.Account, error) {
 	if m.createCashAccountFn != nil {
 		return m.createCashAccountFn(userID, name, description, currency, initialBalance)
 	}
 	return &models.Account{}, nil
 }
 
-func (m *mockAccountService) CreateInvestmentAccount(userID uint, name, description, currency, broker, accountNumber string) (*models.Account, error) {
+func (m *mockAccountService) CreateInvestmentAccount(userID string, name, description, currency, broker, accountNumber string) (*models.Account, error) {
 	if m.createInvestmentAccountFn != nil {
 		return m.createInvestmentAccountFn(userID, name, description, currency, broker, accountNumber)
 	}
 	return &models.Account{}, nil
 }
 
-func (m *mockAccountService) CreateCreditCardAccount(userID uint, name, description, currency string, creditLimit int64, interestRate float64, dueDate *time.Time) (*models.Account, error) {
+func (m *mockAccountService) CreateCreditCardAccount(userID string, name, description, currency string, creditLimit int64, interestRate float64, dueDate *time.Time) (*models.Account, error) {
 	if m.createCreditCardAccountFn != nil {
 		return m.createCreditCardAccountFn(userID, name, description, currency, creditLimit, interestRate, dueDate)
 	}
 	return &models.Account{}, nil
 }
 
-func (m *mockAccountService) GetUserAccounts(userID uint, page pagination.PageRequest) (*pagination.PageResponse[models.Account], error) {
+func (m *mockAccountService) GetUserAccounts(userID string, page pagination.PageRequest) (*pagination.PageResponse[models.Account], error) {
 	if m.getUserAccountsFn != nil {
 		return m.getUserAccountsFn(userID, page)
 	}
@@ -55,14 +55,14 @@ func (m *mockAccountService) GetUserAccounts(userID uint, page pagination.PageRe
 	return &resp, nil
 }
 
-func (m *mockAccountService) GetAccountByID(userID, accountID uint) (*models.Account, error) {
+func (m *mockAccountService) GetAccountByID(userID, accountID string) (*models.Account, error) {
 	if m.getAccountByIDFn != nil {
 		return m.getAccountByIDFn(userID, accountID)
 	}
 	return &models.Account{}, nil
 }
 
-func (m *mockAccountService) UpdateAccount(userID, accountID uint, updates services.AccountUpdateFields) (*models.Account, error) {
+func (m *mockAccountService) UpdateAccount(userID, accountID string, updates services.AccountUpdateFields) (*models.Account, error) {
 	if m.updateAccountFn != nil {
 		return m.updateAccountFn(userID, accountID, updates)
 	}
@@ -81,7 +81,7 @@ var _ services.AccountServicer = (*mockAccountService)(nil)
 
 func setupAccountRouter(handler *AccountHandler) *gin.Engine {
 	r := gin.New()
-	auth := r.Group("", injectUserID(1))
+	auth := r.Group("", injectUserID("test-user-1"))
 	auth.POST("/accounts/cash", handler.CreateCashAccount)
 	auth.POST("/accounts/investment", handler.CreateInvestmentAccount)
 	auth.POST("/accounts/credit-card", handler.CreateCreditCardAccount)
@@ -94,9 +94,9 @@ func setupAccountRouter(handler *AccountHandler) *gin.Engine {
 func TestAccountHandler_CreateCashAccount(t *testing.T) {
 	t.Run("returns 201 on success", func(t *testing.T) {
 		acctSvc := &mockAccountService{
-			createCashAccountFn: func(userID uint, name, desc, currency string, balance int64) (*models.Account, error) {
+			createCashAccountFn: func(userID string, name, desc, currency string, balance int64) (*models.Account, error) {
 				return &models.Account{
-					Base:     models.Base{ID: 1},
+					Base:     models.Base{ID: "test-id-1"},
 					UserID:   userID,
 					Name:     name,
 					Type:     models.AccountTypeCash,
@@ -172,9 +172,9 @@ func TestAccountHandler_CreateCashAccount(t *testing.T) {
 func TestAccountHandler_CreateInvestmentAccount(t *testing.T) {
 	t.Run("returns 201 on success", func(t *testing.T) {
 		acctSvc := &mockAccountService{
-			createInvestmentAccountFn: func(userID uint, name, desc, currency, broker, acctNum string) (*models.Account, error) {
+			createInvestmentAccountFn: func(userID string, name, desc, currency, broker, acctNum string) (*models.Account, error) {
 				return &models.Account{
-					Base:     models.Base{ID: 2},
+					Base:     models.Base{ID: "test-id-2"},
 					UserID:   userID,
 					Name:     name,
 					Type:     models.AccountTypeInvestment,
@@ -199,10 +199,10 @@ func TestAccountHandler_CreateInvestmentAccount(t *testing.T) {
 func TestAccountHandler_GetUserAccounts(t *testing.T) {
 	t.Run("returns 200 with paginated accounts", func(t *testing.T) {
 		acctSvc := &mockAccountService{
-			getUserAccountsFn: func(_ uint, _ pagination.PageRequest) (*pagination.PageResponse[models.Account], error) {
+			getUserAccountsFn: func(_ string, _ pagination.PageRequest) (*pagination.PageResponse[models.Account], error) {
 				resp := pagination.NewPageResponse([]models.Account{
-					{Base: models.Base{ID: 1}, Name: "Cash"},
-					{Base: models.Base{ID: 2}, Name: "Investment"},
+					{Base: models.Base{ID: "1"}, Name: "Cash"},
+					{Base: models.Base{ID: "2"}, Name: "Investment"},
 				}, 1, 20, 2)
 				return &resp, nil
 			},
@@ -228,7 +228,7 @@ func TestAccountHandler_GetUserAccounts(t *testing.T) {
 	t.Run("passes pagination params to service", func(t *testing.T) {
 		var capturedPage pagination.PageRequest
 		acctSvc := &mockAccountService{
-			getUserAccountsFn: func(_ uint, page pagination.PageRequest) (*pagination.PageResponse[models.Account], error) {
+			getUserAccountsFn: func(_ string, page pagination.PageRequest) (*pagination.PageResponse[models.Account], error) {
 				capturedPage = page
 				resp := pagination.NewPageResponse([]models.Account{}, 2, 5, 0)
 				return &resp, nil
@@ -251,7 +251,7 @@ func TestAccountHandler_GetUserAccounts(t *testing.T) {
 func TestAccountHandler_GetAccountByID(t *testing.T) {
 	t.Run("returns 200 on success", func(t *testing.T) {
 		acctSvc := &mockAccountService{
-			getAccountByIDFn: func(_, accountID uint) (*models.Account, error) {
+			getAccountByIDFn: func(_, accountID string) (*models.Account, error) {
 				return &models.Account{
 					Base: models.Base{ID: accountID},
 					Name: "Savings",
@@ -276,7 +276,7 @@ func TestAccountHandler_GetAccountByID(t *testing.T) {
 
 	t.Run("returns 404 when not found", func(t *testing.T) {
 		acctSvc := &mockAccountService{
-			getAccountByIDFn: func(_, _ uint) (*models.Account, error) {
+			getAccountByIDFn: func(_, _ string) (*models.Account, error) {
 				return nil, apperrors.ErrAccountNotFound
 			},
 		}
@@ -413,9 +413,9 @@ func TestAccountHandler_UpdateAccount(t *testing.T) {
 func TestAccountHandler_CreateCreditCardAccount(t *testing.T) {
 	t.Run("returns 201 with valid request", func(t *testing.T) {
 		acctSvc := &mockAccountService{
-			createCreditCardAccountFn: func(userID uint, name, desc, currency string, creditLimit int64, interestRate float64, dueDate *time.Time) (*models.Account, error) {
+			createCreditCardAccountFn: func(userID string, name, desc, currency string, creditLimit int64, interestRate float64, dueDate *time.Time) (*models.Account, error) {
 				return &models.Account{
-					Base:         models.Base{ID: 3},
+					Base:         models.Base{ID: "test-id-3"},
 					UserID:       userID,
 					Name:         name,
 					Type:         models.AccountTypeCreditCard,

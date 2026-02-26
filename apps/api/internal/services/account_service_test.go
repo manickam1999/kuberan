@@ -19,8 +19,8 @@ func TestCreateCashAccount(t *testing.T) {
 		account, err := svc.CreateCashAccount(user.ID, "Savings", "My savings", "USD", 0)
 		testutil.AssertNoError(t, err)
 
-		if account.ID == 0 {
-			t.Fatal("expected non-zero account ID")
+		if account.ID == "" {
+			t.Fatal("expected non-empty account ID")
 		}
 		if account.Name != "Savings" {
 			t.Errorf("expected name Savings, got %s", account.Name)
@@ -164,7 +164,7 @@ func TestGetAccountByID(t *testing.T) {
 		svc := NewAccountService(db)
 		user := testutil.CreateTestUser(t, db)
 
-		_, err := svc.GetAccountByID(user.ID, 99999)
+		_, err := svc.GetAccountByID(user.ID, "99999")
 		testutil.AssertAppError(t, err, "ACCOUNT_NOT_FOUND")
 	})
 
@@ -360,7 +360,7 @@ func TestUpdateAccount(t *testing.T) {
 		user := testutil.CreateTestUser(t, db)
 
 		name := "Test"
-		_, err := svc.UpdateAccount(user.ID, 99999, AccountUpdateFields{
+		_, err := svc.UpdateAccount(user.ID, "99999", AccountUpdateFields{
 			Name: &name,
 		})
 		testutil.AssertAppError(t, err, "ACCOUNT_NOT_FOUND")
@@ -485,8 +485,8 @@ func TestCreateCreditCardAccount(t *testing.T) {
 		account, err := svc.CreateCreditCardAccount(user.ID, "Visa", "My credit card", "USD", 500000, 19.99, &dueDate)
 		testutil.AssertNoError(t, err)
 
-		if account.ID == 0 {
-			t.Fatal("expected non-zero account ID")
+		if account.ID == "" {
+			t.Fatal("expected non-empty account ID")
 		}
 		if account.Type != models.AccountTypeCreditCard {
 			t.Errorf("expected type credit_card, got %s", account.Type)

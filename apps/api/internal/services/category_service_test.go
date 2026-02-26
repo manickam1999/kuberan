@@ -18,8 +18,8 @@ func TestCreateCategory(t *testing.T) {
 		cat, err := svc.CreateCategory(user.ID, "Groceries", models.CategoryTypeExpense, "Food shopping", "cart", "#FF0000", nil)
 		testutil.AssertNoError(t, err)
 
-		if cat.ID == 0 {
-			t.Fatal("expected non-zero category ID")
+		if cat.ID == "" {
+			t.Fatal("expected non-empty category ID")
 		}
 		if cat.Name != "Groceries" {
 			t.Errorf("expected name Groceries, got %s", cat.Name)
