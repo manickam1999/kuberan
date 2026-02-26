@@ -98,7 +98,7 @@
   {
     "id": "3.4",
     "category": "handler-tests",
-    "passes": false,
+    "passes": true,
     "description": "Write telegram_handler_test.go with tests for all endpoints",
     "steps": [
       "Create apps/api/internal/handlers/telegram_handler_test.go",

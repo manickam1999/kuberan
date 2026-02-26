@@ -46,3 +46,20 @@
 - Files: apps/api/internal/services/telegram_service_test.go
 - Note: Existing service/handler tests broken on branch from UUID migration (account_service_test.go, budget_service_test.go, etc all have uint->string type errors). New telegram tests compile correctly.
 - Verification: go build ./... passed
+## Task 3.4 - Write telegram_handler_test.go (COMPLETE)
+- PRD ref: 3.4
+- Created apps/api/internal/handlers/telegram_handler_test.go with comprehensive test coverage for all endpoints
+- Mock service: mockTelegramService with function fields for all TelegramServicer methods, verified interface compliance
+- Router helpers: setupTelegramRouter (auth routes with userID injection), setupInternalTelegramRouter (internal routes)
+- Custom helpers: injectTelegramUserID, doTelegramRequest, parseTelegramJSON, mockTelegramAuditService (all use string IDs, compatible with UUID migration)
+- Tests:
+  - TestTelegramHandler_GetLink: returns_200_with_link, returns_404_when_not_found, returns_401_without_auth
+  - TestTelegramHandler_GenerateCode: returns_200_with_code, returns_500_on_service_error
+  - TestTelegramHandler_Unlink: returns_200_on_success, returns_404_when_not_linked
+  - TestTelegramHandler_CompleteLink: returns_200_on_success, returns_400_on_invalid_body, returns_400_on_expired_code
+  - TestTelegramHandler_ResolveUser: returns_200_with_user_data, returns_404_when_not_found, returns_400_on_invalid_id
+  - TestTelegramHandler_RecordActivity: returns_200_on_success, returns_400_on_invalid_id
+- Followed existing handler test pattern: mock service via function fields, httptest, gin.TestMode
+- Note: Created own helpers instead of reusing existing ones due to UUID migration mismatch (existing tests use uint, new tests use string)
+- Files: apps/api/internal/handlers/telegram_handler_test.go
+- Verification: go test -run TestTelegramHandler - all 6 test groups with 15 subtests PASS
