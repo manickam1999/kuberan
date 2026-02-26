@@ -141,7 +141,7 @@
   {
     "id": "4.1",
     "category": "bot-fix",
-    "passes": false,
+    "passes": true,
     "description": "Wrap create_transaction in try/except in transaction confirm handler",
     "steps": [
       "Open apps/bot/handlers/transaction_flow.py",
@@ -154,7 +154,7 @@
   {
     "id": "4.2",
     "category": "bot-fix",
-    "passes": false,
+    "passes": true,
     "description": "Fix hardcoded USD in balance total — use user's default currency",
     "steps": [
       "Open apps/bot/handlers/balance.py",
@@ -166,7 +166,7 @@
   {
     "id": "4.3",
     "category": "bot-fix",
-    "passes": false,
+    "passes": true,
     "description": "Add debt account type to format_account_type map",
     "steps": [
       "Open apps/bot/utils/formatting.py",

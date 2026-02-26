@@ -74,3 +74,26 @@
 - Uses X-Internal-Secret header (not X-API-Key)
 - Files: apps/api/internal/middleware/pipeline_auth_test.go
 - Verification: go test ./internal/middleware/ - all tests PASS (12 subtests across 2 test groups)
+
+## Task 4.1 - Wrap create_transaction in try/except (COMPLETE)
+- PRD ref: 4.1
+- Wrapped user_client.create_transaction(transaction_data) in try/except Exception block in handle_confirm_callback
+- On exception: logs error via logger.error, shows user-friendly error message with _build_confirm_keyboard(), returns CONFIRM state (allows retry)
+- On success: existing flow unchanged (success message, pop TXN_KEY, return END)
+- Files: apps/bot/handlers/transaction_flow.py (line 572-580)
+- Rationale: If API returns error, user gets feedback and can retry instead of silent failure with inconsistent state
+
+## Task 4.2 - Fix hardcoded USD in balance total (COMPLETE)
+- PRD ref: 4.2
+- Extracted default_currency from user_data.get('default_currency', 'MYR') near top of try block (line 39)
+- Changed line 59 from format_currency(total, 'USD') to format_currency(total, currency)
+- Added comment: "Note: mixed-currency totals are summed naively without conversion"
+- Also changed individual account currency fallback from 'USD' to `currency` variable for consistency
+- Files: apps/bot/handlers/balance.py
+- Rationale: Balance total now displays in user's preferred currency instead of always USD
+
+## Task 4.3 - Add debt account type to formatting (COMPLETE)
+- PRD ref: 4.3
+- Added "debt": "🏦 Debt" to type_map dict in format_account_type function
+- Files: apps/bot/utils/formatting.py
+- Rationale: Debt is a supported account type but was missing from formatting map, would fall back to "Debt" (title case) without emoji

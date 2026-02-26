@@ -569,7 +569,15 @@ def create_transaction_conversation(api_client: KuberanAPIClient, txn_type: str)
             if txn.get('category_id'):
                 transaction_data['category_id'] = txn['category_id']
 
-            user_client.create_transaction(transaction_data)
+            try:
+                user_client.create_transaction(transaction_data)
+            except Exception as e:
+                logger.error(f"Failed to create transaction: {e}")
+                await query.edit_message_text(
+                    "Failed to record transaction. Please try again.",
+                    reply_markup=_build_confirm_keyboard(),
+                )
+                return CONFIRM
 
             await query.edit_message_text(
                 _format_success_message(txn),

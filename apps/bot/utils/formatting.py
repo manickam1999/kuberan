@@ -29,7 +29,8 @@ def format_account_type(account_type: str) -> str:
     type_map = {
         "cash": "💵 Cash",
         "investment": "📈 Investment",
-        "credit_card": "💳 Credit Card"
+        "credit_card": "💳 Credit Card",
+        "debt": "🏦 Debt",
     }
     return type_map.get(account_type, account_type.title())
 
