@@ -229,3 +229,20 @@ func CreateTestSecurityPrice(t *testing.T, db *gorm.DB, securityID string, price
 	}
 	return sp
 }
+
+// CreateTestTelegramLink creates a linked TelegramLink for testing.
+func CreateTestTelegramLink(t *testing.T, db *gorm.DB, userID string, telegramUserID int64) *models.TelegramLink {
+	t.Helper()
+	link := &models.TelegramLink{
+		UserID:            userID,
+		TelegramUserID:    telegramUserID,
+		TelegramUsername:  "testuser",
+		TelegramFirstName: "Test",
+		DefaultCurrency:   "MYR",
+		IsActive:          true,
+	}
+	if err := db.Create(link).Error; err != nil {
+		t.Fatalf("failed to create test telegram link: %v", err)
+	}
+	return link
+}
