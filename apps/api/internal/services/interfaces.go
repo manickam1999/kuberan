@@ -20,6 +20,14 @@ type UserServicer interface {
 	GetRefreshTokenHash(userID string) (string, error)
 }
 
+// TelegramUserAuth holds the resolved user info and auth token for bot service communication.
+type TelegramUserAuth struct {
+	UserID          string `json:"user_id"`
+	Email           string `json:"email"`
+	AuthToken       string `json:"auth_token"`
+	DefaultCurrency string `json:"default_currency"`
+}
+
 // TelegramServicer defines the contract for Telegram-related business logic.
 type TelegramServicer interface {
 	GetLinkByUserID(userID string) (*models.TelegramLink, error)
@@ -29,7 +37,7 @@ type TelegramServicer interface {
 	UnlinkAccount(userID string) error
 	RecordActivity(telegramUserID int64) error
 	IsLinked(userID string) (bool, error)
-	GetUserWithAuthToken(telegramUserID int64) (map[string]interface{}, error)
+	GetUserWithAuthToken(telegramUserID int64) (*TelegramUserAuth, error)
 }
 
 // AccountUpdateFields holds optional fields for updating an account.
