@@ -22,11 +22,11 @@ func TestAddInvestment(t *testing.T) {
 		inv, err := svc.AddInvestment(user.ID, account.ID, sec.ID, 10.0, 15000, "", nil, 0, "")
 		testutil.AssertNoError(t, err)
 
-		if inv.ID == 0 {
-			t.Fatal("expected non-zero investment ID")
+		if inv.ID == "" {
+			t.Fatal("expected non-empty investment ID")
 		}
 		if inv.SecurityID != sec.ID {
-			t.Errorf("expected security ID %d, got %d", sec.ID, inv.SecurityID)
+			t.Errorf("expected security ID %s, got %s", sec.ID, inv.SecurityID)
 		}
 		if inv.Quantity != 10.0 {
 			t.Errorf("expected quantity 10.0, got %f", inv.Quantity)
@@ -81,7 +81,7 @@ func TestAddInvestment(t *testing.T) {
 		user := testutil.CreateTestUser(t, db)
 		sec := testutil.CreateTestSecurity(t, db)
 
-		_, err := svc.AddInvestment(user.ID, 9999, sec.ID, 10.0, 15000, "", nil, 0, "")
+		_, err := svc.AddInvestment(user.ID, "9999", sec.ID, 10.0, 15000, "", nil, 0, "")
 		testutil.AssertAppError(t, err, "ACCOUNT_NOT_FOUND")
 	})
 
@@ -93,7 +93,7 @@ func TestAddInvestment(t *testing.T) {
 		user := testutil.CreateTestUser(t, db)
 		account := testutil.CreateTestInvestmentAccount(t, db, user.ID)
 
-		_, err := svc.AddInvestment(user.ID, account.ID, 9999, 10.0, 15000, "", nil, 0, "")
+		_, err := svc.AddInvestment(user.ID, account.ID, "9999", 10.0, 15000, "", nil, 0, "")
 		testutil.AssertAppError(t, err, "SECURITY_NOT_FOUND")
 	})
 
@@ -205,10 +205,10 @@ func TestGetInvestmentByID(t *testing.T) {
 		testutil.AssertNoError(t, err)
 
 		if result.ID != inv.ID {
-			t.Errorf("expected ID %d, got %d", inv.ID, result.ID)
+			t.Errorf("expected ID %s, got %s", inv.ID, result.ID)
 		}
 		if result.SecurityID != sec.ID {
-			t.Errorf("expected security ID %d, got %d", sec.ID, result.SecurityID)
+			t.Errorf("expected security ID %s, got %s", sec.ID, result.SecurityID)
 		}
 		if result.CurrentPrice != 15000 {
 			t.Errorf("expected current price 15000 from security_prices, got %d", result.CurrentPrice)
@@ -264,7 +264,7 @@ func TestGetInvestmentByID(t *testing.T) {
 		svc := NewInvestmentService(db, acctSvc)
 		user := testutil.CreateTestUser(t, db)
 
-		_, err := svc.GetInvestmentByID(user.ID, 9999)
+		_, err := svc.GetInvestmentByID(user.ID, "9999")
 		testutil.AssertAppError(t, err, "INVESTMENT_NOT_FOUND")
 	})
 
@@ -344,7 +344,7 @@ func TestGetAccountInvestments(t *testing.T) {
 		user := testutil.CreateTestUser(t, db)
 
 		page := pagination.PageRequest{Page: 1, PageSize: 20}
-		_, err := svc.GetAccountInvestments(user.ID, 9999, page)
+		_, err := svc.GetAccountInvestments(user.ID, "9999", page)
 		testutil.AssertAppError(t, err, "ACCOUNT_NOT_FOUND")
 	})
 
@@ -416,7 +416,7 @@ func TestRecordBuy(t *testing.T) {
 
 		// Verify investment updated in DB
 		var dbInv models.Investment
-		db.First(&dbInv, inv.ID)
+		db.First(&dbInv, "id = ?", inv.ID)
 		// 10 + 5 = 15 shares
 		if dbInv.Quantity != 15.0 {
 			t.Errorf("expected quantity 15.0, got %f", dbInv.Quantity)
@@ -434,7 +434,7 @@ func TestRecordBuy(t *testing.T) {
 		svc := NewInvestmentService(db, acctSvc)
 		user := testutil.CreateTestUser(t, db)
 
-		_, err := svc.RecordBuy(user.ID, 9999, time.Now(), 5.0, 10000, 0, "")
+		_, err := svc.RecordBuy(user.ID, "9999", time.Now(), 5.0, 10000, 0, "")
 		testutil.AssertAppError(t, err, "INVESTMENT_NOT_FOUND")
 	})
 }
@@ -466,7 +466,7 @@ func TestRecordSell(t *testing.T) {
 
 		// Verify investment updated in DB
 		var dbInv models.Investment
-		db.First(&dbInv, inv.ID)
+		db.First(&dbInv, "id = ?", inv.ID)
 		// 10 - 4 = 6 shares remaining
 		if dbInv.Quantity != 6.0 {
 			t.Errorf("expected quantity 6.0, got %f", dbInv.Quantity)
@@ -499,7 +499,7 @@ func TestRecordSell(t *testing.T) {
 		}
 
 		var dbInv models.Investment
-		db.First(&dbInv, inv.ID)
+		db.First(&dbInv, "id = ?", inv.ID)
 		if dbInv.RealizedGainLoss != 25000 {
 			t.Errorf("expected investment realized gain/loss 25000, got %d", dbInv.RealizedGainLoss)
 		}
@@ -539,7 +539,7 @@ func TestRecordSell(t *testing.T) {
 
 		// Investment should have accumulated: 6000 + (-4000) = 2000
 		var dbInv models.Investment
-		db.First(&dbInv, inv.ID)
+		db.First(&dbInv, "id = ?", inv.ID)
 		if dbInv.RealizedGainLoss != 2000 {
 			t.Errorf("expected accumulated realized gain/loss 2000, got %d", dbInv.RealizedGainLoss)
 		}
@@ -567,7 +567,7 @@ func TestRecordSell(t *testing.T) {
 		}
 
 		var dbInv models.Investment
-		db.First(&dbInv, inv.ID)
+		db.First(&dbInv, "id = ?", inv.ID)
 		if dbInv.RealizedGainLoss != -50000 {
 			t.Errorf("expected investment realized gain/loss -50000, got %d", dbInv.RealizedGainLoss)
 		}
@@ -594,7 +594,7 @@ func TestRecordSell(t *testing.T) {
 
 		// Verify quantity unchanged
 		var dbInv models.Investment
-		db.First(&dbInv, inv.ID)
+		db.First(&dbInv, "id = ?", inv.ID)
 		if dbInv.Quantity != 10.0 {
 			t.Errorf("expected quantity unchanged at 10.0, got %f", dbInv.Quantity)
 		}
@@ -622,7 +622,7 @@ func TestRecordSell(t *testing.T) {
 		}
 
 		var dbInv models.Investment
-		db.First(&dbInv, inv.ID)
+		db.First(&dbInv, "id = ?", inv.ID)
 		if dbInv.Quantity != 0.0 {
 			t.Errorf("expected quantity 0.0, got %f", dbInv.Quantity)
 		}
@@ -661,7 +661,7 @@ func TestRecordDividend(t *testing.T) {
 
 		// Verify investment quantity and cost basis unchanged
 		var dbInv models.Investment
-		db.First(&dbInv, inv.ID)
+		db.First(&dbInv, "id = ?", inv.ID)
 		if dbInv.Quantity != 10.0 {
 			t.Errorf("expected quantity unchanged at 10.0, got %f", dbInv.Quantity)
 		}
@@ -677,7 +677,7 @@ func TestRecordDividend(t *testing.T) {
 		svc := NewInvestmentService(db, acctSvc)
 		user := testutil.CreateTestUser(t, db)
 
-		_, err := svc.RecordDividend(user.ID, 9999, time.Now(), 5000, "Cash", "")
+		_, err := svc.RecordDividend(user.ID, "9999", time.Now(), 5000, "Cash", "")
 		testutil.AssertAppError(t, err, "INVESTMENT_NOT_FOUND")
 	})
 }
@@ -705,7 +705,7 @@ func TestRecordSplit(t *testing.T) {
 
 		// Verify quantity doubled, cost basis unchanged
 		var dbInv models.Investment
-		db.First(&dbInv, inv.ID)
+		db.First(&dbInv, "id = ?", inv.ID)
 		if dbInv.Quantity != 20.0 {
 			t.Errorf("expected quantity 20.0 after 2:1 split, got %f", dbInv.Quantity)
 		}
@@ -721,7 +721,7 @@ func TestRecordSplit(t *testing.T) {
 		svc := NewInvestmentService(db, acctSvc)
 		user := testutil.CreateTestUser(t, db)
 
-		_, err := svc.RecordSplit(user.ID, 9999, time.Now(), 2.0, "")
+		_, err := svc.RecordSplit(user.ID, "9999", time.Now(), 2.0, "")
 		testutil.AssertAppError(t, err, "INVESTMENT_NOT_FOUND")
 	})
 }
@@ -996,13 +996,13 @@ func TestGetAllInvestments(t *testing.T) {
 		// Verify CurrentPrice, Security, and Account are populated
 		for _, inv := range result.Data {
 			if inv.CurrentPrice == 0 {
-				t.Errorf("expected non-zero CurrentPrice for investment %d", inv.ID)
+				t.Errorf("expected non-zero CurrentPrice for investment %s", inv.ID)
 			}
 			if inv.Security.Symbol == "" {
-				t.Errorf("expected Security preloaded for investment %d", inv.ID)
+				t.Errorf("expected Security preloaded for investment %s", inv.ID)
 			}
 			if inv.Account.Name == "" {
-				t.Errorf("expected Account preloaded for investment %d", inv.ID)
+				t.Errorf("expected Account preloaded for investment %s", inv.ID)
 			}
 		}
 	})
@@ -1160,7 +1160,7 @@ func TestGetInvestmentTransactions(t *testing.T) {
 		user := testutil.CreateTestUser(t, db)
 
 		page := pagination.PageRequest{Page: 1, PageSize: 20}
-		_, err := svc.GetInvestmentTransactions(user.ID, 9999, page)
+		_, err := svc.GetInvestmentTransactions(user.ID, "9999", page)
 		testutil.AssertAppError(t, err, "INVESTMENT_NOT_FOUND")
 	})
 }

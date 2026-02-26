@@ -16,26 +16,26 @@ import (
 // --- mock investment service ---
 
 type mockInvestmentService struct {
-	addInvestmentFn             func(userID, accountID, securityID uint, quantity float64, purchasePrice int64, walletAddress string, date *time.Time, fee int64, notes string) (*models.Investment, error)
-	getAllInvestmentsFn         func(userID uint, page pagination.PageRequest) (*pagination.PageResponse[models.Investment], error)
-	getAccountInvestmentsFn     func(userID, accountID uint, page pagination.PageRequest) (*pagination.PageResponse[models.Investment], error)
-	getInvestmentByIDFn         func(userID, investmentID uint) (*models.Investment, error)
-	getPortfolioFn              func(userID uint) (*services.PortfolioSummary, error)
-	recordBuyFn                 func(userID, investmentID uint, date time.Time, quantity float64, pricePerUnit int64, fee int64, notes string) (*models.InvestmentTransaction, error)
-	recordSellFn                func(userID, investmentID uint, date time.Time, quantity float64, pricePerUnit int64, fee int64, notes string) (*models.InvestmentTransaction, error)
-	recordDividendFn            func(userID, investmentID uint, date time.Time, amount int64, dividendType, notes string) (*models.InvestmentTransaction, error)
-	recordSplitFn               func(userID, investmentID uint, date time.Time, splitRatio float64, notes string) (*models.InvestmentTransaction, error)
-	getInvestmentTransactionsFn func(userID, investmentID uint, page pagination.PageRequest) (*pagination.PageResponse[models.InvestmentTransaction], error)
+	addInvestmentFn             func(userID, accountID, securityID string, quantity float64, purchasePrice int64, walletAddress string, date *time.Time, fee int64, notes string) (*models.Investment, error)
+	getAllInvestmentsFn         func(userID string, page pagination.PageRequest) (*pagination.PageResponse[models.Investment], error)
+	getAccountInvestmentsFn     func(userID, accountID string, page pagination.PageRequest) (*pagination.PageResponse[models.Investment], error)
+	getInvestmentByIDFn         func(userID, investmentID string) (*models.Investment, error)
+	getPortfolioFn              func(userID string) (*services.PortfolioSummary, error)
+	recordBuyFn                 func(userID, investmentID string, date time.Time, quantity float64, pricePerUnit int64, fee int64, notes string) (*models.InvestmentTransaction, error)
+	recordSellFn                func(userID, investmentID string, date time.Time, quantity float64, pricePerUnit int64, fee int64, notes string) (*models.InvestmentTransaction, error)
+	recordDividendFn            func(userID, investmentID string, date time.Time, amount int64, dividendType, notes string) (*models.InvestmentTransaction, error)
+	recordSplitFn               func(userID, investmentID string, date time.Time, splitRatio float64, notes string) (*models.InvestmentTransaction, error)
+	getInvestmentTransactionsFn func(userID, investmentID string, page pagination.PageRequest) (*pagination.PageResponse[models.InvestmentTransaction], error)
 }
 
-func (m *mockInvestmentService) AddInvestment(userID, accountID, securityID uint, quantity float64, purchasePrice int64, walletAddress string, date *time.Time, fee int64, notes string) (*models.Investment, error) {
+func (m *mockInvestmentService) AddInvestment(userID, accountID, securityID string, quantity float64, purchasePrice int64, walletAddress string, date *time.Time, fee int64, notes string) (*models.Investment, error) {
 	if m.addInvestmentFn != nil {
 		return m.addInvestmentFn(userID, accountID, securityID, quantity, purchasePrice, walletAddress, date, fee, notes)
 	}
 	return &models.Investment{}, nil
 }
 
-func (m *mockInvestmentService) GetAllInvestments(userID uint, page pagination.PageRequest) (*pagination.PageResponse[models.Investment], error) {
+func (m *mockInvestmentService) GetAllInvestments(userID string, page pagination.PageRequest) (*pagination.PageResponse[models.Investment], error) {
 	if m.getAllInvestmentsFn != nil {
 		return m.getAllInvestmentsFn(userID, page)
 	}
@@ -43,7 +43,7 @@ func (m *mockInvestmentService) GetAllInvestments(userID uint, page pagination.P
 	return &resp, nil
 }
 
-func (m *mockInvestmentService) GetAccountInvestments(userID, accountID uint, page pagination.PageRequest) (*pagination.PageResponse[models.Investment], error) {
+func (m *mockInvestmentService) GetAccountInvestments(userID, accountID string, page pagination.PageRequest) (*pagination.PageResponse[models.Investment], error) {
 	if m.getAccountInvestmentsFn != nil {
 		return m.getAccountInvestmentsFn(userID, accountID, page)
 	}
@@ -51,49 +51,49 @@ func (m *mockInvestmentService) GetAccountInvestments(userID, accountID uint, pa
 	return &resp, nil
 }
 
-func (m *mockInvestmentService) GetInvestmentByID(userID, investmentID uint) (*models.Investment, error) {
+func (m *mockInvestmentService) GetInvestmentByID(userID, investmentID string) (*models.Investment, error) {
 	if m.getInvestmentByIDFn != nil {
 		return m.getInvestmentByIDFn(userID, investmentID)
 	}
 	return &models.Investment{}, nil
 }
 
-func (m *mockInvestmentService) GetPortfolio(userID uint) (*services.PortfolioSummary, error) {
+func (m *mockInvestmentService) GetPortfolio(userID string) (*services.PortfolioSummary, error) {
 	if m.getPortfolioFn != nil {
 		return m.getPortfolioFn(userID)
 	}
 	return &services.PortfolioSummary{HoldingsByType: map[models.AssetType]services.TypeSummary{}}, nil
 }
 
-func (m *mockInvestmentService) RecordBuy(userID, investmentID uint, date time.Time, quantity float64, pricePerUnit, fee int64, notes string) (*models.InvestmentTransaction, error) {
+func (m *mockInvestmentService) RecordBuy(userID, investmentID string, date time.Time, quantity float64, pricePerUnit, fee int64, notes string) (*models.InvestmentTransaction, error) {
 	if m.recordBuyFn != nil {
 		return m.recordBuyFn(userID, investmentID, date, quantity, pricePerUnit, fee, notes)
 	}
 	return &models.InvestmentTransaction{}, nil
 }
 
-func (m *mockInvestmentService) RecordSell(userID, investmentID uint, date time.Time, quantity float64, pricePerUnit, fee int64, notes string) (*models.InvestmentTransaction, error) {
+func (m *mockInvestmentService) RecordSell(userID, investmentID string, date time.Time, quantity float64, pricePerUnit, fee int64, notes string) (*models.InvestmentTransaction, error) {
 	if m.recordSellFn != nil {
 		return m.recordSellFn(userID, investmentID, date, quantity, pricePerUnit, fee, notes)
 	}
 	return &models.InvestmentTransaction{}, nil
 }
 
-func (m *mockInvestmentService) RecordDividend(userID, investmentID uint, date time.Time, amount int64, dividendType, notes string) (*models.InvestmentTransaction, error) {
+func (m *mockInvestmentService) RecordDividend(userID, investmentID string, date time.Time, amount int64, dividendType, notes string) (*models.InvestmentTransaction, error) {
 	if m.recordDividendFn != nil {
 		return m.recordDividendFn(userID, investmentID, date, amount, dividendType, notes)
 	}
 	return &models.InvestmentTransaction{}, nil
 }
 
-func (m *mockInvestmentService) RecordSplit(userID, investmentID uint, date time.Time, splitRatio float64, notes string) (*models.InvestmentTransaction, error) {
+func (m *mockInvestmentService) RecordSplit(userID, investmentID string, date time.Time, splitRatio float64, notes string) (*models.InvestmentTransaction, error) {
 	if m.recordSplitFn != nil {
 		return m.recordSplitFn(userID, investmentID, date, splitRatio, notes)
 	}
 	return &models.InvestmentTransaction{}, nil
 }
 
-func (m *mockInvestmentService) GetInvestmentTransactions(userID, investmentID uint, page pagination.PageRequest) (*pagination.PageResponse[models.InvestmentTransaction], error) {
+func (m *mockInvestmentService) GetInvestmentTransactions(userID, investmentID string, page pagination.PageRequest) (*pagination.PageResponse[models.InvestmentTransaction], error) {
 	if m.getInvestmentTransactionsFn != nil {
 		return m.getInvestmentTransactionsFn(userID, investmentID, page)
 	}
@@ -105,7 +105,7 @@ var _ services.InvestmentServicer = (*mockInvestmentService)(nil)
 
 func setupInvestmentRouter(handler *InvestmentHandler) *gin.Engine {
 	r := gin.New()
-	auth := r.Group("", injectUserID(1))
+	auth := r.Group("", injectUserID("test-user-1"))
 	auth.POST("/investments", handler.AddInvestment)
 	auth.GET("/investments", handler.GetAllInvestments)
 	auth.GET("/investments/portfolio", handler.GetPortfolio)
@@ -122,9 +122,9 @@ func setupInvestmentRouter(handler *InvestmentHandler) *gin.Engine {
 func TestInvestmentHandler_AddInvestment(t *testing.T) {
 	t.Run("returns 201 on success", func(t *testing.T) {
 		svc := &mockInvestmentService{
-			addInvestmentFn: func(_ uint, accountID, securityID uint, quantity float64, price int64, _ string, _ *time.Time, _ int64, _ string) (*models.Investment, error) {
+			addInvestmentFn: func(_ string, accountID, securityID string, quantity float64, price int64, _ string, _ *time.Time, _ int64, _ string) (*models.Investment, error) {
 				return &models.Investment{
-					Base:       models.Base{ID: 1},
+					Base:       models.Base{ID: "1"},
 					AccountID:  accountID,
 					SecurityID: securityID,
 					Quantity:   quantity,
@@ -136,7 +136,7 @@ func TestInvestmentHandler_AddInvestment(t *testing.T) {
 		r := setupInvestmentRouter(handler)
 
 		rec := doRequest(r, "POST", "/investments",
-			`{"account_id":1,"security_id":1,"quantity":10,"purchase_price":15000}`)
+			`{"account_id":"00000000-0000-0000-0000-000000000001","security_id":"00000000-0000-0000-0000-000000000002","quantity":10,"purchase_price":15000}`)
 
 		if rec.Code != http.StatusCreated {
 			t.Fatalf("expected 201, got %d: %s", rec.Code, rec.Body.String())
@@ -153,7 +153,7 @@ func TestInvestmentHandler_AddInvestment(t *testing.T) {
 		r := setupInvestmentRouter(handler)
 
 		rec := doRequest(r, "POST", "/investments",
-			`{"account_id":1,"quantity":10,"purchase_price":15000}`)
+			`{"account_id":"00000000-0000-0000-0000-000000000001","quantity":10,"purchase_price":15000}`)
 
 		if rec.Code != http.StatusBadRequest {
 			t.Fatalf("expected 400, got %d", rec.Code)
@@ -166,7 +166,7 @@ func TestInvestmentHandler_AddInvestment(t *testing.T) {
 		r := setupInvestmentRouter(handler)
 
 		rec := doRequest(r, "POST", "/investments",
-			`{"account_id":1,"security_id":1,"quantity":0,"purchase_price":15000}`)
+			`{"account_id":"00000000-0000-0000-0000-000000000001","security_id":"00000000-0000-0000-0000-000000000002","quantity":0,"purchase_price":15000}`)
 
 		if rec.Code != http.StatusBadRequest {
 			t.Fatalf("expected 400, got %d", rec.Code)
@@ -175,7 +175,7 @@ func TestInvestmentHandler_AddInvestment(t *testing.T) {
 
 	t.Run("returns 404 on invalid account", func(t *testing.T) {
 		svc := &mockInvestmentService{
-			addInvestmentFn: func(_, _, _ uint, _ float64, _ int64, _ string, _ *time.Time, _ int64, _ string) (*models.Investment, error) {
+			addInvestmentFn: func(_, _, _ string, _ float64, _ int64, _ string, _ *time.Time, _ int64, _ string) (*models.Investment, error) {
 				return nil, apperrors.ErrAccountNotFound
 			},
 		}
@@ -183,7 +183,7 @@ func TestInvestmentHandler_AddInvestment(t *testing.T) {
 		r := setupInvestmentRouter(handler)
 
 		rec := doRequest(r, "POST", "/investments",
-			`{"account_id":999,"security_id":1,"quantity":10,"purchase_price":15000}`)
+			`{"account_id":"00000000-0000-0000-0000-000000000999","security_id":"00000000-0000-0000-0000-000000000002","quantity":10,"purchase_price":15000}`)
 
 		if rec.Code != http.StatusNotFound {
 			t.Fatalf("expected 404, got %d", rec.Code)
@@ -197,7 +197,7 @@ func TestInvestmentHandler_AddInvestment(t *testing.T) {
 		r.POST("/investments", handler.AddInvestment)
 
 		rec := doRequest(r, "POST", "/investments",
-			`{"account_id":1,"security_id":1,"quantity":10,"purchase_price":15000}`)
+			`{"account_id":"00000000-0000-0000-0000-000000000001","security_id":"00000000-0000-0000-0000-000000000002","quantity":10,"purchase_price":15000}`)
 
 		if rec.Code != http.StatusUnauthorized {
 			t.Fatalf("expected 401, got %d", rec.Code)
@@ -209,12 +209,12 @@ func TestInvestmentHandler_AddInvestment(t *testing.T) {
 		var capturedFee int64
 		var capturedNotes string
 		svc := &mockInvestmentService{
-			addInvestmentFn: func(_ uint, accountID, securityID uint, quantity float64, _ int64, _ string, date *time.Time, fee int64, notes string) (*models.Investment, error) {
+			addInvestmentFn: func(_ string, accountID, securityID string, quantity float64, _ int64, _ string, date *time.Time, fee int64, notes string) (*models.Investment, error) {
 				capturedDate = date
 				capturedFee = fee
 				capturedNotes = notes
 				return &models.Investment{
-					Base:       models.Base{ID: 1},
+					Base:       models.Base{ID: "1"},
 					AccountID:  accountID,
 					SecurityID: securityID,
 					Quantity:   quantity,
@@ -225,7 +225,7 @@ func TestInvestmentHandler_AddInvestment(t *testing.T) {
 		r := setupInvestmentRouter(handler)
 
 		rec := doRequest(r, "POST", "/investments",
-			`{"account_id":1,"security_id":1,"quantity":10,"purchase_price":15000,"date":"2025-06-15T00:00:00Z","fee":999,"notes":"Backdated purchase"}`)
+			`{"account_id":"00000000-0000-0000-0000-000000000001","security_id":"00000000-0000-0000-0000-000000000002","quantity":10,"purchase_price":15000,"date":"2025-06-15T00:00:00Z","fee":999,"notes":"Backdated purchase"}`)
 
 		if rec.Code != http.StatusCreated {
 			t.Fatalf("expected 201, got %d: %s", rec.Code, rec.Body.String())
@@ -250,18 +250,18 @@ func TestInvestmentHandler_AddInvestment(t *testing.T) {
 		var capturedFee int64
 		var capturedNotes string
 		svc := &mockInvestmentService{
-			addInvestmentFn: func(_ uint, _, _ uint, _ float64, _ int64, _ string, date *time.Time, fee int64, notes string) (*models.Investment, error) {
+			addInvestmentFn: func(_ string, _, _ string, _ float64, _ int64, _ string, date *time.Time, fee int64, notes string) (*models.Investment, error) {
 				capturedDate = date
 				capturedFee = fee
 				capturedNotes = notes
-				return &models.Investment{Base: models.Base{ID: 1}}, nil
+				return &models.Investment{Base: models.Base{ID: "1"}}, nil
 			},
 		}
 		handler := NewInvestmentHandler(svc, &mockAuditService{})
 		r := setupInvestmentRouter(handler)
 
 		rec := doRequest(r, "POST", "/investments",
-			`{"account_id":1,"security_id":1,"quantity":10,"purchase_price":15000}`)
+			`{"account_id":"00000000-0000-0000-0000-000000000001","security_id":"00000000-0000-0000-0000-000000000002","quantity":10,"purchase_price":15000}`)
 
 		if rec.Code != http.StatusCreated {
 			t.Fatalf("expected 201, got %d: %s", rec.Code, rec.Body.String())
@@ -281,10 +281,10 @@ func TestInvestmentHandler_AddInvestment(t *testing.T) {
 func TestInvestmentHandler_GetInvestment(t *testing.T) {
 	t.Run("returns 200 on success", func(t *testing.T) {
 		svc := &mockInvestmentService{
-			getInvestmentByIDFn: func(_, investmentID uint) (*models.Investment, error) {
+			getInvestmentByIDFn: func(_, investmentID string) (*models.Investment, error) {
 				return &models.Investment{
 					Base:       models.Base{ID: investmentID},
-					SecurityID: 1,
+					SecurityID: "00000000-0000-0000-0000-000000000002",
 					Quantity:   10,
 				}, nil
 			},
@@ -292,28 +292,28 @@ func TestInvestmentHandler_GetInvestment(t *testing.T) {
 		handler := NewInvestmentHandler(svc, &mockAuditService{})
 		r := setupInvestmentRouter(handler)
 
-		rec := doRequest(r, "GET", "/investments/1", "")
+		rec := doRequest(r, "GET", "/investments/00000000-0000-0000-0000-000000000001", "")
 
 		if rec.Code != http.StatusOK {
 			t.Fatalf("expected 200, got %d", rec.Code)
 		}
 		result := parseJSON(t, rec)
 		inv := result["investment"].(map[string]interface{})
-		if inv["security_id"].(float64) != 1 {
-			t.Errorf("expected security_id=1, got %v", inv["security_id"])
+		if inv["security_id"] != "00000000-0000-0000-0000-000000000002" {
+			t.Errorf("expected security_id=00000000-0000-0000-0000-000000000002, got %v", inv["security_id"])
 		}
 	})
 
 	t.Run("returns 404 when not found", func(t *testing.T) {
 		svc := &mockInvestmentService{
-			getInvestmentByIDFn: func(_, _ uint) (*models.Investment, error) {
+			getInvestmentByIDFn: func(_, _ string) (*models.Investment, error) {
 				return nil, apperrors.ErrInvestmentNotFound
 			},
 		}
 		handler := NewInvestmentHandler(svc, &mockAuditService{})
 		r := setupInvestmentRouter(handler)
 
-		rec := doRequest(r, "GET", "/investments/999", "")
+		rec := doRequest(r, "GET", "/investments/00000000-0000-0000-0000-000000000999", "")
 
 		if rec.Code != http.StatusNotFound {
 			t.Fatalf("expected 404, got %d", rec.Code)
@@ -336,7 +336,7 @@ func TestInvestmentHandler_GetInvestment(t *testing.T) {
 func TestInvestmentHandler_GetPortfolio(t *testing.T) {
 	t.Run("returns 200 with portfolio summary", func(t *testing.T) {
 		svc := &mockInvestmentService{
-			getPortfolioFn: func(_ uint) (*services.PortfolioSummary, error) {
+			getPortfolioFn: func(_ string) (*services.PortfolioSummary, error) {
 				return &services.PortfolioSummary{
 					TotalValue:     500000,
 					TotalCostBasis: 400000,
@@ -383,9 +383,9 @@ func TestInvestmentHandler_GetPortfolio(t *testing.T) {
 func TestInvestmentHandler_RecordBuy(t *testing.T) {
 	t.Run("returns 201 on success", func(t *testing.T) {
 		svc := &mockInvestmentService{
-			recordBuyFn: func(_, investmentID uint, _ time.Time, qty float64, price int64, fee int64, notes string) (*models.InvestmentTransaction, error) {
+			recordBuyFn: func(_, investmentID string, _ time.Time, qty float64, price int64, fee int64, notes string) (*models.InvestmentTransaction, error) {
 				return &models.InvestmentTransaction{
-					Base:         models.Base{ID: 1},
+					Base:         models.Base{ID: "1"},
 					InvestmentID: investmentID,
 					Type:         models.InvestmentTransactionBuy,
 					Quantity:     qty,
@@ -398,7 +398,7 @@ func TestInvestmentHandler_RecordBuy(t *testing.T) {
 		handler := NewInvestmentHandler(svc, &mockAuditService{})
 		r := setupInvestmentRouter(handler)
 
-		rec := doRequest(r, "POST", "/investments/1/buy",
+		rec := doRequest(r, "POST", "/investments/00000000-0000-0000-0000-000000000001/buy",
 			`{"date":"2025-01-15T00:00:00Z","quantity":5,"price_per_unit":15000,"fee":999,"notes":"Buy more"}`)
 
 		if rec.Code != http.StatusCreated {
@@ -418,7 +418,7 @@ func TestInvestmentHandler_RecordBuy(t *testing.T) {
 		handler := NewInvestmentHandler(&mockInvestmentService{}, &mockAuditService{})
 		r := setupInvestmentRouter(handler)
 
-		rec := doRequest(r, "POST", "/investments/1/buy",
+		rec := doRequest(r, "POST", "/investments/00000000-0000-0000-0000-000000000001/buy",
 			`{"quantity":5,"price_per_unit":15000}`)
 
 		if rec.Code != http.StatusBadRequest {
@@ -430,7 +430,7 @@ func TestInvestmentHandler_RecordBuy(t *testing.T) {
 		handler := NewInvestmentHandler(&mockInvestmentService{}, &mockAuditService{})
 		r := setupInvestmentRouter(handler)
 
-		rec := doRequest(r, "POST", "/investments/1/buy",
+		rec := doRequest(r, "POST", "/investments/00000000-0000-0000-0000-000000000001/buy",
 			`{"date":"2025-01-15T00:00:00Z","quantity":0,"price_per_unit":15000}`)
 
 		if rec.Code != http.StatusBadRequest {
@@ -440,14 +440,14 @@ func TestInvestmentHandler_RecordBuy(t *testing.T) {
 
 	t.Run("returns 404 when investment not found", func(t *testing.T) {
 		svc := &mockInvestmentService{
-			recordBuyFn: func(_, _ uint, _ time.Time, _ float64, _ int64, _ int64, _ string) (*models.InvestmentTransaction, error) {
+			recordBuyFn: func(_, _ string, _ time.Time, _ float64, _ int64, _ int64, _ string) (*models.InvestmentTransaction, error) {
 				return nil, apperrors.ErrInvestmentNotFound
 			},
 		}
 		handler := NewInvestmentHandler(svc, &mockAuditService{})
 		r := setupInvestmentRouter(handler)
 
-		rec := doRequest(r, "POST", "/investments/999/buy",
+		rec := doRequest(r, "POST", "/investments/00000000-0000-0000-0000-000000000999/buy",
 			`{"date":"2025-01-15T00:00:00Z","quantity":5,"price_per_unit":15000}`)
 
 		if rec.Code != http.StatusNotFound {
@@ -459,9 +459,9 @@ func TestInvestmentHandler_RecordBuy(t *testing.T) {
 func TestInvestmentHandler_RecordSell(t *testing.T) {
 	t.Run("returns 201 on success", func(t *testing.T) {
 		svc := &mockInvestmentService{
-			recordSellFn: func(_, investmentID uint, _ time.Time, qty float64, price int64, _ int64, _ string) (*models.InvestmentTransaction, error) {
+			recordSellFn: func(_, investmentID string, _ time.Time, qty float64, price int64, _ int64, _ string) (*models.InvestmentTransaction, error) {
 				return &models.InvestmentTransaction{
-					Base:         models.Base{ID: 2},
+					Base:         models.Base{ID: "2"},
 					InvestmentID: investmentID,
 					Type:         models.InvestmentTransactionSell,
 					Quantity:     qty,
@@ -472,7 +472,7 @@ func TestInvestmentHandler_RecordSell(t *testing.T) {
 		handler := NewInvestmentHandler(svc, &mockAuditService{})
 		r := setupInvestmentRouter(handler)
 
-		rec := doRequest(r, "POST", "/investments/1/sell",
+		rec := doRequest(r, "POST", "/investments/00000000-0000-0000-0000-000000000001/sell",
 			`{"date":"2025-02-01T00:00:00Z","quantity":3,"price_per_unit":17500}`)
 
 		if rec.Code != http.StatusCreated {
@@ -487,14 +487,14 @@ func TestInvestmentHandler_RecordSell(t *testing.T) {
 
 	t.Run("returns 400 on insufficient shares", func(t *testing.T) {
 		svc := &mockInvestmentService{
-			recordSellFn: func(_, _ uint, _ time.Time, _ float64, _ int64, _ int64, _ string) (*models.InvestmentTransaction, error) {
+			recordSellFn: func(_, _ string, _ time.Time, _ float64, _ int64, _ int64, _ string) (*models.InvestmentTransaction, error) {
 				return nil, apperrors.ErrInsufficientShares
 			},
 		}
 		handler := NewInvestmentHandler(svc, &mockAuditService{})
 		r := setupInvestmentRouter(handler)
 
-		rec := doRequest(r, "POST", "/investments/1/sell",
+		rec := doRequest(r, "POST", "/investments/00000000-0000-0000-0000-000000000001/sell",
 			`{"date":"2025-02-01T00:00:00Z","quantity":100,"price_per_unit":17500}`)
 
 		if rec.Code != http.StatusBadRequest {
@@ -507,9 +507,9 @@ func TestInvestmentHandler_RecordSell(t *testing.T) {
 func TestInvestmentHandler_RecordDividend(t *testing.T) {
 	t.Run("returns 201 on success", func(t *testing.T) {
 		svc := &mockInvestmentService{
-			recordDividendFn: func(_, investmentID uint, _ time.Time, amount int64, divType, _ string) (*models.InvestmentTransaction, error) {
+			recordDividendFn: func(_, investmentID string, _ time.Time, amount int64, divType, _ string) (*models.InvestmentTransaction, error) {
 				return &models.InvestmentTransaction{
-					Base:         models.Base{ID: 3},
+					Base:         models.Base{ID: "3"},
 					InvestmentID: investmentID,
 					Type:         models.InvestmentTransactionDividend,
 					TotalAmount:  amount,
@@ -520,7 +520,7 @@ func TestInvestmentHandler_RecordDividend(t *testing.T) {
 		handler := NewInvestmentHandler(svc, &mockAuditService{})
 		r := setupInvestmentRouter(handler)
 
-		rec := doRequest(r, "POST", "/investments/1/dividend",
+		rec := doRequest(r, "POST", "/investments/00000000-0000-0000-0000-000000000001/dividend",
 			`{"date":"2025-03-15T00:00:00Z","amount":500,"dividend_type":"Cash"}`)
 
 		if rec.Code != http.StatusCreated {
@@ -540,7 +540,7 @@ func TestInvestmentHandler_RecordDividend(t *testing.T) {
 		handler := NewInvestmentHandler(&mockInvestmentService{}, &mockAuditService{})
 		r := setupInvestmentRouter(handler)
 
-		rec := doRequest(r, "POST", "/investments/1/dividend",
+		rec := doRequest(r, "POST", "/investments/00000000-0000-0000-0000-000000000001/dividend",
 			`{"date":"2025-03-15T00:00:00Z","amount":0}`)
 
 		if rec.Code != http.StatusBadRequest {
@@ -550,14 +550,14 @@ func TestInvestmentHandler_RecordDividend(t *testing.T) {
 
 	t.Run("returns 404 when not found", func(t *testing.T) {
 		svc := &mockInvestmentService{
-			recordDividendFn: func(_, _ uint, _ time.Time, _ int64, _, _ string) (*models.InvestmentTransaction, error) {
+			recordDividendFn: func(_, _ string, _ time.Time, _ int64, _, _ string) (*models.InvestmentTransaction, error) {
 				return nil, apperrors.ErrInvestmentNotFound
 			},
 		}
 		handler := NewInvestmentHandler(svc, &mockAuditService{})
 		r := setupInvestmentRouter(handler)
 
-		rec := doRequest(r, "POST", "/investments/999/dividend",
+		rec := doRequest(r, "POST", "/investments/00000000-0000-0000-0000-000000000999/dividend",
 			`{"date":"2025-03-15T00:00:00Z","amount":500}`)
 
 		if rec.Code != http.StatusNotFound {
@@ -569,9 +569,9 @@ func TestInvestmentHandler_RecordDividend(t *testing.T) {
 func TestInvestmentHandler_RecordSplit(t *testing.T) {
 	t.Run("returns 201 on success", func(t *testing.T) {
 		svc := &mockInvestmentService{
-			recordSplitFn: func(_, investmentID uint, _ time.Time, ratio float64, _ string) (*models.InvestmentTransaction, error) {
+			recordSplitFn: func(_, investmentID string, _ time.Time, ratio float64, _ string) (*models.InvestmentTransaction, error) {
 				return &models.InvestmentTransaction{
-					Base:         models.Base{ID: 4},
+					Base:         models.Base{ID: "4"},
 					InvestmentID: investmentID,
 					Type:         models.InvestmentTransactionSplit,
 					SplitRatio:   ratio,
@@ -581,7 +581,7 @@ func TestInvestmentHandler_RecordSplit(t *testing.T) {
 		handler := NewInvestmentHandler(svc, &mockAuditService{})
 		r := setupInvestmentRouter(handler)
 
-		rec := doRequest(r, "POST", "/investments/1/split",
+		rec := doRequest(r, "POST", "/investments/00000000-0000-0000-0000-000000000001/split",
 			`{"date":"2025-06-01T00:00:00Z","split_ratio":2.0,"notes":"2:1 split"}`)
 
 		if rec.Code != http.StatusCreated {
@@ -601,7 +601,7 @@ func TestInvestmentHandler_RecordSplit(t *testing.T) {
 		handler := NewInvestmentHandler(&mockInvestmentService{}, &mockAuditService{})
 		r := setupInvestmentRouter(handler)
 
-		rec := doRequest(r, "POST", "/investments/1/split",
+		rec := doRequest(r, "POST", "/investments/00000000-0000-0000-0000-000000000001/split",
 			`{"date":"2025-06-01T00:00:00Z","split_ratio":0}`)
 
 		if rec.Code != http.StatusBadRequest {
@@ -611,14 +611,14 @@ func TestInvestmentHandler_RecordSplit(t *testing.T) {
 
 	t.Run("returns 404 when not found", func(t *testing.T) {
 		svc := &mockInvestmentService{
-			recordSplitFn: func(_, _ uint, _ time.Time, _ float64, _ string) (*models.InvestmentTransaction, error) {
+			recordSplitFn: func(_, _ string, _ time.Time, _ float64, _ string) (*models.InvestmentTransaction, error) {
 				return nil, apperrors.ErrInvestmentNotFound
 			},
 		}
 		handler := NewInvestmentHandler(svc, &mockAuditService{})
 		r := setupInvestmentRouter(handler)
 
-		rec := doRequest(r, "POST", "/investments/999/split",
+		rec := doRequest(r, "POST", "/investments/00000000-0000-0000-0000-000000000999/split",
 			`{"date":"2025-06-01T00:00:00Z","split_ratio":2.0}`)
 
 		if rec.Code != http.StatusNotFound {
@@ -630,10 +630,10 @@ func TestInvestmentHandler_RecordSplit(t *testing.T) {
 func TestInvestmentHandler_GetAccountInvestments(t *testing.T) {
 	t.Run("returns 200 with paginated investments", func(t *testing.T) {
 		svc := &mockInvestmentService{
-			getAccountInvestmentsFn: func(_, _ uint, _ pagination.PageRequest) (*pagination.PageResponse[models.Investment], error) {
+			getAccountInvestmentsFn: func(_, _ string, _ pagination.PageRequest) (*pagination.PageResponse[models.Investment], error) {
 				resp := pagination.NewPageResponse([]models.Investment{
-					{Base: models.Base{ID: 1}, SecurityID: 1},
-					{Base: models.Base{ID: 2}, SecurityID: 2},
+					{Base: models.Base{ID: "1"}, SecurityID: "1"},
+					{Base: models.Base{ID: "2"}, SecurityID: "2"},
 				}, 1, 20, 2)
 				return &resp, nil
 			},
@@ -641,7 +641,7 @@ func TestInvestmentHandler_GetAccountInvestments(t *testing.T) {
 		handler := NewInvestmentHandler(svc, &mockAuditService{})
 		r := setupInvestmentRouter(handler)
 
-		rec := doRequest(r, "GET", "/accounts/1/investments", "")
+		rec := doRequest(r, "GET", "/accounts/00000000-0000-0000-0000-000000000001/investments", "")
 
 		if rec.Code != http.StatusOK {
 			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
@@ -658,14 +658,14 @@ func TestInvestmentHandler_GetAccountInvestments(t *testing.T) {
 
 	t.Run("returns 404 on invalid account", func(t *testing.T) {
 		svc := &mockInvestmentService{
-			getAccountInvestmentsFn: func(_, _ uint, _ pagination.PageRequest) (*pagination.PageResponse[models.Investment], error) {
+			getAccountInvestmentsFn: func(_, _ string, _ pagination.PageRequest) (*pagination.PageResponse[models.Investment], error) {
 				return nil, apperrors.ErrAccountNotFound
 			},
 		}
 		handler := NewInvestmentHandler(svc, &mockAuditService{})
 		r := setupInvestmentRouter(handler)
 
-		rec := doRequest(r, "GET", "/accounts/999/investments", "")
+		rec := doRequest(r, "GET", "/accounts/00000000-0000-0000-0000-000000000999/investments", "")
 
 		if rec.Code != http.StatusNotFound {
 			t.Fatalf("expected 404, got %d", rec.Code)
@@ -677,10 +677,10 @@ func TestInvestmentHandler_GetAccountInvestments(t *testing.T) {
 func TestInvestmentHandler_GetAllInvestments(t *testing.T) {
 	t.Run("returns_200_with_investments", func(t *testing.T) {
 		svc := &mockInvestmentService{
-			getAllInvestmentsFn: func(_ uint, _ pagination.PageRequest) (*pagination.PageResponse[models.Investment], error) {
+			getAllInvestmentsFn: func(_ string, _ pagination.PageRequest) (*pagination.PageResponse[models.Investment], error) {
 				resp := pagination.NewPageResponse([]models.Investment{
-					{Base: models.Base{ID: 1}, SecurityID: 1, Quantity: 10},
-					{Base: models.Base{ID: 2}, SecurityID: 2, Quantity: 5},
+					{Base: models.Base{ID: "1"}, SecurityID: "1", Quantity: 10},
+					{Base: models.Base{ID: "2"}, SecurityID: "2", Quantity: 5},
 				}, 1, 20, 2)
 				return &resp, nil
 			},
@@ -705,7 +705,7 @@ func TestInvestmentHandler_GetAllInvestments(t *testing.T) {
 
 	t.Run("returns_200_empty_list", func(t *testing.T) {
 		svc := &mockInvestmentService{
-			getAllInvestmentsFn: func(_ uint, _ pagination.PageRequest) (*pagination.PageResponse[models.Investment], error) {
+			getAllInvestmentsFn: func(_ string, _ pagination.PageRequest) (*pagination.PageResponse[models.Investment], error) {
 				resp := pagination.NewPageResponse([]models.Investment{}, 1, 20, 0)
 				return &resp, nil
 			},
@@ -727,7 +727,7 @@ func TestInvestmentHandler_GetAllInvestments(t *testing.T) {
 
 	t.Run("returns_500_on_service_error", func(t *testing.T) {
 		svc := &mockInvestmentService{
-			getAllInvestmentsFn: func(_ uint, _ pagination.PageRequest) (*pagination.PageResponse[models.Investment], error) {
+			getAllInvestmentsFn: func(_ string, _ pagination.PageRequest) (*pagination.PageResponse[models.Investment], error) {
 				return nil, apperrors.ErrInternalServer
 			},
 		}
@@ -745,10 +745,10 @@ func TestInvestmentHandler_GetAllInvestments(t *testing.T) {
 func TestInvestmentHandler_GetInvestmentTransactions(t *testing.T) {
 	t.Run("returns 200 with paginated transactions", func(t *testing.T) {
 		svc := &mockInvestmentService{
-			getInvestmentTransactionsFn: func(_, _ uint, _ pagination.PageRequest) (*pagination.PageResponse[models.InvestmentTransaction], error) {
+			getInvestmentTransactionsFn: func(_, _ string, _ pagination.PageRequest) (*pagination.PageResponse[models.InvestmentTransaction], error) {
 				resp := pagination.NewPageResponse([]models.InvestmentTransaction{
-					{Base: models.Base{ID: 1}, Type: models.InvestmentTransactionBuy},
-					{Base: models.Base{ID: 2}, Type: models.InvestmentTransactionDividend},
+					{Base: models.Base{ID: "1"}, Type: models.InvestmentTransactionBuy},
+					{Base: models.Base{ID: "2"}, Type: models.InvestmentTransactionDividend},
 				}, 1, 20, 2)
 				return &resp, nil
 			},
@@ -756,7 +756,7 @@ func TestInvestmentHandler_GetInvestmentTransactions(t *testing.T) {
 		handler := NewInvestmentHandler(svc, &mockAuditService{})
 		r := setupInvestmentRouter(handler)
 
-		rec := doRequest(r, "GET", "/investments/1/transactions", "")
+		rec := doRequest(r, "GET", "/investments/00000000-0000-0000-0000-000000000001/transactions", "")
 
 		if rec.Code != http.StatusOK {
 			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
@@ -770,14 +770,14 @@ func TestInvestmentHandler_GetInvestmentTransactions(t *testing.T) {
 
 	t.Run("returns 404 when not found", func(t *testing.T) {
 		svc := &mockInvestmentService{
-			getInvestmentTransactionsFn: func(_, _ uint, _ pagination.PageRequest) (*pagination.PageResponse[models.InvestmentTransaction], error) {
+			getInvestmentTransactionsFn: func(_, _ string, _ pagination.PageRequest) (*pagination.PageResponse[models.InvestmentTransaction], error) {
 				return nil, apperrors.ErrInvestmentNotFound
 			},
 		}
 		handler := NewInvestmentHandler(svc, &mockAuditService{})
 		r := setupInvestmentRouter(handler)
 
-		rec := doRequest(r, "GET", "/investments/999/transactions", "")
+		rec := doRequest(r, "GET", "/investments/00000000-0000-0000-0000-000000000999/transactions", "")
 
 		if rec.Code != http.StatusNotFound {
 			t.Fatalf("expected 404, got %d", rec.Code)

@@ -22,7 +22,7 @@ func NewAccountService(db *gorm.DB) AccountServicer {
 }
 
 // CreateCashAccount creates a new cash account for a user
-func (s *accountService) CreateCashAccount(userID string, name, description, currency string, initialBalance int64) (*models.Account, error) {
+func (s *accountService) CreateCashAccount(userID, name, description, currency string, initialBalance int64) (*models.Account, error) {
 	// Validate input
 	if name == "" {
 		return nil, apperrors.WithMessage(apperrors.ErrInvalidInput, "account name is required")
@@ -72,7 +72,7 @@ func (s *accountService) CreateCashAccount(userID string, name, description, cur
 }
 
 // CreateInvestmentAccount creates a new investment account for a user.
-func (s *accountService) CreateInvestmentAccount(userID string, name, description, currency, broker, accountNumber string) (*models.Account, error) {
+func (s *accountService) CreateInvestmentAccount(userID, name, description, currency, broker, accountNumber string) (*models.Account, error) {
 	if name == "" {
 		return nil, apperrors.WithMessage(apperrors.ErrInvalidInput, "account name is required")
 	}
@@ -100,7 +100,7 @@ func (s *accountService) CreateInvestmentAccount(userID string, name, descriptio
 }
 
 // CreateCreditCardAccount creates a new credit card account for a user.
-func (s *accountService) CreateCreditCardAccount(userID string, name, description, currency string, creditLimit int64, interestRate float64, dueDate *time.Time) (*models.Account, error) {
+func (s *accountService) CreateCreditCardAccount(userID, name, description, currency string, creditLimit int64, interestRate float64, dueDate *time.Time) (*models.Account, error) {
 	if name == "" {
 		return nil, apperrors.WithMessage(apperrors.ErrInvalidInput, "account name is required")
 	}

@@ -25,7 +25,7 @@ func NewBudgetHandler(budgetService services.BudgetServicer, auditService servic
 
 // CreateBudgetRequest represents the request payload for creating a budget.
 type CreateBudgetRequest struct {
-	CategoryID string                `json:"category_id" binding:"required"`
+	CategoryID string              `json:"category_id" binding:"required"`
 	Name       string              `json:"name" binding:"required,min=1,max=100"`
 	Amount     int64               `json:"amount" binding:"required,gt=0"`
 	Period     models.BudgetPeriod `json:"period" binding:"required,budget_period"`

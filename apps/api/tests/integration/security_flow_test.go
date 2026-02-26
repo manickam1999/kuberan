@@ -21,7 +21,7 @@ func TestSecurityFlow_FullLifecycle(t *testing.T) {
 	}
 	secResult := parseJSON(t, rec)
 	security := secResult["security"].(map[string]interface{})
-	securityID := security["id"].(float64)
+	securityID := security["id"].(string)
 
 	if security["symbol"] != "AAPL" {
 		t.Errorf("expected symbol AAPL, got %v", security["symbol"])
@@ -55,7 +55,7 @@ func TestSecurityFlow_FullLifecycle(t *testing.T) {
 	}
 
 	// Step 3: Get security by ID — verify fields
-	rec = app.request("GET", fmt.Sprintf("/api/v1/securities/%.0f", securityID), "", token)
+	rec = app.request("GET", fmt.Sprintf("/api/v1/securities/%s", securityID), "", token)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200 getting security, got %d: %s", rec.Code, rec.Body.String())
 	}
@@ -74,9 +74,9 @@ func TestSecurityFlow_FullLifecycle(t *testing.T) {
 	t3 := now.Format(time.RFC3339)
 
 	pricesBody := fmt.Sprintf(`{"prices":[
-		{"security_id":%.0f,"price":17500,"recorded_at":%q},
-		{"security_id":%.0f,"price":17600,"recorded_at":%q},
-		{"security_id":%.0f,"price":17700,"recorded_at":%q}
+		{"security_id":%q,"price":17500,"recorded_at":%q},
+		{"security_id":%q,"price":17600,"recorded_at":%q},
+		{"security_id":%q,"price":17700,"recorded_at":%q}
 	]}`, securityID, t1, securityID, t2, securityID, t3)
 
 	rec = app.pipelineRequest("POST", "/api/v1/pipeline/securities/prices", pricesBody)
@@ -93,7 +93,7 @@ func TestSecurityFlow_FullLifecycle(t *testing.T) {
 	toDate := now.Add(1 * time.Hour).Format(time.RFC3339)
 
 	rec = app.request("GET",
-		fmt.Sprintf("/api/v1/securities/%.0f/prices?from_date=%s&to_date=%s", securityID, fromDate, toDate),
+		fmt.Sprintf("/api/v1/securities/%s/prices?from_date=%s&to_date=%s", securityID, fromDate, toDate),
 		"", token)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200 getting price history, got %d: %s", rec.Code, rec.Body.String())
@@ -130,14 +130,14 @@ func TestSecurityFlow_ProviderSymbolRoundTrip(t *testing.T) {
 	}
 	secResult := parseJSON(t, rec)
 	security := secResult["security"].(map[string]interface{})
-	securityID := security["id"].(float64)
+	securityID := security["id"].(string)
 
 	if security["provider_symbol"] != "1023.KL" {
 		t.Errorf("expected provider_symbol 1023.KL in create response, got %v", security["provider_symbol"])
 	}
 
 	// Get security by ID — verify provider_symbol round-trips
-	rec = app.request("GET", fmt.Sprintf("/api/v1/securities/%.0f", securityID), "", token)
+	rec = app.request("GET", fmt.Sprintf("/api/v1/securities/%s", securityID), "", token)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
 	}

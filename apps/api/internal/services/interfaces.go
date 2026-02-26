@@ -16,8 +16,28 @@ type UserServicer interface {
 	GetUserByID(id string) (*models.User, error)
 	VerifyPassword(user *models.User, password string) bool
 	AttemptLogin(email, password string) (*models.User, error)
-	StoreRefreshTokenHash(userID string, tokenHash string) error
+	StoreRefreshTokenHash(userID, tokenHash string) error
 	GetRefreshTokenHash(userID string) (string, error)
+}
+
+// TelegramUserAuth holds the resolved user info and auth token for bot service communication.
+type TelegramUserAuth struct {
+	UserID          string `json:"user_id"`
+	Email           string `json:"email"`
+	AuthToken       string `json:"auth_token"`
+	DefaultCurrency string `json:"default_currency"`
+}
+
+// TelegramServicer defines the contract for Telegram-related business logic.
+type TelegramServicer interface {
+	GetLinkByUserID(userID string) (*models.TelegramLink, error)
+	GetLinkByTelegramID(telegramUserID int64) (*models.TelegramLink, error)
+	GenerateLinkCode(userID string) (*models.TelegramLink, error)
+	CompleteLink(linkCode string, telegramUserID int64, username, firstName, defaultCurrency string) error
+	UnlinkAccount(userID string) error
+	RecordActivity(telegramUserID int64) error
+	IsLinked(userID string) (bool, error)
+	GetUserWithAuthToken(telegramUserID int64) (*TelegramUserAuth, error)
 }
 
 // AccountUpdateFields holds optional fields for updating an account.
@@ -35,9 +55,9 @@ type AccountUpdateFields struct {
 
 // AccountServicer defines the contract for account-related business logic.
 type AccountServicer interface {
-	CreateCashAccount(userID string, name, description, currency string, initialBalance int64) (*models.Account, error)
-	CreateInvestmentAccount(userID string, name, description, currency, broker, accountNumber string) (*models.Account, error)
-	CreateCreditCardAccount(userID string, name, description, currency string, creditLimit int64, interestRate float64, dueDate *time.Time) (*models.Account, error)
+	CreateCashAccount(userID, name, description, currency string, initialBalance int64) (*models.Account, error)
+	CreateInvestmentAccount(userID, name, description, currency, broker, accountNumber string) (*models.Account, error)
+	CreateCreditCardAccount(userID, name, description, currency string, creditLimit int64, interestRate float64, dueDate *time.Time) (*models.Account, error)
 	GetUserAccounts(userID string, page pagination.PageRequest) (*pagination.PageResponse[models.Account], error)
 	GetAccountByID(userID, accountID string) (*models.Account, error)
 	UpdateAccount(userID, accountID string, updates AccountUpdateFields) (*models.Account, error)
@@ -195,5 +215,5 @@ type PortfolioSnapshotServicer interface {
 
 // AuditServicer defines the contract for audit logging.
 type AuditServicer interface {
-	Log(userID string, action, resourceType string, resourceID string, ipAddress string, changes map[string]interface{})
+	Log(userID, action, resourceType, resourceID, ipAddress string, changes map[string]interface{})
 }

@@ -10,6 +10,7 @@ import {
   PieChart,
   Database,
   TrendingUp,
+  Settings,
 } from "lucide-react";
 import {
   Sidebar,
@@ -33,6 +34,7 @@ const navItems = [
   { title: "Budgets", href: "/budgets", icon: PieChart },
   { title: "Securities", href: "/securities", icon: Database },
   { title: "Investments", href: "/investments", icon: TrendingUp },
+  { title: "Settings", href: "/settings", icon: Settings },
 ];
 
 export function AppSidebar() {

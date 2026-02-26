@@ -38,7 +38,7 @@ type CreateTransactionRequest struct {
 type TransactionResponse struct {
 	ID          uint                   `json:"id"`
 	UserID      uint                   `json:"user_id"`
-	AccountID   *string                 `json:"account_id"`
+	AccountID   *string                `json:"account_id"`
 	CategoryID  string                 `json:"category_id,omitempty"`
 	Type        models.TransactionType `json:"type"`
 	Amount      int64                  `json:"amount"`

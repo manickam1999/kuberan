@@ -20,8 +20,8 @@ func TestCreateBudget(t *testing.T) {
 		budget, err := svc.CreateBudget(user.ID, cat.ID, "Groceries", 50000, models.BudgetPeriodMonthly, time.Now(), nil)
 		testutil.AssertNoError(t, err)
 
-		if budget.ID == 0 {
-			t.Fatal("expected non-zero budget ID")
+		if budget.ID == "" {
+			t.Fatal("expected non-empty budget ID")
 		}
 		if budget.Name != "Groceries" {
 			t.Errorf("expected name Groceries, got %s", budget.Name)
@@ -59,7 +59,7 @@ func TestCreateBudget(t *testing.T) {
 		svc := NewBudgetService(db)
 		user := testutil.CreateTestUser(t, db)
 
-		_, err := svc.CreateBudget(user.ID, 9999, "Bad", 50000, models.BudgetPeriodMonthly, time.Now(), nil)
+		_, err := svc.CreateBudget(user.ID, "9999", "Bad", 50000, models.BudgetPeriodMonthly, time.Now(), nil)
 		testutil.AssertAppError(t, err, "CATEGORY_NOT_FOUND")
 	})
 
@@ -198,7 +198,7 @@ func TestGetBudgetByID(t *testing.T) {
 		testutil.AssertNoError(t, err)
 
 		if found.ID != budget.ID {
-			t.Errorf("expected budget ID %d, got %d", budget.ID, found.ID)
+			t.Errorf("expected budget ID %s, got %s", budget.ID, found.ID)
 		}
 	})
 
@@ -208,7 +208,7 @@ func TestGetBudgetByID(t *testing.T) {
 		svc := NewBudgetService(db)
 		user := testutil.CreateTestUser(t, db)
 
-		_, err := svc.GetBudgetByID(user.ID, 9999)
+		_, err := svc.GetBudgetByID(user.ID, "9999")
 		testutil.AssertAppError(t, err, "BUDGET_NOT_FOUND")
 	})
 
@@ -288,7 +288,7 @@ func TestUpdateBudget(t *testing.T) {
 		svc := NewBudgetService(db)
 		user := testutil.CreateTestUser(t, db)
 
-		_, err := svc.UpdateBudget(user.ID, 9999, "Nope", nil, nil, nil)
+		_, err := svc.UpdateBudget(user.ID, "9999", "Nope", nil, nil, nil)
 		testutil.AssertAppError(t, err, "BUDGET_NOT_FOUND")
 	})
 }
@@ -323,7 +323,7 @@ func TestDeleteBudget(t *testing.T) {
 		svc := NewBudgetService(db)
 		user := testutil.CreateTestUser(t, db)
 
-		err := svc.DeleteBudget(user.ID, 9999)
+		err := svc.DeleteBudget(user.ID, "9999")
 		testutil.AssertAppError(t, err, "BUDGET_NOT_FOUND")
 	})
 
@@ -354,7 +354,7 @@ func TestGetBudgetProgress(t *testing.T) {
 		testutil.AssertNoError(t, err)
 
 		if progress.BudgetID != budget.ID {
-			t.Errorf("expected budget ID %d, got %d", budget.ID, progress.BudgetID)
+			t.Errorf("expected budget ID %s, got %s", budget.ID, progress.BudgetID)
 		}
 		if progress.Budgeted != 10000 {
 			t.Errorf("expected budgeted 10000, got %d", progress.Budgeted)
@@ -523,7 +523,7 @@ func TestGetBudgetProgress(t *testing.T) {
 		svc := NewBudgetService(db)
 		user := testutil.CreateTestUser(t, db)
 
-		_, err := svc.GetBudgetProgress(user.ID, 9999)
+		_, err := svc.GetBudgetProgress(user.ID, "9999")
 		testutil.AssertAppError(t, err, "BUDGET_NOT_FOUND")
 	})
 

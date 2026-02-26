@@ -25,3 +25,22 @@ func PipelineAuthMiddleware(apiKey string) gin.HandlerFunc {
 		c.Next()
 	}
 }
+
+// InternalAuthMiddleware creates a Gin middleware that validates the X-Internal-Secret
+// header against the configured internal secret (for bot service communication).
+func InternalAuthMiddleware(secret string) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if secret == "" {
+			c.AbortWithStatusJSON(http.StatusServiceUnavailable,
+				gin.H{"error": gin.H{"code": "INTERNAL_AUTH_NOT_CONFIGURED", "message": "Internal authentication is not configured"}})
+			return
+		}
+		providedSecret := c.GetHeader("X-Internal-Secret")
+		if subtle.ConstantTimeCompare([]byte(providedSecret), []byte(secret)) != 1 {
+			c.AbortWithStatusJSON(http.StatusUnauthorized,
+				gin.H{"error": gin.H{"code": "INVALID_INTERNAL_SECRET", "message": "Invalid or missing internal secret"}})
+			return
+		}
+		c.Next()
+	}
+}
