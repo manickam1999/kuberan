@@ -58,7 +58,7 @@
   {
     "id": "3.1",
     "category": "test-infra",
-    "passes": false,
+    "passes": true,
     "description": "Add TelegramLink to test DB allModels list",
     "steps": [
       "Open apps/api/internal/testutil/database.go",
@@ -68,7 +68,7 @@
   {
     "id": "3.2",
     "category": "test-infra",
-    "passes": false,
+    "passes": true,
     "description": "Add CreateTestTelegramLink fixture helper",
     "steps": [
       "Open apps/api/internal/testutil/fixtures.go",
@@ -79,7 +79,7 @@
   {
     "id": "3.3",
     "category": "service-tests",
-    "passes": false,
+    "passes": true,
     "description": "Write telegram_service_test.go with tests for all service methods",
     "steps": [
       "Create apps/api/internal/services/telegram_service_test.go",
