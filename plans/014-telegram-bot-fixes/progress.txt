@@ -63,3 +63,14 @@
 - Note: Created own helpers instead of reusing existing ones due to UUID migration mismatch (existing tests use uint, new tests use string)
 - Files: apps/api/internal/handlers/telegram_handler_test.go
 - Verification: go test -run TestTelegramHandler - all 6 test groups with 15 subtests PASS
+
+## Task 3.5 - Add TestInternalAuthMiddleware (COMPLETE)
+- PRD ref: 3.5
+- Added TestInternalAuthMiddleware to apps/api/internal/middleware/pipeline_auth_test.go
+- Helper functions: setupInternalRouter(secret), doInternalRequest(r, secret)
+- Table-driven test cases (6 total): valid_secret, invalid_secret, missing_secret, empty_configured_secret, both_empty, partial_match_rejected
+- Followed exact pattern of existing TestPipelineAuthMiddleware
+- Verifies error codes: INVALID_INTERNAL_SECRET (401), INTERNAL_AUTH_NOT_CONFIGURED (503)
+- Uses X-Internal-Secret header (not X-API-Key)
+- Files: apps/api/internal/middleware/pipeline_auth_test.go
+- Verification: go test ./internal/middleware/ - all tests PASS (12 subtests across 2 test groups)

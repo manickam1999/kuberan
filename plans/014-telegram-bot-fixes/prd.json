@@ -117,7 +117,7 @@
   {
     "id": "3.5",
     "category": "middleware-tests",
-    "passes": false,
+    "passes": true,
     "description": "Add TestInternalAuthMiddleware to pipeline_auth_test.go",
     "steps": [
       "Open apps/api/internal/middleware/pipeline_auth_test.go",
