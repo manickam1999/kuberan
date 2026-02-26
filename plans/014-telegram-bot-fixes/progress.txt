@@ -1,0 +1,16 @@
+## Task 1.1 - Migration Indexes (COMPLETE)
+- Changed idx_telegram_links_user_id from regular INDEX to UNIQUE INDEX
+- Changed idx_telegram_links_telegram_user_id to partial UNIQUE INDEX with WHERE telegram_user_id != 0
+- Rationale: user_id is always set (FK, NOT NULL), so plain unique index enforces one link per user. telegram_user_id defaults to 0 for pending links (before CompleteLink), so partial index excludes 0 to allow multiple pending rows while enforcing uniqueness for linked accounts
+- Files: apps/api/migrations/000018_create_telegram_links.up.sql
+- Verification: go build ./... passed
+
+## Task 2.1-2.4 - Typed Return Struct for GetUserWithAuthToken (COMPLETE)
+- PRD refs: 2.1, 2.2, 2.3, 2.4
+- Added TelegramUserAuth struct in interfaces.go with UserID, Email, AuthToken, DefaultCurrency fields
+- Updated TelegramServicer interface signature: GetUserWithAuthToken returns *TelegramUserAuth instead of map[string]interface{}
+- Updated telegram_service.go implementation to return &TelegramUserAuth{...}
+- Handler compatibility verified: ResolveUser already uses c.JSON(http.StatusOK, userData), struct has matching json tags → serializes identically
+- Rationale: Consistent with all other service methods (typed structs), eliminates type safety gap
+- Files: apps/api/internal/services/interfaces.go, apps/api/internal/services/telegram_service.go
+- Verification: go build ./... passed
