@@ -34,6 +34,7 @@ const ASSET_TYPE_LABELS: Record<AssetType, string> = {
   bond: "Bond",
   crypto: "Crypto",
   reit: "REIT",
+  commodity: "Commodity",
 };
 
 type PricePeriod = "1M" | "3M" | "6M" | "1Y";

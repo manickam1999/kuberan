@@ -6,11 +6,12 @@ import "time"
 type AssetType string
 
 const (
-	AssetTypeStock  AssetType = "stock"
-	AssetTypeETF    AssetType = "etf"
-	AssetTypeBond   AssetType = "bond"
-	AssetTypeCrypto AssetType = "crypto"
-	AssetTypeREIT   AssetType = "reit"
+	AssetTypeStock     AssetType = "stock"
+	AssetTypeETF       AssetType = "etf"
+	AssetTypeBond      AssetType = "bond"
+	AssetTypeCrypto    AssetType = "crypto"
+	AssetTypeREIT      AssetType = "reit"
+	AssetTypeCommodity AssetType = "commodity"
 )
 
 // Security represents a normalized financial instrument (stock, ETF, bond, etc.).

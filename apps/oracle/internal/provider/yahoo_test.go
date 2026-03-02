@@ -70,14 +70,14 @@ func newV8MockServerWithCurrency(priceMap map[string]float64, currency string) *
 func TestYahooProvider_Supports(t *testing.T) {
 	p := NewYahooProvider(http.DefaultClient)
 
-	supported := []string{"stock", "etf", "bond", "reit"}
+	supported := []string{"stock", "etf", "bond", "reit", "commodity"}
 	for _, at := range supported {
 		if !p.Supports(at) {
 			t.Errorf("expected Supports(%q) = true", at)
 		}
 	}
 
-	unsupported := []string{"crypto", "commodity", ""}
+	unsupported := []string{"crypto", ""}
 	for _, at := range unsupported {
 		if p.Supports(at) {
 			t.Errorf("expected Supports(%q) = false", at)

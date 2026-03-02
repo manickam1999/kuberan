@@ -94,7 +94,7 @@ export interface BudgetProgress {
 }
 
 // Asset types
-export type AssetType = "stock" | "etf" | "bond" | "crypto" | "reit";
+export type AssetType = "stock" | "etf" | "bond" | "crypto" | "reit" | "commodity";
 
 // Security — shared entity for financial instruments
 export interface Security extends BaseModel {

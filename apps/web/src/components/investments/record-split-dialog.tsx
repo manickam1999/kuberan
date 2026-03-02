@@ -95,7 +95,7 @@ export function RecordSplitDialog({
         <DialogHeader>
           <DialogTitle>Record Split</DialogTitle>
           <DialogDescription>
-            Record a stock split. A 2:1 split means each share becomes 2 shares.
+            Record a split. A 2:1 split means each unit becomes 2 units.
           </DialogDescription>
         </DialogHeader>
 

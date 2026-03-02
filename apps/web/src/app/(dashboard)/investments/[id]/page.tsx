@@ -51,6 +51,7 @@ const ASSET_TYPE_LABELS: Record<AssetType, string> = {
   bond: "Bond",
   crypto: "Crypto",
   reit: "REIT",
+  commodity: "Commodity",
 };
 
 const TX_TYPE_CONFIG: Record<

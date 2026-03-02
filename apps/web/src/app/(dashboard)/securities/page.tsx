@@ -27,6 +27,7 @@ const ASSET_TYPE_LABELS: Record<AssetType, string> = {
   bond: "Bond",
   crypto: "Crypto",
   reit: "REIT",
+  commodity: "Commodity",
 };
 
 const PAGE_SIZE = 20;

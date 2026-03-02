@@ -101,7 +101,7 @@ func validateBudgetPeriod(fl validator.FieldLevel) bool {
 
 func validateAssetType(fl validator.FieldLevel) bool {
 	switch fl.Field().String() {
-	case "stock", "etf", "bond", "crypto", "reit":
+	case "stock", "etf", "bond", "crypto", "reit", "commodity":
 		return true
 	}
 	return false

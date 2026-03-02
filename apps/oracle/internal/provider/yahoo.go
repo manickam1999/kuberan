@@ -68,10 +68,10 @@ func NewYahooProvider(httpClient *http.Client) *YahooProvider {
 // Name returns the provider's display name.
 func (p *YahooProvider) Name() string { return "Yahoo Finance" }
 
-// Supports returns true for stock, etf, bond, and reit asset types.
+// Supports returns true for stock, etf, bond, reit, and commodity asset types.
 func (p *YahooProvider) Supports(assetType string) bool {
 	switch assetType {
-	case "stock", "etf", "bond", "reit":
+	case "stock", "etf", "bond", "reit", "commodity":
 		return true
 	default:
 		return false
