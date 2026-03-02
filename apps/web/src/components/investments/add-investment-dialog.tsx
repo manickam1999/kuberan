@@ -35,7 +35,16 @@ import {
   CommandList,
 } from "@/components/ui/command";
 import { cn } from "@/lib/utils";
-import type { Security } from "@/types/models";
+import type { AssetType, Security } from "@/types/models";
+
+const ASSET_TYPE_LABELS: Record<AssetType, string> = {
+  stock: "Stock",
+  etf: "ETF",
+  bond: "Bond",
+  crypto: "Crypto",
+  reit: "REIT",
+  commodity: "Commodity",
+};
 
 function getErrorMessage(error: unknown): string {
   if (error instanceof ApiClientError) {
@@ -233,7 +242,7 @@ export function AddInvestmentDialog({
                           </span>
                           <span className="truncate flex-1">{sec.name}</span>
                           <Badge variant="secondary" className="ml-2">
-                            {sec.asset_type}
+                            {ASSET_TYPE_LABELS[sec.asset_type] ?? sec.asset_type}
                           </Badge>
                           {sec.exchange && (
                             <span className="text-muted-foreground ml-1 text-xs">

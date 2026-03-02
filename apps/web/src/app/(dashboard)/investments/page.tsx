@@ -48,6 +48,7 @@ const ASSET_TYPE_LABELS: Record<AssetType, string> = {
   bond: "Bonds",
   crypto: "Crypto",
   reit: "REITs",
+  commodity: "Commodities",
 };
 
 function InvestmentsSkeleton() {

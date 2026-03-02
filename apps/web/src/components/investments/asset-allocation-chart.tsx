@@ -17,12 +17,22 @@ import {
 import { formatCurrency } from "@/lib/format";
 import type { AssetType } from "@/types/models";
 
+const ASSET_TYPE_LABELS: Record<AssetType, string> = {
+  stock: "Stocks",
+  etf: "ETFs",
+  bond: "Bonds",
+  crypto: "Crypto",
+  reit: "REITs",
+  commodity: "Commodities",
+};
+
 const CHART_COLORS = [
   "var(--chart-1)",
   "var(--chart-2)",
   "var(--chart-3)",
   "var(--chart-4)",
   "var(--chart-5)",
+  "var(--chart-6)",
 ];
 
 interface AssetAllocationChartProps {
@@ -50,7 +60,7 @@ export function AssetAllocationChart({
     };
     activeTypes.forEach((type, index) => {
       config[type] = {
-        label: type,
+        label: ASSET_TYPE_LABELS[type] ?? type,
         color: CHART_COLORS[index % CHART_COLORS.length],
       };
     });
@@ -111,7 +121,7 @@ export function AssetAllocationChart({
                         className="h-2.5 w-2.5 shrink-0 rounded-[2px]"
                         style={{ backgroundColor: item.payload.fill }}
                       />
-                      <span className="font-medium">{assetType}</span>
+                      <span className="font-medium">{ASSET_TYPE_LABELS[assetType] ?? assetType}</span>
                     </div>
                     <div className="text-muted-foreground mt-1">
                       {formatCurrency(value * 100)} ({pct}%)
