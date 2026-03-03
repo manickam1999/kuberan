@@ -23,6 +23,13 @@ func NewPortfolioSnapshotHandler(snapshotService services.PortfolioSnapshotServi
 	return &PortfolioSnapshotHandler{snapshotService: snapshotService, auditService: auditService}
 }
 
+// snapshotPageRequest allows a larger page size for snapshot queries (up to 3650
+// for ~10 years of daily snapshots) while keeping the shared PageRequest at 100.
+type snapshotPageRequest struct {
+	Page     int `form:"page" binding:"omitempty,min=1"`
+	PageSize int `form:"page_size" binding:"omitempty,min=1,max=3650"`
+}
+
 // ComputeSnapshotsRequest represents the request payload for computing snapshots.
 type ComputeSnapshotsRequest struct {
 	RecordedAt time.Time `json:"recorded_at" binding:"required"`
@@ -67,7 +74,7 @@ func (h *PortfolioSnapshotHandler) ComputeSnapshots(c *gin.Context) {
 // @Param       from_date query string true  "Start date (RFC3339 or YYYY-MM-DD)"
 // @Param       to_date   query string true  "End date (RFC3339 or YYYY-MM-DD)"
 // @Param       page      query int    false "Page number (default 1)"
-// @Param       page_size query int    false "Items per page (default 20, max 100)"
+// @Param       page_size query int    false "Items per page (default 20, max 3650)"
 // @Success     200 {object} pagination.PageResponse[models.PortfolioSnapshot] "Paginated snapshots"
 // @Failure     400 {object} ErrorResponse "Invalid input"
 // @Failure     401 {object} ErrorResponse "Unauthorized"
@@ -101,11 +108,12 @@ func (h *PortfolioSnapshotHandler) GetSnapshots(c *gin.Context) {
 		return
 	}
 
-	var page pagination.PageRequest
-	if err := c.ShouldBindQuery(&page); err != nil {
+	var sp snapshotPageRequest
+	if err := c.ShouldBindQuery(&sp); err != nil {
 		respondWithError(c, apperrors.WithMessage(apperrors.ErrInvalidInput, err.Error()))
 		return
 	}
+	page := pagination.PageRequest{Page: sp.Page, PageSize: sp.PageSize}
 
 	result, err := h.snapshotService.GetSnapshots(userID, from, to, page)
 	if err != nil {

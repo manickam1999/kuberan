@@ -15,10 +15,16 @@ export function formatCurrency(cents: number, currency = "MYR"): string {
 
 /**
  * Format an ISO 8601 date string as a human-readable date.
- * @param iso - ISO 8601 date string
+ * Extracts the date portion and constructs a local Date to avoid
+ * timezone-induced off-by-one errors (e.g. midnight UTC appearing
+ * as the previous day in UTC- timezones).
+ * @param iso - ISO 8601 date string (e.g. "2026-02-15T00:00:00Z")
  */
 export function formatDate(iso: string): string {
-  return new Date(iso).toLocaleDateString("en-US", {
+  const dateStr = iso.split("T")[0];
+  const [year, month, day] = dateStr.split("-").map(Number);
+  const local = new Date(year, month - 1, day);
+  return local.toLocaleDateString("en-US", {
     year: "numeric",
     month: "short",
     day: "numeric",

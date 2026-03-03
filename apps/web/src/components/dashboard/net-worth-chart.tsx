@@ -32,6 +32,14 @@ const chartConfig = {
   net_worth: { label: "Net Worth", color: "var(--chart-1)" },
 } satisfies ChartConfig;
 
+/** Format a Date as YYYY-MM-DD using local date components (avoids UTC shift). */
+function toLocalDateString(d: Date): string {
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
 function getDateRange(months: number) {
   const to = new Date();
   const from = new Date();
@@ -43,8 +51,8 @@ function getDateRange(months: number) {
   toNextDay.setDate(toNextDay.getDate() + 1);
   
   return {
-    from_date: from.toISOString().split("T")[0],
-    to_date: toNextDay.toISOString().split("T")[0],
+    from_date: toLocalDateString(from),
+    to_date: toLocalDateString(toNextDay),
   };
 }
 
@@ -52,15 +60,24 @@ export function NetWorthChart() {
   const isMobile = useIsMobile();
   const [period, setPeriod] = useState("1Y");
 
-  const { from_date, to_date } = useMemo(() => {
-    const opt = PERIOD_OPTIONS.find((p) => p.value === period);
-    return getDateRange(opt?.months ?? 12);
-  }, [period]);
+  const selectedOpt = useMemo(
+    () => PERIOD_OPTIONS.find((p) => p.value === period) ?? PERIOD_OPTIONS[3],
+    [period]
+  );
+
+  const { from_date, to_date } = useMemo(
+    () => getDateRange(selectedOpt.months),
+    [selectedOpt]
+  );
+
+  // Request enough rows to cover one snapshot per day for the selected period.
+  // The snapshot endpoint allows up to 3650 (≈10 years of daily snapshots).
+  const pageSize = Math.min(selectedOpt.months * 31, 3650);
 
   const { data: snapshotsData, isLoading, error } = usePortfolioSnapshots({
     from_date,
     to_date,
-    page_size: 100, // Backend max is 100
+    page_size: pageSize,
   });
 
   const chartData = useMemo(() => {
