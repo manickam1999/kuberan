@@ -385,3 +385,193 @@ func TestGetSnapshots(t *testing.T) {
 		}
 	})
 }
+
+func TestGetGroupedSnapshots(t *testing.T) {
+	t.Run("groups_by_day_keeps_last_per_day", func(t *testing.T) {
+		db := testutil.SetupTestDB(t)
+		defer testutil.TeardownTestDB(t, db)
+		svc := NewPortfolioSnapshotService(db)
+
+		user := testutil.CreateTestUser(t, db)
+		// Day 1: 3 snapshots at 08:00, 12:00, 20:00
+		day1 := time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC)
+		db.Create(&models.PortfolioSnapshot{
+			UserID: user.ID, RecordedAt: day1.Add(8 * time.Hour),
+			TotalNetWorth: 100000, CashBalance: 100000,
+		})
+		db.Create(&models.PortfolioSnapshot{
+			UserID: user.ID, RecordedAt: day1.Add(12 * time.Hour),
+			TotalNetWorth: 110000, CashBalance: 110000,
+		})
+		db.Create(&models.PortfolioSnapshot{
+			UserID: user.ID, RecordedAt: day1.Add(20 * time.Hour),
+			TotalNetWorth: 120000, CashBalance: 120000,
+		})
+
+		// Day 2: 3 snapshots at 09:00, 15:00, 21:00
+		day2 := time.Date(2026, 3, 2, 0, 0, 0, 0, time.UTC)
+		db.Create(&models.PortfolioSnapshot{
+			UserID: user.ID, RecordedAt: day2.Add(9 * time.Hour),
+			TotalNetWorth: 130000, CashBalance: 130000,
+		})
+		db.Create(&models.PortfolioSnapshot{
+			UserID: user.ID, RecordedAt: day2.Add(15 * time.Hour),
+			TotalNetWorth: 140000, CashBalance: 140000,
+		})
+		db.Create(&models.PortfolioSnapshot{
+			UserID: user.ID, RecordedAt: day2.Add(21 * time.Hour),
+			TotalNetWorth: 150000, CashBalance: 150000,
+		})
+
+		from := day1
+		to := day2.Add(24 * time.Hour)
+
+		result, err := svc.GetGroupedSnapshots(user.ID, from, to, "day")
+		testutil.AssertNoError(t, err)
+
+		if len(result) != 2 {
+			t.Fatalf("expected 2 daily snapshots, got %d", len(result))
+		}
+		// Day 1 last snapshot: 20:00 → 120000
+		if result[0].TotalNetWorth != 120000 {
+			t.Errorf("expected day1 net_worth 120000, got %d", result[0].TotalNetWorth)
+		}
+		// Day 2 last snapshot: 21:00 → 150000
+		if result[1].TotalNetWorth != 150000 {
+			t.Errorf("expected day2 net_worth 150000, got %d", result[1].TotalNetWorth)
+		}
+	})
+
+	t.Run("groups_by_hour_keeps_last_per_hour", func(t *testing.T) {
+		db := testutil.SetupTestDB(t)
+		defer testutil.TeardownTestDB(t, db)
+		svc := NewPortfolioSnapshotService(db)
+
+		user := testutil.CreateTestUser(t, db)
+		base := time.Date(2026, 3, 1, 10, 0, 0, 0, time.UTC)
+
+		// Hour 10: snapshots at :00 and :30
+		db.Create(&models.PortfolioSnapshot{
+			UserID: user.ID, RecordedAt: base,
+			TotalNetWorth: 100000, CashBalance: 100000,
+		})
+		db.Create(&models.PortfolioSnapshot{
+			UserID: user.ID, RecordedAt: base.Add(30 * time.Minute),
+			TotalNetWorth: 110000, CashBalance: 110000,
+		})
+
+		// Hour 11: snapshots at :00 and :30
+		db.Create(&models.PortfolioSnapshot{
+			UserID: user.ID, RecordedAt: base.Add(1 * time.Hour),
+			TotalNetWorth: 120000, CashBalance: 120000,
+		})
+		db.Create(&models.PortfolioSnapshot{
+			UserID: user.ID, RecordedAt: base.Add(90 * time.Minute),
+			TotalNetWorth: 130000, CashBalance: 130000,
+		})
+
+		from := base.Add(-time.Hour)
+		to := base.Add(2 * time.Hour)
+
+		result, err := svc.GetGroupedSnapshots(user.ID, from, to, "hour")
+		testutil.AssertNoError(t, err)
+
+		if len(result) != 2 {
+			t.Fatalf("expected 2 hourly snapshots, got %d", len(result))
+		}
+		// Hour 10 last: :30 → 110000
+		if result[0].TotalNetWorth != 110000 {
+			t.Errorf("expected hour10 net_worth 110000, got %d", result[0].TotalNetWorth)
+		}
+		// Hour 11 last: :30 → 130000
+		if result[1].TotalNetWorth != 130000 {
+			t.Errorf("expected hour11 net_worth 130000, got %d", result[1].TotalNetWorth)
+		}
+	})
+
+	t.Run("returns_chronological_order", func(t *testing.T) {
+		db := testutil.SetupTestDB(t)
+		defer testutil.TeardownTestDB(t, db)
+		svc := NewPortfolioSnapshotService(db)
+
+		user := testutil.CreateTestUser(t, db)
+		base := time.Date(2026, 3, 1, 12, 0, 0, 0, time.UTC)
+
+		// Create snapshots on 3 different days
+		for i := 0; i < 3; i++ {
+			db.Create(&models.PortfolioSnapshot{
+				UserID:        user.ID,
+				RecordedAt:    base.Add(time.Duration(i) * 24 * time.Hour),
+				TotalNetWorth: int64(100000 + i*10000),
+				CashBalance:   int64(100000 + i*10000),
+			})
+		}
+
+		from := base.Add(-time.Hour)
+		to := base.Add(72 * time.Hour)
+
+		result, err := svc.GetGroupedSnapshots(user.ID, from, to, "day")
+		testutil.AssertNoError(t, err)
+
+		if len(result) != 3 {
+			t.Fatalf("expected 3 items, got %d", len(result))
+		}
+		// Oldest first
+		if result[0].TotalNetWorth != 100000 {
+			t.Errorf("expected first net_worth 100000 (oldest), got %d", result[0].TotalNetWorth)
+		}
+		// Newest last
+		if result[2].TotalNetWorth != 120000 {
+			t.Errorf("expected last net_worth 120000 (newest), got %d", result[2].TotalNetWorth)
+		}
+	})
+
+	t.Run("empty_range_returns_empty", func(t *testing.T) {
+		db := testutil.SetupTestDB(t)
+		defer testutil.TeardownTestDB(t, db)
+		svc := NewPortfolioSnapshotService(db)
+
+		user := testutil.CreateTestUser(t, db)
+		from := time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC)
+		to := time.Date(2026, 6, 30, 0, 0, 0, 0, time.UTC)
+
+		result, err := svc.GetGroupedSnapshots(user.ID, from, to, "day")
+		testutil.AssertNoError(t, err)
+
+		if len(result) != 0 {
+			t.Errorf("expected 0 snapshots, got %d", len(result))
+		}
+	})
+
+	t.Run("user_isolation", func(t *testing.T) {
+		db := testutil.SetupTestDB(t)
+		defer testutil.TeardownTestDB(t, db)
+		svc := NewPortfolioSnapshotService(db)
+
+		user1 := testutil.CreateTestUser(t, db)
+		user2 := testutil.CreateTestUser(t, db)
+		recordedAt := time.Date(2026, 3, 1, 12, 0, 0, 0, time.UTC)
+
+		db.Create(&models.PortfolioSnapshot{
+			UserID: user1.ID, RecordedAt: recordedAt,
+			TotalNetWorth: 100000, CashBalance: 100000,
+		})
+		db.Create(&models.PortfolioSnapshot{
+			UserID: user2.ID, RecordedAt: recordedAt,
+			TotalNetWorth: 200000, CashBalance: 200000,
+		})
+
+		from := recordedAt.Add(-time.Hour)
+		to := recordedAt.Add(time.Hour)
+
+		result, err := svc.GetGroupedSnapshots(user1.ID, from, to, "day")
+		testutil.AssertNoError(t, err)
+
+		if len(result) != 1 {
+			t.Fatalf("expected 1 snapshot for user1, got %d", len(result))
+		}
+		if result[0].TotalNetWorth != 100000 {
+			t.Errorf("expected net_worth 100000, got %d", result[0].TotalNetWorth)
+		}
+	})
+}

@@ -46,6 +46,31 @@ export function formatDateTime(iso: string): string {
 }
 
 /**
+ * Format an ISO 8601 date string as a time only (e.g. "2:30 PM").
+ * Useful for intraday charts (1D timeframe).
+ * @param iso - ISO 8601 date string
+ */
+export function formatTime(iso: string): string {
+  return new Date(iso).toLocaleTimeString("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+/**
+ * Format an ISO 8601 date string as a short weekday + time (e.g. "Mon 2:00 PM").
+ * Useful for weekly charts (1W timeframe).
+ * @param iso - ISO 8601 date string
+ */
+export function formatShortDateTime(iso: string): string {
+  return new Date(iso).toLocaleDateString("en-US", {
+    weekday: "short",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+/**
  * Format a numeric percentage value.
  * @param value - Percentage value (e.g., 65.5 = "65.50%")
  */

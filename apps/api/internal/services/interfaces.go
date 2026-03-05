@@ -211,6 +211,7 @@ type SecurityServicer interface {
 type PortfolioSnapshotServicer interface {
 	ComputeAndRecordSnapshots(recordedAt time.Time) (int, error)
 	GetSnapshots(userID string, from, to time.Time, page pagination.PageRequest) (*pagination.PageResponse[models.PortfolioSnapshot], error)
+	GetGroupedSnapshots(userID string, from, to time.Time, groupBy string) ([]models.PortfolioSnapshot, error)
 }
 
 // AuditServicer defines the contract for audit logging.

@@ -299,7 +299,15 @@ export interface SecurityFilters extends PaginationParams {
 }
 
 // Portfolio snapshot filters
-export interface PortfolioSnapshotFilters extends PaginationParams {
+export interface PortfolioSnapshotFilters {
   from_date: string;
   to_date: string;
+  group_by?: "day" | "hour";
+  page?: number;
+  page_size?: number;
+}
+
+// Response shape for grouped (downsampled) snapshot queries
+export interface GroupedSnapshotResponse<T> {
+  data: T[];
 }

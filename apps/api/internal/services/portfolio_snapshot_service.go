@@ -115,6 +115,61 @@ func (s *portfolioSnapshotService) computeSnapshot(userID string, recordedAt tim
 	}, nil
 }
 
+// GetGroupedSnapshots returns snapshots for a user within a date range, keeping
+// only the last snapshot per time bucket (e.g. per day or per hour). The result
+// is sorted chronologically (oldest first) and is not paginated — the caller
+// should ensure the date range produces a reasonable number of buckets.
+func (s *portfolioSnapshotService) GetGroupedSnapshots(
+	userID string,
+	from, to time.Time,
+	groupBy string,
+) ([]models.PortfolioSnapshot, error) {
+	var snapshots []models.PortfolioSnapshot
+	if err := s.db.Where("user_id = ? AND recorded_at >= ? AND recorded_at <= ?", userID, from, to).
+		Order("recorded_at ASC").
+		Find(&snapshots).Error; err != nil {
+		return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)
+	}
+
+	return groupSnapshots(snapshots, groupBy), nil
+}
+
+// groupSnapshots deduplicates snapshots by keeping the last one per time bucket.
+// Since the input must be sorted by recorded_at ASC, iterating and replacing on
+// the same bucket key naturally retains the latest snapshot in each bucket.
+func groupSnapshots(snapshots []models.PortfolioSnapshot, groupBy string) []models.PortfolioSnapshot {
+	if len(snapshots) == 0 {
+		return snapshots
+	}
+
+	bucketKey := dayBucketKey
+	if groupBy == "hour" {
+		bucketKey = hourBucketKey
+	}
+
+	var result []models.PortfolioSnapshot
+	currentKey := ""
+	for i := range snapshots {
+		key := bucketKey(snapshots[i].RecordedAt)
+		if key != currentKey {
+			currentKey = key
+			result = append(result, snapshots[i])
+		} else {
+			// Same bucket — replace with the later snapshot.
+			result[len(result)-1] = snapshots[i]
+		}
+	}
+	return result
+}
+
+func dayBucketKey(t time.Time) string {
+	return t.UTC().Format("2006-01-02")
+}
+
+func hourBucketKey(t time.Time) string {
+	return t.UTC().Format("2006-01-02-15")
+}
+
 // GetSnapshots returns paginated snapshots for a user within a date range.
 func (s *portfolioSnapshotService) GetSnapshots(
 	userID string,

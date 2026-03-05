@@ -16,16 +16,85 @@ import {
 } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { usePortfolioSnapshots } from "@/hooks/use-portfolio-snapshots";
-import { formatCurrency, formatDate } from "@/lib/format";
+import {
+  usePortfolioSnapshots,
+  useGroupedPortfolioSnapshots,
+} from "@/hooks/use-portfolio-snapshots";
+import {
+  formatCurrency,
+  formatDate,
+  formatTime,
+  formatShortDateTime,
+} from "@/lib/format";
 import { useIsMobile } from "@/hooks/use-mobile";
+import type { PortfolioSnapshot } from "@/types/models";
 
-const PERIOD_OPTIONS = [
-  { value: "1M", label: "1M", months: 1 },
-  { value: "3M", label: "3M", months: 3 },
-  { value: "6M", label: "6M", months: 6 },
-  { value: "1Y", label: "1Y", months: 12 },
-  { value: "ALL", label: "ALL", months: 120 },
+interface PeriodOption {
+  readonly value: string;
+  readonly label: string;
+  readonly months: number;
+  readonly days: number;
+  readonly groupBy: "day" | "hour" | undefined;
+  readonly formatLabel: (iso: string) => string;
+}
+
+const PERIOD_OPTIONS: readonly PeriodOption[] = [
+  {
+    value: "1D",
+    label: "1D",
+    months: 0,
+    days: 1,
+    groupBy: undefined,
+    formatLabel: formatTime,
+  },
+  {
+    value: "1W",
+    label: "1W",
+    months: 0,
+    days: 7,
+    groupBy: "hour",
+    formatLabel: formatShortDateTime,
+  },
+  {
+    value: "1M",
+    label: "1M",
+    months: 1,
+    days: 0,
+    groupBy: "day",
+    formatLabel: formatDate,
+  },
+  {
+    value: "3M",
+    label: "3M",
+    months: 3,
+    days: 0,
+    groupBy: "day",
+    formatLabel: formatDate,
+  },
+  {
+    value: "6M",
+    label: "6M",
+    months: 6,
+    days: 0,
+    groupBy: "day",
+    formatLabel: formatDate,
+  },
+  {
+    value: "1Y",
+    label: "1Y",
+    months: 12,
+    days: 0,
+    groupBy: "day",
+    formatLabel: formatDate,
+  },
+  {
+    value: "ALL",
+    label: "ALL",
+    months: 120,
+    days: 0,
+    groupBy: "day",
+    formatLabel: formatDate,
+  },
 ] as const;
 
 const chartConfig = {
@@ -40,20 +109,35 @@ function toLocalDateString(d: Date): string {
   return `${year}-${month}-${day}`;
 }
 
-function getDateRange(months: number) {
+function getDateRange(opt: PeriodOption) {
   const to = new Date();
   const from = new Date();
-  from.setMonth(from.getMonth() - months);
-  
+  if (opt.months > 0) {
+    from.setMonth(from.getMonth() - opt.months);
+  } else {
+    from.setDate(from.getDate() - opt.days);
+  }
+
   // Add 1 day to 'to' date to ensure we include all snapshots from the end date
   // (backend uses <= comparison with midnight UTC, so we need to go to next day)
   const toNextDay = new Date(to);
   toNextDay.setDate(toNextDay.getDate() + 1);
-  
+
   return {
     from_date: toLocalDateString(from),
     to_date: toLocalDateString(toNextDay),
   };
+}
+
+/** Transform raw snapshot array into chart-ready data. */
+function toChartData(
+  snapshots: PortfolioSnapshot[],
+  formatLabel: (iso: string) => string
+) {
+  return snapshots.map((s) => ({
+    date: formatLabel(s.recorded_at),
+    net_worth: s.total_net_worth / 100,
+  }));
 }
 
 export function NetWorthChart() {
@@ -61,41 +145,63 @@ export function NetWorthChart() {
   const [period, setPeriod] = useState("1Y");
 
   const selectedOpt = useMemo(
-    () => PERIOD_OPTIONS.find((p) => p.value === period) ?? PERIOD_OPTIONS[3],
+    () =>
+      PERIOD_OPTIONS.find((p) => p.value === period) ?? PERIOD_OPTIONS[5], // default 1Y
     [period]
   );
 
   const { from_date, to_date } = useMemo(
-    () => getDateRange(selectedOpt.months),
+    () => getDateRange(selectedOpt),
     [selectedOpt]
   );
 
-  // Request enough rows to cover one snapshot per day for the selected period.
-  // The snapshot endpoint allows up to 3650 (≈10 years of daily snapshots).
-  const pageSize = Math.min(selectedOpt.months * 31, 3650);
-
-  const { data: snapshotsData, isLoading, error } = usePortfolioSnapshots({
+  // For 1D (no group_by): fetch raw paginated snapshots with a large enough page_size.
+  // 48 snapshots/day at 30-min intervals, pad a bit for safety.
+  const rawQuery = usePortfolioSnapshots({
     from_date,
     to_date,
-    page_size: pageSize,
+    page_size: 50,
   });
 
+  // For 1W+ (with group_by): fetch downsampled snapshots.
+  const groupedQuery = useGroupedPortfolioSnapshots({
+    from_date,
+    to_date,
+    group_by: selectedOpt.groupBy,
+  });
+
+  const isGrouped = !!selectedOpt.groupBy;
+  const activeQuery = isGrouped ? groupedQuery : rawQuery;
+  const { isLoading, error } = activeQuery;
+
   const chartData = useMemo(() => {
-    if (!snapshotsData?.data) return [];
-    // Backend returns data in DESC order (newest first)
-    // Reverse it for chart display (oldest to newest, left to right)
-    return snapshotsData.data
-      .map((s) => ({
-        date: formatDate(s.recorded_at),
-        net_worth: s.total_net_worth / 100,
-      }))
-      .reverse();
-  }, [snapshotsData]);
+    if (isGrouped) {
+      // Grouped response: { data: [...] } sorted chronologically (oldest first)
+      const data = groupedQuery.data?.data;
+      if (!data) return [];
+      return toChartData(data, selectedOpt.formatLabel);
+    }
+    // Raw paginated response: { data: [...], page, ... } sorted DESC (newest first)
+    const data = rawQuery.data?.data;
+    if (!data) return [];
+    return toChartData(data, selectedOpt.formatLabel).reverse();
+  }, [
+    isGrouped,
+    groupedQuery.data,
+    rawQuery.data,
+    selectedOpt.formatLabel,
+  ]);
 
   const latestNetWorth = useMemo(() => {
-    if (!snapshotsData?.data || snapshotsData.data.length === 0) return null;
-    return snapshotsData.data[0].total_net_worth;
-  }, [snapshotsData]);
+    if (isGrouped) {
+      const data = groupedQuery.data?.data;
+      if (!data || data.length === 0) return null;
+      return data[data.length - 1].total_net_worth; // last = newest (ASC order)
+    }
+    const data = rawQuery.data?.data;
+    if (!data || data.length === 0) return null;
+    return data[0].total_net_worth; // first = newest (DESC order)
+  }, [isGrouped, groupedQuery.data, rawQuery.data]);
 
   if (isLoading) {
     return (
@@ -138,7 +244,8 @@ export function NetWorthChart() {
         {error ? (
           <div className="flex flex-col items-center justify-center py-10 text-destructive">
             <p className="text-sm">
-              Error loading snapshot data: {error instanceof Error ? error.message : "Unknown error"}
+              Error loading snapshot data:{" "}
+              {error instanceof Error ? error.message : "Unknown error"}
             </p>
           </div>
         ) : chartData.length === 0 ? (

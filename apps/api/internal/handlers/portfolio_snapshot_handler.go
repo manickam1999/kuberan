@@ -66,16 +66,17 @@ func (h *PortfolioSnapshotHandler) ComputeSnapshots(c *gin.Context) {
 
 // GetSnapshots handles retrieving portfolio snapshots for the authenticated user.
 // @Summary     Get portfolio snapshots
-// @Description Get paginated portfolio snapshots for a date range
+// @Description Get portfolio snapshots for a date range. Without group_by, returns paginated raw snapshots. With group_by=day or group_by=hour, returns one snapshot per time bucket (last snapshot in each bucket), unpaginated.
 // @Tags        investments
 // @Accept      json
 // @Produce     json
 // @Security    BearerAuth
 // @Param       from_date query string true  "Start date (RFC3339 or YYYY-MM-DD)"
 // @Param       to_date   query string true  "End date (RFC3339 or YYYY-MM-DD)"
-// @Param       page      query int    false "Page number (default 1)"
-// @Param       page_size query int    false "Items per page (default 20, max 3650)"
-// @Success     200 {object} pagination.PageResponse[models.PortfolioSnapshot] "Paginated snapshots"
+// @Param       group_by  query string false "Group snapshots: 'day' or 'hour'. When set, returns unpaginated results."
+// @Param       page      query int    false "Page number (default 1, ignored when group_by is set)"
+// @Param       page_size query int    false "Items per page (default 20, max 3650, ignored when group_by is set)"
+// @Success     200 {object} pagination.PageResponse[models.PortfolioSnapshot] "Paginated snapshots (without group_by) or {data: [...]} (with group_by)"
 // @Failure     400 {object} ErrorResponse "Invalid input"
 // @Failure     401 {object} ErrorResponse "Unauthorized"
 // @Router      /investments/snapshots [get]
@@ -105,6 +106,22 @@ func (h *PortfolioSnapshotHandler) GetSnapshots(c *gin.Context) {
 	to, err := parseFlexibleTime(toStr)
 	if err != nil {
 		respondWithError(c, apperrors.WithMessage(apperrors.ErrInvalidInput, err.Error()))
+		return
+	}
+
+	// When group_by is set, return downsampled snapshots (one per bucket, unpaginated).
+	groupBy := c.Query("group_by")
+	if groupBy != "" {
+		if groupBy != "day" && groupBy != "hour" {
+			respondWithError(c, apperrors.WithMessage(apperrors.ErrInvalidInput, "group_by must be 'day' or 'hour'"))
+			return
+		}
+		snapshots, svcErr := h.snapshotService.GetGroupedSnapshots(userID, from, to, groupBy)
+		if svcErr != nil {
+			respondWithError(c, svcErr)
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"data": snapshots})
 		return
 	}
 

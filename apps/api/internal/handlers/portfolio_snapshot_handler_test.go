@@ -18,6 +18,7 @@ import (
 type mockPortfolioSnapshotService struct {
 	computeAndRecordSnapshotsFn func(recordedAt time.Time) (int, error)
 	getSnapshotsFn              func(userID string, from, to time.Time, page pagination.PageRequest) (*pagination.PageResponse[models.PortfolioSnapshot], error)
+	getGroupedSnapshotsFn       func(userID string, from, to time.Time, groupBy string) ([]models.PortfolioSnapshot, error)
 }
 
 var _ services.PortfolioSnapshotServicer = (*mockPortfolioSnapshotService)(nil)
@@ -35,6 +36,13 @@ func (m *mockPortfolioSnapshotService) GetSnapshots(userID string, from, to time
 	}
 	resp := pagination.NewPageResponse([]models.PortfolioSnapshot{}, 1, 20, 0)
 	return &resp, nil
+}
+
+func (m *mockPortfolioSnapshotService) GetGroupedSnapshots(userID string, from, to time.Time, groupBy string) ([]models.PortfolioSnapshot, error) {
+	if m.getGroupedSnapshotsFn != nil {
+		return m.getGroupedSnapshotsFn(userID, from, to, groupBy)
+	}
+	return []models.PortfolioSnapshot{}, nil
 }
 
 // --- router setup ---
@@ -221,6 +229,93 @@ func TestPortfolioSnapshotHandler_GetSnapshots(t *testing.T) {
 		}
 		if capturedPage.PageSize != 5 {
 			t.Errorf("expected page_size=5, got %d", capturedPage.PageSize)
+		}
+	})
+
+	t.Run("group_by_day_returns_200_with_data", func(t *testing.T) {
+		now := time.Now().UTC().Truncate(time.Second)
+		svc := &mockPortfolioSnapshotService{
+			getGroupedSnapshotsFn: func(_ string, _, _ time.Time, groupBy string) ([]models.PortfolioSnapshot, error) {
+				if groupBy != "day" {
+					t.Errorf("expected groupBy=day, got %s", groupBy)
+				}
+				return []models.PortfolioSnapshot{
+					{ID: "snap-1", UserID: "test-user-1", RecordedAt: now, TotalNetWorth: 15500000, CashBalance: 5000000, InvestmentValue: 11000000, DebtBalance: 500000},
+				}, nil
+			},
+		}
+		handler := NewPortfolioSnapshotHandler(svc, &mockAuditService{})
+		r := setupSnapshotRouter(handler)
+
+		rec := doRequest(r, "GET", "/portfolio/snapshots?from_date=2026-01-01&to_date=2026-12-31&group_by=day", "")
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+		}
+		result := parseJSON(t, rec)
+		data := result["data"].([]interface{})
+		if len(data) != 1 {
+			t.Errorf("expected 1 snapshot, got %d", len(data))
+		}
+		// Should not have pagination fields
+		if _, ok := result["total_items"]; ok {
+			t.Error("expected no total_items field for grouped response")
+		}
+	})
+
+	t.Run("group_by_hour_returns_200", func(t *testing.T) {
+		svc := &mockPortfolioSnapshotService{
+			getGroupedSnapshotsFn: func(_ string, _, _ time.Time, groupBy string) ([]models.PortfolioSnapshot, error) {
+				if groupBy != "hour" {
+					t.Errorf("expected groupBy=hour, got %s", groupBy)
+				}
+				return []models.PortfolioSnapshot{}, nil
+			},
+		}
+		handler := NewPortfolioSnapshotHandler(svc, &mockAuditService{})
+		r := setupSnapshotRouter(handler)
+
+		rec := doRequest(r, "GET", "/portfolio/snapshots?from_date=2026-01-01&to_date=2026-12-31&group_by=hour", "")
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+		}
+	})
+
+	t.Run("group_by_invalid_returns_400", func(t *testing.T) {
+		handler := NewPortfolioSnapshotHandler(&mockPortfolioSnapshotService{}, &mockAuditService{})
+		r := setupSnapshotRouter(handler)
+
+		rec := doRequest(r, "GET", "/portfolio/snapshots?from_date=2026-01-01&to_date=2026-12-31&group_by=week", "")
+
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("expected 400, got %d: %s", rec.Code, rec.Body.String())
+		}
+		assertErrorCode(t, parseJSON(t, rec), "INVALID_INPUT")
+	})
+
+	t.Run("without_group_by_returns_paginated", func(t *testing.T) {
+		now := time.Now().UTC().Truncate(time.Second)
+		svc := &mockPortfolioSnapshotService{
+			getSnapshotsFn: func(_ string, _, _ time.Time, _ pagination.PageRequest) (*pagination.PageResponse[models.PortfolioSnapshot], error) {
+				resp := pagination.NewPageResponse([]models.PortfolioSnapshot{
+					{ID: "snap-1", UserID: "test-user-1", RecordedAt: now, TotalNetWorth: 15500000},
+				}, 1, 20, 1)
+				return &resp, nil
+			},
+		}
+		handler := NewPortfolioSnapshotHandler(svc, &mockAuditService{})
+		r := setupSnapshotRouter(handler)
+
+		rec := doRequest(r, "GET", "/portfolio/snapshots?from_date=2026-01-01&to_date=2026-12-31", "")
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+		}
+		result := parseJSON(t, rec)
+		// Should have pagination fields
+		if _, ok := result["total_items"]; !ok {
+			t.Error("expected total_items field for paginated response")
 		}
 	})
 }
