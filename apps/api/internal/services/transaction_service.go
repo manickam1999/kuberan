@@ -295,7 +295,7 @@ func (s *transactionService) GetAccountTransactions(userID, accountID string, pa
 
 	var transactions []models.Transaction
 	if err := base.Scopes(pagination.Paginate(page)).
-		Order("date DESC").
+		Order("date DESC, created_at DESC").
 		Find(&transactions).Error; err != nil {
 		return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)
 	}
@@ -344,7 +344,7 @@ func (s *transactionService) GetUserTransactions(userID string, page pagination.
 	var transactions []models.Transaction
 	if err := base.Preload("Category").
 		Scopes(pagination.Paginate(page)).
-		Order("date DESC").
+		Order("date DESC, created_at DESC").
 		Find(&transactions).Error; err != nil {
 		return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)
 	}
