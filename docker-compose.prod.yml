@@ -90,5 +90,24 @@ services:
       - api
     restart: unless-stopped
 
+  backup:
+    build:
+      context: ./apps/backup
+      dockerfile: Dockerfile
+    profiles:
+      - backup
+    env_file: .env.prod
+    environment:
+      # pg_dump requires a direct connection, not Supavisor's pooler (port 6543).
+      # Override to port 5432 for direct access.
+      - DB_PORT=5432
+      - BACKUP_RETENTION_DAYS=30
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
+    volumes:
+      - ./backups:/backups
+    restart: unless-stopped
+
 volumes:
   postgres_data:

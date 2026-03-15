@@ -72,6 +72,8 @@ docker compose -f docker-compose.prod.yml exec postgres ls /var/lib/postgresql/d
 
 ### Backups
 
+See the [Automated Backups](#automated-backups) section below for the recommended approach.
+
 **Manual backup:**
 ```bash
 docker compose -f docker-compose.prod.yml exec postgres \
@@ -84,14 +86,6 @@ docker compose -f docker-compose.prod.yml exec postgres \
 docker compose -f docker-compose.prod.yml exec -T postgres \
   pg_restore -U kuberan -d kuberan --no-owner --clean \
   < kuberan_backup_YYYYMMDD_HHMMSS.dump
-```
-
-**Automated daily backup (add to crontab):**
-```bash
-0 2 * * * cd /opt/kuberan && docker compose -f docker-compose.prod.yml exec -T postgres \
-  pg_dump -U kuberan kuberan --no-owner --no-acl -Fc \
-  > /opt/kuberan/backups/kuberan_$(date +\%Y\%m\%d).dump \
-  && find /opt/kuberan/backups -name "*.dump" -mtime +30 -delete
 ```
 
 ---
@@ -140,14 +134,7 @@ No local postgres container is started. Migrations run via the direct Supabase c
 
 ### Backups
 
-Supabase provides automatic daily backups on paid plans. For free plans:
-- Go to **Supabase Dashboard > Database > Backups**
-- Or use `pg_dump` with the direct connection (port 5432):
-
-```bash
-pg_dump "postgres://postgres.xxxx:PASSWORD@db.xxxx.supabase.co:5432/postgres" \
-  --no-owner --no-acl -Fc -f kuberan_backup_$(date +%Y%m%d).dump
-```
+Supabase provides automatic daily backups on paid plans. For an independent backup you control, see the [Automated Backups](#automated-backups) section below.
 
 ---
 
@@ -185,4 +172,86 @@ pg_restore "postgres://postgres.xxxx:PASSWORD@db.xxxx.supabase.co:5432/postgres"
 
 # 3. Update .env.prod to Option B (Supabase) and redeploy
 ./deploy/deploy.sh
+```
+
+---
+
+## Automated Backups
+
+Kuberan includes a `backup` service that runs `pg_dump` on a schedule and stores `.dump` files locally. It works with both self-hosted PostgreSQL and Supabase.
+
+### How It Works
+
+- A lightweight Alpine container runs [supercronic](https://github.com/aptible/supercronic) (a container-friendly cron)
+- Executes `pg_dump` daily at **2:00 AM UTC**
+- Stores compressed custom-format (`.dump`) backups in `./backups/` on the host
+- Automatically prunes backups older than **30 days**
+- Runs an initial backup immediately on container start
+- All output is logged to stdout (visible via `docker logs`)
+
+### Enable the Backup Service
+
+Add `backup` to `COMPOSE_PROFILES` in your `.env.prod`:
+
+```bash
+# Supabase + backups
+COMPOSE_PROFILES=backup
+
+# Self-hosted PostgreSQL + backups
+COMPOSE_PROFILES=postgres,backup
+```
+
+Then deploy as usual:
+
+```bash
+./deploy/deploy.sh
+```
+
+The deploy script automatically creates the `backups/` directory if it doesn't exist.
+
+### Configuration
+
+The backup service uses the same `DB_*` variables from `.env.prod`. It overrides `DB_PORT=5432` internally because `pg_dump` requires a direct connection (not a connection pooler).
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `BACKUP_RETENTION_DAYS` | `30` | Days to keep backups before pruning |
+
+To customize retention, edit the `environment` section of the `backup` service in `docker-compose.prod.yml`.
+
+### Managing Backups
+
+```bash
+# Check backup logs
+docker compose -f docker-compose.prod.yml logs backup
+
+# Run a manual backup (outside the daily schedule)
+docker compose -f docker-compose.prod.yml exec backup /backup.sh
+
+# List all backups
+ls -lah backups/
+
+# Stop the backup service
+docker compose -f docker-compose.prod.yml --profile backup stop backup
+```
+
+### Restoring from a Backup
+
+**Into self-hosted PostgreSQL:**
+```bash
+docker compose -f docker-compose.prod.yml exec -T postgres \
+  pg_restore -U kuberan -d kuberan --no-owner --clean \
+  < backups/kuberan_YYYYMMDD_HHMMSS.dump
+```
+
+**Into Supabase (use direct port 5432):**
+```bash
+pg_restore "postgres://postgres.xxxx:PASSWORD@db.xxxx.supabase.co:5432/postgres" \
+  --no-owner --no-acl --clean -1 < backups/kuberan_YYYYMMDD_HHMMSS.dump
+```
+
+**Into any PostgreSQL instance:**
+```bash
+pg_restore -h <host> -p <port> -U <user> -d <dbname> \
+  --no-owner --clean backups/kuberan_YYYYMMDD_HHMMSS.dump
 ```

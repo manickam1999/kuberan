@@ -1,0 +1,2 @@
+# Run backup daily at 2:00 AM UTC
+0 2 * * * /backup.sh

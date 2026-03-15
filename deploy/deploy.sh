@@ -17,6 +17,9 @@ fi
 # for variable interpolation (${CF_TUNNEL_TOKEN}, ${NEXT_PUBLIC_API_URL}, etc.)
 ln -sf .env.prod .env
 
+# Ensure backups directory exists (used by the backup service)
+mkdir -p backups
+
 echo "==> Building images..."
 $COMPOSE build
 
