@@ -270,6 +270,7 @@ export interface RecordBuyRequest {
   price_per_unit: number; // cents, > 0
   fee?: number; // cents, >= 0
   notes?: string;
+  funding_account_id?: string; // optional cash account to deduct from
 }
 
 export interface RecordSellRequest {
@@ -278,6 +279,7 @@ export interface RecordSellRequest {
   price_per_unit: number; // cents, > 0
   fee?: number; // cents, >= 0
   notes?: string;
+  deposit_account_id?: string; // optional cash account to credit with proceeds
 }
 
 export interface RecordDividendRequest {

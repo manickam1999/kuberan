@@ -21,8 +21,8 @@ type mockInvestmentService struct {
 	getAccountInvestmentsFn     func(userID, accountID string, page pagination.PageRequest) (*pagination.PageResponse[models.Investment], error)
 	getInvestmentByIDFn         func(userID, investmentID string) (*models.Investment, error)
 	getPortfolioFn              func(userID string) (*services.PortfolioSummary, error)
-	recordBuyFn                 func(userID, investmentID string, date time.Time, quantity float64, pricePerUnit int64, fee int64, notes string) (*models.InvestmentTransaction, error)
-	recordSellFn                func(userID, investmentID string, date time.Time, quantity float64, pricePerUnit int64, fee int64, notes string) (*models.InvestmentTransaction, error)
+	recordBuyFn                 func(userID, investmentID string, date time.Time, quantity float64, pricePerUnit int64, fee int64, notes, fundingAccountID string) (*models.InvestmentTransaction, error)
+	recordSellFn                func(userID, investmentID string, date time.Time, quantity float64, pricePerUnit int64, fee int64, notes string, depositAccountID string) (*models.InvestmentTransaction, error)
 	recordDividendFn            func(userID, investmentID string, date time.Time, amount int64, dividendType, notes string) (*models.InvestmentTransaction, error)
 	recordSplitFn               func(userID, investmentID string, date time.Time, splitRatio float64, notes string) (*models.InvestmentTransaction, error)
 	getInvestmentTransactionsFn func(userID, investmentID string, page pagination.PageRequest) (*pagination.PageResponse[models.InvestmentTransaction], error)
@@ -65,16 +65,16 @@ func (m *mockInvestmentService) GetPortfolio(userID string) (*services.Portfolio
 	return &services.PortfolioSummary{HoldingsByType: map[models.AssetType]services.TypeSummary{}}, nil
 }
 
-func (m *mockInvestmentService) RecordBuy(userID, investmentID string, date time.Time, quantity float64, pricePerUnit, fee int64, notes string) (*models.InvestmentTransaction, error) {
+func (m *mockInvestmentService) RecordBuy(userID, investmentID string, date time.Time, quantity float64, pricePerUnit, fee int64, notes, fundingAccountID string) (*models.InvestmentTransaction, error) {
 	if m.recordBuyFn != nil {
-		return m.recordBuyFn(userID, investmentID, date, quantity, pricePerUnit, fee, notes)
+		return m.recordBuyFn(userID, investmentID, date, quantity, pricePerUnit, fee, notes, fundingAccountID)
 	}
 	return &models.InvestmentTransaction{}, nil
 }
 
-func (m *mockInvestmentService) RecordSell(userID, investmentID string, date time.Time, quantity float64, pricePerUnit, fee int64, notes string) (*models.InvestmentTransaction, error) {
+func (m *mockInvestmentService) RecordSell(userID, investmentID string, date time.Time, quantity float64, pricePerUnit, fee int64, notes, depositAccountID string) (*models.InvestmentTransaction, error) {
 	if m.recordSellFn != nil {
-		return m.recordSellFn(userID, investmentID, date, quantity, pricePerUnit, fee, notes)
+		return m.recordSellFn(userID, investmentID, date, quantity, pricePerUnit, fee, notes, depositAccountID)
 	}
 	return &models.InvestmentTransaction{}, nil
 }
@@ -383,7 +383,7 @@ func TestInvestmentHandler_GetPortfolio(t *testing.T) {
 func TestInvestmentHandler_RecordBuy(t *testing.T) {
 	t.Run("returns 201 on success", func(t *testing.T) {
 		svc := &mockInvestmentService{
-			recordBuyFn: func(_, investmentID string, _ time.Time, qty float64, price int64, fee int64, notes string) (*models.InvestmentTransaction, error) {
+			recordBuyFn: func(_, investmentID string, _ time.Time, qty float64, price int64, fee int64, notes, _ string) (*models.InvestmentTransaction, error) {
 				return &models.InvestmentTransaction{
 					Base:         models.Base{ID: "1"},
 					InvestmentID: investmentID,
@@ -440,7 +440,7 @@ func TestInvestmentHandler_RecordBuy(t *testing.T) {
 
 	t.Run("returns 404 when investment not found", func(t *testing.T) {
 		svc := &mockInvestmentService{
-			recordBuyFn: func(_, _ string, _ time.Time, _ float64, _ int64, _ int64, _ string) (*models.InvestmentTransaction, error) {
+			recordBuyFn: func(_, _ string, _ time.Time, _ float64, _ int64, _ int64, _, _ string) (*models.InvestmentTransaction, error) {
 				return nil, apperrors.ErrInvestmentNotFound
 			},
 		}
@@ -459,7 +459,7 @@ func TestInvestmentHandler_RecordBuy(t *testing.T) {
 func TestInvestmentHandler_RecordSell(t *testing.T) {
 	t.Run("returns 201 on success", func(t *testing.T) {
 		svc := &mockInvestmentService{
-			recordSellFn: func(_, investmentID string, _ time.Time, qty float64, price int64, _ int64, _ string) (*models.InvestmentTransaction, error) {
+			recordSellFn: func(_, investmentID string, _ time.Time, qty float64, price int64, _ int64, _ string, _ string) (*models.InvestmentTransaction, error) {
 				return &models.InvestmentTransaction{
 					Base:         models.Base{ID: "2"},
 					InvestmentID: investmentID,
@@ -487,7 +487,7 @@ func TestInvestmentHandler_RecordSell(t *testing.T) {
 
 	t.Run("returns 400 on insufficient shares", func(t *testing.T) {
 		svc := &mockInvestmentService{
-			recordSellFn: func(_, _ string, _ time.Time, _ float64, _ int64, _ int64, _ string) (*models.InvestmentTransaction, error) {
+			recordSellFn: func(_, _ string, _ time.Time, _ float64, _ int64, _ int64, _ string, _ string) (*models.InvestmentTransaction, error) {
 				return nil, apperrors.ErrInsufficientShares
 			},
 		}

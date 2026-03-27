@@ -397,7 +397,7 @@ func TestRecordBuy(t *testing.T) {
 		sec := testutil.CreateTestSecurity(t, db)
 		inv := testutil.CreateTestInvestment(t, db, account.ID, sec.ID) // 10 shares @ $100, cost basis $1000
 
-		buyTx, err := svc.RecordBuy(user.ID, inv.ID, time.Now(), 5.0, 10000, 500, "Buy more")
+		buyTx, err := svc.RecordBuy(user.ID, inv.ID, time.Now(), 5.0, 10000, 500, "Buy more", "")
 		testutil.AssertNoError(t, err)
 
 		if buyTx.Type != models.InvestmentTransactionBuy {
@@ -434,7 +434,7 @@ func TestRecordBuy(t *testing.T) {
 		svc := NewInvestmentService(db, acctSvc)
 		user := testutil.CreateTestUser(t, db)
 
-		_, err := svc.RecordBuy(user.ID, "9999", time.Now(), 5.0, 10000, 0, "")
+		_, err := svc.RecordBuy(user.ID, "9999", time.Now(), 5.0, 10000, 0, "", "")
 		testutil.AssertAppError(t, err, "INVESTMENT_NOT_FOUND")
 	})
 }
@@ -450,7 +450,7 @@ func TestRecordSell(t *testing.T) {
 		sec := testutil.CreateTestSecurity(t, db)
 		inv := testutil.CreateTestInvestment(t, db, account.ID, sec.ID) // 10 shares, cost basis 100000
 
-		sellTx, err := svc.RecordSell(user.ID, inv.ID, time.Now(), 4.0, 12000, 300, "Sell some")
+		sellTx, err := svc.RecordSell(user.ID, inv.ID, time.Now(), 4.0, 12000, 300, "Sell some", "")
 		testutil.AssertNoError(t, err)
 
 		if sellTx.Type != models.InvestmentTransactionSell {
@@ -491,7 +491,7 @@ func TestRecordSell(t *testing.T) {
 		// totalAmount = 5 * 15000 - 0 = 75000
 		// costBasisReduction = 100000 * (5/10) = 50000
 		// realizedGainLoss = 75000 - 50000 = 25000
-		sellTx, err := svc.RecordSell(user.ID, inv.ID, time.Now(), 5.0, 15000, 0, "Sell half at profit")
+		sellTx, err := svc.RecordSell(user.ID, inv.ID, time.Now(), 5.0, 15000, 0, "Sell half at profit", "")
 		testutil.AssertNoError(t, err)
 
 		if sellTx.RealizedGainLoss != 25000 {
@@ -519,7 +519,7 @@ func TestRecordSell(t *testing.T) {
 		// totalAmount = 3 * 12000 = 36000
 		// costBasisReduction = 100000 * (3/10) = 30000
 		// realizedGL1 = 36000 - 30000 = 6000
-		sell1, err := svc.RecordSell(user.ID, inv.ID, time.Now(), 3.0, 12000, 0, "Sell 1")
+		sell1, err := svc.RecordSell(user.ID, inv.ID, time.Now(), 3.0, 12000, 0, "Sell 1", "")
 		testutil.AssertNoError(t, err)
 		if sell1.RealizedGainLoss != 6000 {
 			t.Errorf("expected sell1 realized gain/loss 6000, got %d", sell1.RealizedGainLoss)
@@ -531,7 +531,7 @@ func TestRecordSell(t *testing.T) {
 		// totalAmount = 2 * 8000 = 16000
 		// costBasisReduction = 70000 * (2/7) = 20000
 		// realizedGL2 = 16000 - 20000 = -4000
-		sell2, err := svc.RecordSell(user.ID, inv.ID, time.Now(), 2.0, 8000, 0, "Sell 2")
+		sell2, err := svc.RecordSell(user.ID, inv.ID, time.Now(), 2.0, 8000, 0, "Sell 2", "")
 		testutil.AssertNoError(t, err)
 		if sell2.RealizedGainLoss != -4000 {
 			t.Errorf("expected sell2 realized gain/loss -4000, got %d", sell2.RealizedGainLoss)
@@ -559,7 +559,7 @@ func TestRecordSell(t *testing.T) {
 		// totalAmount = 10 * 5000 = 50000
 		// costBasisReduction = 100000 * (10/10) = 100000
 		// realizedGainLoss = 50000 - 100000 = -50000
-		sellTx, err := svc.RecordSell(user.ID, inv.ID, time.Now(), 10.0, 5000, 0, "Sell all at loss")
+		sellTx, err := svc.RecordSell(user.ID, inv.ID, time.Now(), 10.0, 5000, 0, "Sell all at loss", "")
 		testutil.AssertNoError(t, err)
 
 		if sellTx.RealizedGainLoss != -50000 {
@@ -589,7 +589,7 @@ func TestRecordSell(t *testing.T) {
 		sec := testutil.CreateTestSecurity(t, db)
 		inv := testutil.CreateTestInvestment(t, db, account.ID, sec.ID) // 10 shares
 
-		_, err := svc.RecordSell(user.ID, inv.ID, time.Now(), 15.0, 12000, 0, "Too many")
+		_, err := svc.RecordSell(user.ID, inv.ID, time.Now(), 15.0, 12000, 0, "Too many", "")
 		testutil.AssertAppError(t, err, "INSUFFICIENT_SHARES")
 
 		// Verify quantity unchanged
@@ -614,7 +614,7 @@ func TestRecordSell(t *testing.T) {
 		// totalAmount = 10 * 12000 = 120000
 		// costBasisReduction = 100000 * (10/10) = 100000
 		// realizedGainLoss = 120000 - 100000 = 20000
-		sellTx, err := svc.RecordSell(user.ID, inv.ID, time.Now(), 10.0, 12000, 0, "Sell all")
+		sellTx, err := svc.RecordSell(user.ID, inv.ID, time.Now(), 10.0, 12000, 0, "Sell all", "")
 		testutil.AssertNoError(t, err)
 
 		if sellTx.RealizedGainLoss != 20000 {
@@ -833,12 +833,12 @@ func TestGetPortfolio(t *testing.T) {
 
 		// Sell 5 shares of AAPL at $150 (profit)
 		// totalAmount = 5 * 15000 = 75000, costBasisReduction = 50000, realized = 25000
-		_, err := svc.RecordSell(user.ID, inv1.ID, time.Now(), 5.0, 15000, 0, "")
+		_, err := svc.RecordSell(user.ID, inv1.ID, time.Now(), 5.0, 15000, 0, "", "")
 		testutil.AssertNoError(t, err)
 
 		// Sell 3 shares of GOOG at $80 (loss)
 		// totalAmount = 3 * 8000 = 24000, costBasisReduction = 30000, realized = -6000
-		_, err = svc.RecordSell(user.ID, inv2.ID, time.Now(), 3.0, 8000, 0, "")
+		_, err = svc.RecordSell(user.ID, inv2.ID, time.Now(), 3.0, 8000, 0, "", "")
 		testutil.AssertNoError(t, err)
 
 		portfolio, err := svc.GetPortfolio(user.ID)
@@ -1138,7 +1138,7 @@ func TestGetInvestmentTransactions(t *testing.T) {
 		inv := testutil.CreateTestInvestment(t, db, account.ID, sec.ID)
 
 		// Record some transactions
-		_, err := svc.RecordBuy(user.ID, inv.ID, time.Now(), 5.0, 10000, 0, "Buy 1")
+		_, err := svc.RecordBuy(user.ID, inv.ID, time.Now(), 5.0, 10000, 0, "Buy 1", "")
 		testutil.AssertNoError(t, err)
 		_, err = svc.RecordDividend(user.ID, inv.ID, time.Now(), 2000, "Cash", "Div")
 		testutil.AssertNoError(t, err)

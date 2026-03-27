@@ -37,20 +37,22 @@ type AddInvestmentRequest struct {
 
 // RecordBuyRequest represents the request payload for recording a buy transaction.
 type RecordBuyRequest struct {
-	Date         time.Time `json:"date" binding:"required"`
-	Quantity     float64   `json:"quantity" binding:"required,gt=0"`
-	PricePerUnit int64     `json:"price_per_unit" binding:"required,gt=0"`
-	Fee          int64     `json:"fee" binding:"gte=0"`
-	Notes        string    `json:"notes" binding:"max=500"`
+	Date             time.Time `json:"date" binding:"required"`
+	Quantity         float64   `json:"quantity" binding:"required,gt=0"`
+	PricePerUnit     int64     `json:"price_per_unit" binding:"required,gt=0"`
+	Fee              int64     `json:"fee" binding:"gte=0"`
+	Notes            string    `json:"notes" binding:"max=500"`
+	FundingAccountID string    `json:"funding_account_id" binding:"omitempty"`
 }
 
 // RecordSellRequest represents the request payload for recording a sell transaction.
 type RecordSellRequest struct {
-	Date         time.Time `json:"date" binding:"required"`
-	Quantity     float64   `json:"quantity" binding:"required,gt=0"`
-	PricePerUnit int64     `json:"price_per_unit" binding:"required,gt=0"`
-	Fee          int64     `json:"fee" binding:"gte=0"`
-	Notes        string    `json:"notes" binding:"max=500"`
+	Date             time.Time `json:"date" binding:"required"`
+	Quantity         float64   `json:"quantity" binding:"required,gt=0"`
+	PricePerUnit     int64     `json:"price_per_unit" binding:"required,gt=0"`
+	Fee              int64     `json:"fee" binding:"gte=0"`
+	Notes            string    `json:"notes" binding:"max=500"`
+	DepositAccountID string    `json:"deposit_account_id" binding:"omitempty"`
 }
 
 // RecordDividendRequest represents the request payload for recording a dividend.
@@ -285,14 +287,17 @@ func (h *InvestmentHandler) RecordBuy(c *gin.Context) {
 		return
 	}
 
-	invTx, err := h.investmentService.RecordBuy(userID, investmentID, req.Date, req.Quantity, req.PricePerUnit, req.Fee, req.Notes)
+	invTx, err := h.investmentService.RecordBuy(userID, investmentID, req.Date, req.Quantity, req.PricePerUnit, req.Fee, req.Notes, req.FundingAccountID)
 	if err != nil {
 		respondWithError(c, err)
 		return
 	}
 
-	h.auditService.Log(userID, "INVESTMENT_BUY", "investment", investmentID, c.ClientIP(),
-		map[string]interface{}{"quantity": req.Quantity, "price_per_unit": req.PricePerUnit})
+	auditMeta := map[string]interface{}{"quantity": req.Quantity, "price_per_unit": req.PricePerUnit}
+	if req.FundingAccountID != "" {
+		auditMeta["funding_account_id"] = req.FundingAccountID
+	}
+	h.auditService.Log(userID, "INVESTMENT_BUY", "investment", investmentID, c.ClientIP(), auditMeta)
 
 	c.JSON(http.StatusCreated, gin.H{"transaction": invTx})
 }
@@ -331,14 +336,17 @@ func (h *InvestmentHandler) RecordSell(c *gin.Context) {
 		return
 	}
 
-	invTx, err := h.investmentService.RecordSell(userID, investmentID, req.Date, req.Quantity, req.PricePerUnit, req.Fee, req.Notes)
+	invTx, err := h.investmentService.RecordSell(userID, investmentID, req.Date, req.Quantity, req.PricePerUnit, req.Fee, req.Notes, req.DepositAccountID)
 	if err != nil {
 		respondWithError(c, err)
 		return
 	}
 
-	h.auditService.Log(userID, "INVESTMENT_SELL", "investment", investmentID, c.ClientIP(),
-		map[string]interface{}{"quantity": req.Quantity, "price_per_unit": req.PricePerUnit})
+	auditMeta := map[string]interface{}{"quantity": req.Quantity, "price_per_unit": req.PricePerUnit}
+	if req.DepositAccountID != "" {
+		auditMeta["deposit_account_id"] = req.DepositAccountID
+	}
+	h.auditService.Log(userID, "INVESTMENT_SELL", "investment", investmentID, c.ClientIP(), auditMeta)
 
 	c.JSON(http.StatusCreated, gin.H{"transaction": invTx})
 }

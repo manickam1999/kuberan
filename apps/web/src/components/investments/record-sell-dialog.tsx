@@ -4,12 +4,20 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { ApiClientError } from "@/lib/api-client";
 import { useRecordSell } from "@/hooks/use-investments";
-import { toRFC3339 } from "@/lib/format";
+import { useAccounts } from "@/hooks/use-accounts";
+import { toRFC3339, formatCurrency } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { CurrencyInput } from "@/components/ui/currency-input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   Dialog,
   DialogContent,
@@ -47,10 +55,17 @@ export function RecordSellDialog({
   const [pricePerUnit, setPricePerUnit] = useState(0);
   const [fee, setFee] = useState(0);
   const [notes, setNotes] = useState("");
+  const [depositAccountId, setDepositAccountId] = useState("");
   const [error, setError] = useState("");
 
   const recordSell = useRecordSell(investmentId);
   const isSubmitting = recordSell.isPending;
+
+  const { data: accountsData } = useAccounts({ page: 1, page_size: 100 });
+  const cashAccounts =
+    accountsData?.data?.filter(
+      (a) => a.type === "cash" && a.is_active
+    ) ?? [];
 
   function resetForm() {
     setDate("");
@@ -58,6 +73,7 @@ export function RecordSellDialog({
     setPricePerUnit(0);
     setFee(0);
     setNotes("");
+    setDepositAccountId("");
     setError("");
   }
 
@@ -102,6 +118,7 @@ export function RecordSellDialog({
         price_per_unit: pricePerUnit,
         fee: fee > 0 ? fee : undefined,
         notes: notes.trim() || undefined,
+        deposit_account_id: depositAccountId && depositAccountId !== "none" ? depositAccountId : undefined,
       },
       {
         onSuccess: () => {
@@ -191,6 +208,36 @@ export function RecordSellDialog({
               disabled={isSubmitting}
             />
           </div>
+
+          {cashAccounts.length > 0 && (
+            <div className="flex flex-col gap-2">
+              <Label>Deposit proceeds to (optional)</Label>
+              <Select
+                value={depositAccountId}
+                onValueChange={setDepositAccountId}
+                disabled={isSubmitting}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="None" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">None</SelectItem>
+                  {cashAccounts.map((account) => (
+                    <SelectItem key={account.id} value={account.id}>
+                      {account.name} ({formatCurrency(account.balance)})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {depositAccountId && depositAccountId !== "none" && pricePerUnit > 0 && quantity && (
+                <p className="text-muted-foreground text-sm">
+                  Net proceeds: {formatCurrency(
+                    Math.round(parseFloat(quantity) * pricePerUnit) - fee
+                  )}
+                </p>
+              )}
+            </div>
+          )}
 
           <DialogFooter>
             <Button type="submit" disabled={isSubmitting}>

@@ -2,6 +2,7 @@ package services
 
 import (
 	"errors"
+	"fmt"
 	"time"
 
 	"gorm.io/gorm"
@@ -317,6 +318,7 @@ func (s *investmentService) GetPortfolio(userID string) (*PortfolioSummary, erro
 }
 
 // RecordBuy records a buy transaction and updates the investment holding.
+// If fundingAccountID is non-empty, the total cost is deducted from the specified cash account.
 func (s *investmentService) RecordBuy(
 	userID, investmentID string,
 	date time.Time,
@@ -324,10 +326,24 @@ func (s *investmentService) RecordBuy(
 	pricePerUnit int64,
 	fee int64,
 	notes string,
+	fundingAccountID string,
 ) (*models.InvestmentTransaction, error) {
 	investment, err := s.GetInvestmentByID(userID, investmentID)
 	if err != nil {
 		return nil, err
+	}
+
+	// Validate funding account if specified
+	var fundingAccount *models.Account
+	if fundingAccountID != "" {
+		account, accErr := s.accountService.GetAccountByID(userID, fundingAccountID)
+		if accErr != nil {
+			return nil, accErr
+		}
+		if account.Type != models.AccountTypeCash {
+			return nil, apperrors.WithMessage(apperrors.ErrInvalidInput, "funding account must be a cash account")
+		}
+		fundingAccount = account
 	}
 
 	totalAmount := int64(quantity*float64(pricePerUnit)) + fee
@@ -358,6 +374,24 @@ func (s *investmentService) RecordBuy(
 			return apperrors.Wrap(apperrors.ErrInternalServer, txErr)
 		}
 
+		// Deduct from funding account
+		if fundingAccount != nil {
+			cashTx := models.Transaction{
+				UserID:      userID,
+				AccountID:   fundingAccountID,
+				Type:        models.TransactionTypeInvestment,
+				Amount:      totalAmount,
+				Description: fmt.Sprintf("Investment purchase: %g %s", quantity, investment.Security.Name),
+				Date:        date,
+			}
+			if txErr := tx.Create(&cashTx).Error; txErr != nil {
+				return apperrors.Wrap(apperrors.ErrInternalServer, txErr)
+			}
+			if txErr := s.accountService.UpdateAccountBalance(tx, fundingAccount, models.TransactionTypeExpense, totalAmount); txErr != nil {
+				return txErr
+			}
+		}
+
 		return nil
 	})
 	if err != nil {
@@ -368,6 +402,7 @@ func (s *investmentService) RecordBuy(
 }
 
 // RecordSell records a sell transaction and adjusts the investment holding proportionally.
+// If depositAccountID is non-empty, the net proceeds are also credited to the specified cash account.
 func (s *investmentService) RecordSell(
 	userID, investmentID string,
 	date time.Time,
@@ -375,6 +410,7 @@ func (s *investmentService) RecordSell(
 	pricePerUnit int64,
 	fee int64,
 	notes string,
+	depositAccountID string,
 ) (*models.InvestmentTransaction, error) {
 	investment, err := s.GetInvestmentByID(userID, investmentID)
 	if err != nil {
@@ -383,6 +419,19 @@ func (s *investmentService) RecordSell(
 
 	if quantity > investment.Quantity {
 		return nil, apperrors.ErrInsufficientShares
+	}
+
+	// Validate deposit account if specified
+	var depositAccount *models.Account
+	if depositAccountID != "" {
+		account, accErr := s.accountService.GetAccountByID(userID, depositAccountID)
+		if accErr != nil {
+			return nil, accErr
+		}
+		if account.Type != models.AccountTypeCash {
+			return nil, apperrors.WithMessage(apperrors.ErrInvalidInput, "deposit account must be a cash account")
+		}
+		depositAccount = account
 	}
 
 	totalAmount := int64(quantity*float64(pricePerUnit)) - fee
@@ -419,6 +468,24 @@ func (s *investmentService) RecordSell(
 			"realized_gain_loss": newRealizedGainLoss,
 		}).Error; txErr != nil {
 			return apperrors.Wrap(apperrors.ErrInternalServer, txErr)
+		}
+
+		// Credit deposit account with net proceeds
+		if depositAccount != nil {
+			cashTx := models.Transaction{
+				UserID:      userID,
+				AccountID:   depositAccountID,
+				Type:        models.TransactionTypeInvestment,
+				Amount:      totalAmount,
+				Description: fmt.Sprintf("Sale proceeds: %g %s", quantity, investment.Security.Name),
+				Date:        date,
+			}
+			if txErr := tx.Create(&cashTx).Error; txErr != nil {
+				return apperrors.Wrap(apperrors.ErrInternalServer, txErr)
+			}
+			if txErr := s.accountService.UpdateAccountBalance(tx, depositAccount, models.TransactionTypeIncome, totalAmount); txErr != nil {
+				return txErr
+			}
 		}
 
 		return nil
