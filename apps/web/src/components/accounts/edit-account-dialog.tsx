@@ -55,6 +55,7 @@ export function EditAccountDialog({
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [isActive, setIsActive] = useState(true);
+  const [isPinned, setIsPinned] = useState(false);
   const [broker, setBroker] = useState("");
   const [accountNumber, setAccountNumber] = useState("");
   const [interestRate, setInterestRate] = useState("");
@@ -71,6 +72,7 @@ export function EditAccountDialog({
       setName(account.name);
       setDescription(account.description ?? "");
       setIsActive(account.is_active);
+      setIsPinned(account.is_pinned ?? false);
       setBroker(account.broker ?? "");
       setAccountNumber(account.account_number ?? "");
       setInterestRate(account.interest_rate?.toString() ?? "");
@@ -105,6 +107,7 @@ export function EditAccountDialog({
     const newDesc = description.trim();
     if (newDesc !== (account.description ?? "")) payload.description = newDesc;
     if (isActive !== account.is_active) payload.is_active = isActive;
+    if (isPinned !== (account.is_pinned ?? false)) payload.is_pinned = isPinned;
 
     // Investment-specific fields
     if (account.type === "investment") {
@@ -191,16 +194,29 @@ export function EditAccountDialog({
             />
           </div>
 
-          <div className="flex items-center gap-2">
-            <input
-              id="edit-account-active"
-              type="checkbox"
-              checked={isActive}
-              onChange={(e) => setIsActive(e.target.checked)}
-              disabled={isSubmitting}
-              className="h-4 w-4 rounded border-gray-300"
-            />
-            <Label htmlFor="edit-account-active">Active</Label>
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2">
+              <input
+                id="edit-account-active"
+                type="checkbox"
+                checked={isActive}
+                onChange={(e) => setIsActive(e.target.checked)}
+                disabled={isSubmitting}
+                className="h-4 w-4 rounded border-gray-300"
+              />
+              <Label htmlFor="edit-account-active">Active</Label>
+            </div>
+            <div className="flex items-center gap-2">
+              <input
+                id="edit-account-pinned"
+                type="checkbox"
+                checked={isPinned}
+                onChange={(e) => setIsPinned(e.target.checked)}
+                disabled={isSubmitting}
+                className="h-4 w-4 rounded border-gray-300"
+              />
+              <Label htmlFor="edit-account-pinned">Pinned</Label>
+            </div>
           </div>
 
           {account?.type === "investment" && (

@@ -13,8 +13,9 @@ import {
   TrendingUp,
   ChevronLeft,
   ChevronRight,
+  Pin,
 } from "lucide-react";
-import { useAccount } from "@/hooks/use-accounts";
+import { useAccount, useUpdateAccount } from "@/hooks/use-accounts";
 import { useAccountTransactions } from "@/hooks/use-transactions";
 import { useAccountInvestments } from "@/hooks/use-investments";
 import { useCategories } from "@/hooks/use-categories";
@@ -201,6 +202,7 @@ export default function AccountDetailPage() {
   const [investmentPage, setInvestmentPage] = useState(1);
 
   const { data: account, isLoading: accountLoading } = useAccount(accountId);
+  const updateAccount = useUpdateAccount(accountId);
   const isInvestmentAccount = account?.type === "investment";
   const { data: transactionsData, isLoading: transactionsLoading } =
     useAccountTransactions(isInvestmentAccount ? "" : accountId, {
@@ -285,6 +287,14 @@ export default function AccountDetailPage() {
           )}
         </div>
         <div className="flex flex-col sm:flex-row gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => updateAccount.mutate({ is_pinned: !account.is_pinned })}
+          >
+            <Pin className={`h-4 w-4 ${account.is_pinned ? "fill-primary" : ""}`} />
+            <span className="ml-2">{account.is_pinned ? "Unpin" : "Pin"}</span>
+          </Button>
           <Button
             variant="outline"
             size="sm"

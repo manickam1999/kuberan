@@ -455,20 +455,25 @@ export default function DashboardPage() {
           <div>
             <div className="mb-3 flex items-center justify-between">
               <h2 className="text-lg font-semibold">Accounts</h2>
-              {accounts.filter((a) => !a.is_pinned && a.balance !== 0).length > 6 && (
-                <Button asChild variant="link" size="sm">
-                  <Link href="/accounts">View all</Link>
-                </Button>
-              )}
+              <Button asChild variant="link" size="sm">
+                <Link href="/accounts">View all</Link>
+              </Button>
             </div>
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {[
-                ...accounts.filter((a) => a.is_pinned),
-                ...accounts.filter((a) => !a.is_pinned && a.balance !== 0).slice(0, 6),
-              ].map((account) => (
-                <AccountCard key={account.id} account={account} onTogglePin={handleTogglePin} />
-              ))}
-            </div>
+            {accounts.some((a) => a.is_pinned) ? (
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                {accounts
+                  .filter((a) => a.is_pinned)
+                  .map((account) => (
+                    <AccountCard key={account.id} account={account} onTogglePin={handleTogglePin} />
+                  ))}
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                No pinned accounts. Pin accounts from the{" "}
+                <Link href="/accounts" className="underline">accounts page</Link>{" "}
+                to see them here.
+              </p>
+            )}
           </div>
 
           <BudgetOverview budgets={activeBudgets} />
