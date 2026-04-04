@@ -14,6 +14,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Pin,
+  Loader2,
 } from "lucide-react";
 import { useAccount, useUpdateAccount } from "@/hooks/use-accounts";
 import { useAccountTransactions } from "@/hooks/use-transactions";
@@ -290,9 +291,14 @@ export default function AccountDetailPage() {
           <Button
             variant="outline"
             size="sm"
+            disabled={updateAccount.isPending}
             onClick={() => updateAccount.mutate({ is_pinned: !account.is_pinned })}
           >
-            <Pin className={`h-4 w-4 ${account.is_pinned ? "fill-primary" : ""}`} />
+            {updateAccount.isPending ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Pin className={`h-4 w-4 ${account.is_pinned ? "fill-primary" : ""}`} />
+            )}
             <span className="ml-2">{account.is_pinned ? "Unpin" : "Pin"}</span>
           </Button>
           <Button
