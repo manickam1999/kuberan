@@ -143,7 +143,7 @@ func (s *accountService) GetUserAccounts(userID string, page pagination.PageRequ
 	}
 
 	var accounts []models.Account
-	if err := base.Scopes(pagination.Paginate(page)).Find(&accounts).Error; err != nil {
+	if err := base.Order("is_pinned DESC, name ASC").Scopes(pagination.Paginate(page)).Find(&accounts).Error; err != nil {
 		return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)
 	}
 
@@ -195,6 +195,9 @@ func (s *accountService) UpdateAccount(userID, accountID string, fields AccountU
 	}
 	if fields.IsActive != nil {
 		updates["is_active"] = *fields.IsActive
+	}
+	if fields.IsPinned != nil {
+		updates["is_pinned"] = *fields.IsPinned
 	}
 
 	// Investment-only fields

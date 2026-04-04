@@ -26,6 +26,7 @@ type Account struct {
 	Balance     int64       `gorm:"type:bigint;not null;default:0" json:"balance"`
 	Currency    string      `gorm:"not null;default:'USD'" json:"currency"`
 	IsActive    bool        `gorm:"default:true" json:"is_active"`
+	IsPinned    bool        `gorm:"default:false" json:"is_pinned"`
 
 	// For investment accounts
 	Broker        string       `json:"broker,omitempty"` // E.g., Robinhood, Fidelity, etc.

@@ -56,6 +56,7 @@ type UpdateAccountRequest struct {
 	Name          *string  `json:"name" binding:"omitempty,min=1,max=100"`
 	Description   *string  `json:"description" binding:"omitempty,max=500"`
 	IsActive      *bool    `json:"is_active"`
+	IsPinned      *bool    `json:"is_pinned"`
 	Broker        *string  `json:"broker" binding:"omitempty,max=100"`
 	AccountNumber *string  `json:"account_number" binding:"omitempty,max=50"`
 	InterestRate  *float64 `json:"interest_rate" binding:"omitempty,gte=0,lte=100"`
@@ -332,6 +333,7 @@ func (h *AccountHandler) UpdateAccount(c *gin.Context) {
 		Name:          req.Name,
 		Description:   req.Description,
 		IsActive:      req.IsActive,
+		IsPinned:      req.IsPinned,
 		Broker:        req.Broker,
 		AccountNumber: req.AccountNumber,
 		InterestRate:  req.InterestRate,

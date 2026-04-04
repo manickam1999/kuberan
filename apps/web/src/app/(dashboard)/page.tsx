@@ -12,9 +12,12 @@ import {
   Landmark,
   PiggyBank,
   CreditCard,
+  Pin,
 } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
-import { useAccounts } from "@/hooks/use-accounts";
+import { useAccounts, accountKeys } from "@/hooks/use-accounts";
+import { apiClient } from "@/lib/api-client";
 import { useTransactions } from "@/hooks/use-transactions";
 import { useBudgets, useBudgetProgress } from "@/hooks/use-budgets";
 import { usePortfolio } from "@/hooks/use-investments";
@@ -196,16 +199,40 @@ function SummaryCards({ accounts }: { accounts: Account[] }) {
   );
 }
 
-function AccountCard({ account }: { account: Account }) {
+function AccountCard({
+  account,
+  onTogglePin,
+}: {
+  account: Account;
+  onTogglePin?: (accountId: string, pinned: boolean) => void;
+}) {
   return (
     <Link href={`/accounts/${account.id}`}>
       <Card className="transition-colors hover:bg-accent/50">
         <CardHeader>
           <div className="flex items-center justify-between gap-2 min-w-0">
             <CardTitle className="text-base truncate min-w-0">{account.name}</CardTitle>
-            <Badge variant="secondary" className="shrink-0">
-              {ACCOUNT_TYPE_LABELS[account.type] ?? account.type}
-            </Badge>
+            <div className="flex items-center gap-1 shrink-0">
+              {onTogglePin && (
+                <button
+                  type="button"
+                  className="p-1 rounded-md hover:bg-muted transition-colors"
+                  aria-label={account.is_pinned ? "Unpin account" : "Pin account"}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    onTogglePin(account.id, !account.is_pinned);
+                  }}
+                >
+                  <Pin
+                    className={`h-3.5 w-3.5 ${account.is_pinned ? "fill-primary text-primary" : "text-muted-foreground"}`}
+                  />
+                </button>
+              )}
+              <Badge variant="secondary">
+                {ACCOUNT_TYPE_LABELS[account.type] ?? account.type}
+              </Badge>
+            </div>
           </div>
         </CardHeader>
         <CardContent>
@@ -327,10 +354,16 @@ function TransactionRow({
 
 export default function DashboardPage() {
   const { user } = useAuth();
+  const queryClient = useQueryClient();
   const [txDialogOpen, setTxDialogOpen] = useState(false);
   const [editTxOpen, setEditTxOpen] = useState(false);
   const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
   const { data: accountsData, isLoading: accountsLoading } = useAccounts();
+
+  const handleTogglePin = async (accountId: string, pinned: boolean) => {
+    await apiClient.put(`/api/v1/accounts/${accountId}`, { is_pinned: pinned });
+    queryClient.invalidateQueries({ queryKey: accountKeys.lists() });
+  };
 
   const accounts = accountsData?.data ?? [];
 
@@ -422,19 +455,19 @@ export default function DashboardPage() {
           <div>
             <div className="mb-3 flex items-center justify-between">
               <h2 className="text-lg font-semibold">Accounts</h2>
-              {accounts.length > 6 && (
+              {accounts.filter((a) => !a.is_pinned && a.balance !== 0).length > 6 && (
                 <Button asChild variant="link" size="sm">
                   <Link href="/accounts">View all</Link>
                 </Button>
               )}
             </div>
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {accounts
-                .filter((account) => account.balance !== 0)
-                .slice(0, 6)
-                .map((account) => (
-                  <AccountCard key={account.id} account={account} />
-                ))}
+              {[
+                ...accounts.filter((a) => a.is_pinned),
+                ...accounts.filter((a) => !a.is_pinned && a.balance !== 0).slice(0, 6),
+              ].map((account) => (
+                <AccountCard key={account.id} account={account} onTogglePin={handleTogglePin} />
+              ))}
             </div>
           </div>
 

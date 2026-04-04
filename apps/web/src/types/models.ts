@@ -31,6 +31,7 @@ export interface Account extends BaseModel {
   balance: number; // cents
   currency: string; // ISO 4217
   is_active: boolean;
+  is_pinned: boolean;
   broker?: string; // investment accounts
   account_number?: string; // investment accounts
   interest_rate?: number; // debt/credit_card accounts (float)

@@ -111,6 +111,7 @@ export interface UpdateAccountRequest {
   name?: string;
   description?: string;
   is_active?: boolean;
+  is_pinned?: boolean;
   broker?: string;
   account_number?: string;
   interest_rate?: number;

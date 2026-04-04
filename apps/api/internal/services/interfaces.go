@@ -46,6 +46,7 @@ type AccountUpdateFields struct {
 	Name          *string
 	Description   *string
 	IsActive      *bool
+	IsPinned      *bool
 	Broker        *string    // investment only
 	AccountNumber *string    // investment only
 	InterestRate  *float64   // credit_card only
