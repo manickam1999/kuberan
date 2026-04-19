@@ -16,4 +16,4 @@ COPY crontab /etc/supercronic/crontab
 
 # Run an initial backup on start, then hand off to supercronic.
 # Initial backup failure is non-fatal — supercronic will retry on schedule.
-CMD ["/bin/sh", "-c", "/backup.sh || true; exec supercronic /etc/supercronic/crontab"]
+CMD ["/bin/sh", "-c", "/backup.sh || true; exec /usr/local/bin/supercronic /etc/supercronic/crontab"]
