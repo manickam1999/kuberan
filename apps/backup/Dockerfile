@@ -1,9 +1,11 @@
 FROM alpine:3.21
 
+ARG TARGETARCH
+
 # Install PostgreSQL 17 client (for pg_dump) and supercronic (cron for containers)
 # Client version must be >= server version (Supabase runs PG 17)
 RUN apk add --no-cache postgresql17-client ca-certificates tzdata \
-    && wget -q https://github.com/aptible/supercronic/releases/download/v0.2.33/supercronic-linux-amd64 \
+    && wget -q https://github.com/aptible/supercronic/releases/download/v0.2.33/supercronic-linux-${TARGETARCH} \
        -O /usr/local/bin/supercronic \
     && chmod +x /usr/local/bin/supercronic
 
