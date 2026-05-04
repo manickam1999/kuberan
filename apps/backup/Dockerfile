@@ -2,18 +2,27 @@ FROM alpine:3.21
 
 ARG TARGETARCH
 
-# Install PostgreSQL 17 client (for pg_dump) and supercronic (cron for containers)
-# Client version must be >= server version (Supabase runs PG 17)
-RUN apk add --no-cache ca-certificates tzdata \
-  && wget -q https://github.com/aptible/supercronic/releases/download/v0.2.33/supercronic-linux-${TARGETARCH} \
+# Use a stable Alpine mirror instead of CDN (fixes hanging APKINDEX issues)
+RUN sed -i 's|dl-cdn.alpinelinux.org|mirrors.edge.kernel.org|g' /etc/apk/repositories
+
+# Install dependencies
+RUN apk add --no-cache \
+  postgresql17-client \
+  ca-certificates \
+  tzdata \
+  && update-ca-certificates
+
+# Install supercronic (cron replacement for containers)
+RUN wget -q https://github.com/aptible/supercronic/releases/download/v0.2.33/supercronic-linux-${TARGETARCH} \
   -O /usr/local/bin/supercronic \
   && chmod +x /usr/local/bin/supercronic
 
+# Copy backup script
 COPY backup.sh /backup.sh
 RUN chmod +x /backup.sh
 
+# Copy cron definition
 COPY crontab /etc/supercronic/crontab
 
-# Run an initial backup on start, then hand off to supercronic.
-# Initial backup failure is non-fatal — supercronic will retry on schedule.
+# Run initial backup then start cron
 CMD ["/bin/sh", "-c", "/backup.sh || true; exec /usr/local/bin/supercronic /etc/supercronic/crontab"]
