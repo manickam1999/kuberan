@@ -18,6 +18,9 @@ services:
       - DB_PASSWORD=kuberan
       - DB_NAME=kuberan
       - DB_SSLMODE=disable
+      # JWT_SECRET MUST be identical for the api and mcp services so MCP tokens
+      # issued by the api validate on the mcp server.
+      - JWT_SECRET=${JWT_SECRET:-fallback-secret-key-for-dev-only}
       - PIPELINE_API_KEY=${PIPELINE_API_KEY}
       - BOT_INTERNAL_SECRET=${BOT_INTERNAL_SECRET}
     depends_on:
@@ -73,6 +76,39 @@ services:
     profiles:
       - oracle
     restart: "no"
+
+  mcp:
+    build:
+      context: ./apps/api
+      dockerfile: dockerfiles/Dockerfile.dev
+    command: go run ./cmd/mcp
+    volumes:
+      - ./apps/api:/app
+      - go-modules:/go/pkg/mod
+    ports:
+      - "8081:8081"
+    environment:
+      - ENV=development
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_USER=kuberan
+      - DB_PASSWORD=kuberan
+      - DB_NAME=kuberan
+      - DB_SSLMODE=disable
+      - MCP_PORT=8081
+      # JWT_SECRET MUST match the api service so MCP tokens issued by the api
+      # validate here. In production set a strong shared secret on both.
+      - JWT_SECRET=${JWT_SECRET:-fallback-secret-key-for-dev-only}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8081/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    restart: unless-stopped
 
   postgres:
     image: postgres:16-alpine
