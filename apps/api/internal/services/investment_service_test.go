@@ -983,7 +983,7 @@ func TestGetAllInvestments(t *testing.T) {
 		testutil.CreateTestSecurityPrice(t, db, sec2.ID, 12000, time.Now())
 
 		page := pagination.PageRequest{Page: 1, PageSize: 20}
-		result, err := svc.GetAllInvestments(user.ID, page)
+		result, err := svc.GetAllInvestments(user.ID, InvestmentStatusOpen, page)
 		testutil.AssertNoError(t, err)
 
 		if result.TotalItems != 2 {
@@ -1015,7 +1015,7 @@ func TestGetAllInvestments(t *testing.T) {
 		user := testutil.CreateTestUser(t, db)
 
 		page := pagination.PageRequest{Page: 1, PageSize: 20}
-		result, err := svc.GetAllInvestments(user.ID, page)
+		result, err := svc.GetAllInvestments(user.ID, InvestmentStatusOpen, page)
 		testutil.AssertNoError(t, err)
 
 		if result.TotalItems != 0 {
@@ -1040,7 +1040,7 @@ func TestGetAllInvestments(t *testing.T) {
 		}
 
 		page := pagination.PageRequest{Page: 1, PageSize: 2}
-		result, err := svc.GetAllInvestments(user.ID, page)
+		result, err := svc.GetAllInvestments(user.ID, InvestmentStatusOpen, page)
 		testutil.AssertNoError(t, err)
 
 		if result.TotalItems != 5 {
@@ -1054,7 +1054,7 @@ func TestGetAllInvestments(t *testing.T) {
 		}
 
 		page2 := pagination.PageRequest{Page: 3, PageSize: 2}
-		result2, err := svc.GetAllInvestments(user.ID, page2)
+		result2, err := svc.GetAllInvestments(user.ID, InvestmentStatusOpen, page2)
 		testutil.AssertNoError(t, err)
 		if len(result2.Data) != 1 {
 			t.Errorf("expected 1 item on page 3, got %d", len(result2.Data))
@@ -1080,7 +1080,7 @@ func TestGetAllInvestments(t *testing.T) {
 		testutil.CreateTestInvestment(t, db, inactiveAcct.ID, sec2.ID)
 
 		page := pagination.PageRequest{Page: 1, PageSize: 20}
-		result, err := svc.GetAllInvestments(user.ID, page)
+		result, err := svc.GetAllInvestments(user.ID, InvestmentStatusOpen, page)
 		testutil.AssertNoError(t, err)
 
 		if result.TotalItems != 1 {
@@ -1088,7 +1088,7 @@ func TestGetAllInvestments(t *testing.T) {
 		}
 	})
 
-	t.Run("excludes_closed_positions", func(t *testing.T) {
+	t.Run("filters_by_status", func(t *testing.T) {
 		db := testutil.SetupTestDB(t)
 		defer testutil.TeardownTestDB(t, db)
 		acctSvc := NewAccountService(db)
@@ -1098,9 +1098,9 @@ func TestGetAllInvestments(t *testing.T) {
 
 		// Open position (quantity > 0)
 		sec1 := testutil.CreateTestSecurity(t, db)
-		testutil.CreateTestInvestment(t, db, acct.ID, sec1.ID)
+		openInv := testutil.CreateTestInvestment(t, db, acct.ID, sec1.ID)
 
-		// Closed position (quantity = 0)
+		// Closed position (quantity = 0) with non-zero realized G/L
 		sec2 := testutil.CreateTestSecurity(t, db)
 		closedInv := &models.Investment{
 			AccountID:        acct.ID,
@@ -1114,15 +1114,39 @@ func TestGetAllInvestments(t *testing.T) {
 		}
 
 		page := pagination.PageRequest{Page: 1, PageSize: 20}
-		result, err := svc.GetAllInvestments(user.ID, page)
-		testutil.AssertNoError(t, err)
 
-		if result.TotalItems != 1 {
-			t.Errorf("expected 1 investment (open only), got %d", result.TotalItems)
-		}
-		if len(result.Data) != 1 {
-			t.Errorf("expected 1 item in data, got %d", len(result.Data))
-		}
+		t.Run("open_returns_only_open", func(t *testing.T) {
+			result, err := svc.GetAllInvestments(user.ID, InvestmentStatusOpen, page)
+			testutil.AssertNoError(t, err)
+			if result.TotalItems != 1 {
+				t.Fatalf("expected 1 open investment, got %d", result.TotalItems)
+			}
+			if result.Data[0].ID != openInv.ID {
+				t.Errorf("expected open investment %s, got %s", openInv.ID, result.Data[0].ID)
+			}
+		})
+
+		t.Run("closed_returns_only_closed", func(t *testing.T) {
+			result, err := svc.GetAllInvestments(user.ID, InvestmentStatusClosed, page)
+			testutil.AssertNoError(t, err)
+			if result.TotalItems != 1 {
+				t.Fatalf("expected 1 closed investment, got %d", result.TotalItems)
+			}
+			if result.Data[0].ID != closedInv.ID {
+				t.Errorf("expected closed investment %s, got %s", closedInv.ID, result.Data[0].ID)
+			}
+			if result.Data[0].RealizedGainLoss != 50000 {
+				t.Errorf("expected realized G/L 50000, got %d", result.Data[0].RealizedGainLoss)
+			}
+		})
+
+		t.Run("all_returns_both", func(t *testing.T) {
+			result, err := svc.GetAllInvestments(user.ID, InvestmentStatusAll, page)
+			testutil.AssertNoError(t, err)
+			if result.TotalItems != 2 {
+				t.Errorf("expected 2 investments, got %d", result.TotalItems)
+			}
+		})
 	})
 }
 

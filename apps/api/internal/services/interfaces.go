@@ -180,7 +180,7 @@ type TypeSummary struct {
 // InvestmentServicer defines the contract for investment-related business logic.
 type InvestmentServicer interface {
 	AddInvestment(userID, accountID, securityID string, quantity float64, purchasePrice int64, walletAddress string, date *time.Time, fee int64, notes string) (*models.Investment, error)
-	GetAllInvestments(userID string, page pagination.PageRequest) (*pagination.PageResponse[models.Investment], error)
+	GetAllInvestments(userID string, status InvestmentStatus, page pagination.PageRequest) (*pagination.PageResponse[models.Investment], error)
 	GetAccountInvestments(userID, accountID string, page pagination.PageRequest) (*pagination.PageResponse[models.Investment], error)
 	GetInvestmentByID(userID, investmentID string) (*models.Investment, error)
 	GetPortfolio(userID string) (*PortfolioSummary, error)

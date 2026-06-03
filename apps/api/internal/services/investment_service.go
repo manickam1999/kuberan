@@ -12,6 +12,29 @@ import (
 	"kuberan/internal/pagination"
 )
 
+// InvestmentStatus filters investments by position state.
+type InvestmentStatus string
+
+const (
+	InvestmentStatusOpen   InvestmentStatus = "open"   // quantity > 0
+	InvestmentStatusClosed InvestmentStatus = "closed" // quantity = 0
+	InvestmentStatusAll    InvestmentStatus = "all"    // no filter
+)
+
+// applyStatusFilter applies the quantity clause that corresponds to the given status.
+// Unknown values fall back to InvestmentStatusOpen so callers that omit the filter
+// keep their original behaviour.
+func applyStatusFilter(db *gorm.DB, status InvestmentStatus) *gorm.DB {
+	switch status {
+	case InvestmentStatusClosed:
+		return db.Where("quantity = 0")
+	case InvestmentStatusAll:
+		return db
+	default:
+		return db.Where("quantity > 0")
+	}
+}
+
 // getLatestPrices fetches the most recent price for each security ID from security_prices.
 // Returns a map of security_id -> price (int64 cents). Securities with no price entries
 // are not included in the map.
@@ -179,9 +202,9 @@ func (s *investmentService) GetAccountInvestments(userID, accountID string, page
 	return &result, nil
 }
 
-// GetAllInvestments returns a paginated list of all investments across all active
-// investment accounts for the given user.
-func (s *investmentService) GetAllInvestments(userID string, page pagination.PageRequest) (*pagination.PageResponse[models.Investment], error) {
+// GetAllInvestments returns a paginated list of investments across all active
+// investment accounts for the given user, filtered by status (open/closed/all).
+func (s *investmentService) GetAllInvestments(userID string, status InvestmentStatus, page pagination.PageRequest) (*pagination.PageResponse[models.Investment], error) {
 	page.Defaults()
 
 	// Find all active investment account IDs for the user
@@ -198,15 +221,20 @@ func (s *investmentService) GetAllInvestments(userID string, page pagination.Pag
 	}
 
 	var totalItems int64
-	base := s.db.Model(&models.Investment{}).Where("account_id IN ? AND quantity > 0", accountIDs)
+	base := applyStatusFilter(
+		s.db.Model(&models.Investment{}).Where("account_id IN ?", accountIDs),
+		status,
+	)
 	if err := base.Count(&totalItems).Error; err != nil {
 		return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)
 	}
 
 	var investments []models.Investment
-	if err := s.db.Preload("Security").Preload("Account").
-		Where("account_id IN ? AND quantity > 0", accountIDs).
-		Scopes(pagination.Paginate(page)).Find(&investments).Error; err != nil {
+	query := applyStatusFilter(
+		s.db.Preload("Security").Preload("Account").Where("account_id IN ?", accountIDs),
+		status,
+	)
+	if err := query.Scopes(pagination.Paginate(page)).Find(&investments).Error; err != nil {
 		return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)
 	}
 

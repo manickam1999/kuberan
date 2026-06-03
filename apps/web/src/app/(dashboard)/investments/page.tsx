@@ -36,7 +36,12 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { usePortfolio, useAllInvestments } from "@/hooks/use-investments";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  usePortfolio,
+  useAllInvestments,
+  type InvestmentStatus,
+} from "@/hooks/use-investments";
 import { formatCurrency, formatPercentage } from "@/lib/format";
 import type { AssetType, Investment } from "@/types/models";
 import { AssetAllocationChart } from "@/components/investments/asset-allocation-chart";
@@ -75,8 +80,15 @@ type SortColumn =
   | "price"
   | "market_value"
   | "unrealized_gl"
-  | "realized_gl";
+  | "realized_gl"
+  | "cost_basis"
+  | "return_pct";
 type SortDirection = "asc" | "desc" | null;
+
+function returnPct(investment: Investment) {
+  if (investment.cost_basis === 0) return 0;
+  return (investment.realized_gain_loss / investment.cost_basis) * 100;
+}
 
 function HoldingCard({ investment, onClick }: { investment: Investment; onClick: () => void }) {
   const marketValue = Math.round(investment.quantity * investment.current_price);
@@ -154,15 +166,92 @@ function HoldingCard({ investment, onClick }: { investment: Investment; onClick:
   );
 }
 
+function ClosedHoldingCard({
+  investment,
+  onClick,
+}: {
+  investment: Investment;
+  onClick: () => void;
+}) {
+  const isRealizedPositive = investment.realized_gain_loss >= 0;
+  const pct = returnPct(investment);
+
+  return (
+    <Card className="cursor-pointer transition-colors hover:bg-accent/50" onClick={onClick}>
+      <CardHeader className="pb-3">
+        <div className="flex items-start justify-between gap-2 overflow-hidden">
+          <div className="min-w-0 flex-shrink overflow-hidden max-w-[55%] sm:max-w-[65%]">
+            <CardTitle className="text-base font-mono font-semibold truncate">
+              {investment.security.symbol}
+            </CardTitle>
+            <p className="text-sm text-muted-foreground truncate">
+              {investment.security.name}
+            </p>
+          </div>
+          <div className="text-right flex-shrink-0 min-w-0 overflow-hidden">
+            <p
+              className={`text-sm sm:text-base font-semibold font-mono tabular-nums truncate ${
+                isRealizedPositive ? "text-green-600" : "text-red-600"
+              }`}
+            >
+              {isRealizedPositive ? "+" : ""}
+              {formatCurrency(investment.realized_gain_loss)}
+            </p>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-2 overflow-hidden">
+        <div className="flex items-center justify-between gap-2 text-sm min-w-0">
+          <span className="text-muted-foreground shrink-0">Cost Basis</span>
+          <span className="font-medium font-mono tabular-nums truncate">
+            {formatCurrency(investment.cost_basis)}
+          </span>
+        </div>
+        <div className="flex items-center justify-between gap-2 text-sm min-w-0">
+          <span className="text-muted-foreground shrink-0">Return</span>
+          <span
+            className={`font-medium font-mono tabular-nums truncate ${
+              isRealizedPositive ? "text-green-600" : "text-red-600"
+            }`}
+          >
+            {isRealizedPositive ? "+" : ""}
+            {formatPercentage(Math.abs(pct))}
+          </span>
+        </div>
+        <div className="pt-1 min-w-0">
+          <Link
+            href={`/accounts/${investment.account_id}`}
+            className="text-xs text-primary hover:underline truncate block"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {investment.account?.name ?? `Account #${investment.account_id}`}
+          </Link>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 function AllHoldingsTable() {
   const router = useRouter();
   const [page, setPage] = useState(1);
+  const [status, setStatus] = useState<InvestmentStatus>("open");
   const [sortColumn, setSortColumn] = useState<SortColumn | null>(null);
   const [sortDirection, setSortDirection] = useState<SortDirection>(null);
   const { data, isLoading } = useAllInvestments({
     page,
     page_size: HOLDINGS_PAGE_SIZE,
+    status,
   });
+
+  const handleTabChange = (next: string) => {
+    if (next !== "open" && next !== "closed") return;
+    if (next === status) return;
+    setStatus(next);
+    setPage(1);
+    setSortColumn(null);
+    setSortDirection(null);
+  };
 
   const investments = data?.data ?? [];
   const totalPages = data?.total_pages ?? 1;
@@ -218,6 +307,14 @@ function AllHoldingsTable() {
           aVal = a.realized_gain_loss;
           bVal = b.realized_gain_loss;
           break;
+        case "cost_basis":
+          aVal = a.cost_basis;
+          bVal = b.cost_basis;
+          break;
+        case "return_pct":
+          aVal = returnPct(a);
+          bVal = returnPct(b);
+          break;
         default:
           return 0;
       }
@@ -265,16 +362,27 @@ function AllHoldingsTable() {
     );
   };
 
+  const isClosed = status === "closed";
+  const itemNoun = isClosed ? "closed position" : "holding";
+
   return (
     <Card>
       <CardHeader>
-        <div className="flex items-center gap-2">
-          <List className="h-4 w-4 text-muted-foreground" />
-          <CardTitle>All Holdings</CardTitle>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-2">
+            <List className="h-4 w-4 text-muted-foreground" />
+            <CardTitle>All Holdings</CardTitle>
+          </div>
+          <Tabs value={status} onValueChange={handleTabChange}>
+            <TabsList>
+              <TabsTrigger value="open">Current</TabsTrigger>
+              <TabsTrigger value="closed">Closed</TabsTrigger>
+            </TabsList>
+          </Tabs>
         </div>
         <CardDescription>
-          {totalItems} holding{totalItems !== 1 ? "s" : ""} across all
-          investment accounts
+          {totalItems} {itemNoun}
+          {totalItems !== 1 ? "s" : ""} across all investment accounts
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -295,22 +403,34 @@ function AllHoldingsTable() {
           </>
         ) : investments.length === 0 ? (
           <div className="flex flex-col items-center justify-center rounded-lg border border-dashed p-8 text-center">
-            <h3 className="text-lg font-semibold">No holdings yet</h3>
+            <h3 className="text-lg font-semibold">
+              {isClosed ? "No closed positions yet" : "No holdings yet"}
+            </h3>
             <p className="mt-1 text-sm text-muted-foreground">
-              Add investments to your accounts to see them here.
+              {isClosed
+                ? "Positions you fully sell will appear here with their realized P/L."
+                : "Add investments to your accounts to see them here."}
             </p>
           </div>
         ) : (
           <>
             {/* Mobile: Cards */}
             <div className="md:hidden grid gap-3">
-              {sortedInvestments.map((inv) => (
-                <HoldingCard
-                  key={inv.id}
-                  investment={inv}
-                  onClick={() => router.push(`/investments/${inv.id}`)}
-                />
-              ))}
+              {sortedInvestments.map((inv) =>
+                isClosed ? (
+                  <ClosedHoldingCard
+                    key={inv.id}
+                    investment={inv}
+                    onClick={() => router.push(`/investments/${inv.id}`)}
+                  />
+                ) : (
+                  <HoldingCard
+                    key={inv.id}
+                    investment={inv}
+                    onClick={() => router.push(`/investments/${inv.id}`)}
+                  />
+                )
+              )}
             </div>
 
             {/* Desktop: Sortable Table */}
@@ -321,35 +441,101 @@ function AllHoldingsTable() {
                     <SortableHeader column="symbol" label="Symbol" />
                     <SortableHeader column="name" label="Name" />
                     <TableHead>Account</TableHead>
-                    <SortableHeader
-                      column="qty"
-                      label="Qty"
-                      align="text-right"
-                    />
-                    <SortableHeader
-                      column="price"
-                      label="Price"
-                      align="text-right"
-                    />
-                    <SortableHeader
-                      column="market_value"
-                      label="Market Value"
-                      align="text-right"
-                    />
-                    <SortableHeader
-                      column="unrealized_gl"
-                      label="Unrealized G/L"
-                      align="text-right"
-                    />
-                    <SortableHeader
-                      column="realized_gl"
-                      label="Realized G/L"
-                      align="text-right"
-                    />
+                    {isClosed ? (
+                      <>
+                        <SortableHeader
+                          column="cost_basis"
+                          label="Cost Basis"
+                          align="text-right"
+                        />
+                        <SortableHeader
+                          column="realized_gl"
+                          label="Realized G/L"
+                          align="text-right"
+                        />
+                        <SortableHeader
+                          column="return_pct"
+                          label="Return"
+                          align="text-right"
+                        />
+                      </>
+                    ) : (
+                      <>
+                        <SortableHeader
+                          column="qty"
+                          label="Qty"
+                          align="text-right"
+                        />
+                        <SortableHeader
+                          column="price"
+                          label="Price"
+                          align="text-right"
+                        />
+                        <SortableHeader
+                          column="market_value"
+                          label="Market Value"
+                          align="text-right"
+                        />
+                        <SortableHeader
+                          column="unrealized_gl"
+                          label="Unrealized G/L"
+                          align="text-right"
+                        />
+                        <SortableHeader
+                          column="realized_gl"
+                          label="Realized G/L"
+                          align="text-right"
+                        />
+                      </>
+                    )}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {sortedInvestments.map((inv) => {
+                    const realizedPositive = inv.realized_gain_loss >= 0;
+                    if (isClosed) {
+                      const pct = returnPct(inv);
+                      return (
+                        <TableRow
+                          key={inv.id}
+                          className="cursor-pointer"
+                          onClick={() => router.push(`/investments/${inv.id}`)}
+                        >
+                          <TableCell className="font-mono font-semibold">
+                            {inv.security.symbol}
+                          </TableCell>
+                          <TableCell>{inv.security.name}</TableCell>
+                          <TableCell>
+                            <Link
+                              href={`/accounts/${inv.account_id}`}
+                              className="text-primary hover:underline"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              {inv.account?.name ?? `Account #${inv.account_id}`}
+                            </Link>
+                          </TableCell>
+                          <TableCell className="text-right font-mono tabular-nums">
+                            {formatCurrency(inv.cost_basis)}
+                          </TableCell>
+                          <TableCell
+                            className={`text-right font-medium font-mono tabular-nums ${
+                              realizedPositive ? "text-green-600" : "text-red-600"
+                            }`}
+                          >
+                            {realizedPositive ? "+" : ""}
+                            {formatCurrency(inv.realized_gain_loss)}
+                          </TableCell>
+                          <TableCell
+                            className={`text-right font-medium font-mono tabular-nums ${
+                              realizedPositive ? "text-green-600" : "text-red-600"
+                            }`}
+                          >
+                            {realizedPositive ? "+" : ""}
+                            {formatPercentage(Math.abs(pct))}
+                          </TableCell>
+                        </TableRow>
+                      );
+                    }
                     const marketValue = Math.round(
                       inv.quantity * inv.current_price
                     );
@@ -395,12 +581,10 @@ function AllHoldingsTable() {
                         </TableCell>
                         <TableCell
                           className={`text-right font-medium font-mono tabular-nums ${
-                            inv.realized_gain_loss >= 0
-                              ? "text-green-600"
-                              : "text-red-600"
+                            realizedPositive ? "text-green-600" : "text-red-600"
                           }`}
                         >
-                          {inv.realized_gain_loss >= 0 ? "+" : ""}
+                          {realizedPositive ? "+" : ""}
                           {formatCurrency(inv.realized_gain_loss)}
                         </TableCell>
                       </TableRow>

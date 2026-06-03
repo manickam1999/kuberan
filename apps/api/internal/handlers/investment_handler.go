@@ -72,14 +72,16 @@ type RecordSplitRequest struct {
 
 // GetAllInvestments handles listing all investments across all investment accounts.
 // @Summary     Get all investments
-// @Description Get a paginated list of all investments across all active investment accounts
+// @Description Get a paginated list of investments across all active investment accounts, filtered by position status.
 // @Tags        investments
 // @Accept      json
 // @Produce     json
 // @Security    BearerAuth
-// @Param       page      query int false "Page number (default 1)"
-// @Param       page_size query int false "Items per page (default 20, max 100)"
+// @Param       page      query int    false "Page number (default 1)"
+// @Param       page_size query int    false "Items per page (default 20, max 100)"
+// @Param       status    query string false "Position status: open (default), closed, all"
 // @Success     200 {object} pagination.PageResponse[models.Investment] "Paginated investments"
+// @Failure     400 {object} ErrorResponse "Invalid input"
 // @Failure     401 {object} ErrorResponse "Unauthorized"
 // @Failure     500 {object} ErrorResponse "Server error"
 // @Router      /investments [get]
@@ -96,7 +98,18 @@ func (h *InvestmentHandler) GetAllInvestments(c *gin.Context) {
 		return
 	}
 
-	result, err := h.investmentService.GetAllInvestments(userID, page)
+	status := services.InvestmentStatusOpen
+	if raw := c.Query("status"); raw != "" {
+		switch services.InvestmentStatus(raw) {
+		case services.InvestmentStatusOpen, services.InvestmentStatusClosed, services.InvestmentStatusAll:
+			status = services.InvestmentStatus(raw)
+		default:
+			respondWithError(c, apperrors.WithMessage(apperrors.ErrInvalidInput, "status must be one of: open, closed, all"))
+			return
+		}
+	}
+
+	result, err := h.investmentService.GetAllInvestments(userID, status, page)
 	if err != nil {
 		respondWithError(c, err)
 		return

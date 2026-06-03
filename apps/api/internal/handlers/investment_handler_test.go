@@ -17,7 +17,7 @@ import (
 
 type mockInvestmentService struct {
 	addInvestmentFn             func(userID, accountID, securityID string, quantity float64, purchasePrice int64, walletAddress string, date *time.Time, fee int64, notes string) (*models.Investment, error)
-	getAllInvestmentsFn         func(userID string, page pagination.PageRequest) (*pagination.PageResponse[models.Investment], error)
+	getAllInvestmentsFn         func(userID string, status services.InvestmentStatus, page pagination.PageRequest) (*pagination.PageResponse[models.Investment], error)
 	getAccountInvestmentsFn     func(userID, accountID string, page pagination.PageRequest) (*pagination.PageResponse[models.Investment], error)
 	getInvestmentByIDFn         func(userID, investmentID string) (*models.Investment, error)
 	getPortfolioFn              func(userID string) (*services.PortfolioSummary, error)
@@ -35,9 +35,9 @@ func (m *mockInvestmentService) AddInvestment(userID, accountID, securityID stri
 	return &models.Investment{}, nil
 }
 
-func (m *mockInvestmentService) GetAllInvestments(userID string, page pagination.PageRequest) (*pagination.PageResponse[models.Investment], error) {
+func (m *mockInvestmentService) GetAllInvestments(userID string, status services.InvestmentStatus, page pagination.PageRequest) (*pagination.PageResponse[models.Investment], error) {
 	if m.getAllInvestmentsFn != nil {
-		return m.getAllInvestmentsFn(userID, page)
+		return m.getAllInvestmentsFn(userID, status, page)
 	}
 	resp := pagination.NewPageResponse([]models.Investment{}, 1, 20, 0)
 	return &resp, nil
@@ -676,8 +676,10 @@ func TestInvestmentHandler_GetAccountInvestments(t *testing.T) {
 
 func TestInvestmentHandler_GetAllInvestments(t *testing.T) {
 	t.Run("returns_200_with_investments", func(t *testing.T) {
+		var capturedStatus services.InvestmentStatus
 		svc := &mockInvestmentService{
-			getAllInvestmentsFn: func(_ string, _ pagination.PageRequest) (*pagination.PageResponse[models.Investment], error) {
+			getAllInvestmentsFn: func(_ string, status services.InvestmentStatus, _ pagination.PageRequest) (*pagination.PageResponse[models.Investment], error) {
+				capturedStatus = status
 				resp := pagination.NewPageResponse([]models.Investment{
 					{Base: models.Base{ID: "1"}, SecurityID: "1", Quantity: 10},
 					{Base: models.Base{ID: "2"}, SecurityID: "2", Quantity: 5},
@@ -689,6 +691,10 @@ func TestInvestmentHandler_GetAllInvestments(t *testing.T) {
 		r := setupInvestmentRouter(handler)
 
 		rec := doRequest(r, "GET", "/investments", "")
+
+		if capturedStatus != services.InvestmentStatusOpen {
+			t.Errorf("expected default status=open, got %q", capturedStatus)
+		}
 
 		if rec.Code != http.StatusOK {
 			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
@@ -705,7 +711,7 @@ func TestInvestmentHandler_GetAllInvestments(t *testing.T) {
 
 	t.Run("returns_200_empty_list", func(t *testing.T) {
 		svc := &mockInvestmentService{
-			getAllInvestmentsFn: func(_ string, _ pagination.PageRequest) (*pagination.PageResponse[models.Investment], error) {
+			getAllInvestmentsFn: func(_ string, _ services.InvestmentStatus, _ pagination.PageRequest) (*pagination.PageResponse[models.Investment], error) {
 				resp := pagination.NewPageResponse([]models.Investment{}, 1, 20, 0)
 				return &resp, nil
 			},
@@ -727,7 +733,7 @@ func TestInvestmentHandler_GetAllInvestments(t *testing.T) {
 
 	t.Run("returns_500_on_service_error", func(t *testing.T) {
 		svc := &mockInvestmentService{
-			getAllInvestmentsFn: func(_ string, _ pagination.PageRequest) (*pagination.PageResponse[models.Investment], error) {
+			getAllInvestmentsFn: func(_ string, _ services.InvestmentStatus, _ pagination.PageRequest) (*pagination.PageResponse[models.Investment], error) {
 				return nil, apperrors.ErrInternalServer
 			},
 		}
@@ -738,6 +744,50 @@ func TestInvestmentHandler_GetAllInvestments(t *testing.T) {
 
 		if rec.Code != http.StatusInternalServerError {
 			t.Fatalf("expected 500, got %d: %s", rec.Code, rec.Body.String())
+		}
+	})
+
+	t.Run("passes_status_query_param_to_service", func(t *testing.T) {
+		cases := []struct {
+			query string
+			want  services.InvestmentStatus
+		}{
+			{"open", services.InvestmentStatusOpen},
+			{"closed", services.InvestmentStatusClosed},
+			{"all", services.InvestmentStatusAll},
+		}
+		for _, tc := range cases {
+			t.Run(tc.query, func(t *testing.T) {
+				var got services.InvestmentStatus
+				svc := &mockInvestmentService{
+					getAllInvestmentsFn: func(_ string, status services.InvestmentStatus, _ pagination.PageRequest) (*pagination.PageResponse[models.Investment], error) {
+						got = status
+						resp := pagination.NewPageResponse([]models.Investment{}, 1, 20, 0)
+						return &resp, nil
+					},
+				}
+				handler := NewInvestmentHandler(svc, &mockAuditService{})
+				r := setupInvestmentRouter(handler)
+
+				rec := doRequest(r, "GET", "/investments?status="+tc.query, "")
+				if rec.Code != http.StatusOK {
+					t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+				}
+				if got != tc.want {
+					t.Errorf("expected status %q, got %q", tc.want, got)
+				}
+			})
+		}
+	})
+
+	t.Run("returns_400_on_invalid_status", func(t *testing.T) {
+		handler := NewInvestmentHandler(&mockInvestmentService{}, &mockAuditService{})
+		r := setupInvestmentRouter(handler)
+
+		rec := doRequest(r, "GET", "/investments?status=bogus", "")
+
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("expected 400, got %d: %s", rec.Code, rec.Body.String())
 		}
 	})
 }

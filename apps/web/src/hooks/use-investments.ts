@@ -15,10 +15,16 @@ import type {
 } from "@/types/api";
 import { accountKeys } from "./use-accounts";
 
+export type InvestmentStatus = "open" | "closed" | "all";
+
+export type AllInvestmentsParams = PaginationParams & {
+  status?: InvestmentStatus;
+};
+
 export const investmentKeys = {
   all: ["investments"] as const,
   portfolio: () => [...investmentKeys.all, "portfolio"] as const,
-  allList: (params?: PaginationParams) =>
+  allList: (params?: AllInvestmentsParams) =>
     [...investmentKeys.all, "all", params] as const,
   lists: () => [...investmentKeys.all, "list"] as const,
   list: (accountId: string, params?: PaginationParams) =>
@@ -41,7 +47,7 @@ export function usePortfolio() {
   });
 }
 
-export function useAllInvestments(params?: PaginationParams) {
+export function useAllInvestments(params?: AllInvestmentsParams) {
   return useQuery({
     queryKey: investmentKeys.allList(params),
     queryFn: () =>
