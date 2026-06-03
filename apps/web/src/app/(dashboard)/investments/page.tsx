@@ -81,13 +81,13 @@ type SortColumn =
   | "market_value"
   | "unrealized_gl"
   | "realized_gl"
-  | "cost_basis"
+  | "total_invested"
   | "return_pct";
 type SortDirection = "asc" | "desc" | null;
 
 function returnPct(investment: Investment) {
-  if (investment.cost_basis === 0) return 0;
-  return (investment.realized_gain_loss / investment.cost_basis) * 100;
+  if (investment.total_invested === 0) return 0;
+  return (investment.realized_gain_loss / investment.total_invested) * 100;
 }
 
 function HoldingCard({ investment, onClick }: { investment: Investment; onClick: () => void }) {
@@ -202,9 +202,9 @@ function ClosedHoldingCard({
       </CardHeader>
       <CardContent className="space-y-2 overflow-hidden">
         <div className="flex items-center justify-between gap-2 text-sm min-w-0">
-          <span className="text-muted-foreground shrink-0">Cost Basis</span>
+          <span className="text-muted-foreground shrink-0">Invested</span>
           <span className="font-medium font-mono tabular-nums truncate">
-            {formatCurrency(investment.cost_basis)}
+            {formatCurrency(investment.total_invested)}
           </span>
         </div>
         <div className="flex items-center justify-between gap-2 text-sm min-w-0">
@@ -307,9 +307,9 @@ function AllHoldingsTable() {
           aVal = a.realized_gain_loss;
           bVal = b.realized_gain_loss;
           break;
-        case "cost_basis":
-          aVal = a.cost_basis;
-          bVal = b.cost_basis;
+        case "total_invested":
+          aVal = a.total_invested;
+          bVal = b.total_invested;
           break;
         case "return_pct":
           aVal = returnPct(a);
@@ -444,8 +444,8 @@ function AllHoldingsTable() {
                     {isClosed ? (
                       <>
                         <SortableHeader
-                          column="cost_basis"
-                          label="Cost Basis"
+                          column="total_invested"
+                          label="Invested"
                           align="text-right"
                         />
                         <SortableHeader
@@ -515,7 +515,7 @@ function AllHoldingsTable() {
                             </Link>
                           </TableCell>
                           <TableCell className="text-right font-mono tabular-nums">
-                            {formatCurrency(inv.cost_basis)}
+                            {formatCurrency(inv.total_invested)}
                           </TableCell>
                           <TableCell
                             className={`text-right font-medium font-mono tabular-nums ${

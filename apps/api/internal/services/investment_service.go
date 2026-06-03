@@ -68,6 +68,35 @@ func getLatestPrices(db *gorm.DB, securityIDs []string) (map[string]int64, error
 	return result, nil
 }
 
+// getTotalInvestedByID returns the sum of buy transaction TotalAmount per investment ID.
+// Used to expose the original capital deployed for closed positions, where CostBasis is
+// driven to zero by proportional sell-side reductions.
+func getTotalInvestedByID(db *gorm.DB, investmentIDs []string) (map[string]int64, error) {
+	if len(investmentIDs) == 0 {
+		return map[string]int64{}, nil
+	}
+
+	type row struct {
+		InvestmentID string
+		Total        int64
+	}
+	var rows []row
+
+	if err := db.Table("investment_transactions").
+		Select("investment_id, COALESCE(SUM(total_amount), 0) AS total").
+		Where("investment_id IN ? AND type = ?", investmentIDs, models.InvestmentTransactionBuy).
+		Group("investment_id").
+		Scan(&rows).Error; err != nil {
+		return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)
+	}
+
+	result := make(map[string]int64, len(rows))
+	for _, r := range rows {
+		result[r.InvestmentID] = r.Total
+	}
+	return result, nil
+}
+
 // investmentService handles investment-related business logic.
 type investmentService struct {
 	db             *gorm.DB
@@ -187,15 +216,22 @@ func (s *investmentService) GetAccountInvestments(userID, accountID string, page
 
 	// Batch populate current prices from security_prices
 	secIDs := make([]string, 0, len(investments))
+	invIDs := make([]string, 0, len(investments))
 	for i := range investments {
 		secIDs = append(secIDs, investments[i].SecurityID)
+		invIDs = append(invIDs, investments[i].ID)
 	}
 	prices, err := getLatestPrices(s.db, secIDs)
 	if err != nil {
 		return nil, err
 	}
+	invested, err := getTotalInvestedByID(s.db, invIDs)
+	if err != nil {
+		return nil, err
+	}
 	for i := range investments {
 		investments[i].CurrentPrice = prices[investments[i].SecurityID]
+		investments[i].TotalInvested = invested[investments[i].ID]
 	}
 
 	result := pagination.NewPageResponse(investments, page.Page, page.PageSize, totalItems)
@@ -240,15 +276,22 @@ func (s *investmentService) GetAllInvestments(userID string, status InvestmentSt
 
 	// Batch populate current prices from security_prices
 	secIDs := make([]string, 0, len(investments))
+	invIDs := make([]string, 0, len(investments))
 	for i := range investments {
 		secIDs = append(secIDs, investments[i].SecurityID)
+		invIDs = append(invIDs, investments[i].ID)
 	}
 	prices, err := getLatestPrices(s.db, secIDs)
 	if err != nil {
 		return nil, err
 	}
+	invested, err := getTotalInvestedByID(s.db, invIDs)
+	if err != nil {
+		return nil, err
+	}
 	for i := range investments {
 		investments[i].CurrentPrice = prices[investments[i].SecurityID]
+		investments[i].TotalInvested = invested[investments[i].ID]
 	}
 
 	result := pagination.NewPageResponse(investments, page.Page, page.PageSize, totalItems)
@@ -276,6 +319,12 @@ func (s *investmentService) GetInvestmentByID(userID, investmentID string) (*mod
 		return nil, err
 	}
 	investment.CurrentPrice = prices[investment.SecurityID]
+
+	invested, err := getTotalInvestedByID(s.db, []string{investment.ID})
+	if err != nil {
+		return nil, err
+	}
+	investment.TotalInvested = invested[investment.ID]
 
 	return &investment, nil
 }

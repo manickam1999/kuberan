@@ -10,7 +10,8 @@ type Investment struct {
 	Quantity         float64 `gorm:"not null" json:"quantity"`
 	CostBasis        int64   `gorm:"type:bigint;not null" json:"cost_basis"`
 	RealizedGainLoss int64   `gorm:"type:bigint;not null;default:0" json:"realized_gain_loss"`
-	CurrentPrice     int64   `gorm:"-" json:"current_price"` // Populated at query time from security_prices
+	CurrentPrice     int64   `gorm:"-" json:"current_price"`  // Populated at query time from security_prices
+	TotalInvested    int64   `gorm:"-" json:"total_invested"` // Populated at query time: sum of buy transaction amounts
 	WalletAddress    string  `json:"wallet_address,omitempty"`
 
 	// Relationships

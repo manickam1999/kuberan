@@ -135,9 +135,10 @@ export interface Investment extends BaseModel {
   account_id: string; // UUIDv7
   security_id: string; // UUIDv7
   quantity: number; // float
-  cost_basis: number; // cents
+  cost_basis: number; // cents — remaining cost basis of open position; reduced proportionally on sells (0 for fully closed positions)
   realized_gain_loss: number; // cents — accumulated realized P&L from sells
   current_price: number; // cents per unit, populated at query time from security_prices
+  total_invested: number; // cents — sum of buy transaction amounts, populated at query time (use for closed-position return %)
   wallet_address?: string; // crypto
   security: Security; // preloaded relation
   account?: Account; // preloaded relation
