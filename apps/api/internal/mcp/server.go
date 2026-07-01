@@ -105,7 +105,9 @@ func errUnauthorized() *mcpgo.CallToolResult {
 }
 
 // Run creates the MCP server, registers all tools, and starts the HTTP transport.
-func Run(svc Services, addr string) error {
+// oauth carries the Resource Server discovery settings advertised at the
+// RFC 9728 well-known endpoint and in WWW-Authenticate challenges.
+func Run(svc Services, addr string, oauth OAuthConfig) error {
 	s := &Server{
 		services: svc,
 		mcp: server.NewMCPServer(
@@ -130,7 +132,11 @@ func Run(svc Services, addr string) error {
 	// /health endpoint for container/orchestrator health checks alongside the
 	// authenticated /mcp transport endpoint.
 	mux := http.NewServeMux()
-	mux.Handle("/mcp", mcpHandler)
+	// Wrap /mcp so 401 responses carry a WWW-Authenticate challenge pointing at
+	// the Protected Resource Metadata document (RFC 9728), and serve that
+	// document so MCP clients can discover the Hydra authorization server.
+	mux.Handle("/mcp", withWWWAuthenticate(mcpHandler, oauth))
+	mux.Handle(ProtectedResourceMetadataPath, discoveryHandler(oauth))
 	mux.HandleFunc("/health", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)

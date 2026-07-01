@@ -22,7 +22,8 @@ func main() {
 }
 
 func run() error {
-	if _, err := config.Load(); err != nil {
+	cfg, err := config.Load()
+	if err != nil {
 		return fmt.Errorf("failed to load configuration: %w", err)
 	}
 
@@ -66,5 +67,9 @@ func run() error {
 		Budgets:      budgetService,
 		Investments:  investmentService,
 		Snapshots:    snapshotService,
-	}, addr)
+	}, addr, mcpserver.OAuthConfig{
+		Issuer:      cfg.HydraIssuerURL,
+		ResourceURL: cfg.MCPResourceURL,
+		Scopes:      cfg.OAuthScopes,
+	})
 }
