@@ -70,6 +70,12 @@ type oauthConsentAcceptRequest struct {
 	RememberClient   bool   `json:"remember_client"`
 }
 
+// oauthConsentRejectRequest is the payload the apps/web consent page submits when
+// the user denies an unknown client on the anti-phishing screen.
+type oauthConsentRejectRequest struct {
+	ConsentChallenge string `json:"consent_challenge" binding:"required"`
+}
+
 // Login resolves a Hydra login challenge. It verifies the submitted credentials
 // through the existing login/lockout path and, on success, accepts the login
 // with subject = user ID, returning Hydra's redirect_to.
@@ -208,6 +214,46 @@ func (h *OAuthHandler) AcceptConsent(c *gin.Context) {
 			c.ClientIP(), map[string]interface{}{"client_name": consent.Client.ClientName})
 	}
 
+	c.JSON(http.StatusOK, gin.H{"redirect_to": redirectTo})
+}
+
+// RejectConsent denies a consent challenge. This is the anti-phishing tripwire's
+// active escape hatch (Q4 TOFU / Phase 5 step 3): when a user is shown the consent
+// screen for an unknown client and does not trust it (e.g. a suspicious
+// redirect_uri host), Deny rejects the challenge via Hydra with access_denied and
+// audits the refusal, returning Hydra's redirect_to so the client sees the denial.
+//
+// @Summary     Reject an OAuth consent challenge
+// @Description Deny the requested authorization for an unknown client
+// @Tags        oauth
+// @Accept      json
+// @Produce     json
+// @Param       request body oauthConsentRejectRequest true "Consent challenge"
+// @Success     200 {object} map[string]string "redirect_to"
+// @Failure     400 {object} ErrorResponse "Invalid input"
+// @Failure     404 {object} ErrorResponse "Unknown challenge"
+// @Router      /oauth/consent/reject [post]
+func (h *OAuthHandler) RejectConsent(c *gin.Context) {
+	var req oauthConsentRejectRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		respondWithError(c, apperrors.WithMessage(apperrors.ErrInvalidInput, err.Error()))
+		return
+	}
+
+	consent, err := h.hydra.GetConsentRequest(c.Request.Context(), req.ConsentChallenge)
+	if err != nil {
+		respondWithError(c, err)
+		return
+	}
+
+	redirectTo, err := h.hydra.RejectConsent(c.Request.Context(), consent.Challenge, "user denied consent")
+	if err != nil {
+		respondWithError(c, err)
+		return
+	}
+
+	h.auditService.Log(consent.Subject, "OAUTH_CONSENT_DENIED", "oauth_client", consent.Client.ClientID,
+		c.ClientIP(), map[string]interface{}{"client_name": consent.Client.ClientName})
 	c.JSON(http.StatusOK, gin.H{"redirect_to": redirectTo})
 }
 

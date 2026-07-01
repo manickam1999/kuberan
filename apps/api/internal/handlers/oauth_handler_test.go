@@ -18,11 +18,14 @@ type mockHydraAdmin struct {
 	acceptLoginFn       func(ctx context.Context, challenge string, p hydra.AcceptLoginParams) (string, error)
 	getConsentFn        func(ctx context.Context, challenge string) (*hydra.ConsentRequest, error)
 	acceptConsentFn     func(ctx context.Context, challenge string, p hydra.AcceptConsentParams) (string, error)
+	rejectConsentFn     func(ctx context.Context, challenge, reason string) (string, error)
 	createClientFn      func(ctx context.Context, in hydra.OAuth2ClientCreate) (*hydra.OAuth2Client, error)
 	lastAcceptLogin     hydra.AcceptLoginParams
 	lastAcceptConsent   hydra.AcceptConsentParams
 	lastCreateClient    hydra.OAuth2ClientCreate
+	lastRejectReason    string
 	acceptConsentCalled bool
+	rejectConsentCalled bool
 	createClientCalled  bool
 }
 
@@ -58,8 +61,13 @@ func (m *mockHydraAdmin) AcceptConsent(ctx context.Context, challenge string, p 
 	return "https://hydra/redirect/consent", nil
 }
 
-func (m *mockHydraAdmin) RejectConsent(context.Context, string, string) (string, error) {
-	return "", nil
+func (m *mockHydraAdmin) RejectConsent(ctx context.Context, challenge, reason string) (string, error) {
+	m.rejectConsentCalled = true
+	m.lastRejectReason = reason
+	if m.rejectConsentFn != nil {
+		return m.rejectConsentFn(ctx, challenge, reason)
+	}
+	return "https://hydra/redirect/consent-denied", nil
 }
 
 func (m *mockHydraAdmin) GetClient(context.Context, string) (*hydra.OAuth2Client, error) {
@@ -123,6 +131,7 @@ func setupOAuthRouter(handler *OAuthHandler) *gin.Engine {
 	r.POST("/oauth/login", handler.Login)
 	r.GET("/oauth/consent", handler.GetConsent)
 	r.POST("/oauth/consent/accept", handler.AcceptConsent)
+	r.POST("/oauth/consent/reject", handler.RejectConsent)
 	return r
 }
 
@@ -367,6 +376,56 @@ func TestOAuthHandler_AcceptConsent(t *testing.T) {
 		r := setupOAuthRouter(handler)
 
 		rec := doRequest(r, "POST", "/oauth/consent/accept", `{"remember_client":true}`)
+
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("expected 400, got %d", rec.Code)
+		}
+		assertErrorCode(t, parseJSON(t, rec), apperrors.ErrInvalidInput.Code)
+	})
+}
+
+// --- RejectConsent ---
+
+func TestOAuthHandler_RejectConsent(t *testing.T) {
+	t.Run("rejects the challenge via Hydra and never grants scope or trust", func(t *testing.T) {
+		admin := &mockHydraAdmin{
+			getConsentFn: func(_ context.Context, challenge string) (*hydra.ConsentRequest, error) {
+				return &hydra.ConsentRequest{
+					Challenge:      challenge,
+					Subject:        "user-7",
+					Client:         hydra.OAuth2Client{ClientID: "cid-9", ClientName: "Rogue"},
+					RequestedScope: []string{"read:accounts"},
+				}, nil
+			},
+		}
+		trusted := &mockTrustedClientService{}
+		handler := NewOAuthHandler(admin, &mockUserService{}, trusted, &mockAuditService{}, testScopes, testResourceURL)
+		r := setupOAuthRouter(handler)
+
+		rec := doRequest(r, "POST", "/oauth/consent/reject", `{"consent_challenge":"cc1"}`)
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+		}
+		if result := parseJSON(t, rec); result["redirect_to"] != "https://hydra/redirect/consent-denied" {
+			t.Errorf("unexpected redirect_to: %v", result["redirect_to"])
+		}
+		if !admin.rejectConsentCalled {
+			t.Error("expected Hydra RejectConsent to be called")
+		}
+		if admin.acceptConsentCalled {
+			t.Error("AcceptConsent must not be called when denying")
+		}
+		if trusted.trustCalled {
+			t.Error("client must never be trusted when denying consent")
+		}
+	})
+
+	t.Run("rejects missing consent_challenge", func(t *testing.T) {
+		handler := NewOAuthHandler(&mockHydraAdmin{}, &mockUserService{}, &mockTrustedClientService{}, &mockAuditService{}, testScopes, testResourceURL)
+		r := setupOAuthRouter(handler)
+
+		rec := doRequest(r, "POST", "/oauth/consent/reject", `{}`)
 
 		if rec.Code != http.StatusBadRequest {
 			t.Fatalf("expected 400, got %d", rec.Code)

@@ -167,6 +167,7 @@ func run() error {
 	oauth.POST("/login", oauthHandler.Login)
 	oauth.GET("/consent", oauthHandler.GetConsent)
 	oauth.POST("/consent/accept", oauthHandler.AcceptConsent)
+	oauth.POST("/consent/reject", oauthHandler.RejectConsent)
 	// Hardened DCR proxy: public clients only, restricted grants, capped scopes,
 	// audited + alerted (Phase 5). cloudflared points the AS registration_endpoint here.
 	oauth.POST("/register", registrationHandler.Register)

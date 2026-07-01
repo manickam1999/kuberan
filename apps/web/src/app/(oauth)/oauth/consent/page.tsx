@@ -117,6 +117,25 @@ function OAuthConsent() {
     }
   }
 
+  async function handleDeny() {
+    setError("");
+    setIsSubmitting(true);
+    try {
+      const res = await apiClient.post<OAuthRedirectResponse>(
+        "/api/v1/oauth/consent/reject",
+        { consent_challenge: consentChallenge }
+      );
+      window.location.href = res.redirect_to;
+    } catch (err) {
+      setError(
+        err instanceof ApiClientError
+          ? err.message
+          : "An unexpected error occurred"
+      );
+      setIsSubmitting(false);
+    }
+  }
+
   if (isLoading) {
     return (
       <Card>
@@ -189,7 +208,7 @@ function OAuthConsent() {
           <span>Remember this application (skip this screen next time)</span>
         </label>
       </CardContent>
-      <CardFooter className="pt-2">
+      <CardFooter className="flex flex-col gap-2 pt-2">
         <Button
           type="button"
           className="w-full"
@@ -197,6 +216,15 @@ function OAuthConsent() {
           disabled={isSubmitting}
         >
           {isSubmitting ? "Authorizing..." : "Authorize"}
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          className="w-full"
+          onClick={handleDeny}
+          disabled={isSubmitting}
+        >
+          Deny
         </Button>
       </CardFooter>
     </Card>
