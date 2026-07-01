@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	"kuberan/internal/models"
 	"kuberan/internal/testutil"
 
 	"golang.org/x/crypto/bcrypt"
@@ -251,6 +252,34 @@ func TestAttemptLogin(t *testing.T) {
 		svc := NewUserService(db)
 
 		_, err := svc.AttemptLogin("nobody@example.com", "password123")
+		testutil.AssertAppError(t, err, "INVALID_CREDENTIALS")
+	})
+
+	t.Run("deactivated_account_cannot_authenticate", func(t *testing.T) {
+		// This guards the security-critical property that plan 015 Phase 2
+		// relies on: the MCP Resource Server no longer checks IsActive per
+		// request (it validates Hydra JWTs offline), so a deactivated user must
+		// be blocked at login time instead. That enforcement is transitive:
+		// GetUserByEmail filters on is_active, so AttemptLogin never sees a
+		// deactivated user and returns INVALID_CREDENTIALS (no account
+		// enumeration). If GetUserByEmail's is_active filter is ever removed,
+		// this test fails and flags that the login-time mitigation regressed.
+		db := testutil.SetupTestDB(t)
+		defer testutil.TeardownTestDB(t, db)
+		svc := NewUserService(db)
+
+		_, err := svc.CreateUser("inactive@example.com", "password123", "", "")
+		testutil.AssertNoError(t, err)
+
+		// Deactivate the account (e.g. an admin disabled the user).
+		if err := db.Model(&models.User{}).
+			Where("email = ?", "inactive@example.com").
+			Update("is_active", false).Error; err != nil {
+			t.Fatalf("failed to deactivate account: %v", err)
+		}
+
+		// Correct credentials, but a deactivated account must not authenticate.
+		_, err = svc.AttemptLogin("inactive@example.com", "password123")
 		testutil.AssertAppError(t, err, "INVALID_CREDENTIALS")
 	})
 }
