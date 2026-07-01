@@ -39,5 +39,13 @@ oidc:
     supported_types:
       - public
 
-# Registered scopes the RS enforces per tool (granular read:*).
-# Requested scopes at authorize time are capped to this set.
+# Scope handling is deliberately NOT configured here: Hydra v2.x has no global
+# scope registry. Allowed scopes are set per client (client.scope), so the
+# granular read:* set is enforced code-side instead:
+#   - DCR registration proxy caps a client's registrable scopes
+#     (apps/api/internal/handlers/registration_handler.go, capScopes).
+#   - The consent bridge grants only the registered read:* subset
+#     (apps/api/internal/handlers/oauth_handler.go).
+#   - The MCP Resource Server enforces the required scope per tool
+#     (apps/api/internal/mcp, requireScope).
+# The canonical read:* set lives in config.DefaultOAuthScopes.
