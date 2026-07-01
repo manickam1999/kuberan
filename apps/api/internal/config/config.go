@@ -48,7 +48,18 @@ type Config struct {
 
 	// Bot
 	BotInternalSecret string
+
+	// OAuth / Hydra (MCP authorization). See plans/015-mcp-oauth-hydra.
+	HydraIssuerURL      string // public issuer, e.g. https://auth.<domain>
+	HydraAdminURL       string // private admin API, e.g. http://hydra:4445
+	MCPResourceURL      string // RS resource identifier, e.g. https://mcp.<domain>
+	OAuthScopes         string // space-delimited read:* scope set
+	HydraPinnedClientID string // optional pinned client (if not using TOFU)
 }
+
+// DefaultOAuthScopes is the full granular read:* scope set the RS enforces.
+const DefaultOAuthScopes = "read:accounts read:transactions read:budgets " +
+	"read:categories read:investments read:portfolio read:snapshots"
 
 var appConfig *Config
 
@@ -86,6 +97,13 @@ func Load() (*Config, error) {
 
 		// Bot
 		BotInternalSecret: os.Getenv("BOT_INTERNAL_SECRET"),
+
+		// OAuth / Hydra (MCP authorization)
+		HydraIssuerURL:      getEnv("HYDRA_ISSUER_URL", "http://localhost:4444"),
+		HydraAdminURL:       getEnv("HYDRA_ADMIN_URL", "http://localhost:4445"),
+		MCPResourceURL:      getEnv("MCP_RESOURCE_URL", "http://localhost:8081"),
+		OAuthScopes:         getEnv("OAUTH_SCOPES", DefaultOAuthScopes),
+		HydraPinnedClientID: os.Getenv("HYDRA_PINNED_CLIENT_ID"),
 	}
 
 	// Parse JWT expiration duration

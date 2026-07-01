@@ -110,6 +110,41 @@ services:
       start_period: 30s
     restart: unless-stopped
 
+  # One-shot: create/upgrade Hydra's schema in the dedicated `hydra` database.
+  hydra-migrate:
+    image: oryd/hydra:v2.2.0
+    command: migrate sql -e --yes
+    environment:
+      - DSN=postgres://kuberan:kuberan@postgres:5432/hydra?sslmode=disable
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  # Ory Hydra: OAuth 2.1 Authorization Server for MCP. See plans/015-mcp-oauth-hydra.
+  # Public API (:4444) is exposed; the admin API (:4445) MUST stay on the private
+  # Docker network and is never published.
+  hydra:
+    image: oryd/hydra:v2.2.0
+    command: serve all --dev --config /etc/config/hydra/hydra.yml
+    ports:
+      - "4444:4444" # public: authorize/token/discovery/DCR
+      # :4445 (admin) intentionally NOT published - private network only.
+    volumes:
+      - ./ory/hydra/hydra.yml:/etc/config/hydra/hydra.yml:ro
+    environment:
+      - DSN=postgres://kuberan:kuberan@postgres:5432/hydra?sslmode=disable
+      - SECRETS_SYSTEM=${HYDRA_SECRETS_SYSTEM:-dev-only-hydra-system-secret-change-me}
+      - URLS_SELF_ISSUER=${HYDRA_ISSUER_URL:-http://localhost:4444}
+      - URLS_LOGIN=${HYDRA_LOGIN_URL:-http://localhost:3000/oauth/login}
+      - URLS_CONSENT=${HYDRA_CONSENT_URL:-http://localhost:3000/oauth/consent}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      hydra-migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
   postgres:
     image: postgres:16-alpine
     container_name: kuberan-postgres
