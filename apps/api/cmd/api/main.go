@@ -165,6 +165,7 @@ func run() error {
 	// Hydra authorization flow, before a Kuberan session exists). See plan 15.
 	oauth := v1.Group("/oauth")
 	oauth.POST("/login", oauthHandler.Login)
+	oauth.POST("/login/reject", oauthHandler.RejectLogin)
 	oauth.GET("/consent", oauthHandler.GetConsent)
 	oauth.POST("/consent/accept", oauthHandler.AcceptConsent)
 	oauth.POST("/consent/reject", oauthHandler.RejectConsent)

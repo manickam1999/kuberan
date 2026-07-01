@@ -64,6 +64,12 @@ type oauthLoginRequest struct {
 	Password       string `json:"password" binding:"required"`
 }
 
+// oauthLoginRejectRequest is the payload the apps/web login page submits when
+// the user cancels a login they did not initiate.
+type oauthLoginRejectRequest struct {
+	LoginChallenge string `json:"login_challenge" binding:"required"`
+}
+
 // oauthConsentAcceptRequest is the payload the apps/web consent page submits.
 type oauthConsentAcceptRequest struct {
 	ConsentChallenge string `json:"consent_challenge" binding:"required"`
@@ -115,6 +121,43 @@ func (h *OAuthHandler) Login(c *gin.Context) {
 	}
 
 	h.auditService.Log(user.ID, "OAUTH_LOGIN", "user", user.ID, c.ClientIP(), nil)
+	c.JSON(http.StatusOK, gin.H{"redirect_to": redirectTo})
+}
+
+// RejectLogin cancels a pending login challenge without authenticating. This is
+// the login-side escape hatch: a user who lands on the sign-in page for a
+// connection they did not start (a phishing signal, since the OAuth login page is
+// only reachable mid-flow) can decline rather than abandon the tab. It rejects
+// the challenge via Hydra with access_denied and audits the refusal, returning
+// Hydra's redirect_to so the client sees the denial. No credentials are checked
+// and no subject is bound.
+//
+// @Summary     Reject an OAuth login challenge
+// @Description Cancel an unauthenticated login the user did not initiate
+// @Tags        oauth
+// @Accept      json
+// @Produce     json
+// @Param       request body oauthLoginRejectRequest true "Login challenge"
+// @Success     200 {object} map[string]string "redirect_to"
+// @Failure     400 {object} ErrorResponse "Invalid input"
+// @Failure     404 {object} ErrorResponse "Unknown challenge"
+// @Router      /oauth/login/reject [post]
+func (h *OAuthHandler) RejectLogin(c *gin.Context) {
+	var req oauthLoginRejectRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		respondWithError(c, apperrors.WithMessage(apperrors.ErrInvalidInput, err.Error()))
+		return
+	}
+
+	redirectTo, err := h.hydra.RejectLogin(c.Request.Context(), req.LoginChallenge, "user cancelled login")
+	if err != nil {
+		respondWithError(c, err)
+		return
+	}
+
+	// The user is unauthenticated here, so there is no subject to attribute the
+	// refusal to; the client IP is the only available signal.
+	h.auditService.Log("", "OAUTH_LOGIN_DENIED", "user", "", c.ClientIP(), nil)
 	c.JSON(http.StatusOK, gin.H{"redirect_to": redirectTo})
 }
 

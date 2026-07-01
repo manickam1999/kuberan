@@ -93,6 +93,24 @@ function OAuthLoginForm() {
     }
   }
 
+  // Cancel a login the user did not initiate. Because this page is only reachable
+  // mid-flow, an unexpected sign-in prompt is a phishing signal; declining rejects
+  // the Hydra challenge so the connector sees an explicit denial.
+  async function handleCancel() {
+    setError("");
+    setIsSubmitting(true);
+    try {
+      const res = await apiClient.post<OAuthRedirectResponse>(
+        "/api/v1/oauth/login/reject",
+        { login_challenge: loginChallenge }
+      );
+      window.location.href = res.redirect_to;
+    } catch (err) {
+      setError(getErrorMessage(err));
+      setIsSubmitting(false);
+    }
+  }
+
   return (
     <Card>
       <CardHeader>
@@ -133,9 +151,18 @@ function OAuthLoginForm() {
             />
           </div>
         </CardContent>
-        <CardFooter className="pt-2">
+        <CardFooter className="flex flex-col gap-2 pt-2">
           <Button type="submit" className="w-full" disabled={isSubmitting}>
             {isSubmitting ? "Signing in..." : "Sign in"}
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            className="w-full"
+            onClick={handleCancel}
+            disabled={isSubmitting}
+          >
+            Cancel
           </Button>
         </CardFooter>
       </form>
