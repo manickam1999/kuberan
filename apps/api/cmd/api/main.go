@@ -6,6 +6,7 @@ import (
 	"kuberan/internal/config"
 	"kuberan/internal/database"
 	"kuberan/internal/handlers"
+	"kuberan/internal/hydra"
 	"kuberan/internal/logger"
 	"kuberan/internal/middleware"
 	"kuberan/internal/services"
@@ -91,9 +92,14 @@ func run() error {
 	snapshotService := services.NewPortfolioSnapshotService(db)
 	auditService := services.NewAuditService(db)
 	telegramService := services.NewTelegramService(db)
+	trustedClientService := services.NewTrustedClientService(db)
+
+	// Hydra admin client for the OAuth login/consent bridge (private network only).
+	hydraAdmin := hydra.NewAdminClient(appConfig.HydraAdminURL)
 
 	// Initialize handlers
 	authHandler := handlers.NewAuthHandler(userService, auditService)
+	oauthHandler := handlers.NewOAuthHandler(hydraAdmin, userService, trustedClientService, auditService, appConfig.OAuthScopes)
 	accountHandler := handlers.NewAccountHandler(accountService, auditService)
 	categoryHandler := handlers.NewCategoryHandler(categoryService, auditService)
 	transactionHandler := handlers.NewTransactionHandler(transactionService, auditService)
@@ -153,6 +159,13 @@ func run() error {
 	auth.POST("/register", authHandler.Register)
 	auth.POST("/login", authHandler.Login)
 	auth.POST("/refresh", authHandler.RefreshToken)
+
+	// OAuth login/consent bridge (public: driven by the apps/web pages during the
+	// Hydra authorization flow, before a Kuberan session exists). See plan 15.
+	oauth := v1.Group("/oauth")
+	oauth.POST("/login", oauthHandler.Login)
+	oauth.GET("/consent", oauthHandler.GetConsent)
+	oauth.POST("/consent/accept", oauthHandler.AcceptConsent)
 
 	// Protected routes
 	protected := v1.Group("/")
