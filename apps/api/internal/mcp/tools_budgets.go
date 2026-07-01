@@ -33,6 +33,9 @@ func (s *Server) handleListBudgets(ctx context.Context, req mcp.CallToolRequest)
 	if err != nil {
 		return errUnauthorized(), nil
 	}
+	if denied := requireScope(ctx, "read:budgets"); denied != nil {
+		return denied, nil
+	}
 
 	page := pagination.PageRequest{Page: 1, PageSize: 100}
 
@@ -66,6 +69,9 @@ func (s *Server) handleGetBudgetProgress(ctx context.Context, req mcp.CallToolRe
 	userID, err := getUserID(ctx)
 	if err != nil {
 		return errUnauthorized(), nil
+	}
+	if denied := requireScope(ctx, "read:budgets"); denied != nil {
+		return denied, nil
 	}
 
 	args := req.GetArguments()

@@ -15,7 +15,6 @@ import (
 	"github.com/mark3labs/mcp-go/server"
 
 	"kuberan/internal/logger"
-	"kuberan/internal/middleware"
 	"kuberan/internal/services"
 )
 
@@ -32,6 +31,8 @@ type Services struct {
 
 type userIDKey struct{}
 
+type scopesKey struct{}
+
 // Server wraps the MCP server with Kuberan services.
 type Server struct {
 	services Services
@@ -47,11 +48,35 @@ func getUserID(ctx context.Context) (string, error) {
 	return userID, nil
 }
 
-// makeAuthFromRequest returns an HTTP context function that extracts and
-// validates the MCP JWT from the Authorization header, verifies the token
-// hash against the database, checks the user is active, and stores the
-// user ID in the context.
-func makeAuthFromRequest(userService services.UserServicer) server.HTTPContextFunc {
+// scopesFromContext returns the OAuth scopes granted to the authenticated
+// caller, as extracted from the validated access token.
+func scopesFromContext(ctx context.Context) []string {
+	scopes, _ := ctx.Value(scopesKey{}).([]string)
+	return scopes
+}
+
+// requireScope enforces that the caller was granted at least one of the
+// accepted scopes (Q6 granular read:* enforcement). It returns nil when
+// authorized, or an MCP error result the handler should return directly.
+// Handlers call it after getUserID.
+func requireScope(ctx context.Context, accepted ...string) *mcpgo.CallToolResult {
+	for _, granted := range scopesFromContext(ctx) {
+		for _, a := range accepted {
+			if granted == a {
+				return nil
+			}
+		}
+	}
+	return mcpgo.NewToolResultError(
+		"forbidden: missing required scope (" + strings.Join(accepted, " or ") + ")")
+}
+
+// makeAuthFromRequest returns an HTTP context function that extracts the Bearer
+// access token from the Authorization header, validates it against Hydra's
+// JWKS (signature, exp/nbf, issuer, audience), and stores the resulting subject
+// (Kuberan user ID) and granted scope set in the context. On any failure it
+// returns the bare context; tools then reject the call via getUserID.
+func makeAuthFromRequest(v TokenValidator) server.HTTPContextFunc {
 	return func(ctx context.Context, r *http.Request) context.Context {
 		authHeader := r.Header.Get("Authorization")
 		if authHeader == "" {
@@ -65,37 +90,14 @@ func makeAuthFromRequest(userService services.UserServicer) server.HTTPContextFu
 			return ctx
 		}
 
-		tokenString := parts[1]
-
-		claims, err := middleware.ValidateMCPToken(tokenString)
+		claims, err := v.Validate(ctx, parts[1])
 		if err != nil {
-			logger.Get().Warnf("MCP auth: invalid token: %v", err)
+			logger.Get().Warnf("MCP auth: token rejected: %v", err)
 			return ctx
 		}
 
-		// Verify the token hash matches the stored hash (supports revocation).
-		storedHash, err := userService.GetMCPTokenHash(claims.UserID)
-		if err != nil {
-			logger.Get().Warnf("MCP auth: failed to retrieve token hash for user %s: %v", claims.UserID, err)
-			return ctx
-		}
-		if storedHash == "" || storedHash != middleware.HashToken(tokenString) {
-			logger.Get().Warnf("MCP auth: token hash mismatch for user %s (token may be revoked)", claims.UserID)
-			return ctx
-		}
-
-		// Verify the user still exists and is active.
-		user, err := userService.GetUserByID(claims.UserID)
-		if err != nil {
-			logger.Get().Warnf("MCP auth: user %s not found: %v", claims.UserID, err)
-			return ctx
-		}
-		if !user.IsActive {
-			logger.Get().Warnf("MCP auth: user %s is inactive", claims.UserID)
-			return ctx
-		}
-
-		return context.WithValue(ctx, userIDKey{}, claims.UserID)
+		ctx = context.WithValue(ctx, userIDKey{}, claims.Subject)
+		return context.WithValue(ctx, scopesKey{}, claims.Scopes)
 	}
 }
 
@@ -106,8 +108,9 @@ func errUnauthorized() *mcpgo.CallToolResult {
 
 // Run creates the MCP server, registers all tools, and starts the HTTP transport.
 // oauth carries the Resource Server discovery settings advertised at the
-// RFC 9728 well-known endpoint and in WWW-Authenticate challenges.
-func Run(svc Services, addr string, oauth OAuthConfig) error {
+// RFC 9728 well-known endpoint and in WWW-Authenticate challenges. validator
+// verifies incoming Bearer access tokens against Hydra's JWKS.
+func Run(svc Services, addr string, oauth OAuthConfig, validator TokenValidator) error {
 	s := &Server{
 		services: svc,
 		mcp: server.NewMCPServer(
@@ -125,7 +128,7 @@ func Run(svc Services, addr string, oauth OAuthConfig) error {
 	s.registerSnapshotTools()
 
 	mcpHandler := server.NewStreamableHTTPServer(s.mcp,
-		server.WithHTTPContextFunc(makeAuthFromRequest(svc.Users)),
+		server.WithHTTPContextFunc(makeAuthFromRequest(validator)),
 	)
 
 	// Wrap the MCP handler in our own mux so we can expose an unauthenticated

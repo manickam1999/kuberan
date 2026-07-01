@@ -26,6 +26,9 @@ func (s *Server) handleGetPortfolio(ctx context.Context, _ mcp.CallToolRequest) 
 	if err != nil {
 		return errUnauthorized(), nil
 	}
+	if denied := requireScope(ctx, "read:investments", "read:portfolio"); denied != nil {
+		return denied, nil
+	}
 
 	portfolio, err := s.services.Investments.GetPortfolio(userID)
 	if err != nil {
