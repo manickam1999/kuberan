@@ -19,6 +19,7 @@ const (
 	accessTokenExpiry  = 15 * time.Minute
 	refreshTokenExpiry = 7 * 24 * time.Hour
 	botTokenExpiry     = 365 * 24 * time.Hour // 1 year for bot tokens
+	mcpTokenExpiry     = 365 * 24 * time.Hour // 1 year for MCP tokens
 )
 
 // getJWTKey returns the JWT key from configuration
@@ -91,10 +92,41 @@ func GenerateBotToken(user *models.User) (string, error) {
 	return token.SignedString(getJWTKey())
 }
 
+// GenerateMCPToken generates a long-lived JWT token for MCP server authentication.
+func GenerateMCPToken(user *models.User) (string, error) {
+	claims := &JWTClaims{
+		UserID:    user.ID,
+		Email:     user.Email,
+		TokenType: "mcp",
+		RegisteredClaims: jwt.RegisteredClaims{
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(mcpTokenExpiry)),
+			IssuedAt:  jwt.NewNumericDate(time.Now()),
+			NotBefore: jwt.NewNumericDate(time.Now()),
+			Issuer:    "kuberan-api",
+			Subject:   user.ID,
+		},
+	}
+
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	return token.SignedString(getJWTKey())
+}
+
 // ValidateRefreshToken parses and validates a refresh token JWT.
 // Returns the claims if valid, or an error if the token is invalid,
 // expired, or not a refresh token.
 func ValidateRefreshToken(tokenString string) (*JWTClaims, error) {
+	return validateToken(tokenString, "refresh")
+}
+
+// ValidateMCPToken parses and validates an MCP token JWT.
+// Returns the claims if valid, or an error if the token is invalid,
+// expired, or not an MCP token.
+func ValidateMCPToken(tokenString string) (*JWTClaims, error) {
+	return validateToken(tokenString, "mcp")
+}
+
+// validateToken parses a JWT and ensures it matches the expected token type.
+func validateToken(tokenString, expectedType string) (*JWTClaims, error) {
 	claims := &JWTClaims{}
 	token, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (interface{}, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
@@ -104,11 +136,11 @@ func ValidateRefreshToken(tokenString string) (*JWTClaims, error) {
 	})
 
 	if err != nil || !token.Valid {
-		return nil, fmt.Errorf("invalid refresh token")
+		return nil, fmt.Errorf("invalid %s token", expectedType)
 	}
 
-	if claims.TokenType != "refresh" {
-		return nil, fmt.Errorf("token is not a refresh token")
+	if claims.TokenType != expectedType {
+		return nil, fmt.Errorf("token is not a %s token", expectedType)
 	}
 
 	return claims, nil
@@ -155,8 +187,10 @@ func AuthMiddleware() gin.HandlerFunc {
 			return
 		}
 
-		// Reject refresh tokens used as access tokens
-		if claims.TokenType == "refresh" {
+		// Only allow access and bot tokens for the main API.
+		// Refresh, MCP, and any other token types are rejected to prevent
+		// cross-purpose token usage (e.g., MCP tokens accessing the REST API).
+		if claims.TokenType != "access" && claims.TokenType != "bot" {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid or expired token"})
 			c.Abort()
 			return

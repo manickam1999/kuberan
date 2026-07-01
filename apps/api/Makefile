@@ -1,4 +1,4 @@
-.PHONY: dev build test test-cover test-race lint check check-fast fmt migrate-up migrate-down migrate-version swagger clean
+.PHONY: dev build build-mcp test test-cover test-race lint check check-fast fmt migrate-up migrate-down migrate-version swagger clean
 
 # Development
 dev:
@@ -6,6 +6,9 @@ dev:
 
 build:
 	go build -o bin/api ./cmd/api
+
+build-mcp:
+	go build -o bin/mcp ./cmd/mcp
 
 # Testing
 test:

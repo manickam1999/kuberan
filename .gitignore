@@ -62,3 +62,10 @@ __pycache__/
 venv/
 
 apps/bot/.env*
+
+# Compiled MCP binary
+apps/api/mcp
+
+# Database dumps (may contain personal financial data)
+*.sql
+!apps/api/migrations/*.sql

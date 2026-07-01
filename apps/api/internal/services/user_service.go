@@ -143,3 +143,20 @@ func (s *userService) GetRefreshTokenHash(userID string) (string, error) {
 	}
 	return user.RefreshTokenHash, nil
 }
+
+// StoreMCPTokenHash stores the hash of an MCP token for the given user.
+func (s *userService) StoreMCPTokenHash(userID, tokenHash string) error {
+	if err := s.db.Model(&models.User{}).Where("id = ?", userID).Update("mcp_token_hash", tokenHash).Error; err != nil {
+		return apperrors.Wrap(apperrors.ErrInternalServer, err)
+	}
+	return nil
+}
+
+// GetMCPTokenHash returns the stored MCP token hash for the given user.
+func (s *userService) GetMCPTokenHash(userID string) (string, error) {
+	var user models.User
+	if err := s.db.Select("mcp_token_hash").Where("id = ?", userID).First(&user).Error; err != nil {
+		return "", apperrors.Wrap(apperrors.ErrInternalServer, err)
+	}
+	return user.MCPTokenHash, nil
+}

@@ -18,6 +18,8 @@ type UserServicer interface {
 	AttemptLogin(email, password string) (*models.User, error)
 	StoreRefreshTokenHash(userID, tokenHash string) error
 	GetRefreshTokenHash(userID string) (string, error)
+	StoreMCPTokenHash(userID, tokenHash string) error
+	GetMCPTokenHash(userID string) (string, error)
 }
 
 // TelegramUserAuth holds the resolved user info and auth token for bot service communication.
