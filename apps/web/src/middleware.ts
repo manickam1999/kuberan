@@ -5,9 +5,20 @@ const AUTH_COOKIE_NAME = "kuberan_auth";
 
 const AUTH_ROUTES = ["/login", "/register"];
 
+// OAuth login/consent pages drive Hydra's flow and must stay reachable
+// regardless of the app's own auth cookie: the caller (e.g. a Claude connector)
+// may have no session, and even a signed-in user must be able to complete
+// consent. See plans/015-mcp-oauth-hydra Phase 1.
+const OAUTH_ROUTES = ["/oauth/login", "/oauth/consent"];
+
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const hasAuthCookie = request.cookies.has(AUTH_COOKIE_NAME);
+
+  // OAuth flow pages are always public — never redirect either way.
+  if (OAUTH_ROUTES.includes(pathname)) {
+    return NextResponse.next();
+  }
 
   // Authenticated user visiting auth pages → redirect to dashboard
   if (hasAuthCookie && AUTH_ROUTES.includes(pathname)) {
