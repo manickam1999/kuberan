@@ -42,6 +42,14 @@ type TelegramServicer interface {
 	GetUserWithAuthToken(telegramUserID int64) (*TelegramUserAuth, error)
 }
 
+// TrustedClientServicer defines the contract for managing OAuth clients that a
+// user has approved via trust-on-first-use consent.
+type TrustedClientServicer interface {
+	IsTrusted(clientID string) (bool, error)
+	Trust(clientID, name string) (*models.TrustedOAuthClient, error)
+	ListTrusted() ([]models.TrustedOAuthClient, error)
+}
+
 // AccountUpdateFields holds optional fields for updating an account.
 // Nil pointer means "don't change"; non-nil means "set to this value".
 type AccountUpdateFields struct {
