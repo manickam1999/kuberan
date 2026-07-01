@@ -30,16 +30,22 @@ type OAuthHandler struct {
 	trustedClient services.TrustedClientServicer
 	auditService  services.AuditServicer
 	allowedScopes []string // registered read:* scopes; grants are capped to this set.
+	resourceURL   string   // MCP resource identifier always stamped into the granted audience.
 }
 
 // NewOAuthHandler creates a new OAuthHandler. scopes is the space-delimited set
 // of registered read:* scopes (config.OAuthScopes) that grants are capped to.
+// resourceURL is the MCP resource identifier (config.MCPResourceURL); it is
+// always added to the granted token audience so every token issued through this
+// flow validates against the MCP Resource Server, whose validator requires
+// aud contains resourceURL.
 func NewOAuthHandler(
 	adminClient hydra.AdminClient,
 	userService services.UserServicer,
 	trustedClient services.TrustedClientServicer,
 	auditService services.AuditServicer,
 	scopes string,
+	resourceURL string,
 ) *OAuthHandler {
 	return &OAuthHandler{
 		hydra:         adminClient,
@@ -47,6 +53,7 @@ func NewOAuthHandler(
 		trustedClient: trustedClient,
 		auditService:  auditService,
 		allowedScopes: strings.Fields(scopes),
+		resourceURL:   resourceURL,
 	}
 }
 
@@ -205,13 +212,33 @@ func (h *OAuthHandler) AcceptConsent(c *gin.Context) {
 }
 
 // acceptConsent grants the requested scopes (capped to the allowed set) and the
-// requested audience for a consent challenge.
+// granted audience for a consent challenge.
 func (h *OAuthHandler) acceptConsent(c *gin.Context, consent *hydra.ConsentRequest, remember bool) (string, error) {
 	return h.hydra.AcceptConsent(c.Request.Context(), consent.Challenge, hydra.AcceptConsentParams{
 		GrantScope:    h.grantableScopes(consent.RequestedScope),
-		GrantAudience: consent.RequestedAccessTokenAudience,
+		GrantAudience: h.grantableAudience(consent.RequestedAccessTokenAudience),
 		Remember:      remember,
 	})
+}
+
+// grantableAudience returns the requested audiences with the MCP resource URL
+// always included. MCP clients (e.g. Claude connectors) do not request a
+// resource audience by default, but the RS validator requires the access token's
+// aud to contain resourceURL; force-granting it here guarantees every token
+// issued through consent is accepted by /mcp.
+func (h *OAuthHandler) grantableAudience(requested []string) []string {
+	out := make([]string, 0, len(requested)+1)
+	seen := false
+	for _, a := range requested {
+		out = append(out, a)
+		if a == h.resourceURL {
+			seen = true
+		}
+	}
+	if h.resourceURL != "" && !seen {
+		out = append(out, h.resourceURL)
+	}
+	return out
 }
 
 // grantableScopes returns the requested scopes intersected with the registered

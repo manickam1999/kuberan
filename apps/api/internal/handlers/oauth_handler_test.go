@@ -116,6 +116,8 @@ func (m *mockTrustedClientService) ListTrusted() ([]models.TrustedOAuthClient, e
 
 const testScopes = "read:accounts read:transactions read:budgets"
 
+const testResourceURL = "https://mcp.example"
+
 func setupOAuthRouter(handler *OAuthHandler) *gin.Engine {
 	r := gin.New()
 	r.POST("/oauth/login", handler.Login)
@@ -134,7 +136,7 @@ func TestOAuthHandler_Login(t *testing.T) {
 			},
 		}
 		admin := &mockHydraAdmin{}
-		handler := NewOAuthHandler(admin, userSvc, &mockTrustedClientService{}, &mockAuditService{}, testScopes)
+		handler := NewOAuthHandler(admin, userSvc, &mockTrustedClientService{}, &mockAuditService{}, testScopes, testResourceURL)
 		r := setupOAuthRouter(handler)
 
 		rec := doRequest(r, "POST", "/oauth/login",
@@ -159,7 +161,7 @@ func TestOAuthHandler_Login(t *testing.T) {
 			},
 		}
 		admin := &mockHydraAdmin{}
-		handler := NewOAuthHandler(admin, userSvc, &mockTrustedClientService{}, &mockAuditService{}, testScopes)
+		handler := NewOAuthHandler(admin, userSvc, &mockTrustedClientService{}, &mockAuditService{}, testScopes, testResourceURL)
 		r := setupOAuthRouter(handler)
 
 		rec := doRequest(r, "POST", "/oauth/login",
@@ -174,7 +176,7 @@ func TestOAuthHandler_Login(t *testing.T) {
 	})
 
 	t.Run("rejects missing login_challenge", func(t *testing.T) {
-		handler := NewOAuthHandler(&mockHydraAdmin{}, &mockUserService{}, &mockTrustedClientService{}, &mockAuditService{}, testScopes)
+		handler := NewOAuthHandler(&mockHydraAdmin{}, &mockUserService{}, &mockTrustedClientService{}, &mockAuditService{}, testScopes, testResourceURL)
 		r := setupOAuthRouter(handler)
 
 		rec := doRequest(r, "POST", "/oauth/login", `{"email":"a@b.com","password":"secret123"}`)
@@ -200,7 +202,7 @@ func TestOAuthHandler_GetConsent(t *testing.T) {
 			},
 		}
 		trusted := &mockTrustedClientService{isTrustedFn: func(string) (bool, error) { return true, nil }}
-		handler := NewOAuthHandler(admin, &mockUserService{}, trusted, &mockAuditService{}, testScopes)
+		handler := NewOAuthHandler(admin, &mockUserService{}, trusted, &mockAuditService{}, testScopes, testResourceURL)
 		r := setupOAuthRouter(handler)
 
 		rec := doRequest(r, "GET", "/oauth/consent?consent_challenge=cc1", "")
@@ -220,6 +222,38 @@ func TestOAuthHandler_GetConsent(t *testing.T) {
 		if len(got) != 2 || got[0] != "read:accounts" || got[1] != "offline_access" {
 			t.Errorf("unexpected granted scopes: %v", got)
 		}
+		// The MCP resource URL must always be stamped into the audience so the
+		// RS validator accepts the token, even though the client requested none.
+		aud := admin.lastAcceptConsent.GrantAudience
+		if len(aud) != 1 || aud[0] != testResourceURL {
+			t.Errorf("expected granted audience [%s], got: %v", testResourceURL, aud)
+		}
+	})
+
+	t.Run("preserves a requested audience while keeping the resource URL unique", func(t *testing.T) {
+		admin := &mockHydraAdmin{
+			getConsentFn: func(_ context.Context, challenge string) (*hydra.ConsentRequest, error) {
+				return &hydra.ConsentRequest{
+					Challenge:                    challenge,
+					Client:                       hydra.OAuth2Client{ClientID: "known", ClientName: "Claude"},
+					RequestedScope:               []string{"read:accounts"},
+					RequestedAccessTokenAudience: []string{"https://other.example", testResourceURL},
+				}, nil
+			},
+		}
+		trusted := &mockTrustedClientService{isTrustedFn: func(string) (bool, error) { return true, nil }}
+		handler := NewOAuthHandler(admin, &mockUserService{}, trusted, &mockAuditService{}, testScopes, testResourceURL)
+		r := setupOAuthRouter(handler)
+
+		rec := doRequest(r, "GET", "/oauth/consent?consent_challenge=cc1", "")
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+		}
+		aud := admin.lastAcceptConsent.GrantAudience
+		// Requested audiences pass through and the resource URL is not duplicated.
+		if len(aud) != 2 || aud[0] != "https://other.example" || aud[1] != testResourceURL {
+			t.Errorf("unexpected granted audience: %v", aud)
+		}
 	})
 
 	t.Run("returns consent details for an unknown client without accepting", func(t *testing.T) {
@@ -237,7 +271,7 @@ func TestOAuthHandler_GetConsent(t *testing.T) {
 			},
 		}
 		trusted := &mockTrustedClientService{isTrustedFn: func(string) (bool, error) { return false, nil }}
-		handler := NewOAuthHandler(admin, &mockUserService{}, trusted, &mockAuditService{}, testScopes)
+		handler := NewOAuthHandler(admin, &mockUserService{}, trusted, &mockAuditService{}, testScopes, testResourceURL)
 		r := setupOAuthRouter(handler)
 
 		rec := doRequest(r, "GET", "/oauth/consent?consent_challenge=cc1", "")
@@ -259,7 +293,7 @@ func TestOAuthHandler_GetConsent(t *testing.T) {
 	})
 
 	t.Run("rejects missing consent_challenge", func(t *testing.T) {
-		handler := NewOAuthHandler(&mockHydraAdmin{}, &mockUserService{}, &mockTrustedClientService{}, &mockAuditService{}, testScopes)
+		handler := NewOAuthHandler(&mockHydraAdmin{}, &mockUserService{}, &mockTrustedClientService{}, &mockAuditService{}, testScopes, testResourceURL)
 		r := setupOAuthRouter(handler)
 
 		rec := doRequest(r, "GET", "/oauth/consent", "")
@@ -286,7 +320,7 @@ func TestOAuthHandler_AcceptConsent(t *testing.T) {
 			},
 		}
 		trusted := &mockTrustedClientService{}
-		handler := NewOAuthHandler(admin, &mockUserService{}, trusted, &mockAuditService{}, testScopes)
+		handler := NewOAuthHandler(admin, &mockUserService{}, trusted, &mockAuditService{}, testScopes, testResourceURL)
 		r := setupOAuthRouter(handler)
 
 		rec := doRequest(r, "POST", "/oauth/consent/accept",
@@ -314,7 +348,7 @@ func TestOAuthHandler_AcceptConsent(t *testing.T) {
 			},
 		}
 		trusted := &mockTrustedClientService{}
-		handler := NewOAuthHandler(admin, &mockUserService{}, trusted, &mockAuditService{}, testScopes)
+		handler := NewOAuthHandler(admin, &mockUserService{}, trusted, &mockAuditService{}, testScopes, testResourceURL)
 		r := setupOAuthRouter(handler)
 
 		rec := doRequest(r, "POST", "/oauth/consent/accept",
@@ -329,7 +363,7 @@ func TestOAuthHandler_AcceptConsent(t *testing.T) {
 	})
 
 	t.Run("rejects missing consent_challenge", func(t *testing.T) {
-		handler := NewOAuthHandler(&mockHydraAdmin{}, &mockUserService{}, &mockTrustedClientService{}, &mockAuditService{}, testScopes)
+		handler := NewOAuthHandler(&mockHydraAdmin{}, &mockUserService{}, &mockTrustedClientService{}, &mockAuditService{}, testScopes, testResourceURL)
 		r := setupOAuthRouter(handler)
 
 		rec := doRequest(r, "POST", "/oauth/consent/accept", `{"remember_client":true}`)
