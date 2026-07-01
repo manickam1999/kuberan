@@ -145,6 +145,9 @@ func setupOAuthApp(t *testing.T) *oauthApp {
 	oauth.GET("/consent", oauthHandler.GetConsent)
 	oauth.POST("/consent/accept", oauthHandler.AcceptConsent)
 	oauth.POST("/register", registrationHandler.Register)
+	// Canonical RFC-standard DCR path that Hydra advertises and cloudflared
+	// routes to this proxy (mirrors cmd/api/main.go).
+	router.POST("/oauth2/register", registrationHandler.Register)
 
 	return &oauthApp{
 		testApp:     &testApp{DB: db, Router: router},
@@ -299,6 +302,34 @@ func TestOAuthDCRProxyHardensClient(t *testing.T) {
 	app.DB.Model(&models.AuditLog{}).Where("action = ?", "OAUTH_CLIENT_REGISTERED").Count(&audits)
 	if audits != 1 {
 		t.Fatalf("expected 1 OAUTH_CLIENT_REGISTERED audit, got %d", audits)
+	}
+}
+
+// TestOAuthDCRProxyServedAtStandardPath verifies the hardening proxy is reachable
+// at the RFC-standard /oauth2/register path that Hydra advertises as its
+// registration_endpoint, so cloudflared can route real DCR (from Claude) through
+// the proxy rather than to Hydra directly. Without this, every Phase 5 hardening
+// control (public clients, capped scopes, audit/alert) would be bypassed.
+func TestOAuthDCRProxyServedAtStandardPath(t *testing.T) {
+	app := setupOAuthApp(t)
+
+	body := `{
+		"client_name":"Claude",
+		"redirect_uris":["https://claude.ai/callback"],
+		"scope":"read:accounts admin:everything"
+	}`
+	rec := app.request("POST", "/oauth2/register", body, "")
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("expected 201 at /oauth2/register, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	// The same hardening applies as on the /api/v1 alias: public client, capped scope.
+	create := app.hydra.lastClientCreate
+	if got := create["token_endpoint_auth_method"]; got != "none" {
+		t.Fatalf("expected public client at /oauth2/register, got %v", got)
+	}
+	if scope, _ := create["scope"].(string); scope != "read:accounts" {
+		t.Fatalf("expected capped scope 'read:accounts' at /oauth2/register, got %q", scope)
 	}
 }
 

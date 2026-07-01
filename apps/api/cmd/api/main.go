@@ -170,7 +170,12 @@ func run() error {
 	oauth.POST("/consent/accept", oauthHandler.AcceptConsent)
 	oauth.POST("/consent/reject", oauthHandler.RejectConsent)
 	// Hardened DCR proxy: public clients only, restricted grants, capped scopes,
-	// audited + alerted (Phase 5). cloudflared points the AS registration_endpoint here.
+	// audited + alerted (Phase 5). Served at the RFC-standard /oauth2/register path
+	// that Hydra advertises as its registration_endpoint ({issuer}/oauth2/register),
+	// so cloudflared can route DCR through this proxy via simple path matching
+	// (no path rewriting) instead of hitting Hydra's public endpoint directly.
+	// The /api/v1/oauth/register alias is retained for internal/test callers.
+	router.POST("/oauth2/register", registrationHandler.Register)
 	oauth.POST("/register", registrationHandler.Register)
 
 	// Protected routes
