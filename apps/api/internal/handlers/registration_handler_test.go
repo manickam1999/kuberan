@@ -106,6 +106,44 @@ func TestRegistrationHandler_Register(t *testing.T) {
 		}
 	})
 
+	t.Run("defaults scope to the full read:* + protocol set when none requested", func(t *testing.T) {
+		admin := &mockHydraAdmin{}
+		handler := NewRegistrationHandler(admin, &recordingAuditService{}, testScopes)
+		r := setupRegistrationRouter(handler)
+
+		// MCP connectors commonly register without a scope; the client must still
+		// be able to request read:* + offline_access at authorize time.
+		rec := doRequest(r, "POST", "/oauth/register",
+			`{"client_name":"Claude","redirect_uris":["https://claude.ai/cb"]}`)
+
+		if rec.Code != http.StatusCreated {
+			t.Fatalf("expected 201, got %d: %s", rec.Code, rec.Body.String())
+		}
+		want := "read:accounts read:transactions read:budgets openid offline offline_access"
+		if admin.lastCreateClient.Scope != want {
+			t.Errorf("expected default registrable scope %q, got %q", want, admin.lastCreateClient.Scope)
+		}
+	})
+
+	t.Run("defaults scope when all requested scopes are disallowed", func(t *testing.T) {
+		admin := &mockHydraAdmin{}
+		handler := NewRegistrationHandler(admin, &recordingAuditService{}, testScopes)
+		r := setupRegistrationRouter(handler)
+
+		// Every requested scope is dropped, which would otherwise leave an empty
+		// (unusable) registered scope; fall back to the full default set instead.
+		rec := doRequest(r, "POST", "/oauth/register",
+			`{"redirect_uris":["https://claude.ai/cb"],"scope":"read:secrets write:everything"}`)
+
+		if rec.Code != http.StatusCreated {
+			t.Fatalf("expected 201, got %d: %s", rec.Code, rec.Body.String())
+		}
+		want := "read:accounts read:transactions read:budgets openid offline offline_access"
+		if admin.lastCreateClient.Scope != want {
+			t.Errorf("expected default registrable scope %q, got %q", want, admin.lastCreateClient.Scope)
+		}
+	})
+
 	t.Run("rejects missing redirect_uris", func(t *testing.T) {
 		admin := &mockHydraAdmin{}
 		handler := NewRegistrationHandler(admin, &recordingAuditService{}, testScopes)

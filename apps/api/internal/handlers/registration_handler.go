@@ -84,13 +84,26 @@ func (h *RegistrationHandler) Register(c *gin.Context) {
 		}
 	}
 
+	// Cap requested scopes to the read:* set (plus OIDC/refresh protocol scopes),
+	// dropping anything disallowed. MCP connectors commonly register without a
+	// scope, declaring the scopes they want only at authorize time; Hydra checks
+	// authorize-time scopes against the client's registered set, so a client
+	// registered with an empty scope could never obtain a usable token. In that
+	// case default the registrable scope to the full read:* set plus the
+	// protocol scopes so authorize and silent refresh can succeed. The consent
+	// bridge still caps what is actually granted per request (defense in depth).
+	scope := capScopes(strings.Fields(req.Scope), h.allowedScopes)
+	if len(scope) == 0 {
+		scope = h.defaultRegistrableScopes()
+	}
+
 	// Force the hardened policy regardless of what the client asked for.
 	create := hydra.OAuth2ClientCreate{
 		ClientName:              req.ClientName,
 		RedirectURIs:            req.RedirectURIs,
 		GrantTypes:              allowedGrantTypes,
 		ResponseTypes:           []string{"code"},
-		Scope:                   strings.Join(capScopes(strings.Fields(req.Scope), h.allowedScopes), " "),
+		Scope:                   strings.Join(scope, " "),
 		TokenEndpointAuthMethod: "none",
 	}
 
@@ -116,6 +129,18 @@ func (h *RegistrationHandler) Register(c *gin.Context) {
 	)
 
 	c.JSON(http.StatusCreated, client)
+}
+
+// defaultRegistrableScopes is the scope set assigned to a DCR client that
+// registers without requesting any scope: the full read:* set plus the
+// OIDC/refresh protocol scopes (openid, offline, offline_access), so the client
+// can select them at authorize time and obtain refresh tokens. Consent still
+// gates what is actually granted per request.
+func (h *RegistrationHandler) defaultRegistrableScopes() []string {
+	out := make([]string, 0, len(h.allowedScopes)+3)
+	out = append(out, h.allowedScopes...)
+	out = append(out, "openid", "offline", "offline_access")
+	return out
 }
 
 // isValidRedirectURI reports whether s is an acceptable OAuth redirect URI: an
