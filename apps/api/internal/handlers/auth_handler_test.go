@@ -26,8 +26,6 @@ type mockUserService struct {
 	attemptLoginFn          func(email, password string) (*models.User, error)
 	storeRefreshTokenHashFn func(userID string, tokenHash string) error
 	getRefreshTokenHashFn   func(userID string) (string, error)
-	storeMCPTokenHashFn     func(userID string, tokenHash string) error
-	getMCPTokenHashFn       func(userID string) (string, error)
 }
 
 func (m *mockUserService) CreateUser(email, password, firstName, lastName string) (*models.User, error) {
@@ -75,20 +73,6 @@ func (m *mockUserService) StoreRefreshTokenHash(userID, tokenHash string) error 
 func (m *mockUserService) GetRefreshTokenHash(userID string) (string, error) {
 	if m.getRefreshTokenHashFn != nil {
 		return m.getRefreshTokenHashFn(userID)
-	}
-	return "", nil
-}
-
-func (m *mockUserService) StoreMCPTokenHash(userID, tokenHash string) error {
-	if m.storeMCPTokenHashFn != nil {
-		return m.storeMCPTokenHashFn(userID, tokenHash)
-	}
-	return nil
-}
-
-func (m *mockUserService) GetMCPTokenHash(userID string) (string, error) {
-	if m.getMCPTokenHashFn != nil {
-		return m.getMCPTokenHashFn(userID)
 	}
 	return "", nil
 }

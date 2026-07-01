@@ -11,7 +11,6 @@ type User struct {
 	LastName            string        `json:"last_name"`
 	IsActive            bool          `gorm:"default:true" json:"is_active"`
 	RefreshTokenHash    string        `gorm:"size:64" json:"-"`
-	MCPTokenHash        string        `gorm:"size:64" json:"-"`
 	FailedLoginAttempts int           `gorm:"default:0" json:"-"`
 	LockedUntil         *time.Time    `json:"-"`
 	LastLoginAt         *time.Time    `json:"last_login_at,omitempty"`

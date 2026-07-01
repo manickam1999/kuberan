@@ -174,10 +174,6 @@ func run() error {
 	// User profile
 	protected.GET("/profile", authHandler.GetProfile)
 
-	// MCP token
-	protected.POST("/auth/mcp-token", authHandler.GenerateMCPToken)
-	protected.DELETE("/auth/mcp-token", authHandler.RevokeMCPToken)
-
 	// Account routes
 	accounts := protected.Group("/accounts")
 	accounts.POST("/cash", accountHandler.CreateCashAccount)

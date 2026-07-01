@@ -23,32 +23,41 @@ MCP_PORT=8081 ./bin/mcp
 
 | Path      | Auth        | Purpose                                  |
 | --------- | ----------- | ---------------------------------------- |
-| `/mcp`    | Bearer (MCP token) | Streamable HTTP MCP transport     |
+| `/mcp`    | Bearer (OAuth access token) | Streamable HTTP MCP transport |
+| `/.well-known/oauth-protected-resource` | none | RFC 9728 Protected Resource Metadata |
 | `/health` | none        | Liveness probe, returns `{"status":"ok"}` |
 
 ## Authentication
 
-1. A logged-in user calls `POST /api/v1/auth/mcp-token` on the **API** to mint a
-   long-lived (1 year) MCP token. The token's SHA-256 hash is stored on the user
-   record so it can be validated and revoked.
-2. The MCP client sends that token as `Authorization: Bearer <token>` to `/mcp`.
-3. On each request the MCP server validates the JWT, confirms its type is `mcp`,
-   checks the stored hash matches (supports revocation), and that the user is active.
-4. `DELETE /api/v1/auth/mcp-token` revokes the token by clearing the stored hash.
+The MCP server is an OAuth 2.1 **Resource Server**. [Ory Hydra](https://www.ory.sh/hydra)
+is the Authorization Server; see `plans/015-mcp-oauth-hydra`.
 
-MCP tokens are rejected by the main REST API (`AuthMiddleware`), and access/bot
-tokens are rejected by the MCP server — token types cannot be used cross-purpose.
+1. An MCP client (e.g. a Claude connector) discovers the server via
+   `/.well-known/oauth-protected-resource`, which points at Hydra as the
+   `authorization_servers` entry.
+2. The client registers (Dynamic Client Registration), then drives the OAuth
+   authorization-code + PKCE flow. Login and consent resolve against Kuberan's
+   existing user store via the `apps/web` login/consent pages and the
+   `apps/api` admin bridge (`/api/v1/oauth/*`).
+3. Hydra issues a short-lived (15m) JWT **access token** scoped to granular
+   `read:*` scopes, plus a rotating refresh token for silent renewal.
+4. The client sends the access token as `Authorization: Bearer <token>` to `/mcp`.
+   On each request the server validates the JWT offline against Hydra's JWKS
+   (signature, `exp`/`nbf`, issuer, audience) and enforces the required scope for
+   the tool being called.
 
-> **One token per user.** Only the most recently issued MCP token is valid;
-> generating a new one invalidates the previous token.
+A `/mcp` request without a valid token receives `401` with a
+`WWW-Authenticate: Bearer resource_metadata="…"` challenge pointing at the
+discovery document.
 
 ## Deployment requirements
 
-- **Shared `JWT_SECRET`.** The MCP server validates tokens with the same
-  `JWT_SECRET` the API signs them with. The API and MCP processes **must** be
-  configured with an identical `JWT_SECRET`, or every token will be rejected.
-  In production this must be a strong, explicitly-set value on both services
-  (the dev fallback is refused in production by config validation).
+- **Hydra reachability.** The server validates tokens against Hydra's JWKS at
+  `HYDRA_ISSUER_URL`, and advertises itself under `MCP_RESOURCE_URL` (the token
+  audience). Both must be set to the public hostnames clients reach. The MCP
+  server no longer needs `JWT_SECRET` — that only signs the API's own
+  access/refresh/bot tokens.
 - **Terminate TLS in front of the server.** Tokens are sent as plaintext bearer
   credentials and the server speaks plain HTTP. Run it behind a reverse proxy /
   load balancer that terminates TLS; do not expose `:8081` directly to clients.
+  Keep Hydra's admin API (`:4445`) on the private network — never expose it.

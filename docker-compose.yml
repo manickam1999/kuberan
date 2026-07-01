@@ -18,8 +18,8 @@ services:
       - DB_PASSWORD=kuberan
       - DB_NAME=kuberan
       - DB_SSLMODE=disable
-      # JWT_SECRET MUST be identical for the api and mcp services so MCP tokens
-      # issued by the api validate on the mcp server.
+      # JWT_SECRET signs the api's own access/refresh/bot tokens (HS256).
+      # The mcp server no longer needs it: it validates Hydra-issued JWTs via JWKS.
       - JWT_SECRET=${JWT_SECRET:-fallback-secret-key-for-dev-only}
       - PIPELINE_API_KEY=${PIPELINE_API_KEY}
       - BOT_INTERNAL_SECRET=${BOT_INTERNAL_SECRET}
@@ -96,9 +96,11 @@ services:
       - DB_NAME=kuberan
       - DB_SSLMODE=disable
       - MCP_PORT=8081
-      # JWT_SECRET MUST match the api service so MCP tokens issued by the api
-      # validate here. In production set a strong shared secret on both.
-      - JWT_SECRET=${JWT_SECRET:-fallback-secret-key-for-dev-only}
+      # The mcp server authenticates callers with Hydra-issued OAuth access
+      # tokens, validated offline against Hydra's JWKS. It no longer needs
+      # JWT_SECRET (the legacy static MCP token path was removed in Phase 4).
+      - HYDRA_ISSUER_URL=${HYDRA_ISSUER_URL:-http://hydra:4444}
+      - MCP_RESOURCE_URL=${MCP_RESOURCE_URL:-http://localhost:8081}
     depends_on:
       postgres:
         condition: service_healthy
