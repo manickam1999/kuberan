@@ -18,9 +18,12 @@ type mockHydraAdmin struct {
 	acceptLoginFn       func(ctx context.Context, challenge string, p hydra.AcceptLoginParams) (string, error)
 	getConsentFn        func(ctx context.Context, challenge string) (*hydra.ConsentRequest, error)
 	acceptConsentFn     func(ctx context.Context, challenge string, p hydra.AcceptConsentParams) (string, error)
+	createClientFn      func(ctx context.Context, in hydra.OAuth2ClientCreate) (*hydra.OAuth2Client, error)
 	lastAcceptLogin     hydra.AcceptLoginParams
 	lastAcceptConsent   hydra.AcceptConsentParams
+	lastCreateClient    hydra.OAuth2ClientCreate
 	acceptConsentCalled bool
+	createClientCalled  bool
 }
 
 func (m *mockHydraAdmin) GetLoginRequest(context.Context, string) (*hydra.LoginRequest, error) {
@@ -61,6 +64,23 @@ func (m *mockHydraAdmin) RejectConsent(context.Context, string, string) (string,
 
 func (m *mockHydraAdmin) GetClient(context.Context, string) (*hydra.OAuth2Client, error) {
 	return &hydra.OAuth2Client{}, nil
+}
+
+func (m *mockHydraAdmin) CreateClient(ctx context.Context, in hydra.OAuth2ClientCreate) (*hydra.OAuth2Client, error) {
+	m.createClientCalled = true
+	m.lastCreateClient = in
+	if m.createClientFn != nil {
+		return m.createClientFn(ctx, in)
+	}
+	return &hydra.OAuth2Client{
+		ClientID:                "generated-id",
+		ClientName:              in.ClientName,
+		RedirectURIs:            in.RedirectURIs,
+		Scope:                   in.Scope,
+		GrantTypes:              in.GrantTypes,
+		ResponseTypes:           in.ResponseTypes,
+		TokenEndpointAuthMethod: in.TokenEndpointAuthMethod,
+	}, nil
 }
 
 // --- mock trusted client service ---

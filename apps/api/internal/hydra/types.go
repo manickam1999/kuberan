@@ -6,13 +6,28 @@
 // go through apps/api handlers, never directly to Hydra's admin port.
 package hydra
 
-// OAuth2Client is the subset of a Hydra OAuth 2.0 client used for consent display
-// and trust checks.
+// OAuth2Client is the subset of a Hydra OAuth 2.0 client used for consent display,
+// trust checks, and DCR registration responses.
 type OAuth2Client struct {
-	ClientID     string   `json:"client_id"`
-	ClientName   string   `json:"client_name"`
-	RedirectURIs []string `json:"redirect_uris"`
-	Scope        string   `json:"scope"`
+	ClientID                string   `json:"client_id"`
+	ClientName              string   `json:"client_name"`
+	RedirectURIs            []string `json:"redirect_uris"`
+	Scope                   string   `json:"scope"`
+	GrantTypes              []string `json:"grant_types,omitempty"`
+	ResponseTypes           []string `json:"response_types,omitempty"`
+	TokenEndpointAuthMethod string   `json:"token_endpoint_auth_method,omitempty"`
+}
+
+// OAuth2ClientCreate is the client metadata posted to Hydra's admin API to
+// register a new OAuth 2.0 client. The DCR proxy fully controls these fields
+// (public client, capped scopes, restricted grants) before creation.
+type OAuth2ClientCreate struct {
+	ClientName              string   `json:"client_name,omitempty"`
+	RedirectURIs            []string `json:"redirect_uris,omitempty"`
+	GrantTypes              []string `json:"grant_types,omitempty"`
+	ResponseTypes           []string `json:"response_types,omitempty"`
+	Scope                   string   `json:"scope,omitempty"`
+	TokenEndpointAuthMethod string   `json:"token_endpoint_auth_method,omitempty"`
 }
 
 // LoginRequest describes a pending Hydra login challenge.

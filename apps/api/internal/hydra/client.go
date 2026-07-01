@@ -25,6 +25,7 @@ type AdminClient interface {
 	RejectConsent(ctx context.Context, challenge, reason string) (redirectTo string, err error)
 
 	GetClient(ctx context.Context, clientID string) (*OAuth2Client, error)
+	CreateClient(ctx context.Context, in OAuth2ClientCreate) (*OAuth2Client, error)
 }
 
 // client is the concrete AdminClient backed by net/http.
@@ -128,6 +129,17 @@ func (c *client) GetClient(ctx context.Context, clientID string) (*OAuth2Client,
 	var out OAuth2Client
 	if err := c.do(ctx, http.MethodGet,
 		"/admin/clients/"+url.PathEscape(clientID), nil, nil, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// CreateClient registers a new OAuth 2.0 client via the admin API. The DCR proxy
+// is responsible for sanitising in (forcing a public client, restricting grants,
+// and capping scopes) before calling this.
+func (c *client) CreateClient(ctx context.Context, in OAuth2ClientCreate) (*OAuth2Client, error) {
+	var out OAuth2Client
+	if err := c.do(ctx, http.MethodPost, "/admin/clients", nil, in, &out); err != nil {
 		return nil, err
 	}
 	return &out, nil

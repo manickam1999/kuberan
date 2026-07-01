@@ -218,15 +218,22 @@ func (h *OAuthHandler) acceptConsent(c *gin.Context, consent *hydra.ConsentReque
 // read:* set (plus the OIDC/refresh protocol scopes). This is the defense-in-depth
 // cap: a client can never be granted a scope the RS does not recognise.
 func (h *OAuthHandler) grantableScopes(requested []string) []string {
-	allowed := make(map[string]bool, len(h.allowedScopes))
-	for _, s := range h.allowedScopes {
-		allowed[s] = true
+	return capScopes(requested, h.allowedScopes)
+}
+
+// capScopes returns requested intersected with the allowed read:* set plus the
+// OIDC/refresh protocol scopes. Shared by consent granting and DCR registration
+// so both apply the same defense-in-depth scope ceiling.
+func capScopes(requested, allowed []string) []string {
+	set := make(map[string]bool, len(allowed))
+	for _, s := range allowed {
+		set[s] = true
 	}
-	granted := make([]string, 0, len(requested))
+	out := make([]string, 0, len(requested))
 	for _, s := range requested {
-		if allowed[s] || protocolScopes[s] {
-			granted = append(granted, s)
+		if set[s] || protocolScopes[s] {
+			out = append(out, s)
 		}
 	}
-	return granted
+	return out
 }

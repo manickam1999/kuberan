@@ -100,6 +100,7 @@ func run() error {
 	// Initialize handlers
 	authHandler := handlers.NewAuthHandler(userService, auditService)
 	oauthHandler := handlers.NewOAuthHandler(hydraAdmin, userService, trustedClientService, auditService, appConfig.OAuthScopes)
+	registrationHandler := handlers.NewRegistrationHandler(hydraAdmin, auditService, appConfig.OAuthScopes)
 	accountHandler := handlers.NewAccountHandler(accountService, auditService)
 	categoryHandler := handlers.NewCategoryHandler(categoryService, auditService)
 	transactionHandler := handlers.NewTransactionHandler(transactionService, auditService)
@@ -166,6 +167,9 @@ func run() error {
 	oauth.POST("/login", oauthHandler.Login)
 	oauth.GET("/consent", oauthHandler.GetConsent)
 	oauth.POST("/consent/accept", oauthHandler.AcceptConsent)
+	// Hardened DCR proxy: public clients only, restricted grants, capped scopes,
+	// audited + alerted (Phase 5). cloudflared points the AS registration_endpoint here.
+	oauth.POST("/register", registrationHandler.Register)
 
 	// Protected routes
 	protected := v1.Group("/")
