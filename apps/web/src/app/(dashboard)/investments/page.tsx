@@ -709,8 +709,8 @@ export default function InvestmentsPage() {
       </div>
 
       {/* Value trend + allocation — equal-height row */}
-      <div className="grid gap-4 lg:grid-cols-3">
-        <div className="lg:col-span-2">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+        <div className="min-w-0 lg:col-span-2">
           <InvestmentValueChart />
         </div>
         <AssetAllocationChart
