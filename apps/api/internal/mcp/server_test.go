@@ -3,7 +3,9 @@ package mcp
 import (
 	"context"
 	"errors"
+	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	mcpgo "github.com/mark3labs/mcp-go/mcp"
@@ -79,6 +81,58 @@ func TestHandlerRejectsMissingUser(t *testing.T) {
 	}
 	if res == nil || !res.IsError {
 		t.Fatalf("expected an MCP error result for missing user")
+	}
+}
+
+// TestRequireBearer proves the HTTP-level auth gate: requests without a valid
+// Bearer token get a 401 before reaching the MCP handler (the 401 that
+// triggers a client's OAuth discovery), and valid tokens pass through.
+func TestRequireBearer(t *testing.T) {
+	nextCalled := false
+	next := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		nextCalled = true
+		w.WriteHeader(http.StatusOK)
+	})
+
+	tests := []struct {
+		name       string
+		authHeader string
+		validator  fakeValidator
+		wantStatus int
+	}{
+		{"missing header", "", fakeValidator{}, http.StatusUnauthorized},
+		{"non-bearer scheme", "Basic abc", fakeValidator{}, http.StatusUnauthorized},
+		{"empty bearer token", "Bearer ", fakeValidator{}, http.StatusUnauthorized},
+		{"rejected token", "Bearer bad", fakeValidator{err: errors.New("bad token")}, http.StatusUnauthorized},
+		{"valid token", "Bearer good", fakeValidator{claims: &AccessClaims{Subject: "user-1"}}, http.StatusOK},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			nextCalled = false
+			h := withWWWAuthenticate(requireBearer(next, tt.validator), testOAuthConfig)
+
+			req := httptest.NewRequest("POST", "/mcp", nil)
+			if tt.authHeader != "" {
+				req.Header.Set("Authorization", tt.authHeader)
+			}
+			rec := httptest.NewRecorder()
+			h.ServeHTTP(rec, req)
+
+			if rec.Code != tt.wantStatus {
+				t.Fatalf("expected status %d, got %d", tt.wantStatus, rec.Code)
+			}
+			if tt.wantStatus == http.StatusUnauthorized {
+				if nextCalled {
+					t.Fatalf("MCP handler must not run for unauthenticated requests")
+				}
+				challenge := rec.Header().Get("WWW-Authenticate")
+				if !strings.Contains(challenge, "resource_metadata=") {
+					t.Fatalf("401 must carry the RFC 9728 challenge, got %q", challenge)
+				}
+			} else if !nextCalled {
+				t.Fatalf("MCP handler should run for a valid token")
+			}
+		})
 	}
 }
 

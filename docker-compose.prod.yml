@@ -76,7 +76,7 @@ services:
   # One-shot: create/upgrade Hydra's schema in its dedicated `hydra` database.
   # HYDRA_DSN points at the same Postgres/Supabase instance, own database.
   hydra-migrate:
-    image: oryd/hydra:v2.2.0
+    image: oryd/hydra:v25.4.0
     command: migrate sql -e --yes
     environment:
       - DSN=${HYDRA_DSN:?HYDRA_DSN is required}
@@ -93,7 +93,7 @@ services:
   # Only the public port (:4444) is published, for the external Cloudflare
   # tunnel to front. Admin (:4445) MUST stay on the private Docker network.
   hydra:
-    image: oryd/hydra:v2.2.0
+    image: oryd/hydra:v25.4.0
     command: serve all --config /etc/config/hydra/hydra.yml
     environment:
       - DSN=${HYDRA_DSN:?HYDRA_DSN is required}
