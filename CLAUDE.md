@@ -175,6 +175,7 @@ Non-monetary floats that remain as float64: `Investment.Quantity`, `SplitRatio`,
 4. **Atomic operations**: All balance-affecting operations wrapped in DB transactions
 5. **Audit logging**: Sensitive operations logged to `audit_logs` table
 6. **SQL migrations over AutoMigrate**: Version-controlled, reversible schema changes
+7. **MCP auth via OAuth 2.1 (Ory Hydra)**: The MCP server is an OAuth Resource Server; Hydra owns DCR, authorize/token, and refresh rotation, reusing `UserService` for login. Flow, rationale, and interop gotchas: `docs/mcp-oauth.md`
 
 ## Common Commands
 
