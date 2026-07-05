@@ -37,11 +37,13 @@ export function AppHeader({ onOpenCommandPalette }: AppHeaderProps) {
       <div className="flex-1" />
       <Button
         variant="outline"
-        className="relative h-9 w-9 p-0 text-muted-foreground xl:h-9 xl:w-64 xl:justify-start xl:px-3 xl:py-2 xl:font-normal"
+        className="relative h-9 w-9 p-0 text-muted-foreground xl:h-9 xl:w-72 xl:justify-start xl:gap-2 xl:px-3 xl:py-2 xl:pr-12 xl:font-normal"
         onClick={onOpenCommandPalette}
       >
-        <Search className="size-4 xl:mr-2" aria-hidden="true" />
-        <span className="hidden xl:inline-flex">Search transactions, accounts…</span>
+        <Search className="size-4 shrink-0" aria-hidden="true" />
+        <span className="hidden min-w-0 flex-1 truncate text-left xl:block">
+          Search transactions, accounts…
+        </span>
         <span className="sr-only">Search</span>
         <kbd className="pointer-events-none absolute top-1/2 right-2 hidden h-5 -translate-y-1/2 select-none items-center gap-0.5 rounded border bg-muted px-1.5 font-mono text-[10px] font-medium xl:flex">
           <span className="text-xs">⌘</span>K

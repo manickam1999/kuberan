@@ -9,6 +9,12 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { useMonthlySummary } from "@/hooks/use-transactions";
 import { useActiveMonth } from "@/hooks/use-active-month";
 import { formatCurrency } from "@/lib/format";
@@ -31,10 +37,15 @@ export function CashflowCard() {
     const maxNet = Math.max(1, ...rows.map((m) => Math.abs(m.income - m.expenses)));
     const trend = rows.map((m) => {
       const d = m.income - m.expenses;
-      const label = new Date(m.month + "-01").toLocaleDateString("en-US", {
-        month: "short",
-      });
-      return { label, net: d, height: Math.abs(d) / maxNet };
+      const date = new Date(m.month + "-01");
+      return {
+        label: date.toLocaleDateString("en-US", { month: "short" }),
+        full: date.toLocaleDateString("en-US", { month: "long", year: "numeric" }),
+        income: m.income,
+        expenses: m.expenses,
+        net: d,
+        height: Math.abs(d) / maxNet,
+      };
     });
 
     return { income, expenses, net, trend, savingsRate };
@@ -117,27 +128,55 @@ export function CashflowCard() {
 
         {/* 6-month net trend */}
         {trend.length > 1 && (
-          <div className="flex items-end justify-between gap-1.5 pt-1">
-            {trend.map((m, i) => (
-              <div
-                key={i}
-                className="flex flex-1 flex-col items-center gap-1.5"
-                title={`${m.label}: ${m.net >= 0 ? "+" : "−"}${formatCurrency(Math.abs(m.net))}`}
-              >
-                <div className="flex h-10 w-full items-end justify-center">
-                  <div
-                    className={`w-full max-w-6 rounded-sm ${
-                      m.net >= 0 ? "bg-positive/70" : "bg-negative/70"
-                    }`}
-                    style={{ height: `${Math.max(m.height * 100, 4)}%` }}
-                  />
-                </div>
-                <span className="text-[10px] text-muted-foreground">
-                  {m.label}
-                </span>
-              </div>
-            ))}
-          </div>
+          <TooltipProvider delayDuration={100}>
+            <div className="flex items-end justify-between gap-1.5 pt-1">
+              {trend.map((m, i) => (
+                <Tooltip key={i}>
+                  <TooltipTrigger asChild>
+                    <div className="flex flex-1 cursor-default flex-col items-center gap-1.5 rounded-md py-1 transition-colors hover:bg-accent/40">
+                      <div className="flex h-10 w-full items-end justify-center">
+                        <div
+                          className={`w-full max-w-6 rounded-sm ${
+                            m.net >= 0 ? "bg-positive/70" : "bg-negative/70"
+                          }`}
+                          style={{ height: `${Math.max(m.height * 100, 4)}%` }}
+                        />
+                      </div>
+                      <span className="text-[10px] text-muted-foreground">
+                        {m.label}
+                      </span>
+                    </div>
+                  </TooltipTrigger>
+                  <TooltipContent className="text-xs">
+                    <p className="mb-1 font-medium">{m.full}</p>
+                    <div className="space-y-0.5">
+                      <div className="flex items-center justify-between gap-4">
+                        <span className="text-muted-foreground">Income</span>
+                        <span className="money text-positive">
+                          {formatCurrency(m.income)}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between gap-4">
+                        <span className="text-muted-foreground">Expenses</span>
+                        <span className="money text-negative">
+                          {formatCurrency(m.expenses)}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between gap-4 border-t border-border/40 pt-0.5">
+                        <span className="text-muted-foreground">Net</span>
+                        <span
+                          className={`money ${m.net >= 0 ? "text-positive" : "text-negative"}`}
+                        >
+                          {m.net >= 0 ? "+" : "−"}
+                          {formatCurrency(Math.abs(m.net))}
+                        </span>
+                      </div>
+                    </div>
+                  </TooltipContent>
+                </Tooltip>
+              ))}
+            </div>
+          </TooltipProvider>
         )}
       </CardContent>
     </Card>

@@ -143,11 +143,11 @@ function toChartData(
 
 export function NetWorthChart() {
   const isMobile = useIsMobile();
-  const [period, setPeriod] = useState("1Y");
+  const [period, setPeriod] = useState("1W");
 
   const selectedOpt = useMemo(
     () =>
-      PERIOD_OPTIONS.find((p) => p.value === period) ?? PERIOD_OPTIONS[5], // default 1Y
+      PERIOD_OPTIONS.find((p) => p.value === period) ?? PERIOD_OPTIONS[1], // default 1W
     [period]
   );
 
