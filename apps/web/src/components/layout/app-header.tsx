@@ -31,19 +31,19 @@ export function AppHeader({ onOpenCommandPalette }: AppHeaderProps) {
   const { setTheme } = useTheme();
 
   return (
-    <header className="flex h-14 shrink-0 items-center gap-2 border-b px-4">
-      <SidebarTrigger className="-ml-1" />
-      <Separator orientation="vertical" className="mr-2 h-4" />
+    <header className="sticky top-0 z-20 flex h-16 shrink-0 items-center gap-2 border-b border-border/60 bg-background/80 px-4 backdrop-blur-md supports-[backdrop-filter]:bg-background/70">
+      <SidebarTrigger className="-ml-1 text-muted-foreground" />
+      <Separator orientation="vertical" className="mr-1 h-5" />
       <div className="flex-1" />
       <Button
         variant="outline"
-        className="relative h-9 w-9 p-0 xl:h-10 xl:w-60 xl:justify-start xl:px-3 xl:py-2"
+        className="relative h-9 w-9 p-0 text-muted-foreground xl:h-9 xl:w-64 xl:justify-start xl:px-3 xl:py-2 xl:font-normal"
         onClick={onOpenCommandPalette}
       >
         <Search className="size-4 xl:mr-2" aria-hidden="true" />
-        <span className="hidden xl:inline-flex">Search...</span>
+        <span className="hidden xl:inline-flex">Search transactions, accounts…</span>
         <span className="sr-only">Search</span>
-        <kbd className="pointer-events-none absolute top-2 right-1.5 hidden h-6 select-none items-center gap-1 rounded border bg-muted px-1.5 font-mono text-[10px] font-medium opacity-100 xl:flex">
+        <kbd className="pointer-events-none absolute top-1/2 right-2 hidden h-5 -translate-y-1/2 select-none items-center gap-0.5 rounded border bg-muted px-1.5 font-mono text-[10px] font-medium xl:flex">
           <span className="text-xs">⌘</span>K
         </kbd>
       </Button>
@@ -71,9 +71,9 @@ export function AppHeader({ onOpenCommandPalette }: AppHeaderProps) {
         </DropdownMenuContent>
       </DropdownMenu>
       <DropdownMenu>
-        <DropdownMenuTrigger className="flex items-center gap-2 rounded-md px-2 py-1 hover:bg-accent outline-none">
-          <Avatar size="sm">
-            <AvatarFallback>
+        <DropdownMenuTrigger className="flex items-center gap-2 rounded-full py-1 pl-1 pr-2.5 transition-colors hover:bg-accent outline-none focus-visible:ring-2 focus-visible:ring-ring/50">
+          <Avatar size="sm" className="ring-2 ring-primary/25">
+            <AvatarFallback className="bg-primary/15 text-primary text-xs font-semibold">
               {user
                 ? getUserInitials(user.first_name, user.last_name)
                 : "U"}

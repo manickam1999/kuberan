@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { ArrowUpRight, ArrowDownRight } from "lucide-react";
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid } from "recharts";
 import {
   ChartContainer,
@@ -203,6 +204,15 @@ export function NetWorthChart() {
     return data[0].total_net_worth; // first = newest (DESC order)
   }, [isGrouped, groupedQuery.data, rawQuery.data]);
 
+  // Change over the selected window (first vs last point), in cents.
+  const periodChange = useMemo(() => {
+    if (chartData.length < 2 || latestNetWorth === null) return null;
+    const startCents = chartData[0].net_worth * 100;
+    const deltaCents = latestNetWorth - startCents;
+    const pct = startCents !== 0 ? (deltaCents / Math.abs(startCents)) * 100 : 0;
+    return { deltaCents, pct };
+  }, [chartData, latestNetWorth]);
+
   if (isLoading) {
     return (
       <Card>
@@ -217,22 +227,52 @@ export function NetWorthChart() {
     );
   }
 
+  const changeUp = periodChange ? periodChange.deltaCents >= 0 : true;
+
   return (
-    <Card>
+    <Card className="surface-glow">
       <CardHeader>
-        <div className="flex items-center justify-between">
-          <div>
-            <CardTitle>Net Worth Over Time</CardTitle>
-            <CardDescription>
-              {latestNetWorth !== null
-                ? `Current: ${formatCurrency(latestNetWorth)}`
-                : "Portfolio value over time"}
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <div className="space-y-1.5">
+            <CardDescription className="text-xs font-medium uppercase tracking-wide">
+              Net worth
             </CardDescription>
+            <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+              <CardTitle className="money text-3xl font-semibold sm:text-4xl">
+                {latestNetWorth !== null
+                  ? formatCurrency(latestNetWorth)
+                  : "—"}
+              </CardTitle>
+              {periodChange && (
+                <span
+                  className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${
+                    changeUp
+                      ? "bg-positive-muted text-positive"
+                      : "bg-negative-muted text-negative"
+                  }`}
+                >
+                  {changeUp ? (
+                    <ArrowUpRight className="size-3.5" />
+                  ) : (
+                    <ArrowDownRight className="size-3.5" />
+                  )}
+                  {changeUp ? "+" : ""}
+                  {formatCurrency(periodChange.deltaCents)} (
+                  {changeUp ? "+" : ""}
+                  {periodChange.pct.toFixed(1)}%)
+                </span>
+              )}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              {selectedOpt.label === "ALL"
+                ? "All time"
+                : `Past ${selectedOpt.label}`}
+            </p>
           </div>
           <Tabs value={period} onValueChange={setPeriod}>
-            <TabsList>
+            <TabsList className="h-8">
               {PERIOD_OPTIONS.map((opt) => (
-                <TabsTrigger key={opt.value} value={opt.value}>
+                <TabsTrigger key={opt.value} value={opt.value} className="px-2 text-xs">
                   {opt.label}
                 </TabsTrigger>
               ))}
@@ -258,7 +298,7 @@ export function NetWorthChart() {
         ) : (
           <ChartContainer
             config={chartConfig}
-            className="h-[180px] md:h-[250px] w-full"
+            className="h-[190px] md:h-[230px] w-full"
           >
             <AreaChart accessibilityLayer data={chartData}>
               <defs>

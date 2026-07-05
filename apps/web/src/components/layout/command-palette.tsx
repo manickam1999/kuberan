@@ -7,13 +7,11 @@ import {
   Wallet,
   ArrowLeftRight,
   Tag,
-  PieChart,
   Database,
   TrendingUp,
   Plus,
   Receipt,
   FolderPlus,
-  Target,
 } from "lucide-react";
 import {
   CommandDialog,
@@ -27,7 +25,6 @@ import {
 import { CreateAccountDialog } from "@/components/accounts/create-account-dialog";
 import { CreateTransactionDialog } from "@/components/transactions/create-transaction-dialog";
 import { CreateCategoryDialog } from "@/components/categories/create-category-dialog";
-import { CreateBudgetDialog } from "@/components/budgets/create-budget-dialog";
 
 export interface CommandPaletteRef {
   toggle: () => void;
@@ -47,7 +44,6 @@ export const CommandPalette = forwardRef<CommandPaletteRef>(
   const [createAccountOpen, setCreateAccountOpen] = useState(false);
   const [createTransactionOpen, setCreateTransactionOpen] = useState(false);
   const [createCategoryOpen, setCreateCategoryOpen] = useState(false);
-  const [createBudgetOpen, setCreateBudgetOpen] = useState(false);
 
   // Keyboard listener for Cmd+K / Ctrl+K
   useEffect(() => {
@@ -98,10 +94,6 @@ export const CommandPalette = forwardRef<CommandPaletteRef>(
               <Tag />
               <span>Categories</span>
             </CommandItem>
-            <CommandItem onSelect={() => navigateTo("/budgets")}>
-              <PieChart />
-              <span>Budgets</span>
-            </CommandItem>
             <CommandItem onSelect={() => navigateTo("/securities")}>
               <Database />
               <span>Securities</span>
@@ -127,10 +119,6 @@ export const CommandPalette = forwardRef<CommandPaletteRef>(
               <FolderPlus />
               <span>Create Category</span>
             </CommandItem>
-            <CommandItem onSelect={() => openDialog(setCreateBudgetOpen)}>
-              <Target />
-              <span>Create Budget</span>
-            </CommandItem>
           </CommandGroup>
         </CommandList>
       </CommandDialog>
@@ -147,10 +135,6 @@ export const CommandPalette = forwardRef<CommandPaletteRef>(
       <CreateCategoryDialog
         open={createCategoryOpen}
         onOpenChange={setCreateCategoryOpen}
-      />
-      <CreateBudgetDialog
-        open={createBudgetOpen}
-        onOpenChange={setCreateBudgetOpen}
       />
     </>
   );
