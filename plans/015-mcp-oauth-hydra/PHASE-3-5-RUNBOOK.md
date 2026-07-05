@@ -16,24 +16,26 @@ to re-derive them.
 ## 0. Preconditions
 
 - Prod stack up via `docker compose -f docker-compose.prod.yml up -d`
-  (Hydra, hydra-migrate, api, mcp, web, cloudflared all healthy).
+  (Hydra, hydra-migrate, api, mcp, web all healthy).
 - `.env.prod` populated from `.env.prod.example`, in particular:
   `HYDRA_ISSUER_URL`, `HYDRA_LOGIN_URL`, `HYDRA_CONSENT_URL`, `HYDRA_DSN`,
-  `HYDRA_SECRETS_SYSTEM`, `MCP_RESOURCE_URL`, `OAUTH_SCOPES`, `CF_TUNNEL_TOKEN`.
-- Cloudflare tunnel public hostnames configured (see §3).
+  `HYDRA_SECRETS_SYSTEM`, `MCP_RESOURCE_URL`, `OAUTH_SCOPES`.
+- The external Cloudflare tunnel (managed outside this repo) has its public
+  hostnames configured against the host-published ports (see §3).
 - A Kuberan user account exists (register through the web app first).
 
-Reference public surface (all through cloudflared, HTTPS only):
+Reference public surface (all through the external tunnel, HTTPS only; the
+tunnel reaches the compose services via their host-published ports):
 
-| Host / path | Backend | Purpose |
+| Host / path | Backend (host port) | Purpose |
 |---|---|---|
-| `auth.<domain>/oauth2/register` | `api:8080` | **Hardened DCR proxy** (`POST /oauth2/register`) |
-| `auth.<domain>/*` (all other) | `hydra:4444` | OAuth AS: authorize, token, JWKS, `.well-known/*` |
-| `mcp.<domain>` | `mcp:8081` | MCP Resource Server + `/.well-known/oauth-protected-resource` |
-| `app.<domain>/oauth/login`, `/oauth/consent` | `web:3000` | Login + consent pages |
-| `api.<domain>` (optional) | `api:8080` | REST API |
+| `auth.<domain>/oauth2/register` | `:8080` (api) | **Hardened DCR proxy** (`POST /oauth2/register`) |
+| `auth.<domain>/*` (all other) | `:4444` (hydra) | OAuth AS: authorize, token, JWKS, `.well-known/*` |
+| `mcp.<domain>` | `:8081` (mcp) | MCP Resource Server + `/.well-known/oauth-protected-resource` |
+| `app.<domain>/oauth/login`, `/oauth/consent` | `:3000` (web) | Login + consent pages |
+| `api.<domain>` (optional) | `:8080` (api) | REST API |
 
-Hydra admin (`:4445`) is **never** mapped in cloudflared.
+Hydra admin (`:4445`) is **never** published by compose nor mapped in the tunnel.
 
 ---
 
@@ -99,12 +101,12 @@ fails, these are the two knobs.
 `client_credentials`/implicit grants, or uncapped scopes; no
 `OAUTH_CLIENT_REGISTERED` audit row appears.
 
-**Cause:** cloudflared routed `auth.<domain>/oauth2/register` straight to
-`hydra:4444`, bypassing every Phase 5 control.
+**Cause:** the tunnel routed `auth.<domain>/oauth2/register` straight to
+Hydra (`:4444`), bypassing every Phase 5 control.
 
 **Fix:** in the Cloudflare tunnel config, ensure the **more specific**
-`/oauth2/register` path rule points at `http://api:8080` and is ordered
-*before* the catch-all `auth.<domain>/* -> hydra:4444` rule. Re-run the §1
+`/oauth2/register` path rule points at the api service (host port `:8080`) and
+is ordered *before* the catch-all `auth.<domain>/* -> :4444` rule. Re-run the §1
 sanity checks. (`cmd/api/main.go:178` serves this exact path.)
 
 ### 2b. Resource-identity / token-audience mismatch (RFC 9728 + RFC 8707)

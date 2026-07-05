@@ -90,8 +90,8 @@ services:
     restart: "no"
 
   # Ory Hydra: OAuth 2.1 Authorization Server for MCP (plan 015-mcp-oauth-hydra).
-  # No ports are published: both public (:4444) and admin (:4445) stay on the
-  # private Docker network. cloudflared fronts ONLY :4444; admin is never exposed.
+  # Only the public port (:4444) is published, for the external Cloudflare
+  # tunnel to front. Admin (:4445) MUST stay on the private Docker network.
   hydra:
     image: oryd/hydra:v2.2.0
     command: serve all --config /etc/config/hydra/hydra.yml
@@ -101,9 +101,11 @@ services:
       - URLS_SELF_ISSUER=${HYDRA_ISSUER_URL:?HYDRA_ISSUER_URL is required}
       - URLS_LOGIN=${HYDRA_LOGIN_URL:?HYDRA_LOGIN_URL is required}
       - URLS_CONSENT=${HYDRA_CONSENT_URL:?HYDRA_CONSENT_URL is required}
-      # cloudflared terminates TLS and forwards HTTP over the Docker network,
-      # so Hydra must trust X-Forwarded-Proto from that private range.
+      # The Cloudflare tunnel terminates TLS and forwards plain HTTP, so Hydra
+      # must trust X-Forwarded-Proto from the Docker bridge range it arrives on.
       - SERVE_TLS_ALLOW_TERMINATION_FROM=${HYDRA_TLS_TERMINATION_CIDR:-172.16.0.0/12}
+    ports:
+      - "4444:4444"
     volumes:
       - ./ory/hydra/hydra.yml:/etc/config/hydra/hydra.yml:ro
     dns:
@@ -158,31 +160,20 @@ services:
       - api
     restart: unless-stopped
 
-  # Cloudflare Tunnel: the ONLY public ingress. Terminates TLS at Cloudflare's
-  # edge and forwards to internal services over the Docker network. Configure
-  # the tunnel's public hostnames in the Cloudflare dashboard to map ONLY:
-  #   auth.<domain> (path /oauth2/register) -> http://api:8080  (hardened DCR proxy)
-  #   auth.<domain> (all other paths)       -> http://hydra:4444 (OAuth AS: authorize/token/JWKS)
-  #   mcp.<domain>  -> http://mcp:8081     (MCP Resource Server + discovery)
-  #   app.<domain>  -> http://web:3000     (login/consent pages + web app)
-  #   api.<domain>  -> http://api:8080     (REST API, if exposed)
+  # Public ingress is an EXTERNAL Cloudflare tunnel (managed outside this repo);
+  # it reaches the services via the host-published ports above. Configure the
+  # tunnel's public hostnames in the Cloudflare dashboard to map ONLY:
+  #   auth.<domain> (path /oauth2/register) -> :8080 (hardened DCR proxy)
+  #   auth.<domain> (all other paths)       -> :4444 (OAuth AS: authorize/token/JWKS)
+  #   mcp.<domain>  -> :8081  (MCP Resource Server + discovery)
+  #   app.<domain>  -> :3000  (login/consent pages + web app)
+  #   api.<domain>  -> :8080  (REST API, if exposed)
   # DCR MUST route to the api proxy, not Hydra: Hydra advertises its
   # registration_endpoint as https://auth.<domain>/oauth2/register, and the api
   # container serves that exact path (see cmd/api/main.go) with the Phase 5
   # hardening (public clients, capped scopes, audit/alert). Routing /oauth2/register
   # straight to Hydra would bypass every one of those controls.
   # NEVER map Hydra admin (:4445). Re-verify the ingress after any tunnel change.
-  cloudflared:
-    image: cloudflare/cloudflared:2025.2.1
-    command: tunnel --no-autoupdate run
-    environment:
-      - TUNNEL_TOKEN=${CF_TUNNEL_TOKEN:?CF_TUNNEL_TOKEN is required}
-    depends_on:
-      - api
-      - web
-      - hydra
-      - mcp
-    restart: unless-stopped
 
   backup:
     build:
