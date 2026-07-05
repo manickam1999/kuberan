@@ -109,9 +109,16 @@ func (v *HydraValidator) Validate(ctx context.Context, raw string) (*AccessClaim
 		return nil, errors.New("access token missing sub claim")
 	}
 
+	// Hydra emits granted scopes as the `scp` claim (JSON array); other servers
+	// use `scope` (space-delimited string per RFC 8693). Accept both.
+	scopeClaim := claims["scp"]
+	if scopeClaim == nil {
+		scopeClaim = claims["scope"]
+	}
+
 	return &AccessClaims{
 		Subject: sub,
-		Scopes:  parseScopes(claims["scope"]),
+		Scopes:  parseScopes(scopeClaim),
 	}, nil
 }
 

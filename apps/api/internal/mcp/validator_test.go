@@ -191,6 +191,36 @@ func TestHydraValidator_ScopeFormats(t *testing.T) {
 		}
 	})
 
+	// Hydra's JWT strategy emits granted scopes as `scp` (JSON array), not
+	// `scope`. This is what real Hydra-issued access tokens look like; only
+	// live E2E exposed it, so lock it in.
+	t.Run("hydra scp array claim", func(t *testing.T) {
+		c := validClaims()
+		delete(c, "scope")
+		c["scp"] = []interface{}{"read:accounts", "read:snapshots"}
+		tok := signToken(t, key, testKid, c)
+		claims, err := v.Validate(context.Background(), tok)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(claims.Scopes) != 2 || claims.Scopes[0] != "read:accounts" || claims.Scopes[1] != "read:snapshots" {
+			t.Errorf("scopes = %v, want [read:accounts read:snapshots]", claims.Scopes)
+		}
+	})
+
+	t.Run("scp takes precedence over scope", func(t *testing.T) {
+		c := validClaims()
+		c["scp"] = []interface{}{"read:budgets"}
+		tok := signToken(t, key, testKid, c)
+		claims, err := v.Validate(context.Background(), tok)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(claims.Scopes) != 1 || claims.Scopes[0] != "read:budgets" {
+			t.Errorf("scopes = %v, want [read:budgets]", claims.Scopes)
+		}
+	})
+
 	t.Run("missing scope claim", func(t *testing.T) {
 		c := validClaims()
 		delete(c, "scope")
