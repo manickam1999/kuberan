@@ -104,6 +104,9 @@ services:
       # The Cloudflare tunnel terminates TLS and forwards plain HTTP, so Hydra
       # must trust X-Forwarded-Proto from the Docker bridge range it arrives on.
       - SERVE_TLS_ALLOW_TERMINATION_FROM=${HYDRA_TLS_TERMINATION_CIDR:-172.16.0.0/12}
+      # Advertised as registration_endpoint in the discovery documents; the
+      # tunnel routes this exact path to the hardened DCR proxy in apps/api.
+      - WEBFINGER_OIDC_DISCOVERY_CLIENT_REGISTRATION_URL=${HYDRA_ISSUER_URL:?HYDRA_ISSUER_URL is required}/oauth2/register
     ports:
       - "4444:4444"
     volumes:
