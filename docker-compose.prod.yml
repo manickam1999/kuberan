@@ -76,7 +76,7 @@ services:
   # One-shot: create/upgrade Hydra's schema in its dedicated `hydra` database.
   # HYDRA_DSN points at the same Postgres/Supabase instance, own database.
   hydra-migrate:
-    image: oryd/hydra:v2.2.0
+    image: oryd/hydra:v25.4.0
     command: migrate sql -e --yes
     environment:
       - DSN=${HYDRA_DSN:?HYDRA_DSN is required}
@@ -93,7 +93,7 @@ services:
   # Only the public port (:4444) is published, for the external Cloudflare
   # tunnel to front. Admin (:4445) MUST stay on the private Docker network.
   hydra:
-    image: oryd/hydra:v2.2.0
+    image: oryd/hydra:v25.4.0
     command: serve all --config /etc/config/hydra/hydra.yml
     environment:
       - DSN=${HYDRA_DSN:?HYDRA_DSN is required}
@@ -104,6 +104,9 @@ services:
       # The Cloudflare tunnel terminates TLS and forwards plain HTTP, so Hydra
       # must trust X-Forwarded-Proto from the Docker bridge range it arrives on.
       - SERVE_TLS_ALLOW_TERMINATION_FROM=${HYDRA_TLS_TERMINATION_CIDR:-172.16.0.0/12}
+      # Advertised as registration_endpoint in the discovery documents; the
+      # tunnel routes this exact path to the hardened DCR proxy in apps/api.
+      - WEBFINGER_OIDC_DISCOVERY_CLIENT_REGISTRATION_URL=${HYDRA_ISSUER_URL:?HYDRA_ISSUER_URL is required}/oauth2/register
     ports:
       - "4444:4444"
     volumes:

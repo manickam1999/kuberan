@@ -106,6 +106,36 @@ func errUnauthorized() *mcpgo.CallToolResult {
 	return mcpgo.NewToolResultError("unauthorized: valid Bearer token required")
 }
 
+// requireBearer gates the MCP transport at the HTTP level: any request without
+// a valid Hydra-issued Bearer access token is rejected with 401 (RFC 6750)
+// before it reaches the MCP handler. This 401 is what triggers an MCP client's
+// OAuth discovery via the WWW-Authenticate challenge added by
+// withWWWAuthenticate; without it, clients would connect unauthenticated and
+// only fail in-band at tool-call time.
+func requireBearer(next http.Handler, v TokenValidator) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		parts := strings.SplitN(r.Header.Get("Authorization"), " ", 2)
+		if len(parts) != 2 || parts[0] != "Bearer" || parts[1] == "" {
+			writeUnauthorized(w)
+			return
+		}
+		if _, err := v.Validate(r.Context(), parts[1]); err != nil {
+			logger.Get().Warnf("MCP auth: token rejected: %v", err)
+			writeUnauthorized(w)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// writeUnauthorized emits the RFC 6750 401 response; the WWW-Authenticate
+// challenge is injected by the enclosing withWWWAuthenticate wrapper.
+func writeUnauthorized(w http.ResponseWriter) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusUnauthorized)
+	_, _ = w.Write([]byte(`{"error":"unauthorized","error_description":"valid Bearer access token required"}`))
+}
+
 // Run creates the MCP server, registers all tools, and starts the HTTP transport.
 // oauth carries the Resource Server discovery settings advertised at the
 // RFC 9728 well-known endpoint and in WWW-Authenticate challenges. validator
@@ -135,10 +165,11 @@ func Run(svc Services, addr string, oauth OAuthConfig, validator TokenValidator)
 	// /health endpoint for container/orchestrator health checks alongside the
 	// authenticated /mcp transport endpoint.
 	mux := http.NewServeMux()
-	// Wrap /mcp so 401 responses carry a WWW-Authenticate challenge pointing at
-	// the Protected Resource Metadata document (RFC 9728), and serve that
-	// document so MCP clients can discover the Hydra authorization server.
-	mux.Handle("/mcp", withWWWAuthenticate(mcpHandler, oauth))
+	// Gate /mcp behind Bearer validation (401 without a valid token) and wrap it
+	// so those 401s carry a WWW-Authenticate challenge pointing at the Protected
+	// Resource Metadata document (RFC 9728); serve that document so MCP clients
+	// can discover the Hydra authorization server.
+	mux.Handle("/mcp", withWWWAuthenticate(requireBearer(mcpHandler, validator), oauth))
 	mux.Handle(ProtectedResourceMetadataPath, discoveryHandler(oauth))
 	mux.HandleFunc("/health", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")

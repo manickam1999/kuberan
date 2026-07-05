@@ -39,6 +39,15 @@ oidc:
     supported_types:
       - public
 
+webfinger:
+  oidc_discovery:
+    # Advertised as registration_endpoint in both discovery documents. Points
+    # at the hardened DCR proxy in apps/api (plan 015 Phase 5), NOT a Hydra
+    # endpoint: without this key Hydra omits registration_endpoint entirely and
+    # MCP clients cannot discover where to self-register. Overridden in prod
+    # via WEBFINGER_OIDC_DISCOVERY_CLIENT_REGISTRATION_URL.
+    client_registration_url: http://localhost:8080/oauth2/register
+
 # Scope handling is deliberately NOT configured here: Hydra v2.x has no global
 # scope registry. Allowed scopes are set per client (client.scope), so the
 # granular read:* set is enforced code-side instead:
