@@ -131,6 +131,12 @@ Key patterns:
 - User-scoped queries for data isolation
 - Audit logging on sensitive operations
 
+The MCP server (`apps/api/cmd/mcp`) exposes read-only finance tools to MCP
+clients (e.g. Claude connectors) and authenticates them with OAuth 2.1, using
+Ory Hydra as the authorization server. See
+[docs/mcp-oauth.md](docs/mcp-oauth.md) for the flow, the rationale, and
+deployment topology.
+
 ## Environment Variables
 
 See `apps/api/.env` for backend configuration. Key variables:
