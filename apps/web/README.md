@@ -1,6 +1,6 @@
 # Kuberan Web
 
-The frontend application for Kuberan, built with Next.js 15 (App Router), React 19, and Tailwind CSS v4.
+The frontend application for Kuberan, built with Next.js 15 (App Router), React 19, and Tailwind CSS v4. The UI is dark-first (dark is the default and most-polished theme) following the modern-fintech redesign.
 
 ## Tech Stack
 
@@ -13,8 +13,8 @@ The frontend application for Kuberan, built with Next.js 15 (App Router), React 
 | ShadCN UI (`new-york`) | Component library (Radix UI + Lucide icons) |
 | @tanstack/react-query v5 | Server state management with query key factories |
 | react-hook-form + zod | Form handling and schema validation |
-| Recharts | Dashboard charts (pie, bar, area) |
-| next-themes | Light/dark/system theme switching |
+| Recharts | Dashboard charts (pie, area) |
+| next-themes | Theme switching (dark by default; light and system supported) |
 | Sonner | Toast notifications |
 | pnpm | Package manager |
 
@@ -45,32 +45,37 @@ The dev server runs at http://localhost:3000 with Turbopack for fast refresh.
 src/
 ├── app/
 │   ├── (auth)/                   # Auth route group (login, register)
-│   │   └── layout.tsx            # Centered card layout, redirects authenticated users
+│   │   └── layout.tsx            # Branded layout, redirects authenticated users
+│   ├── (oauth)/                  # OAuth route group (Hydra login/consent for the MCP flow)
+│   │   └── oauth/                # /oauth/login and /oauth/consent pages
 │   ├── (dashboard)/              # Dashboard route group (all protected pages)
 │   │   ├── layout.tsx            # Sidebar + header layout, auth guard
 │   │   ├── page.tsx              # Dashboard home
 │   │   ├── accounts/             # Accounts list + [id] detail
 │   │   ├── transactions/         # Cross-account transactions
 │   │   ├── categories/           # Category management
-│   │   ├── budgets/              # Budget cards with progress
 │   │   ├── investments/          # Portfolio overview + [id] detail
-│   │   └── securities/           # Securities browse + [id] detail
+│   │   ├── securities/           # Securities browse + [id] detail
+│   │   └── settings/             # Settings (Telegram integration)
 │   ├── layout.tsx                # Root layout (providers chain)
 │   └── globals.css               # Tailwind CSS v4 + theme variables
 ├── components/
-│   ├── ui/                       # ShadCN UI primitives (24 components)
-│   ├── layout/                   # App sidebar, header, theme toggle
+│   ├── ui/                       # ShadCN UI primitives (28 components, incl. custom stat-card, currency-input, color-palette)
+│   ├── layout/                   # App sidebar, header (with theme toggle), command palette
 │   ├── accounts/                 # Account dialogs (create, edit)
 │   ├── transactions/             # Transaction dialogs (create, edit)
 │   ├── categories/               # Category dialogs (create, edit, delete)
-│   ├── budgets/                  # Budget dialogs (create, edit, delete)
 │   ├── investments/              # Investment action dialogs (add, buy, sell, dividend, split)
-│   └── dashboard/                # Dashboard charts (expenditure, income/expenses, spending trend)
+│   ├── settings/                 # Telegram settings + setup guide
+│   └── dashboard/                # Dashboard cards (net worth, cash flow, spending, composition)
 ├── hooks/                        # React Query hooks (one per domain, with query key factories)
 ├── providers/                    # ThemeProvider, QueryProvider, AuthProvider
 ├── lib/
 │   ├── api-client.ts             # HTTP client with auto token refresh
-│   ├── auth.ts                   # JWT parsing, token storage, auth cookies
+│   ├── auth.ts                   # Token storage and auth session helpers
+│   ├── auth-cookie.ts            # Auth flag cookie for middleware route protection
+│   ├── token-utils.ts            # JWT parsing
+│   ├── domain-visuals.ts         # Shared icon/color mappings for domain entities
 │   ├── format.ts                 # Currency (cents->display), date, percentage formatters
 │   └── utils.ts                  # cn() Tailwind utility
 ├── types/
@@ -79,12 +84,19 @@ src/
 └── middleware.ts                  # Next.js middleware for cookie-based route protection
 ```
 
+Note: Budgets exist in the backend API but have no page in the redesigned UI (only the `use-budgets.ts` hook remains).
+
 ## Key Patterns
 
-- **Route groups**: `(auth)` for public pages (login, register), `(dashboard)` for protected pages with sidebar layout
+- **Route groups**: `(auth)` for public pages (login, register), `(oauth)` for the Hydra login/consent pages used by the MCP OAuth flow, `(dashboard)` for protected pages with sidebar layout
 - **Provider chain**: Root layout wraps `ThemeProvider` > `QueryProvider` > `AuthProvider` > `Toaster`
 - **Data fetching**: All API calls go through `lib/api-client.ts`, consumed by React Query hooks in `src/hooks/`. Each hook file exports a query key factory for structured cache management
 - **Auth flow**: JWT access tokens (localStorage) + auth flag cookie (for Next.js middleware). Auto-refresh on 401 with concurrent request deduplication
 - **Component organization**: ShadCN primitives in `ui/`, feature-specific dialogs in domain folders (`accounts/`, `transactions/`, etc.)
 - **Forms**: react-hook-form with zod schemas for validation, ShadCN Form components for UI
-- **Theming**: CSS variables with oklch color space, toggled via `next-themes` (light/dark/system)
+- **Theming**: CSS variables with oklch color space, toggled via `next-themes`; dark is the default theme
+
+## Environment Variables
+
+- `NEXT_PUBLIC_API_URL` -- API base URL; when unset, it is auto-detected from `window.location`
+- `NEXT_PUBLIC_BOT_USERNAME` -- Telegram bot username shown in the settings setup guide (default `KuberanFinBot`)

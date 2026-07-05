@@ -2,6 +2,13 @@
 
 Kuberan supports two database backends in production. Choose the one that fits your setup.
 
+Kuberan uses **two databases** on the same PostgreSQL instance:
+
+- The **app database** (`kuberan`) -- all application data, migrated by golang-migrate.
+- The **Hydra database** (`hydra`) -- Ory Hydra's OAuth state (clients, grants, consent sessions) for the MCP OAuth flow, migrated by the `hydra-migrate` compose service. Its connection string is configured separately via `HYDRA_DSN` in `.env.prod` (see `.env.prod.example` for examples per backend).
+
+In development, `apps/api/dev/init.sql` creates the `hydra` database automatically. In production you must set it up yourself (covered per option below).
+
 | | Self-Hosted PostgreSQL | Supabase |
 |---|---|---|
 | **Data location** | Your VPS (Docker volume) | Supabase's cloud |
@@ -21,13 +28,16 @@ PostgreSQL runs as a Docker Compose service alongside the API and web app. Data 
 Uncomment the Option A block and comment out (or remove) Option B:
 
 ```bash
-COMPOSE_PROFILES=postgres
+COMPOSE_PROFILES=postgres,backup
 DB_HOST=postgres
 DB_PORT=5432
 DB_USER=kuberan
 DB_PASSWORD=your_strong_password_here
 DB_NAME=kuberan
 DB_SSLMODE=disable
+
+# Hydra's OAuth state lives in a dedicated database on the same instance
+HYDRA_DSN=postgres://kuberan:your_strong_password_here@postgres:5432/hydra?sslmode=disable
 ```
 
 Generate a strong password:
@@ -35,9 +45,19 @@ Generate a strong password:
 openssl rand -hex 32
 ```
 
-### 2. Deploy
+### 2. Create the Hydra database
 
-No additional steps needed. The `postgres` service starts automatically because `COMPOSE_PROFILES=postgres` is set:
+The production `postgres` service does not run an init script, so the `hydra` database must be created once before the first deploy (otherwise `hydra-migrate` fails, and `hydra` and `mcp` won't start):
+
+```bash
+docker compose -f docker-compose.prod.yml up -d postgres
+docker compose -f docker-compose.prod.yml exec postgres \
+  psql -U kuberan -c "CREATE DATABASE hydra OWNER kuberan;"
+```
+
+### 3. Deploy
+
+The `postgres` service starts automatically because `COMPOSE_PROFILES` includes `postgres`:
 
 ```bash
 cd /opt/kuberan
@@ -45,11 +65,11 @@ cd /opt/kuberan
 ```
 
 The deploy script:
-1. Starts the `postgres` container and waits for it to be healthy
-2. Runs migrations directly against it (port 5432)
-3. Starts the API and web services
+1. Builds the images
+2. Runs app-database migrations directly against Postgres (port 5432)
+3. Starts all services: API, web, MCP server, Hydra (after `hydra-migrate` completes), bot, and any profile-gated services (postgres, backup, oracle)
 
-### 3. Verify
+### 4. Verify
 
 ```bash
 # Check postgres container is running
@@ -123,7 +143,24 @@ DB_SSLMODE=require
 
 > **Why port 6543?** The app connects via Supavisor (connection pooler, transaction mode) for efficiency. The deploy script automatically uses port 5432 (direct connection) for migrations, since `golang-migrate` requires advisory locks that Supavisor's transaction mode does not support.
 
-### 4. Deploy
+### 4. Set up Hydra's schema
+
+On Supabase, Hydra gets a dedicated schema and role inside the main `postgres` database, targeted via `search_path`. In the SQL editor:
+
+```sql
+CREATE SCHEMA hydra;
+CREATE ROLE hydra_svc WITH LOGIN PASSWORD 'your_strong_password_here';
+GRANT ALL ON SCHEMA hydra TO hydra_svc;
+ALTER ROLE hydra_svc SET search_path = hydra;
+```
+
+Then set `HYDRA_DSN` in `.env.prod` using the **session** pooler (port 5432 -- Hydra's long-lived connections break on the 6543 transaction pooler):
+
+```bash
+HYDRA_DSN=postgres://hydra_svc.<project-ref>:<pw>@<region>.pooler.supabase.com:5432/postgres?sslmode=require&search_path=hydra
+```
+
+### 5. Deploy
 
 ```bash
 cd /opt/kuberan
@@ -141,6 +178,8 @@ Supabase provides automatic daily backups on paid plans. For an independent back
 ## Switching Between Options
 
 If you want to move data from one backend to the other:
+
+> **Note:** the commands below move only the app database. Hydra's OAuth state (registered MCP clients, grants, consent sessions) lives in its own database/schema and is not included -- after switching, either dump/restore the `hydra` database the same way or simply let MCP clients re-register and re-authorize.
 
 ### Supabase → Self-Hosted
 
@@ -188,6 +227,8 @@ Kuberan includes a `backup` service that runs `pg_dump` on a schedule and stores
 - Automatically prunes backups older than **30 days**
 - Runs an initial backup immediately on container start
 - All output is logged to stdout (visible via `docker logs`)
+
+> **Note:** the backup service dumps only the app database (`DB_NAME`). Hydra's OAuth database is not backed up; losing it means MCP clients must re-register and re-authorize, but no financial data is affected.
 
 ### Enable the Backup Service
 

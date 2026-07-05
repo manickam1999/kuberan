@@ -6,18 +6,23 @@ Kuberan is a personal finance application that helps users manage their finances
 
 ## Repository Structure
 
-Monorepo with two main applications:
+Monorepo with five applications:
 
 ```
 /
 ├── apps/
-│   ├── api/          # Go backend (Gin + GORM + PostgreSQL)
-│   └── web/          # Next.js frontend (React 19 + Tailwind CSS v4)
-├── packages/         # Shared code between apps
+│   ├── api/          # Go backend (Gin + GORM + PostgreSQL); also hosts the MCP server (cmd/mcp)
+│   ├── web/          # Next.js frontend (React 19 + Tailwind CSS v4)
+│   ├── bot/          # Python Telegram bot (talks to the API over HTTP)
+│   ├── oracle/       # Go price-ingestion + snapshot worker (own Go module, uses the pipeline API)
+│   └── backup/       # Cron-based pg_dump backup service (shell + supercronic)
+├── deploy/           # Deployment scripts (deploy.sh)
+├── docs/             # Documentation (mcp-oauth.md, database-setup.md)
+├── ory/              # Ory Hydra (OAuth 2.1 authorization server) config
 ├── plans/            # Architecture and upgrade plans
 ├── scripts/          # Shared scripts (check-go.sh, etc.)
-├── tools/            # Development tools
-└── docker-compose.yml
+├── docker-compose.yml       # Development environment
+└── docker-compose.prod.yml  # Production environment (adds Hydra prod wiring, backup, oracle)
 ```
 
 ## Technology Stack
@@ -30,6 +35,7 @@ Monorepo with two main applications:
 - **Logging**: Zap (structured logging)
 - **Migrations**: golang-migrate (SQL-based, version-controlled)
 - **API Docs**: Swagger/OpenAPI via swaggo
+- **MCP**: mark3labs/mcp-go — standalone MCP Resource Server binary (`cmd/mcp`) validating Hydra-issued JWTs via JWKS
 - **Testing**: Go standard `testing` package with SQLite in-memory for tests
 
 ### Frontend (`apps/web/`)
@@ -40,16 +46,17 @@ Monorepo with two main applications:
 - **Components**: ShadCN UI (`new-york` style, built on Radix UI + Lucide icons)
 - **Data Fetching**: @tanstack/react-query v5 (query key factories, smart cache invalidation)
 - **Forms**: react-hook-form + zod schema validation
-- **Charts**: Recharts (pie, bar, area charts on dashboard)
-- **Theming**: next-themes (light/dark/system)
+- **Charts**: Recharts (pie and area charts on dashboard)
+- **Theming**: next-themes (dark-first; light and system also supported)
 - **Notifications**: Sonner (toast notifications)
 - **Auth**: JWT token management with auto-refresh, cookie-based route protection via Next.js middleware
 - **API Layer**: Typed HTTP client (`lib/api-client.ts`) consumed by React Query hooks in `src/hooks/`
 - **Package Manager**: pnpm
 
 ### Infrastructure
-- **Database**: PostgreSQL 16 (Alpine)
-- **Dev Environment**: Docker Compose
+- **Database**: PostgreSQL 16 (Alpine); Hydra uses a separate `hydra` database on the same instance
+- **OAuth Authorization Server**: Ory Hydra v25.4.0 (for MCP client auth; config in `ory/hydra/hydra.yml`)
+- **Dev Environment**: Docker Compose (default services: api, web, mcp, hydra, postgres; `bot`/`oracle`/`backup` behind compose profiles)
 - **Hot Reload**: Air (Go), Turbopack (Next.js)
 
 ## Backend Architecture (`apps/api/`)
@@ -57,20 +64,24 @@ Monorepo with two main applications:
 ```
 apps/api/
 ├── cmd/
-│   ├── api/main.go           # Application entrypoint
+│   ├── api/main.go           # API server entrypoint
+│   ├── mcp/main.go           # MCP server entrypoint (OAuth Resource Server)
 │   └── migrate/main.go       # Migration CLI tool
 ├── migrations/               # SQL migration files (golang-migrate)
-├── Makefile                  # Dev targets (build, test, lint, migrate, etc.)
+├── Makefile                  # Dev targets (build, build-mcp, test, lint, migrate, etc.)
 ├── internal/
 │   ├── config/               # Environment-based configuration
 │   ├── database/             # DB connection, pooling, config
 │   ├── errors/               # Custom AppError types with codes
 │   ├── handlers/             # HTTP handlers (thin, delegate to services)
+│   ├── hydra/                # Ory Hydra admin API client
 │   ├── logger/               # Zap logger setup
+│   ├── mcp/                  # MCP server, tools, JWKS validator, discovery
 │   ├── middleware/            # Auth, error handling, request logging
 │   ├── models/               # GORM models (single source of truth)
 │   ├── pagination/           # Pagination utilities
 │   ├── services/             # Business logic layer (interface-based)
+│   ├── uuid/                 # UUID helpers
 │   ├── validator/            # Custom Gin validators
 │   ├── testutil/             # Test helpers (DB setup, fixtures)
 │   └── docs/                 # Generated Swagger docs
@@ -90,31 +101,36 @@ apps/api/
 apps/web/src/
 ├── app/
 │   ├── (auth)/                   # Auth route group (login, register)
-│   │   └── layout.tsx            # Centered card layout, redirects authenticated users
+│   │   └── layout.tsx            # Branded layout, redirects authenticated users
+│   ├── (oauth)/                  # OAuth route group (Hydra login/consent for the MCP flow)
+│   │   └── oauth/                # /oauth/login and /oauth/consent pages
 │   ├── (dashboard)/              # Dashboard route group (all protected pages)
 │   │   ├── layout.tsx            # Sidebar + header layout, auth guard
 │   │   ├── page.tsx              # Dashboard home
 │   │   ├── accounts/             # Accounts list + [id] detail
 │   │   ├── transactions/         # Cross-account transactions
 │   │   ├── categories/           # Category management
-│   │   ├── budgets/              # Budget cards with progress
 │   │   ├── investments/          # Portfolio overview + [id] detail
-│   │   └── securities/           # Securities browse + [id] detail
+│   │   ├── securities/           # Securities browse + [id] detail
+│   │   └── settings/             # Settings (Telegram integration)
 │   └── layout.tsx                # Root layout (providers chain)
 ├── components/
-│   ├── ui/                       # ShadCN UI primitives (24 components)
-│   ├── layout/                   # App sidebar, header
+│   ├── ui/                       # ShadCN UI primitives (28 components, incl. custom stat-card, currency-input, color-palette)
+│   ├── layout/                   # App sidebar, header (with theme toggle), command palette
 │   ├── accounts/                 # Account dialogs (create, edit)
 │   ├── transactions/             # Transaction dialogs (create, edit)
 │   ├── categories/               # Category dialogs (create, edit, delete)
-│   ├── budgets/                  # Budget dialogs (create, edit, delete)
 │   ├── investments/              # Investment action dialogs (add, buy, sell, dividend, split)
-│   └── dashboard/                # Dashboard charts (expenditure, income/expenses, spending trend)
+│   ├── settings/                 # Telegram settings + setup guide
+│   └── dashboard/                # Dashboard cards (net worth, cash flow, spending, composition)
 ├── hooks/                        # React Query hooks (one per domain, with query key factories)
 ├── providers/                    # ThemeProvider, QueryProvider, AuthProvider
 ├── lib/
 │   ├── api-client.ts             # HTTP client with auto token refresh
-│   ├── auth.ts                   # JWT parsing, token storage, auth cookies
+│   ├── auth.ts                   # Token storage and auth session helpers
+│   ├── auth-cookie.ts            # Auth flag cookie for middleware route protection
+│   ├── token-utils.ts            # JWT parsing
+│   ├── domain-visuals.ts         # Shared icon/color mappings for domain entities
 │   ├── format.ts                 # Currency (cents->display), date, percentage formatters
 │   └── utils.ts                  # cn() Tailwind utility
 ├── types/
@@ -123,8 +139,10 @@ apps/web/src/
 └── middleware.ts                  # Next.js middleware for cookie-based route protection
 ```
 
+Note: Budgets exist in the backend API but have no page in the redesigned UI (only the `use-budgets.ts` hook remains).
+
 ### Frontend Patterns
-- **Route groups**: `(auth)` for public pages, `(dashboard)` for protected pages with sidebar layout
+- **Route groups**: `(auth)` for public pages, `(oauth)` for the Hydra login/consent pages (MCP OAuth flow), `(dashboard)` for protected pages with sidebar layout
 - **Provider chain**: Root layout wraps `ThemeProvider` > `QueryProvider` > `AuthProvider` > `Toaster`
 - **Data fetching**: All API calls go through `lib/api-client.ts`, consumed by React Query hooks in `src/hooks/`. Each hook file exports a query key factory for structured cache management
 - **Auth flow**: JWT access tokens (localStorage) + auth flag cookie (for middleware). Auto-refresh on 401 with concurrent request deduplication
@@ -203,7 +221,7 @@ cd apps/api && go run cmd/migrate/main.go down 1
 cd apps/api && go build -o bin/api ./cmd/api
 
 # Generate Swagger docs
-cd apps/api && swag init -g cmd/api/main.go -d . --output internal/docs
+cd apps/api && swag init -g cmd/api/main.go -d . --output internal/docs --parseDependency
 
 # Lint
 cd apps/api && golangci-lint run ./...
@@ -244,6 +262,14 @@ POST /api/v1/auth/login        # Login, returns access + refresh tokens
 POST /api/v1/auth/refresh      # Refresh access token
 GET  /api/health               # Health check (includes DB ping)
 GET  /swagger/*                # Swagger UI
+
+# OAuth login/consent bridge (drives the Hydra authorization flow for MCP clients)
+POST /api/v1/oauth/login
+POST /api/v1/oauth/login/reject
+GET  /api/v1/oauth/consent
+POST /api/v1/oauth/consent/accept
+POST /api/v1/oauth/consent/reject
+POST /oauth2/register          # Hardened RFC 7591 DCR proxy (alias: POST /api/v1/oauth/register)
 ```
 
 ### Protected (require Bearer token)
@@ -303,10 +329,23 @@ GET    /api/v1/investments/:id/transactions
 GET    /api/v1/securities
 GET    /api/v1/securities/:id
 GET    /api/v1/securities/:id/prices
+
+# Telegram
+GET    /api/v1/telegram/link
+POST   /api/v1/telegram/generate-code
+DELETE /api/v1/telegram/unlink
+```
+
+### Internal (require bot secret via InternalAuthMiddleware)
+```
+POST   /api/v1/internal/telegram/complete-link
+GET    /api/v1/internal/telegram/resolve/:telegram_user_id
+POST   /api/v1/internal/telegram/activity/:telegram_user_id
 ```
 
 ### Pipeline (require API key via X-API-Key header)
 ```
+GET    /api/v1/pipeline/securities          # List all securities
 POST   /api/v1/pipeline/securities          # Create security
 POST   /api/v1/pipeline/securities/prices   # Record security prices
 POST   /api/v1/pipeline/snapshots           # Compute portfolio snapshots for all users
@@ -338,18 +377,28 @@ POST   /api/v1/pipeline/snapshots           # Compute portfolio snapshots for al
 
 ## Environment Variables
 
-### Backend (`apps/api/.env`)
+### Backend (`apps/api/.env`; full production template in `.env.prod.example`)
 ```
 ENV=development|staging|production
 PORT=8080
 DB_HOST=localhost
-DB_PORT=5433
+DB_PORT=5433                     # host port in local dev; code default is 5432
 DB_USER=kuberan
 DB_PASSWORD=kuberan
 DB_NAME=kuberan
 DB_SSLMODE=disable
 JWT_SECRET=<required in production>
-JWT_EXPIRES_IN=15m
+JWT_EXPIRES_IN=24h               # config default; access-token lifetime is hardcoded to 15m in middleware
+PIPELINE_API_KEY=<key for pipeline endpoints; shared with the oracle>
+BOT_INTERNAL_SECRET=<shared secret for internal telegram routes>
+CORS_ORIGIN=*                    # default
+HYDRA_ISSUER_URL=http://localhost:4444   # default
+HYDRA_ADMIN_URL=http://localhost:4445    # default
+MCP_RESOURCE_URL=http://localhost:8081   # default; must match the aud in Hydra tokens
+OAUTH_SCOPES=<optional override of the default read:* scope set>
+HYDRA_PINNED_CLIENT_ID=<optional pinned OAuth client>
 ```
+
+The MCP server additionally reads `MCP_PORT` (default `8081`). Hydra itself is configured via `HYDRA_DSN`, `HYDRA_SECRETS_SYSTEM`, `HYDRA_LOGIN_URL`, `HYDRA_CONSENT_URL`, and `HYDRA_TLS_TERMINATION_CIDR` (see `.env.prod.example` and `docker-compose.prod.yml`). The bot service reads `TELEGRAM_BOT_TOKEN`, `API_BASE_URL`, and `LOG_LEVEL` (see `apps/bot/.env.example`).
 
 In production, `JWT_SECRET` must be explicitly set (not the default) and `DB_PASSWORD` must not be the development default.

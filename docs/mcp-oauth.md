@@ -40,7 +40,7 @@ Kratos.
 | Ory Hydra (`oryd/hydra`, pinned in compose) | `:4444` public, `:4445` admin | Authorization Server: authorize/token endpoints, JWKS signing keys, refresh rotation, client store |
 | MCP server | `apps/api/cmd/mcp`, `internal/mcp/`, `:8081` | OAuth **Resource Server**: validates access tokens offline against Hydra's JWKS |
 | Login/consent bridge | `internal/handlers/oauth_handler.go`, `internal/hydra/` | Browser-callable endpoints that resolve Hydra's login/consent challenges via the admin API (the browser never talks to `:4445`) |
-| Hardened DCR proxy | `internal/handlers/registration_handler.go`, served at `/oauth2/register` on `:8080` | Fronts client self-registration: forces public clients + PKCE (S256), restricts grants to `authorization_code`/`refresh_token`, caps scopes to the `read:*` set, audits + alerts every registration |
+| Hardened DCR proxy | `internal/handlers/registration_handler.go`, served at `/oauth2/register` on `:8080` | Fronts client self-registration: forces public clients + PKCE (S256), restricts grants to `authorization_code`/`refresh_token`, caps scopes to the `read:*` set (a client requesting no scopes gets the full default `read:*` set rather than an unusable empty-scope client), audits + alerts every registration |
 | Login/consent pages | `apps/web` `/oauth/login`, `/oauth/consent` | UI for Hydra's login/consent redirects |
 | `trusted_oauth_clients` table | migration + `internal/services` | Trust-on-first-use: unknown clients get a consent screen; remembered clients auto-accept |
 
@@ -82,6 +82,11 @@ sequenceDiagram
     Note over RS: validate vs cached JWKS<br/>+ per-tool scope check
     RS-->>C: tool results
 ```
+
+Both interactive steps have an active refusal path: Cancel on the login page
+and Deny on the consent screen call `POST /api/v1/oauth/login/reject` /
+`POST /api/v1/oauth/consent/reject`, which reject the challenge via Hydra's
+admin API and abort the flow (the anti-phishing tripwire from plan 15).
 
 Every request to `/mcp` without a valid Bearer token gets an HTTP **401** with
 a `WWW-Authenticate: Bearer resource_metadata="..."` challenge
@@ -132,7 +137,9 @@ control.
 Configuration is via `.env.prod` (see `.env.prod.example`): `HYDRA_DSN`,
 `HYDRA_SECRETS_SYSTEM`, `HYDRA_ISSUER_URL`, `HYDRA_ADMIN_URL` (must be the
 Docker-network URL `http://hydra:4445` - the localhost default silently breaks
-the bridge), `HYDRA_LOGIN_URL`, `HYDRA_CONSENT_URL`, `MCP_RESOURCE_URL`.
+the bridge), `HYDRA_LOGIN_URL`, `HYDRA_CONSENT_URL`, `MCP_RESOURCE_URL`, and
+`HYDRA_TLS_TERMINATION_CIDR` (the Docker network CIDR the tunnel connects
+from, so Hydra trusts `X-Forwarded-Proto: https` from cloudflared).
 
 ## Hard-won interop notes
 

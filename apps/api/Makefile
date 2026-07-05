@@ -36,7 +36,7 @@ check-fast:
 	golangci-lint run ./...
 
 check:
-	./scripts/check.sh
+	../../scripts/check-go.sh .
 
 # Database
 migrate-up:

@@ -38,7 +38,9 @@ is the Authorization Server; see `plans/015-mcp-oauth-hydra`.
 2. The client registers (Dynamic Client Registration), then drives the OAuth
    authorization-code + PKCE flow. Login and consent resolve against Kuberan's
    existing user store via the `apps/web` login/consent pages and the
-   `apps/api` admin bridge (`/api/v1/oauth/*`).
+   `apps/api` admin bridge (`/api/v1/oauth/*`). Both pages offer an active
+   refusal path (Cancel on login, Deny on consent) that rejects the challenge
+   via Hydra and aborts the flow.
 3. Hydra issues a short-lived (15m) JWT **access token** scoped to granular
    `read:*` scopes, plus a rotating refresh token for silent renewal.
 4. The client sends the access token as `Authorization: Bearer <token>` to `/mcp`.
