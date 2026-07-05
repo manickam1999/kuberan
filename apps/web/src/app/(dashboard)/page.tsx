@@ -214,16 +214,16 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
       ) : (
-        <div className="grid items-start gap-4 lg:grid-cols-3">
+        <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-3">
           {/* Main column */}
-          <div className="space-y-4 lg:col-span-2">
+          <div className="min-w-0 space-y-4 lg:col-span-2">
             <NetWorthChart />
             <SpendingCard />
             <CashflowCard />
           </div>
 
           {/* Rail */}
-          <div className="space-y-4">
+          <div className="min-w-0 space-y-4">
             <CompositionCard />
 
             <Card>
