@@ -53,31 +53,34 @@ transaction pooler).
 
 ## The flow (first connect)
 
-```
-Claude (MCP client)          MCP RS (:8081)            Hydra (:4444)          api bridge + web UI
-  | POST /mcp (no token)          |                         |                         |
-  |------------------------------>| 401 + WWW-Authenticate: |                         |
-  |                               |   resource_metadata     |                         |
-  | GET /.well-known/oauth-protected-resource               |                         |
-  |------------------------------>| { authorization_servers: [Hydra issuer] }        |
-  | GET /.well-known/oauth-authorization-server ----------->| endpoints + registration_endpoint
-  | POST /oauth2/register (DCR) --- routed to the PROXY on :8080, not Hydra --------->|
-  |                               |                         |    client_id (audited)  |
-  | GET /oauth2/auth (code + PKCE) ------------------------>| redirect login_challenge|
-  |                               |                         |------------------------>|
-  |                               |                         |  user signs in (bcrypt  |
-  |                               |                         |  via UserService)       |
-  |                               |                         |<-- AcceptLogin(sub=uid) |
-  |                               |                         |-- redirect consent ---->|
-  |                               |                         |  TOFU: unknown client   |
-  |                               |                         |  -> consent screen;     |
-  |                               |                         |  remembered -> auto     |
-  |                               |                         |<- AcceptConsent(scopes) |
-  | <-- authorization code --------------------------------|                          |
-  | POST /oauth2/token (code + verifier) ------------------>| access JWT (15m)        |
-  |                               |                         | + rotating refresh (30d)|
-  | POST /mcp (Bearer) ---------->| validate vs JWKS        |                         |
-  | <-- tool results -------------|  + per-tool scope check |                         |
+```mermaid
+sequenceDiagram
+    participant C as Claude (MCP client)
+    participant RS as MCP RS (:8081)
+    participant H as Hydra (:4444)
+    participant K as api bridge (:8080) + web UI (:3000)
+
+    C->>RS: POST /mcp (no token)
+    RS-->>C: 401 + WWW-Authenticate: resource_metadata
+    C->>RS: GET /.well-known/oauth-protected-resource
+    RS-->>C: authorization_servers: [Hydra issuer]
+    C->>H: GET /.well-known/oauth-authorization-server
+    H-->>C: endpoints + registration_endpoint
+    C->>K: POST /oauth2/register (DCR - tunnel routes to the proxy, not Hydra)
+    K-->>C: client_id (public client, PKCE forced, scopes capped, audited)
+    C->>H: GET /oauth2/auth (authorization code + PKCE)
+    H->>K: redirect with login_challenge
+    Note over K: user signs in (bcrypt via UserService)
+    K->>H: AcceptLogin(sub = Kuberan user ID)
+    H->>K: redirect with consent_challenge
+    Note over K: TOFU - unknown client: consent screen<br/>remembered client: auto-accept
+    K->>H: AcceptConsent(granted read:* scopes)
+    H-->>C: authorization code
+    C->>H: POST /oauth2/token (code + PKCE verifier)
+    H-->>C: access JWT (15m TTL) + rotating refresh token
+    C->>RS: POST /mcp (Bearer access token)
+    Note over RS: validate vs cached JWKS<br/>+ per-tool scope check
+    RS-->>C: tool results
 ```
 
 Every request to `/mcp` without a valid Bearer token gets an HTTP **401** with
