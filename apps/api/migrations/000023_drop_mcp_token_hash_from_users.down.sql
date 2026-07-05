@@ -1,0 +1,1 @@
+ALTER TABLE users ADD COLUMN mcp_token_hash VARCHAR(64) DEFAULT '' NOT NULL;

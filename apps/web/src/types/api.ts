@@ -314,3 +314,34 @@ export interface PortfolioSnapshotFilters {
 export interface GroupedSnapshotResponse<T> {
   data: T[];
 }
+
+// OAuth login/consent bridge (Hydra) — see plans/015-mcp-oauth-hydra Phase 1.
+export interface OAuthLoginRequest {
+  login_challenge: string;
+  email: string;
+  password: string;
+}
+
+// Both /oauth/login and /oauth/consent/accept return a Hydra redirect target.
+export interface OAuthRedirectResponse {
+  redirect_to: string;
+}
+
+export interface OAuthConsentClient {
+  client_id: string;
+  client_name: string;
+}
+
+// GET /oauth/consent returns either redirect_to (trusted client, auto-accepted)
+// or the details an unknown client's consent screen needs to render.
+export interface OAuthConsentDetails {
+  redirect_to?: string;
+  client?: OAuthConsentClient;
+  requested_scopes?: string[];
+  redirect_uris?: string[];
+}
+
+export interface OAuthConsentAcceptRequest {
+  consent_challenge: string;
+  remember_client: boolean;
+}

@@ -22,7 +22,8 @@ func main() {
 }
 
 func run() error {
-	if _, err := config.Load(); err != nil {
+	cfg, err := config.Load()
+	if err != nil {
 		return fmt.Errorf("failed to load configuration: %w", err)
 	}
 
@@ -58,6 +59,11 @@ func run() error {
 
 	logger.Get().Infof("Starting MCP server on %s", addr)
 
+	// The Resource Server validates Hydra-issued JWT access tokens offline
+	// against the authorization server's published JWKS.
+	jwksURL := strings.TrimRight(cfg.HydraIssuerURL, "/") + "/.well-known/jwks.json"
+	validator := mcpserver.NewHydraValidator(jwksURL, cfg.HydraIssuerURL, cfg.MCPResourceURL)
+
 	return mcpserver.Run(mcpserver.Services{
 		Users:        userService,
 		Accounts:     accountService,
@@ -66,5 +72,9 @@ func run() error {
 		Budgets:      budgetService,
 		Investments:  investmentService,
 		Snapshots:    snapshotService,
-	}, addr)
+	}, addr, mcpserver.OAuthConfig{
+		Issuer:      cfg.HydraIssuerURL,
+		ResourceURL: cfg.MCPResourceURL,
+		Scopes:      cfg.OAuthScopes,
+	}, validator)
 }

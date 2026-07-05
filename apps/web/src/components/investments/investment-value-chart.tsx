@@ -88,7 +88,7 @@ export function InvestmentValueChart() {
   }
 
   return (
-    <Card>
+    <Card className="h-full">
       <CardHeader>
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div>
@@ -121,7 +121,7 @@ export function InvestmentValueChart() {
         ) : (
           <ChartContainer
             config={chartConfig}
-            className="h-[250px] md:h-[300px] w-full"
+            className="h-[220px] md:h-[280px] w-full"
           >
             <AreaChart accessibilityLayer data={chartData}>
               <defs>

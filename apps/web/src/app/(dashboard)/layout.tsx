@@ -49,7 +49,11 @@ export default function DashboardLayout({
         <AppHeader
           onOpenCommandPalette={() => commandPaletteRef.current?.toggle()}
         />
-        <main className="flex-1 overflow-auto p-6">{children}</main>
+        <main className="flex-1 overflow-auto scrollbar-slim">
+          <div className="mx-auto w-full max-w-[1600px] px-4 py-5 sm:px-6 sm:py-7 lg:px-8">
+            {children}
+          </div>
+        </main>
       </SidebarInset>
       <CommandPalette ref={commandPaletteRef} />
     </SidebarProvider>

@@ -26,6 +26,9 @@ func (s *Server) handleGetNetWorthHistory(ctx context.Context, req mcp.CallToolR
 	if err != nil {
 		return errUnauthorized(), nil
 	}
+	if denied := requireScope(ctx, "read:snapshots"); denied != nil {
+		return denied, nil
+	}
 
 	args := req.GetArguments()
 	fromStr, _ := args["from_date"].(string)

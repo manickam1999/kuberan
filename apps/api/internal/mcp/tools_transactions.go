@@ -62,6 +62,9 @@ func (s *Server) handleListTransactions(ctx context.Context, req mcp.CallToolReq
 	if err != nil {
 		return errUnauthorized(), nil
 	}
+	if denied := requireScope(ctx, "read:transactions"); denied != nil {
+		return denied, nil
+	}
 
 	args := req.GetArguments()
 
@@ -149,6 +152,9 @@ func (s *Server) handleGetSpendingByCategory(ctx context.Context, req mcp.CallTo
 	if err != nil {
 		return errUnauthorized(), nil
 	}
+	if denied := requireScope(ctx, "read:transactions"); denied != nil {
+		return denied, nil
+	}
 
 	args := req.GetArguments()
 	fromStr, _ := args["from_date"].(string)
@@ -182,6 +188,9 @@ func (s *Server) handleGetMonthlySummary(ctx context.Context, req mcp.CallToolRe
 	userID, err := getUserID(ctx)
 	if err != nil {
 		return errUnauthorized(), nil
+	}
+	if denied := requireScope(ctx, "read:transactions"); denied != nil {
+		return denied, nil
 	}
 
 	args := req.GetArguments()
@@ -217,6 +226,9 @@ func (s *Server) handleGetDailySpending(ctx context.Context, req mcp.CallToolReq
 	userID, err := getUserID(ctx)
 	if err != nil {
 		return errUnauthorized(), nil
+	}
+	if denied := requireScope(ctx, "read:transactions"); denied != nil {
+		return denied, nil
 	}
 
 	args := req.GetArguments()

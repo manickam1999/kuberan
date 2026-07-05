@@ -6,10 +6,8 @@ import { useRouter } from "next/navigation";
 import {
   TrendingUp,
   TrendingDown,
-  DollarSign,
-  BarChart3,
-  PieChart,
-  Landmark,
+  Wallet,
+  Coins,
   ChevronLeft,
   ChevronRight,
   List,
@@ -25,7 +23,6 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -37,6 +34,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { StatCard } from "@/components/ui/stat-card";
 import {
   usePortfolio,
   useAllInvestments,
@@ -46,15 +44,6 @@ import { formatCurrency, formatPercentage } from "@/lib/format";
 import type { AssetType, Investment } from "@/types/models";
 import { AssetAllocationChart } from "@/components/investments/asset-allocation-chart";
 import { InvestmentValueChart } from "@/components/investments/investment-value-chart";
-
-const ASSET_TYPE_LABELS: Record<AssetType, string> = {
-  stock: "Stocks",
-  etf: "ETFs",
-  bond: "Bonds",
-  crypto: "Crypto",
-  reit: "REITs",
-  commodity: "Commodities",
-};
 
 function InvestmentsSkeleton() {
   return (
@@ -134,7 +123,7 @@ function HoldingCard({ investment, onClick }: { investment: Investment; onClick:
           <span className="text-muted-foreground shrink-0">Unrealized G/L</span>
           <span
             className={`font-medium font-mono tabular-nums truncate ${
-              isUnrealizedPositive ? "text-green-600" : "text-red-600"
+              isUnrealizedPositive ? "text-positive" : "text-negative"
             }`}
           >
             {isUnrealizedPositive ? "+" : ""}
@@ -145,7 +134,7 @@ function HoldingCard({ investment, onClick }: { investment: Investment; onClick:
           <span className="text-muted-foreground shrink-0">Realized G/L</span>
           <span
             className={`font-medium font-mono tabular-nums truncate ${
-              isRealizedPositive ? "text-green-600" : "text-red-600"
+              isRealizedPositive ? "text-positive" : "text-negative"
             }`}
           >
             {isRealizedPositive ? "+" : ""}
@@ -191,7 +180,7 @@ function ClosedHoldingCard({
           <div className="text-right flex-shrink-0 min-w-0 overflow-hidden">
             <p
               className={`text-sm sm:text-base font-semibold font-mono tabular-nums truncate ${
-                isRealizedPositive ? "text-green-600" : "text-red-600"
+                isRealizedPositive ? "text-positive" : "text-negative"
               }`}
             >
               {isRealizedPositive ? "+" : ""}
@@ -211,7 +200,7 @@ function ClosedHoldingCard({
           <span className="text-muted-foreground shrink-0">Return</span>
           <span
             className={`font-medium font-mono tabular-nums truncate ${
-              isRealizedPositive ? "text-green-600" : "text-red-600"
+              isRealizedPositive ? "text-positive" : "text-negative"
             }`}
           >
             {isRealizedPositive ? "+" : ""}
@@ -253,7 +242,7 @@ function AllHoldingsTable() {
     setSortDirection(null);
   };
 
-  const investments = data?.data ?? [];
+  const investments = useMemo(() => data?.data ?? [], [data?.data]);
   const totalPages = data?.total_pages ?? 1;
   const totalItems = data?.total_items ?? 0;
 
@@ -519,7 +508,7 @@ function AllHoldingsTable() {
                           </TableCell>
                           <TableCell
                             className={`text-right font-medium font-mono tabular-nums ${
-                              realizedPositive ? "text-green-600" : "text-red-600"
+                              realizedPositive ? "text-positive" : "text-negative"
                             }`}
                           >
                             {realizedPositive ? "+" : ""}
@@ -527,7 +516,7 @@ function AllHoldingsTable() {
                           </TableCell>
                           <TableCell
                             className={`text-right font-medium font-mono tabular-nums ${
-                              realizedPositive ? "text-green-600" : "text-red-600"
+                              realizedPositive ? "text-positive" : "text-negative"
                             }`}
                           >
                             {realizedPositive ? "+" : ""}
@@ -573,7 +562,7 @@ function AllHoldingsTable() {
                         </TableCell>
                         <TableCell
                           className={`text-right font-medium font-mono tabular-nums ${
-                            isPositive ? "text-green-600" : "text-red-600"
+                            isPositive ? "text-positive" : "text-negative"
                           }`}
                         >
                           {isPositive ? "+" : ""}
@@ -581,7 +570,7 @@ function AllHoldingsTable() {
                         </TableCell>
                         <TableCell
                           className={`text-right font-medium font-mono tabular-nums ${
-                            realizedPositive ? "text-green-600" : "text-red-600"
+                            realizedPositive ? "text-positive" : "text-negative"
                           }`}
                         >
                           {realizedPositive ? "+" : ""}
@@ -661,15 +650,8 @@ export default function InvestmentsPage() {
     );
   }
 
-  const gainLossColor =
-    portfolio.total_gain_loss >= 0
-      ? "text-green-600 dark:text-green-400"
-      : "text-red-600 dark:text-red-400";
-
-  const realizedGainLossColor =
-    portfolio.total_realized_gain_loss >= 0
-      ? "text-green-600 dark:text-green-400"
-      : "text-red-600 dark:text-red-400";
+  const gainUp = portfolio.total_gain_loss >= 0;
+  const realizedUp = portfolio.total_realized_gain_loss >= 0;
 
   const holdingsCount = Object.values(portfolio.holdings_by_type).reduce(
     (sum, h) => sum + h.count,
@@ -682,218 +664,60 @@ export default function InvestmentsPage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold">Investments</h1>
-
-      {/* Summary Cards */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
-        <Card className="gap-2">
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <CardDescription>Total Value</CardDescription>
-              <DollarSign className="h-4 w-4 text-muted-foreground" />
-            </div>
-            <CardTitle className="text-2xl">
-              {formatCurrency(portfolio.total_value)}
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-sm text-muted-foreground">
-              Current market value
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card className="gap-2">
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <CardDescription>Cost Basis</CardDescription>
-              <Landmark className="h-4 w-4 text-muted-foreground" />
-            </div>
-            <CardTitle className="text-2xl">
-              {formatCurrency(portfolio.total_cost_basis)}
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-sm text-muted-foreground">Total invested</p>
-          </CardContent>
-        </Card>
-
-        <Card className="gap-2">
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <CardDescription>Unrealized G/L</CardDescription>
-              {portfolio.total_gain_loss >= 0 ? (
-                <TrendingUp className="h-4 w-4 text-green-600" />
-              ) : (
-                <TrendingDown className="h-4 w-4 text-red-600" />
-              )}
-            </div>
-            <CardTitle
-              className={`text-2xl whitespace-nowrap ${gainLossColor}`}
-            >
-              {portfolio.total_gain_loss >= 0 ? "+" : "-"}{" "}
-              {formatCurrency(Math.abs(portfolio.total_gain_loss))}
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className={`text-sm ${gainLossColor}`}>
-              {portfolio.total_gain_loss >= 0 ? "+" : "-"}
-              {formatPercentage(Math.abs(portfolio.gain_loss_pct))}
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card className="gap-2">
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <CardDescription>Realized G/L</CardDescription>
-              {portfolio.total_realized_gain_loss >= 0 ? (
-                <TrendingUp className="h-4 w-4 text-green-600" />
-              ) : (
-                <TrendingDown className="h-4 w-4 text-red-600" />
-              )}
-            </div>
-            <CardTitle
-              className={`text-2xl whitespace-nowrap ${realizedGainLossColor}`}
-            >
-              {portfolio.total_realized_gain_loss >= 0 ? "+" : "-"}{" "}
-              {formatCurrency(Math.abs(portfolio.total_realized_gain_loss))}
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-sm text-muted-foreground">
-              From closed positions
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card className="gap-2">
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <CardDescription>Holdings</CardDescription>
-              <BarChart3 className="h-4 w-4 text-muted-foreground" />
-            </div>
-            <CardTitle className="text-2xl">{holdingsCount}</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-sm text-muted-foreground">
-              Across {holdingsEntries.length} asset type
-              {holdingsEntries.length !== 1 ? "s" : ""}
-            </p>
-          </CardContent>
-        </Card>
+      <div>
+        <h1 className="text-2xl font-semibold tracking-tight">Investments</h1>
+        <p className="text-sm text-muted-foreground">
+          {holdingsCount} holding{holdingsCount !== 1 ? "s" : ""} across{" "}
+          {holdingsEntries.length} asset class
+          {holdingsEntries.length !== 1 ? "es" : ""}
+        </p>
       </div>
 
-      {/* Investment Value Chart */}
-      <InvestmentValueChart />
+      {/* Summary Cards */}
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <StatCard
+          label="Total value"
+          value={formatCurrency(portfolio.total_value)}
+          icon={Wallet}
+          tone="primary"
+          delta={{
+            text: `${gainUp ? "+" : ""}${formatPercentage(portfolio.gain_loss_pct)}`,
+            direction: gainUp ? "up" : "down",
+          }}
+          sub="market value"
+        />
+        <StatCard
+          label="Cost basis"
+          value={formatCurrency(portfolio.total_cost_basis)}
+          icon={Coins}
+          sub="Total invested"
+        />
+        <StatCard
+          label="Unrealized G/L"
+          value={`${gainUp ? "+" : "−"}${formatCurrency(Math.abs(portfolio.total_gain_loss))}`}
+          icon={gainUp ? TrendingUp : TrendingDown}
+          tone={gainUp ? "positive" : "negative"}
+          sub="open positions"
+        />
+        <StatCard
+          label="Realized G/L"
+          value={`${realizedUp ? "+" : "−"}${formatCurrency(Math.abs(portfolio.total_realized_gain_loss))}`}
+          icon={realizedUp ? TrendingUp : TrendingDown}
+          tone={realizedUp ? "positive" : "negative"}
+          sub="closed positions"
+        />
+      </div>
 
-      {/* Asset Allocation Chart */}
-      <AssetAllocationChart
-        holdingsByType={portfolio.holdings_by_type}
-        totalValue={portfolio.total_value}
-      />
-
-      {/* Holdings by Type */}
-      <Card>
-        <CardHeader>
-          <div className="flex items-center gap-2">
-            <PieChart className="h-4 w-4 text-muted-foreground" />
-            <CardTitle>Holdings by Asset Type</CardTitle>
-          </div>
-          <CardDescription>
-            Breakdown of your portfolio by asset class
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          {holdingsEntries.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              No holdings to display.
-            </p>
-          ) : (
-            <>
-              {/* Mobile: Cards */}
-              <div className="md:hidden grid gap-3">
-                {holdingsEntries.map(([type, holding]) => {
-                  const allocation =
-                    portfolio.total_value > 0
-                      ? (holding.value / portfolio.total_value) * 100
-                      : 0;
-                  return (
-                    <Card key={type}>
-                      <CardHeader className="pb-2">
-                        <div className="flex items-center justify-between">
-                          <Badge variant="secondary">
-                            {ASSET_TYPE_LABELS[type] ?? type}
-                          </Badge>
-                          <span className="text-sm text-muted-foreground">
-                            {holding.count} holding{holding.count !== 1 ? "s" : ""}
-                          </span>
-                        </div>
-                      </CardHeader>
-                      <CardContent className="space-y-2">
-                        <div className="flex items-center justify-between">
-                          <span className="text-sm text-muted-foreground">Value</span>
-                          <span className="text-base font-semibold font-mono tabular-nums">
-                            {formatCurrency(holding.value)}
-                          </span>
-                        </div>
-                        <div className="flex items-center justify-between">
-                          <span className="text-sm text-muted-foreground">Allocation</span>
-                          <span className="text-sm font-medium font-mono tabular-nums">
-                            {formatPercentage(allocation)}
-                          </span>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  );
-                })}
-              </div>
-
-              {/* Desktop: Table */}
-              <div className="hidden md:block overflow-x-auto">
-                <table className="w-full">
-                  <thead>
-                    <tr className="border-b text-left text-sm text-muted-foreground">
-                      <th className="pb-2 font-medium">Asset Type</th>
-                      <th className="pb-2 text-right font-medium">Holdings</th>
-                      <th className="pb-2 text-right font-medium">
-                        Total Value
-                      </th>
-                      <th className="pb-2 text-right font-medium">Allocation</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y">
-                    {holdingsEntries.map(([type, holding]) => {
-                      const allocation =
-                        portfolio.total_value > 0
-                          ? (holding.value / portfolio.total_value) * 100
-                          : 0;
-                      return (
-                        <tr key={type} className="text-sm">
-                          <td className="py-3">
-                            <Badge variant="secondary">
-                              {ASSET_TYPE_LABELS[type] ?? type}
-                            </Badge>
-                          </td>
-                          <td className="py-3 text-right font-mono tabular-nums">
-                            {holding.count}
-                          </td>
-                          <td className="py-3 text-right font-mono tabular-nums">
-                            {formatCurrency(holding.value)}
-                          </td>
-                          <td className="py-3 text-right font-mono tabular-nums">
-                            {formatPercentage(allocation)}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </>
-          )}
-        </CardContent>
-      </Card>
+      {/* Value trend + allocation — equal-height row */}
+      <div className="grid gap-4 lg:grid-cols-3">
+        <div className="lg:col-span-2">
+          <InvestmentValueChart />
+        </div>
+        <AssetAllocationChart
+          holdingsByType={portfolio.holdings_by_type}
+          totalValue={portfolio.total_value}
+        />
+      </div>
 
       {/* All Holdings Table */}
       <AllHoldingsTable />

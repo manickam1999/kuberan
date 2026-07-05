@@ -1399,7 +1399,208 @@ const docTemplate = `{
                 }
             }
         },
+        "/internal/telegram/activity/{telegram_user_id}": {
+            "post": {
+                "security": [
+                    {
+                        "InternalSecret": []
+                    }
+                ],
+                "description": "Update last message timestamp and increment message count (internal endpoint)",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "internal"
+                ],
+                "summary": "Record bot activity",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Telegram user ID",
+                        "name": "telegram_user_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Success message",
+                        "schema": {
+                            "type": "object"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid input",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/internal/telegram/complete-link": {
+            "post": {
+                "security": [
+                    {
+                        "InternalSecret": []
+                    }
+                ],
+                "description": "Complete the linking process by verifying the link code (internal endpoint)",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "internal"
+                ],
+                "summary": "Complete Telegram linking",
+                "parameters": [
+                    {
+                        "description": "Link completion data",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.CompleteLinkRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Success message",
+                        "schema": {
+                            "type": "object"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid code or expired",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Telegram already linked",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/internal/telegram/resolve/{telegram_user_id}": {
+            "get": {
+                "security": [
+                    {
+                        "InternalSecret": []
+                    }
+                ],
+                "description": "Get Kuberan user info and auth token from Telegram user ID (internal endpoint)",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "internal"
+                ],
+                "summary": "Resolve Telegram user",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Telegram user ID",
+                        "name": "telegram_user_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "User info with auth token",
+                        "schema": {
+                            "type": "object"
+                        }
+                    },
+                    "404": {
+                        "description": "Not found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/investments": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Get a paginated list of investments across all active investment accounts, filtered by position status.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "investments"
+                ],
+                "summary": "Get all investments",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Page number (default 1)",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Items per page (default 20, max 100)",
+                        "name": "page_size",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Position status: open (default), closed, all",
+                        "name": "status",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Paginated investments",
+                        "schema": {
+                            "$ref": "#/definitions/kuberan_internal_pagination.PageResponse-kuberan_internal_models_Investment"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid input",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Server error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    }
+                }
+            },
             "post": {
                 "security": [
                     {
@@ -1509,7 +1710,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Get paginated portfolio snapshots for a date range",
+                "description": "Get portfolio snapshots for a date range. Without group_by, returns paginated raw snapshots. With group_by=day or group_by=hour, returns one snapshot per time bucket (last snapshot in each bucket), unpaginated.",
                 "consumes": [
                     "application/json"
                 ],
@@ -1536,21 +1737,27 @@ const docTemplate = `{
                         "required": true
                     },
                     {
+                        "type": "string",
+                        "description": "Group snapshots: 'day' or 'hour'. When set, returns unpaginated results.",
+                        "name": "group_by",
+                        "in": "query"
+                    },
+                    {
                         "type": "integer",
-                        "description": "Page number (default 1)",
+                        "description": "Page number (default 1, ignored when group_by is set)",
                         "name": "page",
                         "in": "query"
                     },
                     {
                         "type": "integer",
-                        "description": "Items per page (default 20, max 100)",
+                        "description": "Items per page (default 20, max 3650, ignored when group_by is set)",
                         "name": "page_size",
                         "in": "query"
                     }
                 ],
                 "responses": {
                     "200": {
-                        "description": "Paginated snapshots",
+                        "description": "Paginated snapshots (without group_by) or {data: [...]} (with group_by)",
                         "schema": {
                             "$ref": "#/definitions/kuberan_internal_pagination.PageResponse-kuberan_internal_models_PortfolioSnapshot"
                         }
@@ -1984,7 +2191,332 @@ const docTemplate = `{
                 }
             }
         },
+        "/oauth/consent": {
+            "get": {
+                "description": "Auto-accept trusted clients, or return details for unknown clients",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "oauth"
+                ],
+                "summary": "Fetch an OAuth consent challenge",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Consent challenge",
+                        "name": "consent_challenge",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "redirect_to or consent details",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid input",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Unknown challenge",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/oauth/consent/accept": {
+            "post": {
+                "description": "Grant the requested read:* scopes and optionally remember the client",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "oauth"
+                ],
+                "summary": "Accept an OAuth consent challenge",
+                "parameters": [
+                    {
+                        "description": "Consent challenge and remember flag",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.oauthConsentAcceptRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "redirect_to",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid input",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Unknown challenge",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/oauth/consent/reject": {
+            "post": {
+                "description": "Deny the requested authorization for an unknown client",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "oauth"
+                ],
+                "summary": "Reject an OAuth consent challenge",
+                "parameters": [
+                    {
+                        "description": "Consent challenge",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.oauthConsentRejectRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "redirect_to",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid input",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Unknown challenge",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/oauth/login": {
+            "post": {
+                "description": "Verify credentials and accept Hydra's login challenge",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "oauth"
+                ],
+                "summary": "Resolve an OAuth login challenge",
+                "parameters": [
+                    {
+                        "description": "Login challenge and credentials",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.oauthLoginRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "redirect_to",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid input",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Invalid credentials",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/oauth/login/reject": {
+            "post": {
+                "description": "Cancel an unauthenticated login the user did not initiate",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "oauth"
+                ],
+                "summary": "Reject an OAuth login challenge",
+                "parameters": [
+                    {
+                        "description": "Login challenge",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.oauthLoginRejectRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "redirect_to",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid input",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Unknown challenge",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/oauth/register": {
+            "post": {
+                "description": "Register a public OAuth client with forced PKCE, restricted grants, and capped scopes",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "oauth"
+                ],
+                "summary": "Dynamically register an OAuth client (DCR proxy)",
+                "parameters": [
+                    {
+                        "description": "Client metadata (RFC 7591)",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.dcrRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Registered client",
+                        "schema": {
+                            "$ref": "#/definitions/kuberan_internal_hydra.OAuth2Client"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid input",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/pipeline/securities": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Get all active securities without pagination (pipeline endpoint)",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "pipeline"
+                ],
+                "summary": "List all securities (pipeline)",
+                "responses": {
+                    "200": {
+                        "description": "All securities",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "array",
+                                "items": {
+                                    "$ref": "#/definitions/kuberan_internal_models.Security"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Invalid API key",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Server error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Pipeline not configured",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    }
+                }
+            },
             "post": {
                 "security": [
                     {
@@ -2390,6 +2922,126 @@ const docTemplate = `{
                     },
                     "401": {
                         "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/telegram/generate-code": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Generate a new 6-character link code for linking Telegram account",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "telegram"
+                ],
+                "summary": "Generate link code",
+                "responses": {
+                    "200": {
+                        "description": "Link code generated",
+                        "schema": {
+                            "type": "object"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Server error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/telegram/link": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Get the current Telegram link for the authenticated user",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "telegram"
+                ],
+                "summary": "Get Telegram link status",
+                "responses": {
+                    "200": {
+                        "description": "Link information",
+                        "schema": {
+                            "type": "object"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/telegram/unlink": {
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Remove the link between Telegram and Kuberan account",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "telegram"
+                ],
+                "summary": "Unlink Telegram account",
+                "responses": {
+                    "200": {
+                        "description": "Success message",
+                        "schema": {
+                            "type": "object"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not found",
                         "schema": {
                             "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
@@ -3032,7 +3684,7 @@ const docTemplate = `{
             ],
             "properties": {
                 "account_id": {
-                    "type": "integer"
+                    "type": "string"
                 },
                 "date": {
                     "description": "optional, defaults to now",
@@ -3055,7 +3707,7 @@ const docTemplate = `{
                     "type": "number"
                 },
                 "security_id": {
-                    "type": "integer"
+                    "type": "string"
                 },
                 "wallet_address": {
                     "type": "string"
@@ -3095,13 +3747,37 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "parent_id": {
-                    "type": "integer"
+                    "type": "string"
                 },
                 "type": {
                     "$ref": "#/definitions/kuberan_internal_models.CategoryType"
                 },
                 "user_id": {
                     "type": "integer"
+                }
+            }
+        },
+        "internal_handlers.CompleteLinkRequest": {
+            "type": "object",
+            "required": [
+                "link_code",
+                "telegram_user_id"
+            ],
+            "properties": {
+                "default_currency": {
+                    "type": "string"
+                },
+                "link_code": {
+                    "type": "string"
+                },
+                "telegram_first_name": {
+                    "type": "string"
+                },
+                "telegram_user_id": {
+                    "type": "integer"
+                },
+                "telegram_username": {
+                    "type": "string"
                 }
             }
         },
@@ -3130,7 +3806,7 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "category_id": {
-                    "type": "integer"
+                    "type": "string"
                 },
                 "end_date": {
                     "type": "string"
@@ -3196,7 +3872,7 @@ const docTemplate = `{
                     "minLength": 1
                 },
                 "parent_id": {
-                    "type": "integer"
+                    "type": "string"
                 },
                 "type": {
                     "$ref": "#/definitions/kuberan_internal_models.CategoryType"
@@ -3297,6 +3973,9 @@ const docTemplate = `{
                 "property_type": {
                     "type": "string"
                 },
+                "provider_symbol": {
+                    "type": "string"
+                },
                 "symbol": {
                     "type": "string",
                     "maxLength": 20,
@@ -3316,13 +3995,13 @@ const docTemplate = `{
             ],
             "properties": {
                 "account_id": {
-                    "type": "integer"
+                    "type": "string"
                 },
                 "amount": {
                     "type": "integer"
                 },
                 "category_id": {
-                    "type": "integer"
+                    "type": "string"
                 },
                 "date": {
                     "type": "string"
@@ -3355,10 +4034,10 @@ const docTemplate = `{
                     "maxLength": 500
                 },
                 "from_account_id": {
-                    "type": "integer"
+                    "type": "string"
                 },
                 "to_account_id": {
-                    "type": "integer"
+                    "type": "string"
                 }
             }
         },
@@ -3419,6 +4098,9 @@ const docTemplate = `{
                     "type": "integer",
                     "minimum": 0
                 },
+                "funding_account_id": {
+                    "type": "string"
+                },
                 "notes": {
                     "type": "string",
                     "maxLength": 500
@@ -3469,7 +4151,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "security_id": {
-                    "type": "integer"
+                    "type": "string"
                 }
             }
         },
@@ -3497,6 +4179,9 @@ const docTemplate = `{
             ],
             "properties": {
                 "date": {
+                    "type": "string"
+                },
+                "deposit_account_id": {
                     "type": "string"
                 },
                 "fee": {
@@ -3575,13 +4260,13 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "account_id": {
-                    "type": "integer"
+                    "type": "string"
                 },
                 "amount": {
                     "type": "integer"
                 },
                 "category_id": {
-                    "type": "integer"
+                    "type": "string"
                 },
                 "date": {
                     "type": "string"
@@ -3630,6 +4315,9 @@ const docTemplate = `{
                 "is_active": {
                     "type": "boolean"
                 },
+                "is_pinned": {
+                    "type": "boolean"
+                },
                 "name": {
                     "type": "string",
                     "maxLength": 100,
@@ -3676,7 +4364,7 @@ const docTemplate = `{
                     "minLength": 1
                 },
                 "parent_id": {
-                    "type": "integer"
+                    "type": "string"
                 }
             }
         },
@@ -3684,13 +4372,13 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "account_id": {
-                    "type": "integer"
+                    "type": "string"
                 },
                 "amount": {
                     "type": "integer"
                 },
                 "category_id": {
-                    "type": "integer"
+                    "type": "string"
                 },
                 "date": {
                     "type": "string"
@@ -3717,6 +4405,125 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "last_name": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_handlers.dcrRequest": {
+            "type": "object",
+            "properties": {
+                "client_name": {
+                    "type": "string"
+                },
+                "grant_types": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "redirect_uris": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "response_types": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "scope": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_handlers.oauthConsentAcceptRequest": {
+            "type": "object",
+            "required": [
+                "consent_challenge"
+            ],
+            "properties": {
+                "consent_challenge": {
+                    "type": "string"
+                },
+                "remember_client": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "internal_handlers.oauthConsentRejectRequest": {
+            "type": "object",
+            "required": [
+                "consent_challenge"
+            ],
+            "properties": {
+                "consent_challenge": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_handlers.oauthLoginRejectRequest": {
+            "type": "object",
+            "required": [
+                "login_challenge"
+            ],
+            "properties": {
+                "login_challenge": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_handlers.oauthLoginRequest": {
+            "type": "object",
+            "required": [
+                "email",
+                "login_challenge",
+                "password"
+            ],
+            "properties": {
+                "email": {
+                    "type": "string"
+                },
+                "login_challenge": {
+                    "type": "string"
+                },
+                "password": {
+                    "type": "string"
+                }
+            }
+        },
+        "kuberan_internal_hydra.OAuth2Client": {
+            "type": "object",
+            "properties": {
+                "client_id": {
+                    "type": "string"
+                },
+                "client_name": {
+                    "type": "string"
+                },
+                "grant_types": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "redirect_uris": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "response_types": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "scope": {
+                    "type": "string"
+                },
+                "token_endpoint_auth_method": {
                     "type": "string"
                 }
             }
@@ -3753,7 +4560,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "id": {
-                    "type": "integer"
+                    "type": "string"
                 },
                 "interest_rate": {
                     "description": "For debt and credit card accounts",
@@ -3766,6 +4573,9 @@ const docTemplate = `{
                     }
                 },
                 "is_active": {
+                    "type": "boolean"
+                },
+                "is_pinned": {
                     "type": "boolean"
                 },
                 "name": {
@@ -3785,7 +4595,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "user_id": {
-                    "type": "integer"
+                    "type": "string"
                 }
             }
         },
@@ -3811,14 +4621,16 @@ const docTemplate = `{
                 "etf",
                 "bond",
                 "crypto",
-                "reit"
+                "reit",
+                "commodity"
             ],
             "x-enum-varnames": [
                 "AssetTypeStock",
                 "AssetTypeETF",
                 "AssetTypeBond",
                 "AssetTypeCrypto",
-                "AssetTypeREIT"
+                "AssetTypeREIT",
+                "AssetTypeCommodity"
             ]
         },
         "kuberan_internal_models.Budget": {
@@ -3836,7 +4648,7 @@ const docTemplate = `{
                     ]
                 },
                 "category_id": {
-                    "type": "integer"
+                    "type": "string"
                 },
                 "created_at": {
                     "type": "string"
@@ -3848,7 +4660,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "id": {
-                    "type": "integer"
+                    "type": "string"
                 },
                 "is_active": {
                     "type": "boolean"
@@ -3866,7 +4678,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "user_id": {
-                    "type": "integer"
+                    "type": "string"
                 }
             }
         },
@@ -3912,7 +4724,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "id": {
-                    "type": "integer"
+                    "type": "string"
                 },
                 "name": {
                     "type": "string"
@@ -3926,7 +4738,7 @@ const docTemplate = `{
                     ]
                 },
                 "parent_id": {
-                    "type": "integer"
+                    "type": "string"
                 },
                 "transactions": {
                     "type": "array",
@@ -3941,7 +4753,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "user_id": {
-                    "type": "integer"
+                    "type": "string"
                 }
             }
         },
@@ -3963,7 +4775,7 @@ const docTemplate = `{
                     "$ref": "#/definitions/kuberan_internal_models.Account"
                 },
                 "account_id": {
-                    "type": "integer"
+                    "type": "string"
                 },
                 "cost_basis": {
                     "type": "integer"
@@ -3979,10 +4791,13 @@ const docTemplate = `{
                     "$ref": "#/definitions/gorm.DeletedAt"
                 },
                 "id": {
-                    "type": "integer"
+                    "type": "string"
                 },
                 "quantity": {
                     "type": "number"
+                },
+                "realized_gain_loss": {
+                    "type": "integer"
                 },
                 "security": {
                     "description": "Relationships",
@@ -3993,6 +4808,10 @@ const docTemplate = `{
                     ]
                 },
                 "security_id": {
+                    "type": "string"
+                },
+                "total_invested": {
+                    "description": "Populated at query time: sum of buy transaction amounts",
                     "type": "integer"
                 },
                 "transactions": {
@@ -4029,7 +4848,7 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "id": {
-                    "type": "integer"
+                    "type": "string"
                 },
                 "investment": {
                     "description": "Relationships",
@@ -4040,7 +4859,7 @@ const docTemplate = `{
                     ]
                 },
                 "investment_id": {
-                    "type": "integer"
+                    "type": "string"
                 },
                 "notes": {
                     "type": "string"
@@ -4050,6 +4869,9 @@ const docTemplate = `{
                 },
                 "quantity": {
                     "type": "number"
+                },
+                "realized_gain_loss": {
+                    "type": "integer"
                 },
                 "split_ratio": {
                     "description": "For splits",
@@ -4093,7 +4915,7 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "id": {
-                    "type": "integer"
+                    "type": "string"
                 },
                 "investment_value": {
                     "type": "integer"
@@ -4105,7 +4927,7 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "user_id": {
-                    "type": "integer"
+                    "type": "string"
                 }
             }
         },
@@ -4131,7 +4953,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "id": {
-                    "type": "integer"
+                    "type": "string"
                 },
                 "maturity_date": {
                     "type": "string"
@@ -4143,6 +4965,9 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "property_type": {
+                    "type": "string"
+                },
+                "provider_symbol": {
                     "type": "string"
                 },
                 "symbol": {
@@ -4160,7 +4985,7 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "id": {
-                    "type": "integer"
+                    "type": "string"
                 },
                 "price": {
                     "type": "integer"
@@ -4172,7 +4997,7 @@ const docTemplate = `{
                     "$ref": "#/definitions/kuberan_internal_models.Security"
                 },
                 "security_id": {
-                    "type": "integer"
+                    "type": "string"
                 }
             }
         },
@@ -4188,7 +5013,7 @@ const docTemplate = `{
                     ]
                 },
                 "account_id": {
-                    "type": "integer"
+                    "type": "string"
                 },
                 "amount": {
                     "type": "integer"
@@ -4197,7 +5022,7 @@ const docTemplate = `{
                     "$ref": "#/definitions/kuberan_internal_models.Category"
                 },
                 "category_id": {
-                    "type": "integer"
+                    "type": "string"
                 },
                 "created_at": {
                     "type": "string"
@@ -4212,14 +5037,14 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "id": {
-                    "type": "integer"
+                    "type": "string"
                 },
                 "to_account": {
                     "$ref": "#/definitions/kuberan_internal_models.Account"
                 },
                 "to_account_id": {
                     "description": "For transfers",
-                    "type": "integer"
+                    "type": "string"
                 },
                 "type": {
                     "$ref": "#/definitions/kuberan_internal_models.TransactionType"
@@ -4228,7 +5053,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "user_id": {
-                    "type": "integer"
+                    "type": "string"
                 }
             }
         },
@@ -4458,7 +5283,7 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "budget_id": {
-                    "type": "integer"
+                    "type": "string"
                 },
                 "budgeted": {
                     "type": "integer"
@@ -4490,6 +5315,9 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "total_gain_loss": {
+                    "type": "integer"
+                },
+                "total_realized_gain_loss": {
                     "type": "integer"
                 },
                 "total_value": {
@@ -4527,7 +5355,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "category_id": {
-                    "type": "integer"
+                    "type": "string"
                 },
                 "category_name": {
                     "type": "string"

@@ -26,6 +26,9 @@ func (s *Server) handleListCategories(ctx context.Context, req mcp.CallToolReque
 	if err != nil {
 		return errUnauthorized(), nil
 	}
+	if denied := requireScope(ctx, "read:categories"); denied != nil {
+		return denied, nil
+	}
 
 	page := pagination.PageRequest{Page: 1, PageSize: 100}
 	args := req.GetArguments()

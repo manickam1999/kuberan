@@ -18,6 +18,15 @@ const badgeVariants = cva(
           "border-border text-foreground [a&]:hover:bg-accent [a&]:hover:text-accent-foreground",
         ghost: "[a&]:hover:bg-accent [a&]:hover:text-accent-foreground",
         link: "text-primary underline-offset-4 [a&]:hover:underline",
+        positive:
+          "border-transparent bg-positive-muted text-positive [a&]:hover:bg-positive-muted/80",
+        negative:
+          "border-transparent bg-negative-muted text-negative [a&]:hover:bg-negative-muted/80",
+        warning:
+          "border-transparent bg-warning-muted text-warning [a&]:hover:bg-warning-muted/80",
+        info: "border-transparent bg-info-muted text-info [a&]:hover:bg-info-muted/80",
+        investment:
+          "border-transparent bg-investment-muted text-investment [a&]:hover:bg-investment-muted/80",
       },
     },
     defaultVariants: {

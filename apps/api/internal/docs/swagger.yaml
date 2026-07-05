@@ -30,7 +30,7 @@ definitions:
   internal_handlers.AddInvestmentRequest:
     properties:
       account_id:
-        type: integer
+        type: string
       date:
         description: optional, defaults to now
         type: string
@@ -47,7 +47,7 @@ definitions:
       quantity:
         type: number
       security_id:
-        type: integer
+        type: string
       wallet_address:
         type: string
     required:
@@ -78,11 +78,27 @@ definitions:
       name:
         type: string
       parent_id:
-        type: integer
+        type: string
       type:
         $ref: '#/definitions/kuberan_internal_models.CategoryType'
       user_id:
         type: integer
+    type: object
+  internal_handlers.CompleteLinkRequest:
+    properties:
+      default_currency:
+        type: string
+      link_code:
+        type: string
+      telegram_first_name:
+        type: string
+      telegram_user_id:
+        type: integer
+      telegram_username:
+        type: string
+    required:
+    - link_code
+    - telegram_user_id
     type: object
   internal_handlers.ComputeSnapshotsRequest:
     properties:
@@ -96,7 +112,7 @@ definitions:
       amount:
         type: integer
       category_id:
-        type: integer
+        type: string
       end_date:
         type: string
       name:
@@ -146,7 +162,7 @@ definitions:
         minLength: 1
         type: string
       parent_id:
-        type: integer
+        type: string
       type:
         $ref: '#/definitions/kuberan_internal_models.CategoryType'
     required:
@@ -216,6 +232,8 @@ definitions:
         type: string
       property_type:
         type: string
+      provider_symbol:
+        type: string
       symbol:
         maxLength: 20
         minLength: 1
@@ -230,11 +248,11 @@ definitions:
   internal_handlers.CreateTransactionRequest:
     properties:
       account_id:
-        type: integer
+        type: string
       amount:
         type: integer
       category_id:
-        type: integer
+        type: string
       date:
         type: string
       description:
@@ -257,9 +275,9 @@ definitions:
         maxLength: 500
         type: string
       from_account_id:
-        type: integer
+        type: string
       to_account_id:
-        type: integer
+        type: string
     required:
     - amount
     - from_account_id
@@ -299,6 +317,8 @@ definitions:
       fee:
         minimum: 0
         type: integer
+      funding_account_id:
+        type: string
       notes:
         maxLength: 500
         type: string
@@ -334,7 +354,7 @@ definitions:
       recorded_at:
         type: string
       security_id:
-        type: integer
+        type: string
     required:
     - price
     - recorded_at
@@ -353,6 +373,8 @@ definitions:
   internal_handlers.RecordSellRequest:
     properties:
       date:
+        type: string
+      deposit_account_id:
         type: string
       fee:
         minimum: 0
@@ -411,11 +433,11 @@ definitions:
   internal_handlers.TransactionResponse:
     properties:
       account_id:
-        type: integer
+        type: string
       amount:
         type: integer
       category_id:
-        type: integer
+        type: string
       date:
         type: string
       description:
@@ -448,6 +470,8 @@ definitions:
         minimum: 0
         type: number
       is_active:
+        type: boolean
+      is_pinned:
         type: boolean
       name:
         maxLength: 100
@@ -482,16 +506,16 @@ definitions:
         minLength: 1
         type: string
       parent_id:
-        type: integer
+        type: string
     type: object
   internal_handlers.UpdateTransactionRequest:
     properties:
       account_id:
-        type: integer
+        type: string
       amount:
         type: integer
       category_id:
-        type: integer
+        type: string
       date:
         type: string
       description:
@@ -509,6 +533,84 @@ definitions:
       id:
         type: integer
       last_name:
+        type: string
+    type: object
+  internal_handlers.dcrRequest:
+    properties:
+      client_name:
+        type: string
+      grant_types:
+        items:
+          type: string
+        type: array
+      redirect_uris:
+        items:
+          type: string
+        type: array
+      response_types:
+        items:
+          type: string
+        type: array
+      scope:
+        type: string
+    type: object
+  internal_handlers.oauthConsentAcceptRequest:
+    properties:
+      consent_challenge:
+        type: string
+      remember_client:
+        type: boolean
+    required:
+    - consent_challenge
+    type: object
+  internal_handlers.oauthConsentRejectRequest:
+    properties:
+      consent_challenge:
+        type: string
+    required:
+    - consent_challenge
+    type: object
+  internal_handlers.oauthLoginRejectRequest:
+    properties:
+      login_challenge:
+        type: string
+    required:
+    - login_challenge
+    type: object
+  internal_handlers.oauthLoginRequest:
+    properties:
+      email:
+        type: string
+      login_challenge:
+        type: string
+      password:
+        type: string
+    required:
+    - email
+    - login_challenge
+    - password
+    type: object
+  kuberan_internal_hydra.OAuth2Client:
+    properties:
+      client_id:
+        type: string
+      client_name:
+        type: string
+      grant_types:
+        items:
+          type: string
+        type: array
+      redirect_uris:
+        items:
+          type: string
+        type: array
+      response_types:
+        items:
+          type: string
+        type: array
+      scope:
+        type: string
+      token_endpoint_auth_method:
         type: string
     type: object
   kuberan_internal_models.Account:
@@ -533,7 +635,7 @@ definitions:
       due_date:
         type: string
       id:
-        type: integer
+        type: string
       interest_rate:
         description: For debt and credit card accounts
         type: number
@@ -542,6 +644,8 @@ definitions:
           $ref: '#/definitions/kuberan_internal_models.Investment'
         type: array
       is_active:
+        type: boolean
+      is_pinned:
         type: boolean
       name:
         type: string
@@ -555,7 +659,7 @@ definitions:
       updated_at:
         type: string
       user_id:
-        type: integer
+        type: string
     type: object
   kuberan_internal_models.AccountType:
     enum:
@@ -576,6 +680,7 @@ definitions:
     - bond
     - crypto
     - reit
+    - commodity
     type: string
     x-enum-varnames:
     - AssetTypeStock
@@ -583,6 +688,7 @@ definitions:
     - AssetTypeBond
     - AssetTypeCrypto
     - AssetTypeREIT
+    - AssetTypeCommodity
   kuberan_internal_models.Budget:
     properties:
       amount:
@@ -592,7 +698,7 @@ definitions:
         - $ref: '#/definitions/kuberan_internal_models.Category'
         description: Relationships
       category_id:
-        type: integer
+        type: string
       created_at:
         type: string
       deleted_at:
@@ -600,7 +706,7 @@ definitions:
       end_date:
         type: string
       id:
-        type: integer
+        type: string
       is_active:
         type: boolean
       name:
@@ -612,7 +718,7 @@ definitions:
       updated_at:
         type: string
       user_id:
-        type: integer
+        type: string
     type: object
   kuberan_internal_models.BudgetPeriod:
     enum:
@@ -643,7 +749,7 @@ definitions:
       icon:
         type: string
       id:
-        type: integer
+        type: string
       name:
         type: string
       parent:
@@ -651,7 +757,7 @@ definitions:
         - $ref: '#/definitions/kuberan_internal_models.Category'
         description: Relationships
       parent_id:
-        type: integer
+        type: string
       transactions:
         items:
           $ref: '#/definitions/kuberan_internal_models.Transaction'
@@ -661,7 +767,7 @@ definitions:
       updated_at:
         type: string
       user_id:
-        type: integer
+        type: string
     type: object
   kuberan_internal_models.CategoryType:
     enum:
@@ -676,7 +782,7 @@ definitions:
       account:
         $ref: '#/definitions/kuberan_internal_models.Account'
       account_id:
-        type: integer
+        type: string
       cost_basis:
         type: integer
       created_at:
@@ -687,14 +793,19 @@ definitions:
       deleted_at:
         $ref: '#/definitions/gorm.DeletedAt'
       id:
-        type: integer
+        type: string
       quantity:
         type: number
+      realized_gain_loss:
+        type: integer
       security:
         allOf:
         - $ref: '#/definitions/kuberan_internal_models.Security'
         description: Relationships
       security_id:
+        type: string
+      total_invested:
+        description: 'Populated at query time: sum of buy transaction amounts'
         type: integer
       transactions:
         items:
@@ -719,19 +830,21 @@ definitions:
       fee:
         type: integer
       id:
-        type: integer
+        type: string
       investment:
         allOf:
         - $ref: '#/definitions/kuberan_internal_models.Investment'
         description: Relationships
       investment_id:
-        type: integer
+        type: string
       notes:
         type: string
       price_per_unit:
         type: integer
       quantity:
         type: number
+      realized_gain_loss:
+        type: integer
       split_ratio:
         description: For splits
         type: number
@@ -763,7 +876,7 @@ definitions:
       debt_balance:
         type: integer
       id:
-        type: integer
+        type: string
       investment_value:
         type: integer
       recorded_at:
@@ -771,7 +884,7 @@ definitions:
       total_net_worth:
         type: integer
       user_id:
-        type: integer
+        type: string
     type: object
   kuberan_internal_models.Security:
     properties:
@@ -788,7 +901,7 @@ definitions:
       exchange:
         type: string
       id:
-        type: integer
+        type: string
       maturity_date:
         type: string
       name:
@@ -796,6 +909,8 @@ definitions:
       network:
         type: string
       property_type:
+        type: string
+      provider_symbol:
         type: string
       symbol:
         type: string
@@ -807,7 +922,7 @@ definitions:
   kuberan_internal_models.SecurityPrice:
     properties:
       id:
-        type: integer
+        type: string
       price:
         type: integer
       recorded_at:
@@ -815,7 +930,7 @@ definitions:
       security:
         $ref: '#/definitions/kuberan_internal_models.Security'
       security_id:
-        type: integer
+        type: string
     type: object
   kuberan_internal_models.Transaction:
     properties:
@@ -824,13 +939,13 @@ definitions:
         - $ref: '#/definitions/kuberan_internal_models.Account'
         description: Relationships
       account_id:
-        type: integer
+        type: string
       amount:
         type: integer
       category:
         $ref: '#/definitions/kuberan_internal_models.Category'
       category_id:
-        type: integer
+        type: string
       created_at:
         type: string
       date:
@@ -840,18 +955,18 @@ definitions:
       description:
         type: string
       id:
-        type: integer
+        type: string
       to_account:
         $ref: '#/definitions/kuberan_internal_models.Account'
       to_account_id:
         description: For transfers
-        type: integer
+        type: string
       type:
         $ref: '#/definitions/kuberan_internal_models.TransactionType'
       updated_at:
         type: string
       user_id:
-        type: integer
+        type: string
     type: object
   kuberan_internal_models.TransactionType:
     enum:
@@ -1003,7 +1118,7 @@ definitions:
   kuberan_internal_services.BudgetProgress:
     properties:
       budget_id:
-        type: integer
+        type: string
       budgeted:
         type: integer
       percentage:
@@ -1024,6 +1139,8 @@ definitions:
       total_cost_basis:
         type: integer
       total_gain_loss:
+        type: integer
+      total_realized_gain_loss:
         type: integer
       total_value:
         type: integer
@@ -1048,7 +1165,7 @@ definitions:
       category_icon:
         type: string
       category_id:
-        type: integer
+        type: string
       category_name:
         type: string
       total:
@@ -1961,7 +2078,138 @@ paths:
       summary: Update category
       tags:
       - categories
+  /internal/telegram/activity/{telegram_user_id}:
+    post:
+      consumes:
+      - application/json
+      description: Update last message timestamp and increment message count (internal
+        endpoint)
+      parameters:
+      - description: Telegram user ID
+        in: path
+        name: telegram_user_id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Success message
+          schema:
+            type: object
+        "400":
+          description: Invalid input
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+      security:
+      - InternalSecret: []
+      summary: Record bot activity
+      tags:
+      - internal
+  /internal/telegram/complete-link:
+    post:
+      consumes:
+      - application/json
+      description: Complete the linking process by verifying the link code (internal
+        endpoint)
+      parameters:
+      - description: Link completion data
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_handlers.CompleteLinkRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Success message
+          schema:
+            type: object
+        "400":
+          description: Invalid code or expired
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "409":
+          description: Telegram already linked
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+      security:
+      - InternalSecret: []
+      summary: Complete Telegram linking
+      tags:
+      - internal
+  /internal/telegram/resolve/{telegram_user_id}:
+    get:
+      consumes:
+      - application/json
+      description: Get Kuberan user info and auth token from Telegram user ID (internal
+        endpoint)
+      parameters:
+      - description: Telegram user ID
+        in: path
+        name: telegram_user_id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: User info with auth token
+          schema:
+            type: object
+        "404":
+          description: Not found
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+      security:
+      - InternalSecret: []
+      summary: Resolve Telegram user
+      tags:
+      - internal
   /investments:
+    get:
+      consumes:
+      - application/json
+      description: Get a paginated list of investments across all active investment
+        accounts, filtered by position status.
+      parameters:
+      - description: Page number (default 1)
+        in: query
+        name: page
+        type: integer
+      - description: Items per page (default 20, max 100)
+        in: query
+        name: page_size
+        type: integer
+      - description: 'Position status: open (default), closed, all'
+        in: query
+        name: status
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Paginated investments
+          schema:
+            $ref: '#/definitions/kuberan_internal_pagination.PageResponse-kuberan_internal_models_Investment'
+        "400":
+          description: Invalid input
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "500":
+          description: Server error
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get all investments
+      tags:
+      - investments
     post:
       consumes:
       - application/json
@@ -2296,7 +2544,9 @@ paths:
     get:
       consumes:
       - application/json
-      description: Get paginated portfolio snapshots for a date range
+      description: Get portfolio snapshots for a date range. Without group_by, returns
+        paginated raw snapshots. With group_by=day or group_by=hour, returns one snapshot
+        per time bucket (last snapshot in each bucket), unpaginated.
       parameters:
       - description: Start date (RFC3339 or YYYY-MM-DD)
         in: query
@@ -2308,11 +2558,17 @@ paths:
         name: to_date
         required: true
         type: string
-      - description: Page number (default 1)
+      - description: 'Group snapshots: ''day'' or ''hour''. When set, returns unpaginated
+          results.'
+        in: query
+        name: group_by
+        type: string
+      - description: Page number (default 1, ignored when group_by is set)
         in: query
         name: page
         type: integer
-      - description: Items per page (default 20, max 100)
+      - description: Items per page (default 20, max 3650, ignored when group_by is
+          set)
         in: query
         name: page_size
         type: integer
@@ -2320,7 +2576,8 @@ paths:
       - application/json
       responses:
         "200":
-          description: Paginated snapshots
+          description: 'Paginated snapshots (without group_by) or {data: [...]} (with
+            group_by)'
           schema:
             $ref: '#/definitions/kuberan_internal_pagination.PageResponse-kuberan_internal_models_PortfolioSnapshot'
         "400":
@@ -2336,7 +2593,220 @@ paths:
       summary: Get portfolio snapshots
       tags:
       - investments
+  /oauth/consent:
+    get:
+      description: Auto-accept trusted clients, or return details for unknown clients
+      parameters:
+      - description: Consent challenge
+        in: query
+        name: consent_challenge
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: redirect_to or consent details
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Invalid input
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "404":
+          description: Unknown challenge
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+      summary: Fetch an OAuth consent challenge
+      tags:
+      - oauth
+  /oauth/consent/accept:
+    post:
+      consumes:
+      - application/json
+      description: Grant the requested read:* scopes and optionally remember the client
+      parameters:
+      - description: Consent challenge and remember flag
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_handlers.oauthConsentAcceptRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: redirect_to
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: Invalid input
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "404":
+          description: Unknown challenge
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+      summary: Accept an OAuth consent challenge
+      tags:
+      - oauth
+  /oauth/consent/reject:
+    post:
+      consumes:
+      - application/json
+      description: Deny the requested authorization for an unknown client
+      parameters:
+      - description: Consent challenge
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_handlers.oauthConsentRejectRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: redirect_to
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: Invalid input
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "404":
+          description: Unknown challenge
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+      summary: Reject an OAuth consent challenge
+      tags:
+      - oauth
+  /oauth/login:
+    post:
+      consumes:
+      - application/json
+      description: Verify credentials and accept Hydra's login challenge
+      parameters:
+      - description: Login challenge and credentials
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_handlers.oauthLoginRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: redirect_to
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: Invalid input
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "401":
+          description: Invalid credentials
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+      summary: Resolve an OAuth login challenge
+      tags:
+      - oauth
+  /oauth/login/reject:
+    post:
+      consumes:
+      - application/json
+      description: Cancel an unauthenticated login the user did not initiate
+      parameters:
+      - description: Login challenge
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_handlers.oauthLoginRejectRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: redirect_to
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: Invalid input
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "404":
+          description: Unknown challenge
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+      summary: Reject an OAuth login challenge
+      tags:
+      - oauth
+  /oauth/register:
+    post:
+      consumes:
+      - application/json
+      description: Register a public OAuth client with forced PKCE, restricted grants,
+        and capped scopes
+      parameters:
+      - description: Client metadata (RFC 7591)
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_handlers.dcrRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Registered client
+          schema:
+            $ref: '#/definitions/kuberan_internal_hydra.OAuth2Client'
+        "400":
+          description: Invalid input
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+      summary: Dynamically register an OAuth client (DCR proxy)
+      tags:
+      - oauth
   /pipeline/securities:
+    get:
+      description: Get all active securities without pagination (pipeline endpoint)
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: All securities
+          schema:
+            additionalProperties:
+              items:
+                $ref: '#/definitions/kuberan_internal_models.Security'
+              type: array
+            type: object
+        "401":
+          description: Invalid API key
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "500":
+          description: Server error
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "503":
+          description: Pipeline not configured
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: List all securities (pipeline)
+      tags:
+      - pipeline
     post:
       consumes:
       - application/json
@@ -2601,6 +3071,81 @@ paths:
       summary: Get price history
       tags:
       - securities
+  /telegram/generate-code:
+    post:
+      consumes:
+      - application/json
+      description: Generate a new 6-character link code for linking Telegram account
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Link code generated
+          schema:
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "500":
+          description: Server error
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Generate link code
+      tags:
+      - telegram
+  /telegram/link:
+    get:
+      consumes:
+      - application/json
+      description: Get the current Telegram link for the authenticated user
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Link information
+          schema:
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "404":
+          description: Not found
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get Telegram link status
+      tags:
+      - telegram
+  /telegram/unlink:
+    delete:
+      consumes:
+      - application/json
+      description: Remove the link between Telegram and Kuberan account
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Success message
+          schema:
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "404":
+          description: Not found
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Unlink Telegram account
+      tags:
+      - telegram
   /transactions:
     get:
       consumes:

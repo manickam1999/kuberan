@@ -102,10 +102,8 @@ export default function RegisterPage() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-2xl">Create an account</CardTitle>
-        <CardDescription>
-          Enter your details to get started
-        </CardDescription>
+        <CardTitle className="text-xl">Create your account</CardTitle>
+        <CardDescription>Start tracking your finances in minutes</CardDescription>
       </CardHeader>
       <form onSubmit={handleSubmit}>
         <CardContent className="flex flex-col gap-4">

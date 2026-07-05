@@ -43,12 +43,18 @@ services:
       context: ./apps/api
       dockerfile: Dockerfile
     # Same image as api; override the entrypoint to run the MCP binary.
-    # env_file shares JWT_SECRET with the api so MCP tokens validate here.
+    # The MCP server is an OAuth Resource Server: it validates Hydra-issued
+    # access tokens offline against Hydra's JWKS. It no longer needs JWT_SECRET
+    # (the legacy static MCP token path was removed in plan 15 Phase 4).
     entrypoint: ["/mcp"]
     restart: unless-stopped
     env_file: .env.prod
     environment:
       - MCP_PORT=8081
+      # Issuer is reached over the private Docker network; the RS fetches JWKS
+      # and validates iss against this URL, so it must equal the public issuer.
+      - HYDRA_ISSUER_URL=${HYDRA_ISSUER_URL:?HYDRA_ISSUER_URL is required}
+      - MCP_RESOURCE_URL=${MCP_RESOURCE_URL:?MCP_RESOURCE_URL is required}
     dns:
       - 8.8.8.8
       - 8.8.4.4
@@ -56,6 +62,8 @@ services:
       postgres:
         condition: service_healthy
         required: false
+      hydra:
+        condition: service_started
     healthcheck:
       test: ["CMD", "wget", "--spider", "-q", "http://localhost:8081/health"]
       interval: 30s
@@ -64,6 +72,52 @@ services:
       start_period: 10s
     ports:
       - "8081:8081"
+
+  # One-shot: create/upgrade Hydra's schema in its dedicated `hydra` database.
+  # HYDRA_DSN points at the same Postgres/Supabase instance, own database.
+  hydra-migrate:
+    image: oryd/hydra:v2.2.0
+    command: migrate sql -e --yes
+    environment:
+      - DSN=${HYDRA_DSN:?HYDRA_DSN is required}
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
+    depends_on:
+      postgres:
+        condition: service_healthy
+        required: false
+    restart: "no"
+
+  # Ory Hydra: OAuth 2.1 Authorization Server for MCP (plan 015-mcp-oauth-hydra).
+  # Only the public port (:4444) is published, for the external Cloudflare
+  # tunnel to front. Admin (:4445) MUST stay on the private Docker network.
+  hydra:
+    image: oryd/hydra:v2.2.0
+    command: serve all --config /etc/config/hydra/hydra.yml
+    environment:
+      - DSN=${HYDRA_DSN:?HYDRA_DSN is required}
+      - SECRETS_SYSTEM=${HYDRA_SECRETS_SYSTEM:?HYDRA_SECRETS_SYSTEM is required}
+      - URLS_SELF_ISSUER=${HYDRA_ISSUER_URL:?HYDRA_ISSUER_URL is required}
+      - URLS_LOGIN=${HYDRA_LOGIN_URL:?HYDRA_LOGIN_URL is required}
+      - URLS_CONSENT=${HYDRA_CONSENT_URL:?HYDRA_CONSENT_URL is required}
+      # The Cloudflare tunnel terminates TLS and forwards plain HTTP, so Hydra
+      # must trust X-Forwarded-Proto from the Docker bridge range it arrives on.
+      - SERVE_TLS_ALLOW_TERMINATION_FROM=${HYDRA_TLS_TERMINATION_CIDR:-172.16.0.0/12}
+    ports:
+      - "4444:4444"
+    volumes:
+      - ./ory/hydra/hydra.yml:/etc/config/hydra/hydra.yml:ro
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
+    depends_on:
+      postgres:
+        condition: service_healthy
+        required: false
+      hydra-migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
 
   web:
     build:
@@ -105,6 +159,21 @@ services:
     depends_on:
       - api
     restart: unless-stopped
+
+  # Public ingress is an EXTERNAL Cloudflare tunnel (managed outside this repo);
+  # it reaches the services via the host-published ports above. Configure the
+  # tunnel's public hostnames in the Cloudflare dashboard to map ONLY:
+  #   auth.<domain> (path /oauth2/register) -> :8080 (hardened DCR proxy)
+  #   auth.<domain> (all other paths)       -> :4444 (OAuth AS: authorize/token/JWKS)
+  #   mcp.<domain>  -> :8081  (MCP Resource Server + discovery)
+  #   app.<domain>  -> :3000  (login/consent pages + web app)
+  #   api.<domain>  -> :8080  (REST API, if exposed)
+  # DCR MUST route to the api proxy, not Hydra: Hydra advertises its
+  # registration_endpoint as https://auth.<domain>/oauth2/register, and the api
+  # container serves that exact path (see cmd/api/main.go) with the Phase 5
+  # hardening (public clients, capped scopes, audit/alert). Routing /oauth2/register
+  # straight to Hydra would bypass every one of those controls.
+  # NEVER map Hydra admin (:4445). Re-verify the ingress after any tunnel change.
 
   backup:
     build:

@@ -1,0 +1,51 @@
+# Ory Hydra configuration for Kuberan MCP OAuth 2.1.
+# See plans/015-mcp-oauth-hydra. Pinned to Hydra v2.x.
+#
+# Secrets and the DSN are supplied via environment variables in docker-compose
+# (SECRETS_SYSTEM, DSN) so they are not committed here.
+
+serve:
+  public:
+    port: 4444
+  admin:
+    port: 4445
+  cookies:
+    same_site_mode: Lax
+
+urls:
+  self:
+    # Public issuer. Must match the hostname cloudflared serves in prod
+    # (e.g. https://auth.<domain>). Overridden via URLS_SELF_ISSUER.
+    issuer: http://localhost:4444
+  # Login & consent UI live in apps/web (Next.js). Overridden via env in prod.
+  login: http://localhost:3000/oauth/login
+  consent: http://localhost:3000/oauth/consent
+
+strategies:
+  access_token: jwt
+
+ttl:
+  access_token: 15m
+  refresh_token: 720h
+  id_token: 1h
+  auth_code: 10m
+
+oauth2:
+  # Never leak internal error details to clients.
+  expose_internal_errors: false
+
+oidc:
+  subject_identifiers:
+    supported_types:
+      - public
+
+# Scope handling is deliberately NOT configured here: Hydra v2.x has no global
+# scope registry. Allowed scopes are set per client (client.scope), so the
+# granular read:* set is enforced code-side instead:
+#   - DCR registration proxy caps a client's registrable scopes
+#     (apps/api/internal/handlers/registration_handler.go, capScopes).
+#   - The consent bridge grants only the registered read:* subset
+#     (apps/api/internal/handlers/oauth_handler.go).
+#   - The MCP Resource Server enforces the required scope per tool
+#     (apps/api/internal/mcp, requireScope).
+# The canonical read:* set lives in config.DefaultOAuthScopes.

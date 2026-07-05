@@ -59,6 +59,7 @@ func setupIsolatedDB(t *testing.T) *gorm.DB {
 		&models.Investment{},
 		&models.InvestmentTransaction{},
 		&models.AuditLog{},
+		&models.TrustedOAuthClient{},
 	}
 	if err := db.AutoMigrate(allModels...); err != nil {
 		t.Fatalf("failed to migrate test database: %v", err)

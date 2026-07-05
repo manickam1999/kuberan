@@ -18,8 +18,6 @@ type UserServicer interface {
 	AttemptLogin(email, password string) (*models.User, error)
 	StoreRefreshTokenHash(userID, tokenHash string) error
 	GetRefreshTokenHash(userID string) (string, error)
-	StoreMCPTokenHash(userID, tokenHash string) error
-	GetMCPTokenHash(userID string) (string, error)
 }
 
 // TelegramUserAuth holds the resolved user info and auth token for bot service communication.
@@ -40,6 +38,14 @@ type TelegramServicer interface {
 	RecordActivity(telegramUserID int64) error
 	IsLinked(userID string) (bool, error)
 	GetUserWithAuthToken(telegramUserID int64) (*TelegramUserAuth, error)
+}
+
+// TrustedClientServicer defines the contract for managing OAuth clients that a
+// user has approved via trust-on-first-use consent.
+type TrustedClientServicer interface {
+	IsTrusted(clientID string) (bool, error)
+	Trust(clientID, name string) (*models.TrustedOAuthClient, error)
+	ListTrusted() ([]models.TrustedOAuthClient, error)
 }
 
 // AccountUpdateFields holds optional fields for updating an account.

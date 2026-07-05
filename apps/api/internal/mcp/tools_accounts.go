@@ -24,6 +24,9 @@ func (s *Server) handleListAccounts(ctx context.Context, _ mcp.CallToolRequest) 
 	if err != nil {
 		return errUnauthorized(), nil
 	}
+	if denied := requireScope(ctx, "read:accounts"); denied != nil {
+		return denied, nil
+	}
 
 	page := pagination.PageRequest{Page: 1, PageSize: 100}
 	result, err := s.services.Accounts.GetUserAccounts(userID, page)
