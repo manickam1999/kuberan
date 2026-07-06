@@ -79,23 +79,23 @@ export function CashflowCard() {
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        <div className="grid grid-cols-3 gap-3">
-          <div>
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-3 sm:gap-3">
+          <div className="flex items-baseline justify-between gap-2 sm:block">
             <p className="text-xs text-muted-foreground">Income</p>
-            <p className="money mt-0.5 text-lg font-semibold text-positive">
+            <p className="money text-base font-semibold text-positive sm:mt-0.5 sm:text-lg">
               {formatCurrency(income)}
             </p>
           </div>
-          <div>
+          <div className="flex items-baseline justify-between gap-2 sm:block">
             <p className="text-xs text-muted-foreground">Expenses</p>
-            <p className="money mt-0.5 text-lg font-semibold text-negative">
+            <p className="money text-base font-semibold text-negative sm:mt-0.5 sm:text-lg">
               {formatCurrency(expenses)}
             </p>
           </div>
-          <div>
+          <div className="flex items-baseline justify-between gap-2 sm:block">
             <p className="text-xs text-muted-foreground">Net</p>
             <p
-              className={`money mt-0.5 text-lg font-semibold ${
+              className={`money text-base font-semibold sm:mt-0.5 sm:text-lg ${
                 netUp ? "text-positive" : "text-negative"
               }`}
             >
