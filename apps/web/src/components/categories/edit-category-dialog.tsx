@@ -71,9 +71,9 @@ export function EditCategoryDialog({
   const { data: parentData } = useCategories(
     category ? { type: category.type, page_size: 100 } : undefined
   );
-  const parentOptions = (parentData?.data ?? []).filter(
-    (c) => !c.parent_id && c.id !== category?.id
-  );
+  const parentOptions = (parentData?.data ?? [])
+    .filter((c) => !c.parent_id && c.id !== category?.id)
+    .sort((a, b) => a.name.localeCompare(b.name));
 
   // Sync form state when category changes
   useEffect(() => {

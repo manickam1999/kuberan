@@ -2,7 +2,9 @@
 
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
+import { ArrowDownRight, ArrowUpRight } from "lucide-react";
 import { ApiClientError } from "@/lib/api-client";
+import { cn } from "@/lib/utils";
 import { useAccounts } from "@/hooks/use-accounts";
 import {
   useUpdateTransaction,
@@ -87,8 +89,12 @@ export function EditTransactionDialog({
     type: type === "income" ? "income" : "expense",
   });
 
-  const accounts = accountsData?.data ?? [];
-  const categories = categoriesData?.data ?? [];
+  const accounts = [...(accountsData?.data ?? [])].sort((a, b) =>
+    a.name.localeCompare(b.name)
+  );
+  const categories = [...(categoriesData?.data ?? [])].sort((a, b) =>
+    a.name.localeCompare(b.name)
+  );
   const isSaving = updateTransaction.isPending;
   const isDeleting = deleteTransaction.isPending;
   const isEditable =
@@ -202,36 +208,66 @@ export function EditTransactionDialog({
           )}
 
           {isEditable ? (
-            <form onSubmit={handleSubmit} className="flex flex-col gap-5">
-              {/* Type toggle */}
-              <div className="flex flex-col gap-2">
-                <Label>Type</Label>
-                <div className="flex flex-col sm:flex-row gap-2">
-                  <Button
-                    type="button"
-                    variant={type === "expense" ? "default" : "outline"}
-                    size="sm"
-                    className="flex-1"
-                    onClick={() => handleTypeChange("expense")}
-                    disabled={isSaving}
-                  >
-                    Expense
-                  </Button>
-                  <Button
-                    type="button"
-                    variant={type === "income" ? "default" : "outline"}
-                    size="sm"
-                    className="flex-1"
-                    onClick={() => handleTypeChange("income")}
-                    disabled={isSaving}
-                  >
-                    Income
-                  </Button>
-                </div>
+            <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+              {/* Type segmented control */}
+              <div className="grid grid-cols-2 gap-1 rounded-xl bg-muted p-1">
+                {[
+                  {
+                    value: "expense" as const,
+                    label: "Expense",
+                    icon: ArrowDownRight,
+                    activeText: "text-negative",
+                  },
+                  {
+                    value: "income" as const,
+                    label: "Income",
+                    icon: ArrowUpRight,
+                    activeText: "text-positive",
+                  },
+                ].map((opt) => {
+                  const active = type === opt.value;
+                  const Icon = opt.icon;
+                  return (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() => handleTypeChange(opt.value)}
+                      disabled={isSaving}
+                      className={cn(
+                        "flex items-center justify-center gap-1.5 rounded-lg px-2 py-2 text-sm font-medium transition-all disabled:opacity-50",
+                        active
+                          ? cn("bg-background shadow-sm", opt.activeText)
+                          : "text-muted-foreground hover:text-foreground"
+                      )}
+                    >
+                      <Icon className="size-4" />
+                      {opt.label}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Amount */}
+              <div className="flex flex-col gap-1.5">
+                <Label
+                  htmlFor="edit-tx-amount"
+                  className="text-xs font-medium uppercase tracking-wide text-muted-foreground"
+                >
+                  Amount
+                </Label>
+                <CurrencyInput
+                  id="edit-tx-amount"
+                  value={amount}
+                  onChange={setAmount}
+                  symbol="MYR"
+                  placeholder="0.00"
+                  disabled={isSaving}
+                  className="money h-14 pl-16 text-2xl font-semibold"
+                />
               </div>
 
               {/* Account */}
-              <div className="flex flex-col gap-2">
+              <div className="flex flex-col gap-1.5">
                 <Label htmlFor="edit-tx-account">Account</Label>
                 <Select
                   value={accountId}
@@ -251,20 +287,8 @@ export function EditTransactionDialog({
                 </Select>
               </div>
 
-              {/* Amount */}
-              <div className="flex flex-col gap-2">
-                <Label htmlFor="edit-tx-amount">Amount</Label>
-                <CurrencyInput
-                  id="edit-tx-amount"
-                  value={amount}
-                  onChange={setAmount}
-                  placeholder="0.00"
-                  disabled={isSaving}
-                />
-              </div>
-
               {/* Category */}
-              <div className="flex flex-col gap-2">
+              <div className="flex flex-col gap-1.5">
                 <Label htmlFor="edit-tx-category">Category</Label>
                 <Select
                   value={categoryId}
@@ -285,21 +309,8 @@ export function EditTransactionDialog({
                 </Select>
               </div>
 
-              {/* Description */}
-              <div className="flex flex-col gap-2">
-                <Label htmlFor="edit-tx-description">Description</Label>
-                <Input
-                  id="edit-tx-description"
-                  placeholder="Optional description"
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                  disabled={isSaving}
-                  maxLength={500}
-                />
-              </div>
-
               {/* Date */}
-              <div className="flex flex-col gap-2">
+              <div className="flex flex-col gap-1.5">
                 <Label htmlFor="edit-tx-date">Date</Label>
                 <Input
                   id="edit-tx-date"
@@ -310,17 +321,31 @@ export function EditTransactionDialog({
                 />
               </div>
 
-              <DialogFooter className="flex gap-2 sm:justify-between">
+              {/* Note */}
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="edit-tx-description">Note</Label>
+                <Input
+                  id="edit-tx-description"
+                  placeholder="Optional description"
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  disabled={isSaving}
+                  maxLength={500}
+                />
+              </div>
+
+              <DialogFooter className="mt-1 flex-row justify-between gap-2">
                 <Button
                   type="button"
-                  variant="destructive"
+                  variant="ghost"
+                  className="text-muted-foreground hover:text-destructive"
                   onClick={() => setDeleteOpen(true)}
                   disabled={isSaving || isDeleting}
                 >
                   Delete
                 </Button>
                 <Button type="submit" disabled={isSaving || isDeleting}>
-                  {isSaving ? "Saving..." : "Save Changes"}
+                  {isSaving ? "Saving…" : "Save changes"}
                 </Button>
               </DialogFooter>
             </form>

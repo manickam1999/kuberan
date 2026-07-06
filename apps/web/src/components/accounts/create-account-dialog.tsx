@@ -29,7 +29,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
-const CURRENCIES = ["USD", "EUR", "GBP", "CAD", "AUD", "JPY", "INR", "MYR"];
+const CURRENCIES = ["MYR", "USD", "EUR", "GBP", "CAD", "AUD", "JPY", "INR"];
 
 function getErrorMessage(error: unknown): string {
   if (error instanceof ApiClientError) {
@@ -52,20 +52,20 @@ export function CreateAccountDialog({
   // Cash account fields
   const [cashName, setCashName] = useState("");
   const [cashDescription, setCashDescription] = useState("");
-  const [cashCurrency, setCashCurrency] = useState("USD");
+  const [cashCurrency, setCashCurrency] = useState("MYR");
   const [cashBalance, setCashBalance] = useState(0);
 
   // Investment account fields
   const [investName, setInvestName] = useState("");
   const [investDescription, setInvestDescription] = useState("");
-  const [investCurrency, setInvestCurrency] = useState("USD");
+  const [investCurrency, setInvestCurrency] = useState("MYR");
   const [investBroker, setInvestBroker] = useState("");
   const [investAccountNumber, setInvestAccountNumber] = useState("");
 
   // Credit card account fields
   const [ccName, setCcName] = useState("");
   const [ccDescription, setCcDescription] = useState("");
-  const [ccCurrency, setCcCurrency] = useState("USD");
+  const [ccCurrency, setCcCurrency] = useState("MYR");
   const [ccCreditLimit, setCcCreditLimit] = useState(0);
   const [ccInterestRate, setCcInterestRate] = useState("");
   const [ccDueDate, setCcDueDate] = useState("");
@@ -84,16 +84,16 @@ export function CreateAccountDialog({
   function resetForm() {
     setCashName("");
     setCashDescription("");
-    setCashCurrency("USD");
+    setCashCurrency("MYR");
     setCashBalance(0);
     setInvestName("");
     setInvestDescription("");
-    setInvestCurrency("USD");
+    setInvestCurrency("MYR");
     setInvestBroker("");
     setInvestAccountNumber("");
     setCcName("");
     setCcDescription("");
-    setCcCurrency("USD");
+    setCcCurrency("MYR");
     setCcCreditLimit(0);
     setCcInterestRate("");
     setCcDueDate("");

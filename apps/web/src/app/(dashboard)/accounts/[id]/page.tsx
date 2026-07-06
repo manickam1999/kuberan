@@ -221,7 +221,9 @@ export default function AccountDetailPage() {
   const transactions = transactionsData?.data ?? [];
   const totalPages = transactionsData?.total_pages ?? 1;
   const totalItems = transactionsData?.total_items ?? 0;
-  const categories = categoriesData?.data ?? [];
+  const categories = [...(categoriesData?.data ?? [])].sort((a, b) =>
+    a.name.localeCompare(b.name)
+  );
   const investments = investmentsData?.data ?? [];
   const investmentTotalPages = investmentsData?.total_pages ?? 1;
   const investmentTotalItems = investmentsData?.total_items ?? 0;
