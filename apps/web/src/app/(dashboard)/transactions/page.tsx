@@ -107,8 +107,12 @@ export default function TransactionsPage() {
 
   const transactions = useMemo(() => data?.data ?? [], [data?.data]);
   const totalPages = data?.total_pages ?? 1;
-  const accounts = accountsData?.data ?? [];
-  const categories = categoriesData?.data ?? [];
+  const accounts = [...(accountsData?.data ?? [])].sort((a, b) =>
+    a.name.localeCompare(b.name)
+  );
+  const categories = [...(categoriesData?.data ?? [])].sort((a, b) =>
+    a.name.localeCompare(b.name)
+  );
 
   const accountNameMap = new Map(accounts.map((a) => [a.id, a.name]));
 

@@ -2,7 +2,9 @@
 
 import { useState } from "react";
 import { toast } from "sonner";
+import { ArrowDownRight, ArrowUpRight, ArrowLeftRight } from "lucide-react";
 import { ApiClientError } from "@/lib/api-client";
+import { cn } from "@/lib/utils";
 import { useAccounts } from "@/hooks/use-accounts";
 import { useCreateTransaction, useCreateTransfer } from "@/hooks/use-transactions";
 import { useCategories } from "@/hooks/use-categories";
@@ -29,6 +31,32 @@ import { toRFC3339 } from "@/lib/format";
 import type { TransactionType } from "@/types/models";
 
 type DialogType = TransactionType | "transfer";
+
+const TYPE_OPTIONS: {
+  value: DialogType;
+  label: string;
+  icon: typeof ArrowUpRight;
+  activeText: string;
+}[] = [
+  {
+    value: "expense",
+    label: "Expense",
+    icon: ArrowDownRight,
+    activeText: "text-negative",
+  },
+  {
+    value: "income",
+    label: "Income",
+    icon: ArrowUpRight,
+    activeText: "text-positive",
+  },
+  {
+    value: "transfer",
+    label: "Transfer",
+    icon: ArrowLeftRight,
+    activeText: "text-info",
+  },
+];
 
 function getErrorMessage(error: unknown): string {
   if (error instanceof ApiClientError) {
@@ -59,9 +87,7 @@ export function CreateTransactionDialog({
   onOpenChange,
   defaultAccountId,
 }: CreateTransactionDialogProps) {
-  const [accountId, setAccountId] = useState<string>(
-    defaultAccountId ?? ""
-  );
+  const [accountId, setAccountId] = useState<string>(defaultAccountId ?? "");
   const [type, setType] = useState<DialogType>("expense");
   const [amount, setAmount] = useState(0);
   const [categoryId, setCategoryId] = useState<string>("");
@@ -83,8 +109,12 @@ export function CreateTransactionDialog({
     type: type === "income" ? "income" : "expense",
   });
 
-  const accounts = accountsData?.data ?? [];
-  const categories = categoriesData?.data ?? [];
+  const accounts = [...(accountsData?.data ?? [])].sort((a, b) =>
+    a.name.localeCompare(b.name)
+  );
+  const categories = [...(categoriesData?.data ?? [])].sort((a, b) =>
+    a.name.localeCompare(b.name)
+  );
   const isTransfer = type === "transfer";
   const isSubmitting = createTransaction.isPending || createTransfer.isPending;
 
@@ -116,10 +146,8 @@ export function CreateTransactionDialog({
     setType(newType);
     setCategoryId("");
     if (newType === "transfer") {
-      // Pre-fill from-account with existing account selection or default
       setFromAccountId(accountId || defaultAccountId || "");
     } else {
-      // When switching back from transfer, restore account from from-account
       if (type === "transfer" && fromAccountId) {
         setAccountId(fromAccountId);
       }
@@ -183,7 +211,8 @@ export function CreateTransactionDialog({
           account_id: accountId,
           type: type as TransactionType,
           amount,
-          category_id: categoryId && categoryId !== "none" ? categoryId : undefined,
+          category_id:
+            categoryId && categoryId !== "none" ? categoryId : undefined,
           description: description.trim() || undefined,
           date: date ? toRFC3339(date) : undefined,
         },
@@ -203,62 +232,69 @@ export function CreateTransactionDialog({
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>
-            {isTransfer ? "Transfer Funds" : "Add Transaction"}
+            {isTransfer ? "Transfer funds" : "New transaction"}
           </DialogTitle>
           <DialogDescription>
             {isTransfer
               ? "Move money between your accounts."
-              : "Record an income or expense transaction."}
+              : "Record an income or expense."}
           </DialogDescription>
         </DialogHeader>
 
-        {error && (
-          <div className="bg-destructive/10 text-destructive rounded-md p-3 text-sm">
-            {error}
+        <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+          {/* Type segmented control */}
+          <div className="grid grid-cols-3 gap-1 rounded-xl bg-muted p-1">
+            {TYPE_OPTIONS.map((opt) => {
+              const active = type === opt.value;
+              const Icon = opt.icon;
+              return (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => handleTypeChange(opt.value)}
+                  disabled={isSubmitting}
+                  className={cn(
+                    "flex items-center justify-center gap-1.5 rounded-lg px-2 py-2 text-sm font-medium transition-all disabled:opacity-50",
+                    active
+                      ? cn("bg-background shadow-sm", opt.activeText)
+                      : "text-muted-foreground hover:text-foreground"
+                  )}
+                >
+                  <Icon className="size-4" />
+                  {opt.label}
+                </button>
+              );
+            })}
           </div>
-        )}
 
-        <form onSubmit={handleSubmit} className="flex flex-col gap-5">
-          {/* Type */}
-          <div className="flex flex-col gap-2">
-            <Label>Type</Label>
-            <div className="flex flex-col sm:flex-row gap-2">
-              <Button
-                type="button"
-                variant={type === "expense" ? "default" : "outline"}
-                size="sm"
-                className="flex-1"
-                onClick={() => handleTypeChange("expense")}
-                disabled={isSubmitting}
-              >
-                Expense
-              </Button>
-              <Button
-                type="button"
-                variant={type === "income" ? "default" : "outline"}
-                size="sm"
-                className="flex-1"
-                onClick={() => handleTypeChange("income")}
-                disabled={isSubmitting}
-              >
-                Income
-              </Button>
-              <Button
-                type="button"
-                variant={type === "transfer" ? "default" : "outline"}
-                size="sm"
-                className="flex-1"
-                onClick={() => handleTypeChange("transfer")}
-                disabled={isSubmitting}
-              >
-                Transfer
-              </Button>
+          {/* Amount — the primary field */}
+          <div className="flex flex-col gap-1.5">
+            <Label
+              htmlFor="tx-amount"
+              className="text-xs font-medium uppercase tracking-wide text-muted-foreground"
+            >
+              Amount
+            </Label>
+            <CurrencyInput
+              id="tx-amount"
+              value={amount}
+              onChange={setAmount}
+              symbol="MYR"
+              placeholder="0.00"
+              disabled={isSubmitting}
+              className="money h-14 pl-16 text-2xl font-semibold"
+            />
+          </div>
+
+          {error && (
+            <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
+              {error}
             </div>
-          </div>
+          )}
 
-          {/* Account selector for expense/income */}
+          {/* Account (expense/income) */}
           {!isTransfer && !defaultAccountId && (
-            <div className="flex flex-col gap-2">
+            <div className="flex flex-col gap-1.5">
               <Label htmlFor="tx-account">Account</Label>
               <Select
                 value={accountId}
@@ -279,37 +315,39 @@ export function CreateTransactionDialog({
             </div>
           )}
 
-          {/* From/To Account selectors for transfer */}
+          {/* From / To (transfer) */}
           {isTransfer && (
-            <>
-              <div className="flex flex-col gap-2">
-                <Label htmlFor="tx-from-account">From Account</Label>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="tx-from-account">From</Label>
                 <Select
                   value={fromAccountId}
                   onValueChange={handleFromAccountChange}
                   disabled={isSubmitting}
                 >
                   <SelectTrigger id="tx-from-account" className="w-full">
-                    <SelectValue placeholder="Select source account" />
+                    <SelectValue placeholder="Source" />
                   </SelectTrigger>
                   <SelectContent>
-                    {accounts.filter((a) => a.is_active).map((a) => (
-                      <SelectItem key={a.id} value={a.id}>
-                        {a.name}
-                      </SelectItem>
-                    ))}
+                    {accounts
+                      .filter((a) => a.is_active)
+                      .map((a) => (
+                        <SelectItem key={a.id} value={a.id}>
+                          {a.name}
+                        </SelectItem>
+                      ))}
                   </SelectContent>
                 </Select>
               </div>
-              <div className="flex flex-col gap-2">
-                <Label htmlFor="tx-to-account">To Account</Label>
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="tx-to-account">To</Label>
                 <Select
                   value={toAccountId}
                   onValueChange={setToAccountId}
                   disabled={isSubmitting}
                 >
                   <SelectTrigger id="tx-to-account" className="w-full">
-                    <SelectValue placeholder="Select destination account" />
+                    <SelectValue placeholder="Destination" />
                   </SelectTrigger>
                   <SelectContent>
                     {toAccounts.map((a) => (
@@ -320,24 +358,12 @@ export function CreateTransactionDialog({
                   </SelectContent>
                 </Select>
               </div>
-            </>
+            </div>
           )}
 
-          {/* Amount */}
-          <div className="flex flex-col gap-2">
-            <Label htmlFor="tx-amount">Amount</Label>
-            <CurrencyInput
-              id="tx-amount"
-              value={amount}
-              onChange={setAmount}
-              placeholder="0.00"
-              disabled={isSubmitting}
-            />
-          </div>
-
-          {/* Category (hidden for transfers) */}
+          {/* Category (expense/income) */}
           {!isTransfer && (
-            <div className="flex flex-col gap-2">
+            <div className="flex flex-col gap-1.5">
               <Label htmlFor="tx-category">Category</Label>
               <Select
                 value={categoryId}
@@ -359,20 +385,8 @@ export function CreateTransactionDialog({
             </div>
           )}
 
-          {/* Description */}
-          <div className="flex flex-col gap-2">
-            <Label htmlFor="tx-description">Description</Label>
-            <Input
-              id="tx-description"
-              placeholder="Optional description"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              disabled={isSubmitting}
-            />
-          </div>
-
-          {/* Date */}
-          <div className="flex flex-col gap-2">
+          {/* Date + Description */}
+          <div className="flex flex-col gap-1.5">
             <Label htmlFor="tx-date">Date</Label>
             <Input
               id="tx-date"
@@ -383,15 +397,26 @@ export function CreateTransactionDialog({
             />
           </div>
 
-          <DialogFooter>
-            <Button type="submit" disabled={isSubmitting}>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="tx-description">Note</Label>
+            <Input
+              id="tx-description"
+              placeholder="Optional description"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              disabled={isSubmitting}
+            />
+          </div>
+
+          <DialogFooter className="mt-1">
+            <Button type="submit" className="w-full" disabled={isSubmitting}>
               {isSubmitting
                 ? isTransfer
-                  ? "Transferring..."
-                  : "Creating..."
+                  ? "Transferring…"
+                  : "Adding…"
                 : isTransfer
-                  ? "Transfer Funds"
-                  : "Add Transaction"}
+                  ? "Transfer funds"
+                  : "Add transaction"}
             </Button>
           </DialogFooter>
         </form>

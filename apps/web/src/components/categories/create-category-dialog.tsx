@@ -63,7 +63,9 @@ export function CreateCategoryDialog({
   const { data: parentData } = useCategories(
     type ? { type: type as CategoryType, page_size: 100 } : undefined
   );
-  const parentOptions = (parentData?.data ?? []).filter((c) => !c.parent_id);
+  const parentOptions = (parentData?.data ?? [])
+    .filter((c) => !c.parent_id)
+    .sort((a, b) => a.name.localeCompare(b.name));
 
   function resetForm() {
     setName("");
