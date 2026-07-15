@@ -21,14 +21,13 @@ func NewBudgetService(db *gorm.DB) BudgetServicer {
 	return &budgetService{db: db}
 }
 
-// CreateBudget creates a new budget for a category.
+// CreateBudget creates a new recurring budget for a category. It rejects a second
+// active budget for the same (user, category, period) with ErrBudgetAlreadyExists (D4).
 func (s *budgetService) CreateBudget(
 	userID, categoryID string,
 	name string,
 	amount int64,
 	period models.BudgetPeriod,
-	startDate time.Time,
-	endDate *time.Time,
 ) (*models.Budget, error) {
 	// Verify category exists and belongs to user
 	var category models.Category
@@ -39,14 +38,24 @@ func (s *budgetService) CreateBudget(
 		return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)
 	}
 
+	// D4: only one active budget per (user, category, period).
+	var existing int64
+	if err := s.db.Model(&models.Budget{}).
+		Where("user_id = ? AND category_id = ? AND period = ? AND is_active = ?",
+			userID, categoryID, period, true).
+		Count(&existing).Error; err != nil {
+		return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)
+	}
+	if existing > 0 {
+		return nil, apperrors.ErrBudgetAlreadyExists
+	}
+
 	budget := &models.Budget{
 		UserID:     userID,
 		CategoryID: categoryID,
 		Name:       name,
 		Amount:     amount,
 		Period:     period,
-		StartDate:  startDate,
-		EndDate:    endDate,
 		IsActive:   true,
 	}
 
@@ -57,7 +66,8 @@ func (s *budgetService) CreateBudget(
 	return budget, nil
 }
 
-// GetUserBudgets returns a paginated list of budgets for the user with optional filters.
+// GetUserBudgets returns a paginated list of budgets for the user with optional filters,
+// ordered by newest first for deterministic pagination.
 func (s *budgetService) GetUserBudgets(
 	userID string,
 	page pagination.PageRequest,
@@ -80,7 +90,10 @@ func (s *budgetService) GetUserBudgets(
 	}
 
 	var budgets []models.Budget
-	if err := base.Preload("Category").Scopes(pagination.Paginate(page)).Find(&budgets).Error; err != nil {
+	if err := base.Preload("Category").
+		Order("created_at DESC").
+		Scopes(pagination.Paginate(page)).
+		Find(&budgets).Error; err != nil {
 		return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)
 	}
 
@@ -100,13 +113,13 @@ func (s *budgetService) GetBudgetByID(userID, budgetID string) (*models.Budget, 
 	return &budget, nil
 }
 
-// UpdateBudget updates an existing budget's fields.
+// UpdateBudget updates an existing budget's fields. Nil pointers are left unchanged.
 func (s *budgetService) UpdateBudget(
 	userID, budgetID string,
 	name string,
 	amount *int64,
 	period *models.BudgetPeriod,
-	endDate *time.Time,
+	isActive *bool,
 ) (*models.Budget, error) {
 	budget, err := s.GetBudgetByID(userID, budgetID)
 	if err != nil {
@@ -123,8 +136,8 @@ func (s *budgetService) UpdateBudget(
 	if period != nil {
 		updates["period"] = *period
 	}
-	if endDate != nil {
-		updates["end_date"] = endDate
+	if isActive != nil {
+		updates["is_active"] = *isActive
 	}
 
 	if len(updates) > 0 {
@@ -149,6 +162,37 @@ func (s *budgetService) DeleteBudget(userID, budgetID string) error {
 	return nil
 }
 
+// periodWindow returns the current calendar-period window for the given period,
+// derived from now. Budgets are recurring caps, so progress is always the current window.
+func periodWindow(period models.BudgetPeriod, now time.Time) (start, end time.Time) {
+	switch period {
+	case models.BudgetPeriodMonthly:
+		start = time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location())
+		end = start.AddDate(0, 1, -1)
+		end = time.Date(end.Year(), end.Month(), end.Day(), 23, 59, 59, 999999999, now.Location())
+	case models.BudgetPeriodYearly:
+		start = time.Date(now.Year(), 1, 1, 0, 0, 0, 0, now.Location())
+		end = time.Date(now.Year(), 12, 31, 23, 59, 59, 999999999, now.Location())
+	}
+	return start, end
+}
+
+// computeProgress builds a BudgetProgress from a budget amount and spent total.
+func computeProgress(budgetID string, amount, spent int64) BudgetProgress {
+	remaining := amount - spent
+	var percentage float64
+	if amount > 0 {
+		percentage = float64(spent) / float64(amount) * 100
+	}
+	return BudgetProgress{
+		BudgetID:   budgetID,
+		Budgeted:   amount,
+		Spent:      spent,
+		Remaining:  remaining,
+		Percentage: percentage,
+	}
+}
+
 // GetBudgetProgress calculates spending vs budget for the current period.
 func (s *budgetService) GetBudgetProgress(userID, budgetID string) (*BudgetProgress, error) {
 	budget, err := s.GetBudgetByID(userID, budgetID)
@@ -156,19 +200,7 @@ func (s *budgetService) GetBudgetProgress(userID, budgetID string) (*BudgetProgr
 		return nil, err
 	}
 
-	// Determine current period window
-	now := time.Now()
-	var periodStart, periodEnd time.Time
-
-	switch budget.Period {
-	case models.BudgetPeriodMonthly:
-		periodStart = time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location())
-		periodEnd = periodStart.AddDate(0, 1, -1)
-		periodEnd = time.Date(periodEnd.Year(), periodEnd.Month(), periodEnd.Day(), 23, 59, 59, 999999999, now.Location())
-	case models.BudgetPeriodYearly:
-		periodStart = time.Date(now.Year(), 1, 1, 0, 0, 0, 0, now.Location())
-		periodEnd = time.Date(now.Year(), 12, 31, 23, 59, 59, 999999999, now.Location())
-	}
+	periodStart, periodEnd := periodWindow(budget.Period, time.Now())
 
 	// Sum expense transactions for this category within the period
 	var spent int64
@@ -181,17 +213,66 @@ func (s *budgetService) GetBudgetProgress(userID, budgetID string) (*BudgetProgr
 		return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)
 	}
 
-	remaining := budget.Amount - spent
-	var percentage float64
-	if budget.Amount > 0 {
-		percentage = float64(spent) / float64(budget.Amount) * 100
+	progress := computeProgress(budget.ID, budget.Amount, spent)
+	return &progress, nil
+}
+
+// GetActiveBudgetsProgress returns progress for every active budget in a small,
+// fixed number of queries (one to load active budgets, then one grouped aggregate
+// per distinct period over the relevant transactions) rather than an N+1 per-budget loop.
+// Inactive budgets are excluded. Ordering matches GetUserBudgets (created_at DESC).
+func (s *budgetService) GetActiveBudgetsProgress(userID string) ([]BudgetProgress, error) {
+	var budgets []models.Budget
+	if err := s.db.
+		Where("user_id = ? AND is_active = ?", userID, true).
+		Order("created_at DESC").
+		Find(&budgets).Error; err != nil {
+		return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)
 	}
 
-	return &BudgetProgress{
-		BudgetID:   budget.ID,
-		Budgeted:   budget.Amount,
-		Spent:      spent,
-		Remaining:  remaining,
-		Percentage: percentage,
-	}, nil
+	if len(budgets) == 0 {
+		return []BudgetProgress{}, nil
+	}
+
+	// Group the category IDs by their budget's period so each period window is
+	// aggregated in a single grouped query.
+	now := time.Now()
+	categoriesByPeriod := make(map[models.BudgetPeriod][]string)
+	for _, b := range budgets {
+		categoriesByPeriod[b.Period] = append(categoriesByPeriod[b.Period], b.CategoryID)
+	}
+
+	// spentByPeriodCategory[period][categoryID] = spent cents in that period window.
+	spentByPeriodCategory := make(map[models.BudgetPeriod]map[string]int64, len(categoriesByPeriod))
+	for period, categoryIDs := range categoriesByPeriod {
+		periodStart, periodEnd := periodWindow(period, now)
+
+		type categorySpend struct {
+			CategoryID string
+			Total      int64
+		}
+		var rows []categorySpend
+		if err := s.db.Model(&models.Transaction{}).
+			Select("category_id, COALESCE(SUM(amount), 0) AS total").
+			Where("user_id = ? AND category_id IN ? AND type = ? AND date BETWEEN ? AND ?",
+				userID, categoryIDs, models.TransactionTypeExpense, periodStart, periodEnd).
+			Group("category_id").
+			Scan(&rows).Error; err != nil {
+			return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)
+		}
+
+		spentForPeriod := make(map[string]int64, len(rows))
+		for _, r := range rows {
+			spentForPeriod[r.CategoryID] = r.Total
+		}
+		spentByPeriodCategory[period] = spentForPeriod
+	}
+
+	progress := make([]BudgetProgress, 0, len(budgets))
+	for _, b := range budgets {
+		spent := spentByPeriodCategory[b.Period][b.CategoryID]
+		progress = append(progress, computeProgress(b.ID, b.Amount, spent))
+	}
+
+	return progress, nil
 }

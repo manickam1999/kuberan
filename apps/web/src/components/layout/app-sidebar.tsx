@@ -7,6 +7,7 @@ import {
   Wallet,
   ArrowLeftRight,
   Tag,
+  PiggyBank,
   Database,
   TrendingUp,
   Settings,
@@ -49,6 +50,7 @@ const navSections: NavSection[] = [
       { title: "Accounts", href: "/accounts", icon: Wallet },
       { title: "Transactions", href: "/transactions", icon: ArrowLeftRight },
       { title: "Categories", href: "/categories", icon: Tag },
+      { title: "Budgets", href: "/budgets", icon: PiggyBank },
     ],
   },
   {

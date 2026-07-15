@@ -1,7 +1,5 @@
 package models
 
-import "time"
-
 // BudgetPeriod represents the period type for a budget
 type BudgetPeriod string
 
@@ -18,8 +16,6 @@ type Budget struct {
 	Name       string       `gorm:"not null" json:"name"`
 	Amount     int64        `gorm:"type:bigint;not null" json:"amount"`
 	Period     BudgetPeriod `gorm:"not null" json:"period"`
-	StartDate  time.Time    `gorm:"not null" json:"start_date"`
-	EndDate    *time.Time   `json:"end_date,omitempty"`
 	IsActive   bool         `gorm:"default:true" json:"is_active"`
 
 	// Relationships

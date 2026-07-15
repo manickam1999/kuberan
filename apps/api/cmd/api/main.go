@@ -212,6 +212,8 @@ func run() error {
 	budgets := protected.Group("/budgets")
 	budgets.POST("", budgetHandler.CreateBudget)
 	budgets.GET("", budgetHandler.GetBudgets)
+	// Static route registered before the param routes so Gin resolves it correctly.
+	budgets.GET("/progress", budgetHandler.GetBudgetsProgress)
 	budgets.GET("/:id", budgetHandler.GetBudget)
 	budgets.PUT("/:id", budgetHandler.UpdateBudget)
 	budgets.DELETE("/:id", budgetHandler.DeleteBudget)

@@ -33,10 +33,9 @@ func TestBudgetFlow_CreateAndCheckProgress(t *testing.T) {
 
 	// Step 3: Create a monthly budget of $200 for the category
 	now := time.Now()
-	startDate := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)
 	rec = app.request("POST", "/api/v1/budgets",
-		fmt.Sprintf(`{"category_id":%q,"name":"Grocery Budget","amount":20000,"period":"monthly","start_date":%q}`,
-			categoryID, startDate.Format(time.RFC3339)), token)
+		fmt.Sprintf(`{"category_id":%q,"name":"Grocery Budget","amount":20000,"period":"monthly"}`,
+			categoryID), token)
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("expected 201 creating budget, got %d: %s", rec.Code, rec.Body.String())
 	}
@@ -110,10 +109,9 @@ func TestBudgetFlow_OverBudget(t *testing.T) {
 	acctID := parseJSON(t, rec)["account"].(map[string]interface{})["id"].(string)
 
 	now := time.Now()
-	startDate := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)
 	rec = app.request("POST", "/api/v1/budgets",
-		fmt.Sprintf(`{"category_id":%q,"name":"Dining Budget","amount":5000,"period":"monthly","start_date":%q}`,
-			catID, startDate.Format(time.RFC3339)), token)
+		fmt.Sprintf(`{"category_id":%q,"name":"Dining Budget","amount":5000,"period":"monthly"}`,
+			catID), token)
 	budgetID := parseJSON(t, rec)["budget"].(map[string]interface{})["id"].(string)
 
 	// Spend $75 on a $50 budget (over budget)
@@ -147,13 +145,10 @@ func TestBudgetFlow_CRUDOperations(t *testing.T) {
 		`{"name":"Utilities","type":"expense"}`, token)
 	catID := parseJSON(t, rec)["category"].(map[string]interface{})["id"].(string)
 
-	now := time.Now()
-	startDate := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)
-
 	// Create budget
 	rec = app.request("POST", "/api/v1/budgets",
-		fmt.Sprintf(`{"category_id":%q,"name":"Utility Budget","amount":15000,"period":"monthly","start_date":%q}`,
-			catID, startDate.Format(time.RFC3339)), token)
+		fmt.Sprintf(`{"category_id":%q,"name":"Utility Budget","amount":15000,"period":"monthly"}`,
+			catID), token)
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("expected 201, got %d: %s", rec.Code, rec.Body.String())
 	}
@@ -220,10 +215,9 @@ func TestBudgetFlow_IncomeIgnored(t *testing.T) {
 	acctID := parseJSON(t, rec)["account"].(map[string]interface{})["id"].(string)
 
 	now := time.Now()
-	startDate := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)
 	rec = app.request("POST", "/api/v1/budgets",
-		fmt.Sprintf(`{"category_id":%q,"name":"Income Budget","amount":10000,"period":"monthly","start_date":%q}`,
-			catID, startDate.Format(time.RFC3339)), token)
+		fmt.Sprintf(`{"category_id":%q,"name":"Income Budget","amount":10000,"period":"monthly"}`,
+			catID), token)
 	budgetID := parseJSON(t, rec)["budget"].(map[string]interface{})["id"].(string)
 
 	// Add income transaction with same category
@@ -239,5 +233,104 @@ func TestBudgetFlow_IncomeIgnored(t *testing.T) {
 	progress := parseJSON(t, rec)["progress"].(map[string]interface{})
 	if progress["spent"].(float64) != 0 {
 		t.Errorf("expected 0 spent (income should be ignored), got %.0f", progress["spent"].(float64))
+	}
+}
+
+func TestBudgetFlow_DuplicateActiveRejected(t *testing.T) {
+	app := setupApp(t)
+	token, _, _ := app.registerUser(t, "budgetdup@test.com", "password123")
+
+	rec := app.request("POST", "/api/v1/categories",
+		`{"name":"Groceries","type":"expense"}`, token)
+	catID := parseJSON(t, rec)["category"].(map[string]interface{})["id"].(string)
+
+	rec = app.request("POST", "/api/v1/budgets",
+		fmt.Sprintf(`{"category_id":%q,"name":"Groceries","amount":20000,"period":"monthly"}`, catID), token)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("expected 201 creating first budget, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	// D4: a second active monthly budget for the same category is a 409.
+	rec = app.request("POST", "/api/v1/budgets",
+		fmt.Sprintf(`{"category_id":%q,"name":"Groceries Again","amount":25000,"period":"monthly"}`, catID), token)
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("expected 409 on duplicate active budget, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if code := parseJSON(t, rec)["error"].(map[string]interface{})["code"]; code != "BUDGET_ALREADY_EXISTS" {
+		t.Errorf("expected BUDGET_ALREADY_EXISTS, got %v", code)
+	}
+
+	// A different period for the same category is allowed.
+	rec = app.request("POST", "/api/v1/budgets",
+		fmt.Sprintf(`{"category_id":%q,"name":"Groceries Yearly","amount":240000,"period":"yearly"}`, catID), token)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("expected 201 for yearly budget, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestBudgetFlow_BatchProgressExcludesInactive(t *testing.T) {
+	app := setupApp(t)
+	token, _, _ := app.registerUser(t, "budgetbatch@test.com", "password123")
+
+	rec := app.request("POST", "/api/v1/accounts/cash",
+		`{"name":"Checking","initial_balance":100000}`, token)
+	acctID := parseJSON(t, rec)["account"].(map[string]interface{})["id"].(string)
+
+	// Two expense categories, each with an active monthly budget.
+	rec = app.request("POST", "/api/v1/categories", `{"name":"Food","type":"expense"}`, token)
+	foodCat := parseJSON(t, rec)["category"].(map[string]interface{})["id"].(string)
+	rec = app.request("POST", "/api/v1/categories", `{"name":"Transport","type":"expense"}`, token)
+	transportCat := parseJSON(t, rec)["category"].(map[string]interface{})["id"].(string)
+
+	rec = app.request("POST", "/api/v1/budgets",
+		fmt.Sprintf(`{"category_id":%q,"name":"Food","amount":20000,"period":"monthly"}`, foodCat), token)
+	foodBudget := parseJSON(t, rec)["budget"].(map[string]interface{})["id"].(string)
+
+	rec = app.request("POST", "/api/v1/budgets",
+		fmt.Sprintf(`{"category_id":%q,"name":"Transport","amount":10000,"period":"monthly"}`, transportCat), token)
+	transportBudget := parseJSON(t, rec)["budget"].(map[string]interface{})["id"].(string)
+
+	now := time.Now()
+	app.request("POST", "/api/v1/transactions",
+		fmt.Sprintf(`{"account_id":%q,"type":"expense","amount":5000,"category_id":%q,"date":%q}`,
+			acctID, foodCat, now.Format(time.RFC3339)), token)
+
+	// Batch progress: both active budgets appear.
+	rec = app.request("GET", "/api/v1/budgets/progress", "", token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	progress := parseJSON(t, rec)["progress"].([]interface{})
+	if len(progress) != 2 {
+		t.Fatalf("expected 2 active budgets in batch, got %d", len(progress))
+	}
+	// Verify the food budget shows the $50 spend.
+	foundFood := false
+	for _, p := range progress {
+		entry := p.(map[string]interface{})
+		if entry["budget_id"] == foodBudget && entry["spent"].(float64) != 5000 {
+			t.Errorf("expected food spent 5000, got %.0f", entry["spent"].(float64))
+		}
+		if entry["budget_id"] == foodBudget {
+			foundFood = true
+		}
+	}
+	if !foundFood {
+		t.Error("food budget missing from batch progress")
+	}
+
+	// Pause the transport budget; it should drop out of the batch.
+	rec = app.request("PUT", fmt.Sprintf("/api/v1/budgets/%s", transportBudget), `{"is_active":false}`, token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 pausing budget, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	rec = app.request("GET", "/api/v1/budgets/progress", "", token)
+	progress = parseJSON(t, rec)["progress"].([]interface{})
+	if len(progress) != 1 {
+		t.Fatalf("expected 1 active budget after pause, got %d", len(progress))
+	}
+	if progress[0].(map[string]interface{})["budget_id"] != foodBudget {
+		t.Errorf("expected remaining budget to be food, got %v", progress[0].(map[string]interface{})["budget_id"])
 	}
 }

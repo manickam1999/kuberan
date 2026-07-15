@@ -71,6 +71,11 @@ class KuberanAPIClient:
 class UserAPIClient:
     """API client for user-scoped operations (uses JWT token)"""
 
+    # Batch endpoint for progress of all active budgets. If the backend falls
+    # back to /budgets/overview on a Gin static/param routing conflict, change
+    # this single constant to match.
+    BUDGETS_PROGRESS_PATH = "/api/v1/budgets/progress"
+
     def __init__(self, base_url: str, auth_token: str):
         self.base_url = base_url
         self.headers = {"Authorization": f"Bearer {auth_token}"}
@@ -108,8 +113,8 @@ class UserAPIClient:
         result = response.json()
         return result.get('data', [])
 
-    def get_budget_progress(self, budget_id: int):
-        """Get budget progress"""
+    def get_budget_progress(self, budget_id: str):
+        """Get progress for a single budget (budget_id is a UUID string)."""
         response = requests.get(
             f"{self.base_url}/api/v1/budgets/{budget_id}/progress",
             headers=self.headers,
@@ -118,6 +123,20 @@ class UserAPIClient:
         response.raise_for_status()
         result = response.json()
         return result.get('progress', {})
+
+    def get_budgets_progress(self):
+        """Get progress for all active budgets in a single batch call.
+
+        Returns a list of BudgetProgress dicts (empty list if none).
+        """
+        response = requests.get(
+            f"{self.base_url}{self.BUDGETS_PROGRESS_PATH}",
+            headers=self.headers,
+            timeout=10
+        )
+        response.raise_for_status()
+        result = response.json()
+        return result.get('progress', [])
 
     def create_category(self, name: str, category_type: str,
                         description: str = "", icon: str = "",

@@ -167,7 +167,6 @@ func CreateTestBudget(t *testing.T, db *gorm.DB, userID, categoryID string) *mod
 		Name:       fmt.Sprintf("Test Budget %d", nextID()),
 		Amount:     10000, // $100.00
 		Period:     models.BudgetPeriodMonthly,
-		StartDate:  time.Now().Truncate(24 * time.Hour),
 		IsActive:   true,
 	}
 	if err := db.Create(budget).Error; err != nil {
