@@ -86,7 +86,8 @@ var (
 
 // Budget errors.
 var (
-	ErrBudgetNotFound = &AppError{Code: "BUDGET_NOT_FOUND", Message: "Budget not found", StatusCode: http.StatusNotFound}
+	ErrBudgetNotFound      = &AppError{Code: "BUDGET_NOT_FOUND", Message: "Budget not found", StatusCode: http.StatusNotFound}
+	ErrBudgetAlreadyExists = &AppError{Code: "BUDGET_ALREADY_EXISTS", Message: "An active budget already exists for this category and period", StatusCode: http.StatusConflict}
 )
 
 // Investment errors.

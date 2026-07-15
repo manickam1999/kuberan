@@ -17,7 +17,7 @@ func TestCreateBudget(t *testing.T) {
 		user := testutil.CreateTestUser(t, db)
 		cat := testutil.CreateTestCategory(t, db, user.ID, models.CategoryTypeExpense)
 
-		budget, err := svc.CreateBudget(user.ID, cat.ID, "Groceries", 50000, models.BudgetPeriodMonthly, time.Now(), nil)
+		budget, err := svc.CreateBudget(user.ID, cat.ID, "Groceries", 50000, models.BudgetPeriodMonthly)
 		testutil.AssertNoError(t, err)
 
 		if budget.ID == "" {
@@ -37,29 +37,13 @@ func TestCreateBudget(t *testing.T) {
 		}
 	})
 
-	t.Run("with_end_date", func(t *testing.T) {
-		db := testutil.SetupTestDB(t)
-		defer testutil.TeardownTestDB(t, db)
-		svc := NewBudgetService(db)
-		user := testutil.CreateTestUser(t, db)
-		cat := testutil.CreateTestCategory(t, db, user.ID, models.CategoryTypeExpense)
-
-		endDate := time.Now().AddDate(0, 6, 0)
-		budget, err := svc.CreateBudget(user.ID, cat.ID, "Half Year", 100000, models.BudgetPeriodYearly, time.Now(), &endDate)
-		testutil.AssertNoError(t, err)
-
-		if budget.EndDate == nil {
-			t.Fatal("expected end date to be set")
-		}
-	})
-
 	t.Run("invalid_category", func(t *testing.T) {
 		db := testutil.SetupTestDB(t)
 		defer testutil.TeardownTestDB(t, db)
 		svc := NewBudgetService(db)
 		user := testutil.CreateTestUser(t, db)
 
-		_, err := svc.CreateBudget(user.ID, "9999", "Bad", 50000, models.BudgetPeriodMonthly, time.Now(), nil)
+		_, err := svc.CreateBudget(user.ID, "9999", "Bad", 50000, models.BudgetPeriodMonthly)
 		testutil.AssertAppError(t, err, "CATEGORY_NOT_FOUND")
 	})
 
@@ -71,8 +55,56 @@ func TestCreateBudget(t *testing.T) {
 		user2 := testutil.CreateTestUser(t, db)
 		cat := testutil.CreateTestCategory(t, db, user2.ID, models.CategoryTypeExpense)
 
-		_, err := svc.CreateBudget(user1.ID, cat.ID, "Not Mine", 50000, models.BudgetPeriodMonthly, time.Now(), nil)
+		_, err := svc.CreateBudget(user1.ID, cat.ID, "Not Mine", 50000, models.BudgetPeriodMonthly)
 		testutil.AssertAppError(t, err, "CATEGORY_NOT_FOUND")
+	})
+
+	t.Run("rejects_duplicate_active_budget", func(t *testing.T) {
+		// D4: a second active budget for the same (user, category, period) is rejected.
+		db := testutil.SetupTestDB(t)
+		defer testutil.TeardownTestDB(t, db)
+		svc := NewBudgetService(db)
+		user := testutil.CreateTestUser(t, db)
+		cat := testutil.CreateTestCategory(t, db, user.ID, models.CategoryTypeExpense)
+
+		_, err := svc.CreateBudget(user.ID, cat.ID, "Groceries", 50000, models.BudgetPeriodMonthly)
+		testutil.AssertNoError(t, err)
+
+		_, err = svc.CreateBudget(user.ID, cat.ID, "Groceries Again", 60000, models.BudgetPeriodMonthly)
+		testutil.AssertAppError(t, err, "BUDGET_ALREADY_EXISTS")
+	})
+
+	t.Run("allows_same_category_different_period", func(t *testing.T) {
+		db := testutil.SetupTestDB(t)
+		defer testutil.TeardownTestDB(t, db)
+		svc := NewBudgetService(db)
+		user := testutil.CreateTestUser(t, db)
+		cat := testutil.CreateTestCategory(t, db, user.ID, models.CategoryTypeExpense)
+
+		_, err := svc.CreateBudget(user.ID, cat.ID, "Monthly", 50000, models.BudgetPeriodMonthly)
+		testutil.AssertNoError(t, err)
+
+		_, err = svc.CreateBudget(user.ID, cat.ID, "Yearly", 600000, models.BudgetPeriodYearly)
+		testutil.AssertNoError(t, err)
+	})
+
+	t.Run("allows_new_budget_when_existing_is_inactive", func(t *testing.T) {
+		db := testutil.SetupTestDB(t)
+		defer testutil.TeardownTestDB(t, db)
+		svc := NewBudgetService(db)
+		user := testutil.CreateTestUser(t, db)
+		cat := testutil.CreateTestCategory(t, db, user.ID, models.CategoryTypeExpense)
+
+		first, err := svc.CreateBudget(user.ID, cat.ID, "Groceries", 50000, models.BudgetPeriodMonthly)
+		testutil.AssertNoError(t, err)
+
+		// Deactivate the first, then a new active one for the same key is allowed.
+		inactive := false
+		_, err = svc.UpdateBudget(user.ID, first.ID, "", nil, nil, &inactive)
+		testutil.AssertNoError(t, err)
+
+		_, err = svc.CreateBudget(user.ID, cat.ID, "Groceries v2", 60000, models.BudgetPeriodMonthly)
+		testutil.AssertNoError(t, err)
 	})
 }
 
@@ -138,7 +170,6 @@ func TestGetUserBudgets(t *testing.T) {
 			Name:       "Yearly",
 			Amount:     120000,
 			Period:     models.BudgetPeriodYearly,
-			StartDate:  time.Now(),
 			IsActive:   true,
 		}
 		if err := db.Create(yearlyBudget).Error; err != nil {
@@ -282,6 +313,53 @@ func TestUpdateBudget(t *testing.T) {
 		}
 	})
 
+	t.Run("update_is_active", func(t *testing.T) {
+		db := testutil.SetupTestDB(t)
+		defer testutil.TeardownTestDB(t, db)
+		svc := NewBudgetService(db)
+		user := testutil.CreateTestUser(t, db)
+		cat := testutil.CreateTestCategory(t, db, user.ID, models.CategoryTypeExpense)
+		budget := testutil.CreateTestBudget(t, db, user.ID, cat.ID) // active
+
+		inactive := false
+		_, err := svc.UpdateBudget(user.ID, budget.ID, "", nil, nil, &inactive)
+		testutil.AssertNoError(t, err)
+
+		fetched, err := svc.GetBudgetByID(user.ID, budget.ID)
+		testutil.AssertNoError(t, err)
+		if fetched.IsActive {
+			t.Error("expected budget to be inactive after update")
+		}
+
+		// Re-activate.
+		active := true
+		_, err = svc.UpdateBudget(user.ID, budget.ID, "", nil, nil, &active)
+		testutil.AssertNoError(t, err)
+		fetched, err = svc.GetBudgetByID(user.ID, budget.ID)
+		testutil.AssertNoError(t, err)
+		if !fetched.IsActive {
+			t.Error("expected budget to be active after re-activation")
+		}
+	})
+
+	t.Run("nil_is_active_leaves_unchanged", func(t *testing.T) {
+		db := testutil.SetupTestDB(t)
+		defer testutil.TeardownTestDB(t, db)
+		svc := NewBudgetService(db)
+		user := testutil.CreateTestUser(t, db)
+		cat := testutil.CreateTestCategory(t, db, user.ID, models.CategoryTypeExpense)
+		budget := testutil.CreateTestBudget(t, db, user.ID, cat.ID) // active
+
+		_, err := svc.UpdateBudget(user.ID, budget.ID, "Renamed", nil, nil, nil)
+		testutil.AssertNoError(t, err)
+
+		fetched, err := svc.GetBudgetByID(user.ID, budget.ID)
+		testutil.AssertNoError(t, err)
+		if !fetched.IsActive {
+			t.Error("expected budget to remain active when is_active is nil")
+		}
+	})
+
 	t.Run("not_found", func(t *testing.T) {
 		db := testutil.SetupTestDB(t)
 		defer testutil.TeardownTestDB(t, db)
@@ -290,6 +368,178 @@ func TestUpdateBudget(t *testing.T) {
 
 		_, err := svc.UpdateBudget(user.ID, "9999", "Nope", nil, nil, nil)
 		testutil.AssertAppError(t, err, "BUDGET_NOT_FOUND")
+	})
+}
+
+func TestGetUserBudgets_Ordering(t *testing.T) {
+	// GetUserBudgets orders by created_at DESC (newest first) deterministically.
+	db := testutil.SetupTestDB(t)
+	defer testutil.TeardownTestDB(t, db)
+	svc := NewBudgetService(db)
+	user := testutil.CreateTestUser(t, db)
+	cat := testutil.CreateTestCategory(t, db, user.ID, models.CategoryTypeExpense)
+
+	// Create three budgets with strictly increasing created_at.
+	var ids []string
+	base := time.Now().Add(-3 * time.Hour)
+	for i := 0; i < 3; i++ {
+		b := &models.Budget{
+			UserID:     user.ID,
+			CategoryID: cat.ID,
+			Name:       "B",
+			Amount:     10000,
+			Period:     models.BudgetPeriodMonthly,
+			IsActive:   true,
+		}
+		if err := db.Create(b).Error; err != nil {
+			t.Fatalf("failed to create budget: %v", err)
+		}
+		// Force a distinct, increasing created_at.
+		if err := db.Model(b).Update("created_at", base.Add(time.Duration(i)*time.Hour)).Error; err != nil {
+			t.Fatalf("failed to set created_at: %v", err)
+		}
+		ids = append(ids, b.ID)
+	}
+
+	page := pagination.PageRequest{Page: 1, PageSize: 20}
+	result, err := svc.GetUserBudgets(user.ID, page, nil, nil)
+	testutil.AssertNoError(t, err)
+
+	if len(result.Data) != 3 {
+		t.Fatalf("expected 3 budgets, got %d", len(result.Data))
+	}
+	// Newest (last created) first.
+	want := []string{ids[2], ids[1], ids[0]}
+	for i, id := range want {
+		if result.Data[i].ID != id {
+			t.Errorf("position %d: expected %s, got %s", i, id, result.Data[i].ID)
+		}
+	}
+}
+
+func TestGetActiveBudgetsProgress(t *testing.T) {
+	t.Run("empty_when_no_budgets", func(t *testing.T) {
+		db := testutil.SetupTestDB(t)
+		defer testutil.TeardownTestDB(t, db)
+		svc := NewBudgetService(db)
+		user := testutil.CreateTestUser(t, db)
+
+		progress, err := svc.GetActiveBudgetsProgress(user.ID)
+		testutil.AssertNoError(t, err)
+		if len(progress) != 0 {
+			t.Errorf("expected empty progress, got %d entries", len(progress))
+		}
+	})
+
+	t.Run("excludes_inactive_budgets", func(t *testing.T) {
+		db := testutil.SetupTestDB(t)
+		defer testutil.TeardownTestDB(t, db)
+		svc := NewBudgetService(db)
+		user := testutil.CreateTestUser(t, db)
+		cat1 := testutil.CreateTestCategory(t, db, user.ID, models.CategoryTypeExpense)
+		cat2 := testutil.CreateTestCategory(t, db, user.ID, models.CategoryTypeExpense)
+
+		active := testutil.CreateTestBudget(t, db, user.ID, cat1.ID)
+		inactive := testutil.CreateTestBudget(t, db, user.ID, cat2.ID)
+		if err := db.Model(inactive).Update("is_active", false).Error; err != nil {
+			t.Fatalf("failed to deactivate budget: %v", err)
+		}
+
+		progress, err := svc.GetActiveBudgetsProgress(user.ID)
+		testutil.AssertNoError(t, err)
+		if len(progress) != 1 {
+			t.Fatalf("expected 1 active budget progress, got %d", len(progress))
+		}
+		if progress[0].BudgetID != active.ID {
+			t.Errorf("expected progress for active budget %s, got %s", active.ID, progress[0].BudgetID)
+		}
+	})
+
+	t.Run("parity_with_single_progress_calls", func(t *testing.T) {
+		db := testutil.SetupTestDB(t)
+		defer testutil.TeardownTestDB(t, db)
+		svc := NewBudgetService(db)
+		user := testutil.CreateTestUser(t, db)
+		account := testutil.CreateTestCashAccountWithBalance(t, db, user.ID, 1000000)
+
+		// Two monthly + one yearly budget across distinct categories.
+		catA := testutil.CreateTestCategory(t, db, user.ID, models.CategoryTypeExpense)
+		catB := testutil.CreateTestCategory(t, db, user.ID, models.CategoryTypeExpense)
+		catC := testutil.CreateTestCategory(t, db, user.ID, models.CategoryTypeExpense)
+
+		bA, err := svc.CreateBudget(user.ID, catA.ID, "A", 10000, models.BudgetPeriodMonthly)
+		testutil.AssertNoError(t, err)
+		bB, err := svc.CreateBudget(user.ID, catB.ID, "B", 20000, models.BudgetPeriodMonthly)
+		testutil.AssertNoError(t, err)
+		bC, err := svc.CreateBudget(user.ID, catC.ID, "C", 500000, models.BudgetPeriodYearly)
+		testutil.AssertNoError(t, err)
+
+		now := time.Now()
+		spend := func(catID string, amount int64) {
+			id := catID
+			tx := &models.Transaction{
+				UserID:     user.ID,
+				AccountID:  account.ID,
+				CategoryID: &id,
+				Type:       models.TransactionTypeExpense,
+				Amount:     amount,
+				Date:       now,
+			}
+			if err := db.Create(tx).Error; err != nil {
+				t.Fatalf("failed to create tx: %v", err)
+			}
+		}
+		spend(catA.ID, 3000)
+		spend(catB.ID, 25000) // over budget
+		spend(catC.ID, 100000)
+
+		batch, err := svc.GetActiveBudgetsProgress(user.ID)
+		testutil.AssertNoError(t, err)
+
+		byID := make(map[string]BudgetProgress, len(batch))
+		for _, p := range batch {
+			byID[p.BudgetID] = p
+		}
+
+		for _, id := range []string{bA.ID, bB.ID, bC.ID} {
+			single, err := svc.GetBudgetProgress(user.ID, id)
+			testutil.AssertNoError(t, err)
+			got, ok := byID[id]
+			if !ok {
+				t.Fatalf("batch missing progress for budget %s", id)
+			}
+			if got.Budgeted != single.Budgeted || got.Spent != single.Spent ||
+				got.Remaining != single.Remaining || got.Percentage != single.Percentage {
+				t.Errorf("budget %s: batch %+v != single %+v", id, got, *single)
+			}
+		}
+	})
+
+	t.Run("inactivated_budget_excluded_from_batch", func(t *testing.T) {
+		db := testutil.SetupTestDB(t)
+		defer testutil.TeardownTestDB(t, db)
+		svc := NewBudgetService(db)
+		user := testutil.CreateTestUser(t, db)
+		cat := testutil.CreateTestCategory(t, db, user.ID, models.CategoryTypeExpense)
+		budget := testutil.CreateTestBudget(t, db, user.ID, cat.ID)
+
+		// Present while active.
+		progress, err := svc.GetActiveBudgetsProgress(user.ID)
+		testutil.AssertNoError(t, err)
+		if len(progress) != 1 {
+			t.Fatalf("expected 1 active budget, got %d", len(progress))
+		}
+
+		// Pause it via the service, then it disappears from the batch.
+		inactive := false
+		_, err = svc.UpdateBudget(user.ID, budget.ID, "", nil, nil, &inactive)
+		testutil.AssertNoError(t, err)
+
+		progress, err = svc.GetActiveBudgetsProgress(user.ID)
+		testutil.AssertNoError(t, err)
+		if len(progress) != 0 {
+			t.Errorf("expected 0 active budgets after pause, got %d", len(progress))
+		}
 	})
 }
 
@@ -535,7 +785,7 @@ func TestGetBudgetProgress(t *testing.T) {
 		cat := testutil.CreateTestCategory(t, db, user.ID, models.CategoryTypeExpense)
 
 		// Create budget with zero amount
-		budget, err := svc.CreateBudget(user.ID, cat.ID, "Zero", 0, models.BudgetPeriodMonthly, time.Now(), nil)
+		budget, err := svc.CreateBudget(user.ID, cat.ID, "Zero", 0, models.BudgetPeriodMonthly)
 		testutil.AssertNoError(t, err)
 
 		progress, err := svc.GetBudgetProgress(user.ID, budget.ID)
