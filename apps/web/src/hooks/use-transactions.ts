@@ -15,6 +15,7 @@ import type {
   DailySpendingItem,
 } from "@/types/api";
 import { accountKeys } from "./use-accounts";
+import { budgetKeys } from "./use-budgets";
 
 export const transactionKeys = {
   all: ["transactions"] as const,
@@ -88,6 +89,9 @@ export function useCreateTransaction() {
         queryKey: accountKeys.detail(variables.account_id),
       });
       queryClient.invalidateQueries({ queryKey: accountKeys.lists() });
+      // Spending against a category budget changes; refresh budget progress
+      // (budgets page stats/cards + dashboard budgets card).
+      queryClient.invalidateQueries({ queryKey: budgetKeys.allProgress() });
     },
   });
 }
@@ -128,6 +132,7 @@ export function useUpdateTransaction(id: string) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: transactionKeys.all });
       queryClient.invalidateQueries({ queryKey: accountKeys.all });
+      queryClient.invalidateQueries({ queryKey: budgetKeys.allProgress() });
     },
   });
 }
@@ -141,6 +146,7 @@ export function useDeleteTransaction() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: transactionKeys.all });
       queryClient.invalidateQueries({ queryKey: accountKeys.all });
+      queryClient.invalidateQueries({ queryKey: budgetKeys.allProgress() });
     },
   });
 }
