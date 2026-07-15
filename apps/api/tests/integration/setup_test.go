@@ -136,6 +136,7 @@ func setupApp(t *testing.T) *testApp {
 	budgets := protected.Group("/budgets")
 	budgets.POST("", budgetHandler.CreateBudget)
 	budgets.GET("", budgetHandler.GetBudgets)
+	budgets.GET("/progress", budgetHandler.GetBudgetsProgress)
 	budgets.GET("/:id", budgetHandler.GetBudget)
 	budgets.PUT("/:id", budgetHandler.UpdateBudget)
 	budgets.DELETE("/:id", budgetHandler.DeleteBudget)

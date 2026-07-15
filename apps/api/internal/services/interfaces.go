@@ -161,12 +161,13 @@ type BudgetProgress struct {
 
 // BudgetServicer defines the contract for budget-related business logic.
 type BudgetServicer interface {
-	CreateBudget(userID, categoryID string, name string, amount int64, period models.BudgetPeriod, startDate time.Time, endDate *time.Time) (*models.Budget, error)
+	CreateBudget(userID, categoryID string, name string, amount int64, period models.BudgetPeriod) (*models.Budget, error)
 	GetUserBudgets(userID string, page pagination.PageRequest, isActive *bool, period *models.BudgetPeriod) (*pagination.PageResponse[models.Budget], error)
 	GetBudgetByID(userID, budgetID string) (*models.Budget, error)
-	UpdateBudget(userID, budgetID string, name string, amount *int64, period *models.BudgetPeriod, endDate *time.Time) (*models.Budget, error)
+	UpdateBudget(userID, budgetID string, name string, amount *int64, period *models.BudgetPeriod, isActive *bool) (*models.Budget, error)
 	DeleteBudget(userID, budgetID string) error
 	GetBudgetProgress(userID, budgetID string) (*BudgetProgress, error)
+	GetActiveBudgetsProgress(userID string) ([]BudgetProgress, error)
 }
 
 // PortfolioSummary contains aggregated portfolio data across all investment accounts.

@@ -113,22 +113,17 @@ definitions:
         type: integer
       category_id:
         type: string
-      end_date:
-        type: string
       name:
         maxLength: 100
         minLength: 1
         type: string
       period:
         $ref: '#/definitions/kuberan_internal_models.BudgetPeriod'
-      start_date:
-        type: string
     required:
     - amount
     - category_id
     - name
     - period
-    - start_date
     type: object
   internal_handlers.CreateCashAccountRequest:
     properties:
@@ -482,8 +477,8 @@ definitions:
     properties:
       amount:
         type: integer
-      end_date:
-        type: string
+      is_active:
+        type: boolean
       name:
         maxLength: 100
         minLength: 1
@@ -703,8 +698,6 @@ definitions:
         type: string
       deleted_at:
         $ref: '#/definitions/gorm.DeletedAt'
-      end_date:
-        type: string
       id:
         type: string
       is_active:
@@ -713,8 +706,6 @@ definitions:
         type: string
       period:
         $ref: '#/definitions/kuberan_internal_models.BudgetPeriod'
-      start_date:
-        type: string
       updated_at:
         type: string
       user_id:
@@ -1710,6 +1701,10 @@ paths:
           description: Category not found
           schema:
             $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "409":
+          description: Active budget already exists for this category and period
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
         "500":
           description: Server error
           schema:
@@ -1729,7 +1724,7 @@ paths:
         in: path
         name: id
         required: true
-        type: integer
+        type: string
       produces:
       - application/json
       responses:
@@ -1767,7 +1762,7 @@ paths:
         in: path
         name: id
         required: true
-        type: integer
+        type: string
       produces:
       - application/json
       responses:
@@ -1805,7 +1800,7 @@ paths:
         in: path
         name: id
         required: true
-        type: integer
+        type: string
       - description: Updated budget details
         in: body
         name: request
@@ -1850,7 +1845,7 @@ paths:
         in: path
         name: id
         required: true
-        type: integer
+        type: string
       produces:
       - application/json
       responses:
@@ -1877,6 +1872,36 @@ paths:
       security:
       - BearerAuth: []
       summary: Get budget progress
+      tags:
+      - budgets
+  /budgets/progress:
+    get:
+      consumes:
+      - application/json
+      description: Get spending progress for every active budget in the current period,
+        in one call
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Active budgets progress
+          schema:
+            additionalProperties:
+              items:
+                $ref: '#/definitions/kuberan_internal_services.BudgetProgress'
+              type: array
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "500":
+          description: Server error
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get progress for all active budgets
       tags:
       - budgets
   /categories:

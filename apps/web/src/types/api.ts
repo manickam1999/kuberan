@@ -186,21 +186,24 @@ export interface BudgetProgressResponse {
   progress: BudgetProgress;
 }
 
+// Batch progress for all active budgets (single round-trip)
+export interface BudgetsProgressResponse {
+  progress: BudgetProgress[];
+}
+
 // Budget requests
 export interface CreateBudgetRequest {
   category_id: string; // UUIDv7
   name: string;
   amount: number; // cents, > 0
   period: BudgetPeriod;
-  start_date: string; // ISO 8601
-  end_date?: string; // ISO 8601
 }
 
 export interface UpdateBudgetRequest {
   name?: string;
   amount?: number; // cents, > 0
   period?: BudgetPeriod;
-  end_date?: string; // ISO 8601
+  is_active?: boolean;
 }
 
 // Budget filters

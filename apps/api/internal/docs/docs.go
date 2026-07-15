@@ -832,6 +832,58 @@ const docTemplate = `{
                             "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
+                    "409": {
+                        "description": "Active budget already exists for this category and period",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Server error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/budgets/progress": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Get spending progress for every active budget in the current period, in one call",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "budgets"
+                ],
+                "summary": "Get progress for all active budgets",
+                "responses": {
+                    "200": {
+                        "description": "Active budgets progress",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "array",
+                                "items": {
+                                    "$ref": "#/definitions/kuberan_internal_services.BudgetProgress"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
                     "500": {
                         "description": "Server error",
                         "schema": {
@@ -861,7 +913,7 @@ const docTemplate = `{
                 "summary": "Get budget by ID",
                 "parameters": [
                     {
-                        "type": "integer",
+                        "type": "string",
                         "description": "Budget ID",
                         "name": "id",
                         "in": "path",
@@ -920,7 +972,7 @@ const docTemplate = `{
                 "summary": "Update budget",
                 "parameters": [
                     {
-                        "type": "integer",
+                        "type": "string",
                         "description": "Budget ID",
                         "name": "id",
                         "in": "path",
@@ -988,7 +1040,7 @@ const docTemplate = `{
                 "summary": "Delete budget",
                 "parameters": [
                     {
-                        "type": "integer",
+                        "type": "string",
                         "description": "Budget ID",
                         "name": "id",
                         "in": "path",
@@ -1049,7 +1101,7 @@ const docTemplate = `{
                 "summary": "Get budget progress",
                 "parameters": [
                     {
-                        "type": "integer",
+                        "type": "string",
                         "description": "Budget ID",
                         "name": "id",
                         "in": "path",
@@ -3798,17 +3850,13 @@ const docTemplate = `{
                 "amount",
                 "category_id",
                 "name",
-                "period",
-                "start_date"
+                "period"
             ],
             "properties": {
                 "amount": {
                     "type": "integer"
                 },
                 "category_id": {
-                    "type": "string"
-                },
-                "end_date": {
                     "type": "string"
                 },
                 "name": {
@@ -3818,9 +3866,6 @@ const docTemplate = `{
                 },
                 "period": {
                     "$ref": "#/definitions/kuberan_internal_models.BudgetPeriod"
-                },
-                "start_date": {
-                    "type": "string"
                 }
             }
         },
@@ -4331,8 +4376,8 @@ const docTemplate = `{
                 "amount": {
                     "type": "integer"
                 },
-                "end_date": {
-                    "type": "string"
+                "is_active": {
+                    "type": "boolean"
                 },
                 "name": {
                     "type": "string",
@@ -4656,9 +4701,6 @@ const docTemplate = `{
                 "deleted_at": {
                     "$ref": "#/definitions/gorm.DeletedAt"
                 },
-                "end_date": {
-                    "type": "string"
-                },
                 "id": {
                     "type": "string"
                 },
@@ -4670,9 +4712,6 @@ const docTemplate = `{
                 },
                 "period": {
                     "$ref": "#/definitions/kuberan_internal_models.BudgetPeriod"
-                },
-                "start_date": {
-                    "type": "string"
                 },
                 "updated_at": {
                     "type": "string"

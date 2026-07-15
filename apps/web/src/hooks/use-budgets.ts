@@ -5,6 +5,7 @@ import type {
   PageResponse,
   BudgetResponse,
   BudgetProgressResponse,
+  BudgetsProgressResponse,
   BudgetFilters,
   CreateBudgetRequest,
   UpdateBudgetRequest,
@@ -19,6 +20,7 @@ export const budgetKeys = {
   detail: (id: string) => [...budgetKeys.details(), id] as const,
   progress: (id: string) =>
     [...budgetKeys.all, "progress", id] as const,
+  allProgress: () => [...budgetKeys.all, "progress"] as const,
 };
 
 export function useBudgets(filters?: BudgetFilters) {
@@ -57,6 +59,20 @@ export function useBudgetProgress(id: string) {
   });
 }
 
+// Batch progress for all active budgets in a single request. Prefer this over
+// N per-card useBudgetProgress calls on the budgets page and dashboard card.
+export function useBudgetsProgress() {
+  return useQuery({
+    queryKey: budgetKeys.allProgress(),
+    queryFn: async () => {
+      const res = await apiClient.get<BudgetsProgressResponse>(
+        "/api/v1/budgets/progress"
+      );
+      return res.progress;
+    },
+  });
+}
+
 export function useCreateBudget() {
   const queryClient = useQueryClient();
   return useMutation({
@@ -69,6 +85,7 @@ export function useCreateBudget() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: budgetKeys.lists() });
+      queryClient.invalidateQueries({ queryKey: budgetKeys.allProgress() });
     },
   });
 }
@@ -86,6 +103,7 @@ export function useUpdateBudget(id: string) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: budgetKeys.lists() });
       queryClient.invalidateQueries({ queryKey: budgetKeys.detail(id) });
+      queryClient.invalidateQueries({ queryKey: budgetKeys.allProgress() });
     },
   });
 }
@@ -101,6 +119,7 @@ export function useDeleteBudget() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: budgetKeys.lists() });
+      queryClient.invalidateQueries({ queryKey: budgetKeys.allProgress() });
     },
   });
 }

@@ -36,6 +36,14 @@ def handle(api_client: KuberanAPIClient):
                 )
                 return
 
+            # Fetch progress for all active budgets in a single batch call,
+            # then index it by budget_id to avoid a per-budget HTTP request.
+            progress_by_budget = {
+                p['budget_id']: p
+                for p in user_client.get_budgets_progress()
+                if p.get('budget_id')
+            }
+
             message = "📊 *Your Budgets*\n\n"
 
             for budget in budgets:
@@ -46,9 +54,8 @@ def handle(api_client: KuberanAPIClient):
                 amount = budget.get('amount', 0)
                 period = budget.get('period', 'monthly')
 
-                # Try to get progress
-                try:
-                    progress = user_client.get_budget_progress(budget['id'])
+                progress = progress_by_budget.get(budget['id'])
+                if progress:
                     spent = progress.get('spent', 0)
                     remaining = progress.get('remaining', 0)
                     percentage = progress.get('percentage', 0)
@@ -59,8 +66,8 @@ def handle(api_client: KuberanAPIClient):
                     message += f"Budget: {format_currency(amount)}\n"
                     message += f"Spent: {format_currency(spent)} ({format_percentage(percentage)})\n"
                     message += f"Remaining: {format_currency(remaining)}\n\n"
-                except:
-                    # If progress fails, just show budget info
+                else:
+                    # No matching progress entry; show budget info only.
                     message += f"📋 *{name}* ({period})\n"
                     message += f"Budget: {format_currency(amount)}\n\n"
 

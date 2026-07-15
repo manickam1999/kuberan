@@ -3,7 +3,6 @@ package handlers
 import (
 	"net/http"
 	"testing"
-	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -16,17 +15,18 @@ import (
 // --- mock budget service ---
 
 type mockBudgetService struct {
-	createBudgetFn      func(userID, categoryID string, name string, amount int64, period models.BudgetPeriod, startDate time.Time, endDate *time.Time) (*models.Budget, error)
-	getUserBudgetsFn    func(userID string, page pagination.PageRequest, isActive *bool, period *models.BudgetPeriod) (*pagination.PageResponse[models.Budget], error)
-	getBudgetByIDFn     func(userID, budgetID string) (*models.Budget, error)
-	updateBudgetFn      func(userID, budgetID string, name string, amount *int64, period *models.BudgetPeriod, endDate *time.Time) (*models.Budget, error)
-	deleteBudgetFn      func(userID, budgetID string) error
-	getBudgetProgressFn func(userID, budgetID string) (*services.BudgetProgress, error)
+	createBudgetFn             func(userID, categoryID string, name string, amount int64, period models.BudgetPeriod) (*models.Budget, error)
+	getUserBudgetsFn           func(userID string, page pagination.PageRequest, isActive *bool, period *models.BudgetPeriod) (*pagination.PageResponse[models.Budget], error)
+	getBudgetByIDFn            func(userID, budgetID string) (*models.Budget, error)
+	updateBudgetFn             func(userID, budgetID string, name string, amount *int64, period *models.BudgetPeriod, isActive *bool) (*models.Budget, error)
+	deleteBudgetFn             func(userID, budgetID string) error
+	getBudgetProgressFn        func(userID, budgetID string) (*services.BudgetProgress, error)
+	getActiveBudgetsProgressFn func(userID string) ([]services.BudgetProgress, error)
 }
 
-func (m *mockBudgetService) CreateBudget(userID, categoryID, name string, amount int64, period models.BudgetPeriod, startDate time.Time, endDate *time.Time) (*models.Budget, error) {
+func (m *mockBudgetService) CreateBudget(userID, categoryID, name string, amount int64, period models.BudgetPeriod) (*models.Budget, error) {
 	if m.createBudgetFn != nil {
-		return m.createBudgetFn(userID, categoryID, name, amount, period, startDate, endDate)
+		return m.createBudgetFn(userID, categoryID, name, amount, period)
 	}
 	return &models.Budget{}, nil
 }
@@ -46,9 +46,9 @@ func (m *mockBudgetService) GetBudgetByID(userID, budgetID string) (*models.Budg
 	return &models.Budget{}, nil
 }
 
-func (m *mockBudgetService) UpdateBudget(userID, budgetID, name string, amount *int64, period *models.BudgetPeriod, endDate *time.Time) (*models.Budget, error) {
+func (m *mockBudgetService) UpdateBudget(userID, budgetID, name string, amount *int64, period *models.BudgetPeriod, isActive *bool) (*models.Budget, error) {
 	if m.updateBudgetFn != nil {
-		return m.updateBudgetFn(userID, budgetID, name, amount, period, endDate)
+		return m.updateBudgetFn(userID, budgetID, name, amount, period, isActive)
 	}
 	return &models.Budget{}, nil
 }
@@ -67,6 +67,13 @@ func (m *mockBudgetService) GetBudgetProgress(userID, budgetID string) (*service
 	return &services.BudgetProgress{}, nil
 }
 
+func (m *mockBudgetService) GetActiveBudgetsProgress(userID string) ([]services.BudgetProgress, error) {
+	if m.getActiveBudgetsProgressFn != nil {
+		return m.getActiveBudgetsProgressFn(userID)
+	}
+	return []services.BudgetProgress{}, nil
+}
+
 var _ services.BudgetServicer = (*mockBudgetService)(nil)
 
 func setupBudgetRouter(handler *BudgetHandler) *gin.Engine {
@@ -74,6 +81,7 @@ func setupBudgetRouter(handler *BudgetHandler) *gin.Engine {
 	auth := r.Group("", injectUserID("test-user-1"))
 	auth.POST("/budgets", handler.CreateBudget)
 	auth.GET("/budgets", handler.GetBudgets)
+	auth.GET("/budgets/progress", handler.GetBudgetsProgress)
 	auth.GET("/budgets/:id", handler.GetBudget)
 	auth.PUT("/budgets/:id", handler.UpdateBudget)
 	auth.DELETE("/budgets/:id", handler.DeleteBudget)
@@ -84,7 +92,7 @@ func setupBudgetRouter(handler *BudgetHandler) *gin.Engine {
 func TestBudgetHandler_CreateBudget(t *testing.T) {
 	t.Run("returns 201 on success", func(t *testing.T) {
 		svc := &mockBudgetService{
-			createBudgetFn: func(_ string, categoryID string, name string, amount int64, period models.BudgetPeriod, _ time.Time, _ *time.Time) (*models.Budget, error) {
+			createBudgetFn: func(_ string, categoryID string, name string, amount int64, period models.BudgetPeriod) (*models.Budget, error) {
 				return &models.Budget{
 					Base:       models.Base{ID: "1"},
 					UserID:     "1",
@@ -100,7 +108,7 @@ func TestBudgetHandler_CreateBudget(t *testing.T) {
 		r := setupBudgetRouter(handler)
 
 		rec := doRequest(r, "POST", "/budgets",
-			`{"category_id":"00000000-0000-0000-0000-000000000001","name":"Groceries","amount":50000,"period":"monthly","start_date":"2025-01-01T00:00:00Z"}`)
+			`{"category_id":"00000000-0000-0000-0000-000000000001","name":"Groceries","amount":50000,"period":"monthly"}`)
 
 		if rec.Code != http.StatusCreated {
 			t.Fatalf("expected 201, got %d: %s", rec.Code, rec.Body.String())
@@ -120,7 +128,7 @@ func TestBudgetHandler_CreateBudget(t *testing.T) {
 		r := setupBudgetRouter(handler)
 
 		rec := doRequest(r, "POST", "/budgets",
-			`{"category_id":"00000000-0000-0000-0000-000000000001","amount":50000,"period":"monthly","start_date":"2025-01-01T00:00:00Z"}`)
+			`{"category_id":"00000000-0000-0000-0000-000000000001","amount":50000,"period":"monthly"}`)
 
 		if rec.Code != http.StatusBadRequest {
 			t.Fatalf("expected 400, got %d", rec.Code)
@@ -133,7 +141,7 @@ func TestBudgetHandler_CreateBudget(t *testing.T) {
 		r := setupBudgetRouter(handler)
 
 		rec := doRequest(r, "POST", "/budgets",
-			`{"category_id":"00000000-0000-0000-0000-000000000001","name":"Groceries","amount":50000,"start_date":"2025-01-01T00:00:00Z"}`)
+			`{"category_id":"00000000-0000-0000-0000-000000000001","name":"Groceries","amount":50000}`)
 
 		if rec.Code != http.StatusBadRequest {
 			t.Fatalf("expected 400, got %d", rec.Code)
@@ -145,7 +153,7 @@ func TestBudgetHandler_CreateBudget(t *testing.T) {
 		r := setupBudgetRouter(handler)
 
 		rec := doRequest(r, "POST", "/budgets",
-			`{"category_id":"00000000-0000-0000-0000-000000000001","name":"Groceries","amount":50000,"period":"weekly","start_date":"2025-01-01T00:00:00Z"}`)
+			`{"category_id":"00000000-0000-0000-0000-000000000001","name":"Groceries","amount":50000,"period":"weekly"}`)
 
 		if rec.Code != http.StatusBadRequest {
 			t.Fatalf("expected 400, got %d", rec.Code)
@@ -157,7 +165,7 @@ func TestBudgetHandler_CreateBudget(t *testing.T) {
 		r := setupBudgetRouter(handler)
 
 		rec := doRequest(r, "POST", "/budgets",
-			`{"category_id":"00000000-0000-0000-0000-000000000001","name":"Groceries","amount":0,"period":"monthly","start_date":"2025-01-01T00:00:00Z"}`)
+			`{"category_id":"00000000-0000-0000-0000-000000000001","name":"Groceries","amount":0,"period":"monthly"}`)
 
 		if rec.Code != http.StatusBadRequest {
 			t.Fatalf("expected 400, got %d", rec.Code)
@@ -166,7 +174,7 @@ func TestBudgetHandler_CreateBudget(t *testing.T) {
 
 	t.Run("returns 404 on invalid category", func(t *testing.T) {
 		svc := &mockBudgetService{
-			createBudgetFn: func(_, _ string, _ string, _ int64, _ models.BudgetPeriod, _ time.Time, _ *time.Time) (*models.Budget, error) {
+			createBudgetFn: func(_, _ string, _ string, _ int64, _ models.BudgetPeriod) (*models.Budget, error) {
 				return nil, apperrors.ErrCategoryNotFound
 			},
 		}
@@ -174,12 +182,30 @@ func TestBudgetHandler_CreateBudget(t *testing.T) {
 		r := setupBudgetRouter(handler)
 
 		rec := doRequest(r, "POST", "/budgets",
-			`{"category_id":"00000000-0000-0000-0000-000000000999","name":"Groceries","amount":50000,"period":"monthly","start_date":"2025-01-01T00:00:00Z"}`)
+			`{"category_id":"00000000-0000-0000-0000-000000000999","name":"Groceries","amount":50000,"period":"monthly"}`)
 
 		if rec.Code != http.StatusNotFound {
 			t.Fatalf("expected 404, got %d", rec.Code)
 		}
 		assertErrorCode(t, parseJSON(t, rec), "CATEGORY_NOT_FOUND")
+	})
+
+	t.Run("returns 409 on duplicate active budget", func(t *testing.T) {
+		svc := &mockBudgetService{
+			createBudgetFn: func(_, _ string, _ string, _ int64, _ models.BudgetPeriod) (*models.Budget, error) {
+				return nil, apperrors.ErrBudgetAlreadyExists
+			},
+		}
+		handler := NewBudgetHandler(svc, &mockAuditService{})
+		r := setupBudgetRouter(handler)
+
+		rec := doRequest(r, "POST", "/budgets",
+			`{"category_id":"00000000-0000-0000-0000-000000000001","name":"Groceries","amount":50000,"period":"monthly"}`)
+
+		if rec.Code != http.StatusConflict {
+			t.Fatalf("expected 409, got %d: %s", rec.Code, rec.Body.String())
+		}
+		assertErrorCode(t, parseJSON(t, rec), "BUDGET_ALREADY_EXISTS")
 	})
 
 	t.Run("returns 401 without auth", func(t *testing.T) {
@@ -188,7 +214,7 @@ func TestBudgetHandler_CreateBudget(t *testing.T) {
 		r.POST("/budgets", handler.CreateBudget)
 
 		rec := doRequest(r, "POST", "/budgets",
-			`{"category_id":"00000000-0000-0000-0000-000000000001","name":"Groceries","amount":50000,"period":"monthly","start_date":"2025-01-01T00:00:00Z"}`)
+			`{"category_id":"00000000-0000-0000-0000-000000000001","name":"Groceries","amount":50000,"period":"monthly"}`)
 
 		if rec.Code != http.StatusUnauthorized {
 			t.Fatalf("expected 401, got %d", rec.Code)
@@ -332,7 +358,7 @@ func TestBudgetHandler_GetBudget(t *testing.T) {
 func TestBudgetHandler_UpdateBudget(t *testing.T) {
 	t.Run("returns 200 on success", func(t *testing.T) {
 		svc := &mockBudgetService{
-			updateBudgetFn: func(_, budgetID string, name string, amount *int64, _ *models.BudgetPeriod, _ *time.Time) (*models.Budget, error) {
+			updateBudgetFn: func(_, budgetID string, name string, amount *int64, _ *models.BudgetPeriod, _ *bool) (*models.Budget, error) {
 				b := &models.Budget{
 					Base: models.Base{ID: budgetID},
 					Name: name,
@@ -358,9 +384,33 @@ func TestBudgetHandler_UpdateBudget(t *testing.T) {
 		}
 	})
 
+	t.Run("passes is_active to service", func(t *testing.T) {
+		var captured *bool
+		svc := &mockBudgetService{
+			updateBudgetFn: func(_, budgetID string, _ string, _ *int64, _ *models.BudgetPeriod, isActive *bool) (*models.Budget, error) {
+				captured = isActive
+				return &models.Budget{Base: models.Base{ID: budgetID}}, nil
+			},
+		}
+		handler := NewBudgetHandler(svc, &mockAuditService{})
+		r := setupBudgetRouter(handler)
+
+		rec := doRequest(r, "PUT", "/budgets/00000000-0000-0000-0000-000000000001", `{"is_active":false}`)
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+		}
+		if captured == nil {
+			t.Fatal("expected is_active to be passed to the service")
+		}
+		if *captured {
+			t.Error("expected is_active=false to be passed")
+		}
+	})
+
 	t.Run("returns 404 when not found", func(t *testing.T) {
 		svc := &mockBudgetService{
-			updateBudgetFn: func(_, _ string, _ string, _ *int64, _ *models.BudgetPeriod, _ *time.Time) (*models.Budget, error) {
+			updateBudgetFn: func(_, _ string, _ string, _ *int64, _ *models.BudgetPeriod, _ *bool) (*models.Budget, error) {
 				return nil, apperrors.ErrBudgetNotFound
 			},
 		}
@@ -480,6 +530,74 @@ func TestBudgetHandler_GetBudgetProgress(t *testing.T) {
 
 		if rec.Code != http.StatusBadRequest {
 			t.Fatalf("expected 400, got %d", rec.Code)
+		}
+	})
+}
+
+func TestBudgetHandler_GetBudgetsProgress(t *testing.T) {
+	t.Run("returns 200 with progress list", func(t *testing.T) {
+		svc := &mockBudgetService{
+			getActiveBudgetsProgressFn: func(_ string) ([]services.BudgetProgress, error) {
+				return []services.BudgetProgress{
+					{BudgetID: "1", Budgeted: 50000, Spent: 25000, Remaining: 25000, Percentage: 50.0},
+					{BudgetID: "2", Budgeted: 10000, Spent: 12000, Remaining: -2000, Percentage: 120.0},
+				}, nil
+			},
+		}
+		handler := NewBudgetHandler(svc, &mockAuditService{})
+		r := setupBudgetRouter(handler)
+
+		rec := doRequest(r, "GET", "/budgets/progress", "")
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+		}
+		result := parseJSON(t, rec)
+		progress := result["progress"].([]interface{})
+		if len(progress) != 2 {
+			t.Fatalf("expected 2 progress entries, got %d", len(progress))
+		}
+		first := progress[0].(map[string]interface{})
+		if first["budget_id"] != "1" {
+			t.Errorf("expected first budget_id=1, got %v", first["budget_id"])
+		}
+	})
+
+	t.Run("routes static path before param path", func(t *testing.T) {
+		// /budgets/progress must hit the batch handler, not GetBudget with id="progress".
+		called := false
+		svc := &mockBudgetService{
+			getActiveBudgetsProgressFn: func(_ string) ([]services.BudgetProgress, error) {
+				called = true
+				return []services.BudgetProgress{}, nil
+			},
+			getBudgetByIDFn: func(_, _ string) (*models.Budget, error) {
+				t.Fatal("GetBudgetByID should not be called for /budgets/progress")
+				return nil, nil
+			},
+		}
+		handler := NewBudgetHandler(svc, &mockAuditService{})
+		r := setupBudgetRouter(handler)
+
+		rec := doRequest(r, "GET", "/budgets/progress", "")
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d", rec.Code)
+		}
+		if !called {
+			t.Error("expected GetActiveBudgetsProgress to be called")
+		}
+	})
+
+	t.Run("returns 401 without auth", func(t *testing.T) {
+		handler := NewBudgetHandler(&mockBudgetService{}, &mockAuditService{})
+		r := gin.New()
+		r.GET("/budgets/progress", handler.GetBudgetsProgress)
+
+		rec := doRequest(r, "GET", "/budgets/progress", "")
+
+		if rec.Code != http.StatusUnauthorized {
+			t.Fatalf("expected 401, got %d", rec.Code)
 		}
 	})
 }

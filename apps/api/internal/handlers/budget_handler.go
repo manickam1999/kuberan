@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"net/http"
-	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -29,16 +28,14 @@ type CreateBudgetRequest struct {
 	Name       string              `json:"name" binding:"required,min=1,max=100"`
 	Amount     int64               `json:"amount" binding:"required,gt=0"`
 	Period     models.BudgetPeriod `json:"period" binding:"required,budget_period"`
-	StartDate  time.Time           `json:"start_date" binding:"required"`
-	EndDate    *time.Time          `json:"end_date"`
 }
 
 // UpdateBudgetRequest represents the request payload for updating a budget.
 type UpdateBudgetRequest struct {
-	Name    string               `json:"name" binding:"omitempty,min=1,max=100"`
-	Amount  *int64               `json:"amount" binding:"omitempty,gt=0"`
-	Period  *models.BudgetPeriod `json:"period" binding:"omitempty,budget_period"`
-	EndDate *time.Time           `json:"end_date"`
+	Name     string               `json:"name" binding:"omitempty,min=1,max=100"`
+	Amount   *int64               `json:"amount" binding:"omitempty,gt=0"`
+	Period   *models.BudgetPeriod `json:"period" binding:"omitempty,budget_period"`
+	IsActive *bool                `json:"is_active,omitempty"`
 }
 
 // CreateBudget handles the creation of a new budget.
@@ -53,6 +50,7 @@ type UpdateBudgetRequest struct {
 // @Failure     400 {object} ErrorResponse "Invalid input"
 // @Failure     401 {object} ErrorResponse "Unauthorized"
 // @Failure     404 {object} ErrorResponse "Category not found"
+// @Failure     409 {object} ErrorResponse "Active budget already exists for this category and period"
 // @Failure     500 {object} ErrorResponse "Server error"
 // @Router      /budgets [post]
 func (h *BudgetHandler) CreateBudget(c *gin.Context) {
@@ -69,7 +67,7 @@ func (h *BudgetHandler) CreateBudget(c *gin.Context) {
 	}
 
 	budget, err := h.budgetService.CreateBudget(
-		userID, req.CategoryID, req.Name, req.Amount, req.Period, req.StartDate, req.EndDate,
+		userID, req.CategoryID, req.Name, req.Amount, req.Period,
 	)
 	if err != nil {
 		respondWithError(c, err)
@@ -153,7 +151,7 @@ func (h *BudgetHandler) GetBudgets(c *gin.Context) {
 // @Accept      json
 // @Produce     json
 // @Security    BearerAuth
-// @Param       id path int true "Budget ID"
+// @Param       id path string true "Budget ID"
 // @Success     200 {object} models.Budget "Budget details"
 // @Failure     400 {object} ErrorResponse "Invalid budget ID"
 // @Failure     401 {object} ErrorResponse "Unauthorized"
@@ -189,7 +187,7 @@ func (h *BudgetHandler) GetBudget(c *gin.Context) {
 // @Accept      json
 // @Produce     json
 // @Security    BearerAuth
-// @Param       id      path int                true "Budget ID"
+// @Param       id      path string             true "Budget ID"
 // @Param       request body UpdateBudgetRequest true "Updated budget details"
 // @Success     200 {object} models.Budget "Updated budget"
 // @Failure     400 {object} ErrorResponse "Invalid input or budget ID"
@@ -216,7 +214,7 @@ func (h *BudgetHandler) UpdateBudget(c *gin.Context) {
 		return
 	}
 
-	budget, err := h.budgetService.UpdateBudget(userID, budgetID, req.Name, req.Amount, req.Period, req.EndDate)
+	budget, err := h.budgetService.UpdateBudget(userID, budgetID, req.Name, req.Amount, req.Period, req.IsActive)
 	if err != nil {
 		respondWithError(c, err)
 		return
@@ -235,7 +233,7 @@ func (h *BudgetHandler) UpdateBudget(c *gin.Context) {
 // @Accept      json
 // @Produce     json
 // @Security    BearerAuth
-// @Param       id path int true "Budget ID"
+// @Param       id path string true "Budget ID"
 // @Success     200 {object} MessageResponse "Budget deleted"
 // @Failure     400 {object} ErrorResponse "Invalid budget ID"
 // @Failure     401 {object} ErrorResponse "Unauthorized"
@@ -272,7 +270,7 @@ func (h *BudgetHandler) DeleteBudget(c *gin.Context) {
 // @Accept      json
 // @Produce     json
 // @Security    BearerAuth
-// @Param       id path int true "Budget ID"
+// @Param       id path string true "Budget ID"
 // @Success     200 {object} services.BudgetProgress "Budget progress"
 // @Failure     400 {object} ErrorResponse "Invalid budget ID"
 // @Failure     401 {object} ErrorResponse "Unauthorized"
@@ -293,6 +291,33 @@ func (h *BudgetHandler) GetBudgetProgress(c *gin.Context) {
 	}
 
 	progress, err := h.budgetService.GetBudgetProgress(userID, budgetID)
+	if err != nil {
+		respondWithError(c, err)
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"progress": progress})
+}
+
+// GetBudgetsProgress handles retrieving spending progress for all active budgets.
+// @Summary     Get progress for all active budgets
+// @Description Get spending progress for every active budget in the current period, in one call
+// @Tags        budgets
+// @Accept      json
+// @Produce     json
+// @Security    BearerAuth
+// @Success     200 {object} map[string][]services.BudgetProgress "Active budgets progress"
+// @Failure     401 {object} ErrorResponse "Unauthorized"
+// @Failure     500 {object} ErrorResponse "Server error"
+// @Router      /budgets/progress [get]
+func (h *BudgetHandler) GetBudgetsProgress(c *gin.Context) {
+	userID, err := getUserID(c)
+	if err != nil {
+		respondWithError(c, err)
+		return
+	}
+
+	progress, err := h.budgetService.GetActiveBudgetsProgress(userID)
 	if err != nil {
 		respondWithError(c, err)
 		return
