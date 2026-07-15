@@ -72,3 +72,6 @@ apps/api/mcp
 
 .playwright-mcp/*
 current-*.png
+
+# Lavish review artifacts
+.lavish/
