@@ -1,0 +1,567 @@
+<!doctype html>
+<html lang="en" class="dark">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Plan 016 — Budgets Reintegration</title>
+<script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4.2.4/dist/index.global.js"></script>
+<style type="text/tailwindcss">
+  @theme {
+    --color-background: oklch(0.17 0.008 260);
+    --color-foreground: oklch(0.96 0.004 250);
+    --color-card: oklch(0.21 0.009 262);
+    --color-elevated: oklch(0.245 0.01 262);
+    --color-muted: oklch(0.26 0.01 262);
+    --color-muted-foreground: oklch(0.68 0.015 258);
+    --color-primary: oklch(0.74 0.15 162);
+    --color-primary-foreground: oklch(0.18 0.03 165);
+    --color-border: oklch(1 0 0 / 9%);
+    --color-positive: oklch(0.78 0.16 160);
+    --color-positive-muted: oklch(0.3 0.06 162);
+    --color-negative: oklch(0.72 0.18 20);
+    --color-negative-muted: oklch(0.32 0.08 22);
+    --color-warning: oklch(0.82 0.15 78);
+    --color-warning-muted: oklch(0.33 0.06 75);
+    --color-info: oklch(0.72 0.14 245);
+    --color-info-muted: oklch(0.32 0.07 245);
+    --color-investment: oklch(0.72 0.16 292);
+    --color-investment-muted: oklch(0.32 0.08 292);
+    --radius-xl: 1rem;
+    --radius-2xl: 1.25rem;
+  }
+</style>
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    background:
+      radial-gradient(120% 90% at 100% 0%, color-mix(in oklch, oklch(0.74 0.15 162) 8%, transparent) 0%, transparent 55%),
+      oklch(0.17 0.008 260);
+    -webkit-font-smoothing: antialiased;
+    font-feature-settings: "cv11", "ss01";
+  }
+  .money, .tabular-nums { font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
+  :where(.grid, .flex) > * { min-width: 0; }
+  :where(p, h1, h2, h3, h4, li, td, th, .badge) { overflow-wrap: anywhere; }
+  .card-hover { transition: border-color .18s ease, transform .18s ease; }
+  .card-hover:hover { border-color: color-mix(in oklch, oklch(0.74 0.15 162) 45%, transparent); }
+  .mermaid { line-height: 1.2; }
+  .anchor-offset { scroll-margin-top: 5rem; }
+  /* thin scrollbar for code */
+  pre::-webkit-scrollbar { height: 8px; }
+  pre::-webkit-scrollbar-thumb { background: oklch(1 0 0 / 12%); border-radius: 8px; }
+</style>
+</head>
+<body class="text-foreground min-h-screen">
+
+<!-- ░░ Sticky top bar ░░ -->
+<header class="sticky top-0 z-30 border-b border-border bg-background/80 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+  <div class="mx-auto max-w-6xl px-5 lg:px-8 h-14 flex items-center gap-3">
+    <div class="flex items-center gap-2.5 min-w-0">
+      <div class="grid size-7 place-items-center rounded-lg bg-primary/15 text-primary shrink-0">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 5c-1.5 0-2.8 1.4-3 2-3.5-1.5-11-.3-11 5 0 1.8 0 3 2 4.5V20h4v-2h3v2h4v-4c1-.5 1.4-1.5 2-2h2v-4h-2c-1-1-2-2-3-2z"/><path d="M2 9v1c0 1.1.9 2 2 2h1"/><path d="M16 11h.01"/></svg>
+      </div>
+      <span class="text-sm font-semibold tracking-tight truncate">Plan 016 — Budgets Reintegration</span>
+    </div>
+    <nav class="ml-auto hidden md:flex items-center gap-1 text-xs text-muted-foreground">
+      <a href="#implications" class="px-2.5 py-1.5 rounded-md hover:bg-muted hover:text-foreground transition">Implications</a>
+      <a href="#decisions" class="px-2.5 py-1.5 rounded-md hover:bg-muted hover:text-foreground transition">Decisions</a>
+      <a href="#backend" class="px-2.5 py-1.5 rounded-md hover:bg-muted hover:text-foreground transition">Backend</a>
+      <a href="#frontend" class="px-2.5 py-1.5 rounded-md hover:bg-muted hover:text-foreground transition">Frontend</a>
+      <a href="#choose" class="px-2.5 py-1.5 rounded-md bg-primary/15 text-primary hover:bg-primary/25 transition font-medium">Choose →</a>
+    </nav>
+  </div>
+</header>
+
+<main class="mx-auto max-w-6xl px-5 lg:px-8 py-8 lg:py-12 space-y-14">
+
+  <!-- ░░ Hero ░░ -->
+  <section class="space-y-5">
+    <div class="flex flex-wrap items-center gap-2">
+      <span class="badge inline-flex items-center gap-1.5 rounded-full border border-border bg-muted/60 px-2.5 py-1 text-[11px] font-medium text-muted-foreground">plans/016-budgets-reintegration</span>
+      <span class="badge inline-flex items-center gap-1.5 rounded-full border border-primary/30 bg-primary/10 px-2.5 py-1 text-[11px] font-medium text-primary">Review before build</span>
+    </div>
+    <h1 class="text-3xl lg:text-[2.5rem] font-semibold tracking-tight leading-[1.18] pb-1">
+      Re-adding the budgets module
+    </h1>
+    <p class="max-w-3xl text-[15px] leading-relaxed text-muted-foreground">
+      The backend, MCP tools, Telegram bot, and the web data layer are all intact. The UI was deleted in the
+      redesign (commit <code class="rounded bg-muted px-1.5 text-xs text-foreground">e6e8336f</code>). Reintegration is
+      mostly additive UI work — plus a one-time window to fix the data model honestly, because
+      <strong class="text-foreground font-medium">you currently have zero budgets</strong>, so there is no data to migrate.
+    </p>
+
+    <!-- Status stat row -->
+    <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <div class="rounded-xl border border-border bg-card p-4">
+        <div class="text-[11px] uppercase tracking-wide text-muted-foreground">Backend + hook</div>
+        <div class="mt-1.5 flex items-baseline gap-2">
+          <span class="text-2xl font-semibold text-positive">Intact</span>
+        </div>
+        <div class="mt-1 text-xs text-muted-foreground">Drift-free, compiles today</div>
+      </div>
+      <div class="rounded-xl border border-border bg-card p-4">
+        <div class="text-[11px] uppercase tracking-wide text-muted-foreground">Web UI</div>
+        <div class="mt-1.5 flex items-baseline gap-2">
+          <span class="text-2xl font-semibold text-negative">Deleted</span>
+        </div>
+        <div class="mt-1 text-xs text-muted-foreground">4 files removed in redesign</div>
+      </div>
+      <div class="rounded-xl border border-border bg-card p-4">
+        <div class="text-[11px] uppercase tracking-wide text-muted-foreground">Existing budgets</div>
+        <div class="mt-1.5 flex items-baseline gap-2">
+          <span class="text-2xl font-semibold tabular-nums">0</span>
+        </div>
+        <div class="mt-1 text-xs text-muted-foreground">Free hand to fix schema</div>
+      </div>
+      <div class="rounded-xl border border-border bg-card p-4">
+        <div class="text-[11px] uppercase tracking-wide text-muted-foreground">Decisions needed</div>
+        <div class="mt-1.5 flex items-baseline gap-2">
+          <span class="text-2xl font-semibold text-warning tabular-nums">4</span>
+        </div>
+        <div class="mt-1 text-xs text-muted-foreground">Fork the plan — see bottom</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ░░ Architecture diagram ░░ -->
+  <section id="architecture" class="anchor-offset space-y-4">
+    <div class="flex items-center gap-2">
+      <h2 class="text-lg font-semibold tracking-tight">Where budgets live today</h2>
+      <span class="h-px flex-1 bg-border"></span>
+    </div>
+    <div class="rounded-2xl border border-border bg-card p-5 lg:p-6">
+      <pre class="mermaid">
+flowchart LR
+  M["models/budget.go"] --> S["services/budget_service.go"]
+  S --> H["handlers/budget_handler.go"]
+  H --> R["routes: /api/v1/budgets/*"]
+  R --> BOT["Telegram bot /budgets"]
+  R --> MCP["MCP tools"]
+  R -.->|"wired, unused"| HOOK["web: use-budgets.ts"]
+  HOOK -.->|"MISSING"| UI["web budgets UI"]
+
+  classDef ok fill:#10221b,stroke:#3ddc97,color:#d6f5e8;
+  classDef dark fill:#2a1518,stroke:#f2708a,color:#ffd9e0,stroke-dasharray:5 5;
+  class M,S,H,R,BOT,MCP,HOOK ok;
+  class UI dark;
+      </pre>
+      <p class="mt-3 text-xs text-muted-foreground">
+        Only two live consumers (bot + MCP), both in-repo. Blast radius of a backend change is small.
+      </p>
+    </div>
+  </section>
+
+  <!-- ░░ Implications ░░ -->
+  <section id="implications" class="anchor-offset space-y-5">
+    <div class="flex items-center gap-2">
+      <h2 class="text-lg font-semibold tracking-tight">What the findings imply</h2>
+      <span class="h-px flex-1 bg-border"></span>
+    </div>
+    <div class="grid gap-4 md:grid-cols-2">
+
+      <article class="card-hover rounded-xl border border-border bg-card p-5 space-y-2">
+        <div class="flex items-center gap-2">
+          <span class="grid size-6 place-items-center rounded-md bg-positive-muted text-positive text-xs font-bold">1</span>
+          <h3 class="text-sm font-semibold">UI-only, low risk</h3>
+        </div>
+        <p class="text-[13px] leading-relaxed text-muted-foreground">
+          Hook, types, and api-client compile unchanged. No backend change is <em>required</em> to restore a page —
+          the hardening below is quality work, not a blocker.
+        </p>
+      </article>
+
+      <article class="card-hover rounded-xl border border-border bg-card p-5 space-y-2">
+        <div class="flex items-center gap-2">
+          <span class="grid size-6 place-items-center rounded-md bg-warning-muted text-warning text-xs font-bold">2</span>
+          <h3 class="text-sm font-semibold">The model lies about dates</h3>
+        </div>
+        <p class="text-[13px] leading-relaxed text-muted-foreground">
+          <code class="rounded bg-muted px-1 py-0.5 text-[11px]">StartDate</code> / <code class="rounded bg-muted px-1 py-0.5 text-[11px]">EndDate</code>
+          are stored but <strong class="text-foreground font-medium">never read</strong>. Progress is derived purely from
+          <code class="rounded bg-muted px-1 py-0.5 text-[11px]">time.Now()</code>. The real feature is a recurring monthly/yearly cap.
+        </p>
+      </article>
+
+      <article class="card-hover rounded-xl border border-border bg-card p-5 space-y-2">
+        <div class="flex items-center gap-2">
+          <span class="grid size-6 place-items-center rounded-md bg-warning-muted text-warning text-xs font-bold">3</span>
+          <h3 class="text-sm font-semibold"><code class="text-[13px]">is_active</code> is decorative</h3>
+        </div>
+        <p class="text-[13px] leading-relaxed text-muted-foreground">
+          Forced <code class="rounded bg-muted px-1 py-0.5 text-[11px]">true</code> on create, not updatable, ignored by progress.
+          The only way to stop a budget is to delete it. The old UI showed a toggle that did nothing.
+        </p>
+      </article>
+
+      <article class="card-hover rounded-xl border border-border bg-card p-5 space-y-2">
+        <div class="flex items-center gap-2">
+          <span class="grid size-6 place-items-center rounded-md bg-info-muted text-info text-xs font-bold">4</span>
+          <h3 class="text-sm font-semibold">N+1 baked into the UX</h3>
+        </div>
+        <p class="text-[13px] leading-relaxed text-muted-foreground">
+          Old page fired one progress request per card; the bot loops too. A batch endpoint should land
+          <em>before</em> the UI is rebuilt, not after.
+        </p>
+      </article>
+
+      <article class="card-hover rounded-xl border border-border bg-card p-5 space-y-2">
+        <div class="flex items-center gap-2">
+          <span class="grid size-6 place-items-center rounded-md bg-info-muted text-info text-xs font-bold">5</span>
+          <h3 class="text-sm font-semibold">Expense categories only</h3>
+        </div>
+        <p class="text-[13px] leading-relaxed text-muted-foreground">
+          Progress sums <code class="rounded bg-muted px-1 py-0.5 text-[11px]">type='expense'</code> only, so a budget on an income
+          category is always 0% spent. The picker must filter to expense types.
+        </p>
+      </article>
+
+      <article class="card-hover rounded-xl border border-border bg-card p-5 space-y-2">
+        <div class="flex items-center gap-2">
+          <span class="grid size-6 place-items-center rounded-md bg-positive-muted text-positive text-xs font-bold">6</span>
+          <h3 class="text-sm font-semibold">Empty DB = fix-it window</h3>
+        </div>
+        <p class="text-[13px] leading-relaxed text-muted-foreground">
+          Zero budgets exist. Schema flaws (dead columns, no uniqueness, no CHECK) are cheap to fix now and
+          expensive once real budgets land. Take the window.
+        </p>
+      </article>
+    </div>
+  </section>
+
+  <!-- ░░ Decisions comparison ░░ -->
+  <section id="decisions" class="anchor-offset space-y-5">
+    <div class="flex items-center gap-2">
+      <h2 class="text-lg font-semibold tracking-tight">Design decisions</h2>
+      <span class="badge rounded-full border border-border bg-muted/60 px-2 py-0.5 text-[11px] text-muted-foreground">recommendations</span>
+      <span class="h-px flex-1 bg-border"></span>
+    </div>
+
+    <div class="overflow-x-auto rounded-2xl border border-border bg-card">
+      <table class="w-full text-sm border-collapse">
+        <thead>
+          <tr class="text-left text-[11px] uppercase tracking-wide text-muted-foreground border-b border-border">
+            <th class="p-3 font-medium w-10">#</th>
+            <th class="p-3 font-medium">Decision</th>
+            <th class="p-3 font-medium">Recommendation</th>
+            <th class="p-3 font-medium">Why</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-border">
+          <tr class="align-top">
+            <td class="p-3 font-mono text-xs text-muted-foreground">D1</td>
+            <td class="p-3 font-medium">Date-range vs recurring</td>
+            <td class="p-3"><span class="inline-flex rounded-md bg-primary/15 px-2 py-1 text-[12px] font-medium text-primary">Drop date columns, keep period</span></td>
+            <td class="p-3 text-[13px] text-muted-foreground">Columns never affected behavior; makes the model truthful, form simpler. Reversible.</td>
+          </tr>
+          <tr class="align-top">
+            <td class="p-3 font-mono text-xs text-muted-foreground">D2</td>
+            <td class="p-3 font-medium"><code>is_active</code></td>
+            <td class="p-3"><span class="inline-flex rounded-md bg-primary/15 px-2 py-1 text-[12px] font-medium text-primary">Make updatable + pause toggle</span></td>
+            <td class="p-3 text-[13px] text-muted-foreground">Turns a dead field into a real feature; stop a budget without losing history.</td>
+          </tr>
+          <tr class="align-top">
+            <td class="p-3 font-mono text-xs text-muted-foreground">D3</td>
+            <td class="p-3 font-medium">Batch progress</td>
+            <td class="p-3"><span class="inline-flex rounded-md bg-primary/15 px-2 py-1 text-[12px] font-medium text-primary">Add <code>GET /budgets/progress</code></span></td>
+            <td class="p-3 text-[13px] text-muted-foreground">Kills the N+1 for page, dashboard card, and bot in one call.</td>
+          </tr>
+          <tr class="align-top">
+            <td class="p-3 font-mono text-xs text-muted-foreground">D4</td>
+            <td class="p-3 font-medium">Uniqueness</td>
+            <td class="p-3"><span class="inline-flex rounded-md bg-primary/15 px-2 py-1 text-[12px] font-medium text-primary">One active / category + period</span></td>
+            <td class="p-3 text-[13px] text-muted-foreground">Removes ambiguity for rollups; matches intuition ("my monthly Food budget").</td>
+          </tr>
+          <tr class="align-top">
+            <td class="p-3 font-mono text-xs text-muted-foreground">D5</td>
+            <td class="p-3 font-medium">Sub-category rollup</td>
+            <td class="p-3"><span class="inline-flex rounded-md bg-muted px-2 py-1 text-[12px] font-medium text-muted-foreground">Defer + document</span></td>
+            <td class="p-3 text-[13px] text-muted-foreground">No nested expense categories exist today. Revisit if nesting is used.</td>
+          </tr>
+          <tr class="align-top">
+            <td class="p-3 font-mono text-xs text-muted-foreground">D6</td>
+            <td class="p-3 font-medium">Category picker scope</td>
+            <td class="p-3"><span class="inline-flex rounded-md bg-primary/15 px-2 py-1 text-[12px] font-medium text-primary">Expense only</span></td>
+            <td class="p-3 text-[13px] text-muted-foreground">Income budgets are always 0% spent by construction.</td>
+          </tr>
+          <tr class="align-top">
+            <td class="p-3 font-mono text-xs text-muted-foreground">D7</td>
+            <td class="p-3 font-medium">Dashboard presence</td>
+            <td class="p-3"><span class="inline-flex rounded-md bg-primary/15 px-2 py-1 text-[12px] font-medium text-primary">Compact budgets card</span></td>
+            <td class="p-3 text-[13px] text-muted-foreground">What makes budgets get used daily — likely why the page died the first time.</td>
+          </tr>
+          <tr class="align-top">
+            <td class="p-3 font-mono text-xs text-muted-foreground">D8</td>
+            <td class="p-3 font-medium">Over-budget display</td>
+            <td class="p-3"><span class="inline-flex rounded-md bg-primary/15 px-2 py-1 text-[12px] font-medium text-primary">Cap bar, show "over by X"</span></td>
+            <td class="p-3 text-[13px] text-muted-foreground">Percentage can exceed 100 and remaining can go negative by design.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- D1 spotlight comparison -->
+    <div class="rounded-2xl border border-border bg-card p-5 lg:p-6 space-y-4">
+      <div class="flex flex-wrap items-center gap-2">
+        <span class="inline-flex rounded-md bg-warning/15 px-2 py-1 text-[11px] font-semibold text-warning">Key fork · D1</span>
+        <h3 class="text-sm font-semibold">Recurring caps vs. date-ranged budgets</h3>
+      </div>
+      <div class="grid gap-4 md:grid-cols-2">
+        <div class="rounded-xl border border-primary/40 bg-primary/5 p-4 space-y-2">
+          <div class="flex items-center justify-between">
+            <span class="text-sm font-semibold text-primary">Option A — Recurring (recommended)</span>
+            <span class="badge rounded-full bg-primary/15 px-2 py-0.5 text-[10px] font-medium text-primary">simpler</span>
+          </div>
+          <p class="text-[13px] leading-relaxed text-muted-foreground">Drop the date columns. A budget is a monthly/yearly cap per category. Progress already works this way.</p>
+          <ul class="text-[12px] text-muted-foreground space-y-1 list-disc pl-4">
+            <li>1 migration, form drops to 4 fields</li>
+            <li>Model tells the truth</li>
+            <li>Matches how you'd track spending</li>
+          </ul>
+        </div>
+        <div class="rounded-xl border border-border bg-elevated p-4 space-y-2">
+          <div class="flex items-center justify-between">
+            <span class="text-sm font-semibold">Option B — Date-ranged</span>
+            <span class="badge rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">more code</span>
+          </div>
+          <p class="text-[13px] leading-relaxed text-muted-foreground">Make progress honor <code class="rounded bg-muted px-1 py-0.5 text-[11px]">Start/End</code>, add a <code class="rounded bg-muted px-1 py-0.5 text-[11px]">custom</code> period for one-off budgets.</p>
+          <ul class="text-[12px] text-muted-foreground space-y-1 list-disc pl-4">
+            <li>New concept + window logic</li>
+            <li>Only worth it if custom ranges are a real want</li>
+            <li>Larger test surface</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ░░ Backend plan ░░ -->
+  <section id="backend" class="anchor-offset space-y-5">
+    <div class="flex items-center gap-2">
+      <h2 class="text-lg font-semibold tracking-tight">Backend work</h2>
+      <span class="badge rounded-full border border-info/30 bg-info/10 px-2 py-0.5 text-[11px] text-info">PR 1</span>
+      <span class="h-px flex-1 bg-border"></span>
+    </div>
+    <div class="grid gap-3 md:grid-cols-2">
+      <div class="rounded-xl border border-border bg-card p-4 space-y-1.5">
+        <div class="flex items-center gap-2"><span class="font-mono text-xs text-primary">B1</span><h3 class="text-sm font-semibold">Schema migration</h3></div>
+        <p class="text-[13px] text-muted-foreground">Drop <code class="text-[11px]">start_date</code>/<code class="text-[11px]">end_date</code>; add <code class="text-[11px]">CHECK(period)</code>, <code class="text-[11px]">(user_id, category_id)</code> index, and a partial-unique index on active budgets.</p>
+      </div>
+      <div class="rounded-xl border border-border bg-card p-4 space-y-1.5">
+        <div class="flex items-center gap-2"><span class="font-mono text-xs text-primary">B2</span><h3 class="text-sm font-semibold">Model</h3></div>
+        <p class="text-[13px] text-muted-foreground">Remove date fields from <code class="text-[11px]">budget.go</code>; keep <code class="text-[11px]">IsActive</code> (now meaningful).</p>
+      </div>
+      <div class="rounded-xl border border-border bg-card p-4 space-y-1.5">
+        <div class="flex items-center gap-2"><span class="font-mono text-xs text-primary">B3</span><h3 class="text-sm font-semibold">Service</h3></div>
+        <p class="text-[13px] text-muted-foreground">Duplicate-active guard on create; <code class="text-[11px]">is_active</code> update path; deterministic <code class="text-[11px]">ORDER BY</code>; new <code class="text-[11px]">GetActiveBudgetsProgress</code> (single grouped query).</p>
+      </div>
+      <div class="rounded-xl border border-border bg-card p-4 space-y-1.5">
+        <div class="flex items-center gap-2"><span class="font-mono text-xs text-primary">B4</span><h3 class="text-sm font-semibold">Handlers &amp; routes</h3></div>
+        <p class="text-[13px] text-muted-foreground">Drop dates from DTOs; add <code class="text-[11px]">is_active</code> to update; new <code class="text-[11px]">GET /budgets/progress</code>; fix Swagger <code class="text-[11px]">path string</code>.</p>
+      </div>
+      <div class="rounded-xl border border-border bg-card p-4 space-y-1.5">
+        <div class="flex items-center gap-2"><span class="font-mono text-xs text-primary">B5</span><h3 class="text-sm font-semibold">MCP + bot align</h3></div>
+        <p class="text-[13px] text-muted-foreground">Optional batch MCP tool; bot can switch to batch endpoint; fix <code class="text-[11px]">budget_id: int → str</code> hint.</p>
+      </div>
+      <div class="rounded-xl border border-border bg-card p-4 space-y-1.5">
+        <div class="flex items-center gap-2"><span class="font-mono text-xs text-primary">B6</span><h3 class="text-sm font-semibold">Tests</h3></div>
+        <p class="text-[13px] text-muted-foreground">Update for dropped columns/signatures; add duplicate-reject, pause-hides-from-batch, batch parity, ordering. Run <code class="text-[11px]">check-go.sh</code>.</p>
+      </div>
+    </div>
+
+    <details class="group rounded-xl border border-border bg-card overflow-hidden">
+      <summary class="cursor-pointer select-none px-4 py-3 text-sm font-medium flex items-center gap-2 hover:bg-muted/50 transition">
+        <svg class="size-4 text-muted-foreground transition group-open:rotate-90" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+        The bug that motivates B1/B2: progress ignores the stored dates
+      </summary>
+      <div class="border-t border-border p-4 overflow-x-auto">
+        <pre class="text-[12px] leading-relaxed text-muted-foreground"><code>// budget_service.go — GetBudgetProgress (today)
+now := time.Now()                       // ← window comes from *now*, not the budget
+switch budget.Period {
+case BudgetPeriodMonthly:
+    periodStart = firstOfMonth(now)
+    periodEnd   = lastOfMonth(now)
+}
+// budget.StartDate / budget.EndDate are NEVER referenced here.</code></pre>
+      </div>
+    </details>
+  </section>
+
+  <!-- ░░ Frontend plan ░░ -->
+  <section id="frontend" class="anchor-offset space-y-5">
+    <div class="flex items-center gap-2">
+      <h2 class="text-lg font-semibold tracking-tight">Frontend work</h2>
+      <span class="badge rounded-full border border-info/30 bg-info/10 px-2 py-0.5 text-[11px] text-info">PR 2 + 3</span>
+      <span class="h-px flex-1 bg-border"></span>
+    </div>
+
+    <div class="grid gap-4 lg:grid-cols-5">
+      <!-- steps list -->
+      <div class="lg:col-span-3 grid gap-3">
+        <div class="rounded-xl border border-border bg-card p-4 space-y-1.5">
+          <div class="flex items-center gap-2"><span class="font-mono text-xs text-primary">F1</span><h3 class="text-sm font-semibold">Hook + types touch-up</h3></div>
+          <p class="text-[13px] text-muted-foreground">Add <code class="text-[11px]">useBudgetsProgress()</code>; add <code class="text-[11px]">is_active</code> to update type; drop date fields from types.</p>
+        </div>
+        <div class="rounded-xl border border-border bg-card p-4 space-y-1.5">
+          <div class="flex items-center gap-2"><span class="font-mono text-xs text-primary">F2</span><h3 class="text-sm font-semibold">Budgets page</h3></div>
+          <p class="text-[13px] text-muted-foreground">Model on <code class="text-[11px]">categories/page.tsx</code>: StatCard row (batch-fed), Tabs filter, card grid, semantic progress bars, skeleton, empty state, pagination.</p>
+        </div>
+        <div class="rounded-xl border border-border bg-card p-4 space-y-1.5">
+          <div class="flex items-center gap-2"><span class="font-mono text-xs text-primary">F3</span><h3 class="text-sm font-semibold">Dialogs</h3></div>
+          <p class="text-[13px] text-muted-foreground">Create / edit / delete under <code class="text-[11px]">components/budgets/</code>. Expense-only picker, <code class="text-[11px]">CurrencyInput</code>, no dates, pause toggle on edit.</p>
+        </div>
+        <div class="rounded-xl border border-border bg-card p-4 space-y-1.5">
+          <div class="flex items-center gap-2"><span class="font-mono text-xs text-primary">F4</span><h3 class="text-sm font-semibold">Nav wiring</h3></div>
+          <p class="text-[13px] text-muted-foreground">One <code class="text-[11px]">NavItem</code> in sidebar "Money" section + command-palette entry.</p>
+        </div>
+        <div class="rounded-xl border border-border bg-card p-4 space-y-1.5">
+          <div class="flex items-center gap-2"><span class="font-mono text-xs text-primary">F5</span><h3 class="text-sm font-semibold">Dashboard card <span class="badge rounded-full bg-info/10 px-1.5 py-0.5 text-[10px] text-info">PR 3</span></h3></div>
+          <p class="text-[13px] text-muted-foreground">Compact card beside <code class="text-[11px]">SpendingCard</code> — top budgets by % used, "View all".</p>
+        </div>
+      </div>
+
+      <!-- Mock of the budget card -->
+      <div class="lg:col-span-2 space-y-2">
+        <p class="text-[11px] uppercase tracking-wide text-muted-foreground">Target look — budget card</p>
+        <div class="rounded-2xl border border-border bg-card p-4 space-y-4">
+          <!-- card 1: healthy -->
+          <div class="space-y-2">
+            <div class="flex items-center justify-between gap-2">
+              <div class="flex items-center gap-2 min-w-0">
+                <span class="grid size-7 place-items-center rounded-lg bg-primary/15 text-primary text-xs shrink-0">🍔</span>
+                <span class="text-sm font-medium truncate">Food</span>
+                <span class="badge rounded-full border border-border px-1.5 py-0.5 text-[10px] text-muted-foreground shrink-0">monthly</span>
+              </div>
+              <span class="text-[11px] text-muted-foreground shrink-0">62%</span>
+            </div>
+            <div class="h-2 rounded-full bg-muted overflow-hidden"><div class="h-full rounded-full bg-primary" style="width:62%"></div></div>
+            <div class="flex justify-between text-[11px] text-muted-foreground money"><span>RM 620 / RM 1,000</span><span class="text-positive">RM 380 left</span></div>
+          </div>
+          <!-- card 2: warning -->
+          <div class="space-y-2">
+            <div class="flex items-center justify-between gap-2">
+              <div class="flex items-center gap-2 min-w-0">
+                <span class="grid size-7 place-items-center rounded-lg bg-warning-muted text-warning text-xs shrink-0">⛽</span>
+                <span class="text-sm font-medium truncate">Fuel</span>
+                <span class="badge rounded-full border border-border px-1.5 py-0.5 text-[10px] text-muted-foreground shrink-0">monthly</span>
+              </div>
+              <span class="text-[11px] text-warning shrink-0">84%</span>
+            </div>
+            <div class="h-2 rounded-full bg-muted overflow-hidden"><div class="h-full rounded-full bg-warning" style="width:84%"></div></div>
+            <div class="flex justify-between text-[11px] text-muted-foreground money"><span>RM 336 / RM 400</span><span>RM 64 left</span></div>
+          </div>
+          <!-- card 3: over -->
+          <div class="space-y-2">
+            <div class="flex items-center justify-between gap-2">
+              <div class="flex items-center gap-2 min-w-0">
+                <span class="grid size-7 place-items-center rounded-lg bg-negative-muted text-negative text-xs shrink-0">☕</span>
+                <span class="text-sm font-medium truncate">Coffee</span>
+                <span class="badge rounded-full border border-border px-1.5 py-0.5 text-[10px] text-muted-foreground shrink-0">monthly</span>
+              </div>
+              <span class="text-[11px] text-negative shrink-0">118%</span>
+            </div>
+            <div class="h-2 rounded-full bg-muted overflow-hidden"><div class="h-full rounded-full bg-negative" style="width:100%"></div></div>
+            <div class="flex justify-between text-[11px] money"><span class="text-muted-foreground">RM 236 / RM 200</span><span class="text-negative">over by RM 36</span></div>
+          </div>
+          <div class="pt-1 text-center"><span class="text-[11px] text-primary">View all budgets →</span></div>
+        </div>
+        <p class="text-[11px] text-muted-foreground">Semantic tokens: <span class="text-primary">primary</span> &lt;75% · <span class="text-warning">warning</span> 75–90% · <span class="text-negative">negative</span> ≥90%. Rendered in Kuberan's own theme.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ░░ Sequencing ░░ -->
+  <section id="sequencing" class="anchor-offset space-y-5">
+    <div class="flex items-center gap-2">
+      <h2 class="text-lg font-semibold tracking-tight">Sequencing</h2>
+      <span class="h-px flex-1 bg-border"></span>
+    </div>
+    <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <div class="rounded-xl border border-primary/30 bg-primary/5 p-4">
+        <div class="text-[11px] font-semibold text-primary">PR 1 · Backend</div>
+        <p class="mt-1.5 text-[13px] text-muted-foreground">Model cleanup + batch endpoint + tests. Self-contained, no UI.</p>
+      </div>
+      <div class="rounded-xl border border-border bg-card p-4">
+        <div class="text-[11px] font-semibold">PR 2 · Page</div>
+        <p class="mt-1.5 text-[13px] text-muted-foreground">Budgets page + dialogs + nav wiring.</p>
+      </div>
+      <div class="rounded-xl border border-border bg-card p-4">
+        <div class="text-[11px] font-semibold">PR 3 · Dashboard</div>
+        <p class="mt-1.5 text-[13px] text-muted-foreground">Budgets summary card on the dashboard.</p>
+      </div>
+      <div class="rounded-xl border border-border bg-card p-4">
+        <div class="text-[11px] font-semibold text-muted-foreground">PR 4 · Bot <span class="font-normal">(optional)</span></div>
+        <p class="mt-1.5 text-[13px] text-muted-foreground">Switch bot to the batch endpoint.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ░░ DECISION INPUT ░░ -->
+  <section id="choose" class="anchor-offset space-y-5">
+    <div class="flex items-center gap-2">
+      <h2 class="text-lg font-semibold tracking-tight">Your call</h2>
+      <span class="badge rounded-full border border-primary/30 bg-primary/10 px-2 py-0.5 text-[11px] text-primary">4 decisions fork the plan</span>
+      <span class="h-px flex-1 bg-border"></span>
+    </div>
+    <p class="text-[13px] text-muted-foreground max-w-3xl">Pick an option per question, then <strong class="text-foreground font-medium">Queue</strong> it. When you're done, hit <strong class="text-foreground font-medium">Send to Agent</strong> (or use the browser's send control) and I'll proceed accordingly. Defaults below match my recommendations.</p>
+
+    <div class="grid gap-4 lg:grid-cols-2">
+
+      <!-- Q1 -->
+      <form class="rounded-xl border border-border bg-card p-5 space-y-3" data-lavish-question="D1-model"
+        onsubmit="event.preventDefault(); const v=new FormData(event.currentTarget).get('d1'); if(v) window.lavish.queuePrompt('D1 (budget model): '+v, {tag:'choice', text:'D1 · '+v, queueKey:'D1', element:event.currentTarget, data:{question:'D1-model', answer:v}});">
+        <div class="flex items-center gap-2"><span class="font-mono text-xs text-primary">D1</span><h3 class="text-sm font-semibold">Budget model</h3></div>
+        <label class="flex items-start gap-2.5 rounded-lg border border-border p-2.5 cursor-pointer hover:border-primary/40 transition"><input type="radio" name="d1" value="Recurring — drop date columns" class="mt-0.5 accent-[oklch(0.74_0.15_162)]" checked><span class="text-[13px]">Recurring caps — drop the date columns <span class="text-primary">(recommended)</span></span></label>
+        <label class="flex items-start gap-2.5 rounded-lg border border-border p-2.5 cursor-pointer hover:border-primary/40 transition"><input type="radio" name="d1" value="Date-ranged — keep dates, add custom period" class="mt-0.5 accent-[oklch(0.74_0.15_162)]"><span class="text-[13px]">Date-ranged — keep dates, add a <code class="text-[11px]">custom</code> period</span></label>
+        <button type="submit" class="w-full rounded-lg bg-primary px-3 py-2 text-[13px] font-medium text-primary-foreground hover:opacity-90 transition">Queue D1</button>
+      </form>
+
+      <!-- Q2 -->
+      <form class="rounded-xl border border-border bg-card p-5 space-y-3" data-lavish-question="D4-unique"
+        onsubmit="event.preventDefault(); const v=new FormData(event.currentTarget).get('d4'); if(v) window.lavish.queuePrompt('D4 (uniqueness): '+v, {tag:'choice', text:'D4 · '+v, queueKey:'D4', element:event.currentTarget, data:{question:'D4-unique', answer:v}});">
+        <div class="flex items-center gap-2"><span class="font-mono text-xs text-primary">D4</span><h3 class="text-sm font-semibold">Uniqueness</h3></div>
+        <label class="flex items-start gap-2.5 rounded-lg border border-border p-2.5 cursor-pointer hover:border-primary/40 transition"><input type="radio" name="d4" value="One active budget per category + period" class="mt-0.5 accent-[oklch(0.74_0.15_162)]" checked><span class="text-[13px]">Enforce one active per category + period <span class="text-primary">(recommended)</span></span></label>
+        <label class="flex items-start gap-2.5 rounded-lg border border-border p-2.5 cursor-pointer hover:border-primary/40 transition"><input type="radio" name="d4" value="Allow multiple budgets per category" class="mt-0.5 accent-[oklch(0.74_0.15_162)]"><span class="text-[13px]">Allow multiple budgets per category</span></label>
+        <button type="submit" class="w-full rounded-lg bg-primary px-3 py-2 text-[13px] font-medium text-primary-foreground hover:opacity-90 transition">Queue D4</button>
+      </form>
+
+      <!-- Q3 -->
+      <form class="rounded-xl border border-border bg-card p-5 space-y-3" data-lavish-question="D7-dashboard"
+        onsubmit="event.preventDefault(); const v=new FormData(event.currentTarget).get('d7'); if(v) window.lavish.queuePrompt('D7 (dashboard card): '+v, {tag:'choice', text:'D7 · '+v, queueKey:'D7', element:event.currentTarget, data:{question:'D7-dashboard', answer:v}});">
+        <div class="flex items-center gap-2"><span class="font-mono text-xs text-primary">D7</span><h3 class="text-sm font-semibold">Dashboard card</h3></div>
+        <label class="flex items-start gap-2.5 rounded-lg border border-border p-2.5 cursor-pointer hover:border-primary/40 transition"><input type="radio" name="d7" value="Include dashboard card now" class="mt-0.5 accent-[oklch(0.74_0.15_162)]" checked><span class="text-[13px]">Include the dashboard card now <span class="text-primary">(recommended)</span></span></label>
+        <label class="flex items-start gap-2.5 rounded-lg border border-border p-2.5 cursor-pointer hover:border-primary/40 transition"><input type="radio" name="d7" value="Page first, dashboard later" class="mt-0.5 accent-[oklch(0.74_0.15_162)]"><span class="text-[13px]">Page first, dashboard card later</span></label>
+        <button type="submit" class="w-full rounded-lg bg-primary px-3 py-2 text-[13px] font-medium text-primary-foreground hover:opacity-90 transition">Queue D7</button>
+      </form>
+
+      <!-- Q4 -->
+      <form class="rounded-xl border border-border bg-card p-5 space-y-3" data-lavish-question="scope"
+        onsubmit="event.preventDefault(); const v=new FormData(event.currentTarget).get('scope'); if(v) window.lavish.queuePrompt('Scope of this pass: '+v, {tag:'choice', text:'Scope · '+v, queueKey:'scope', element:event.currentTarget, data:{question:'scope', answer:v}});">
+        <div class="flex items-center gap-2"><span class="font-mono text-xs text-primary">Scope</span><h3 class="text-sm font-semibold">How far this round</h3></div>
+        <label class="flex items-start gap-2.5 rounded-lg border border-border p-2.5 cursor-pointer hover:border-primary/40 transition"><input type="radio" name="scope" value="Backend first (PR 1), review before UI" class="mt-0.5 accent-[oklch(0.74_0.15_162)]" checked><span class="text-[13px]">Backend first (PR 1), review before UI <span class="text-primary">(recommended)</span></span></label>
+        <label class="flex items-start gap-2.5 rounded-lg border border-border p-2.5 cursor-pointer hover:border-primary/40 transition"><input type="radio" name="scope" value="Do PR 1 through 3 in one pass" class="mt-0.5 accent-[oklch(0.74_0.15_162)]"><span class="text-[13px]">Do PR 1 → 3 in one pass</span></label>
+        <button type="submit" class="w-full rounded-lg bg-primary px-3 py-2 text-[13px] font-medium text-primary-foreground hover:opacity-90 transition">Queue Scope</button>
+      </form>
+    </div>
+
+    <div class="flex flex-wrap items-center gap-3 rounded-xl border border-primary/30 bg-primary/5 p-4">
+      <p class="text-[13px] text-muted-foreground flex-1 min-w-[12rem]">Queued answers replace each other per question. Send them all when ready.</p>
+      <button type="button" class="rounded-lg bg-primary px-4 py-2 text-[13px] font-semibold text-primary-foreground hover:opacity-90 transition"
+        data-lavish-action onclick="window.lavish && window.lavish.sendQueuedPrompts && window.lavish.sendQueuedPrompts();">Send all answers to agent</button>
+    </div>
+  </section>
+
+  <footer class="pt-4 pb-2 text-center text-[11px] text-muted-foreground border-t border-border">
+    Full written plan: <code class="rounded bg-muted px-1.5 py-0.5">plans/016-budgets-reintegration/016-budgets-reintegration.md</code> · rendered in Kuberan's own theme
+  </footer>
+</main>
+
+<!-- Mermaid, theme-aware -->
+<script type="module">
+  import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11.15.0/dist/mermaid.esm.min.mjs";
+  mermaid.initialize({ startOnLoad: false, theme: "dark", securityLevel: "strict", themeVariables: { fontFamily: "ui-sans-serif, system-ui, sans-serif" } });
+  try { await mermaid.run({ nodes: document.querySelectorAll(".mermaid") }); }
+  catch (e) { console.error("Mermaid render failed:", e); }
+</script>
+</body>
+</html>

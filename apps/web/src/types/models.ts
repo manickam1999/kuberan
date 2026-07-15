@@ -80,8 +80,6 @@ export interface Budget extends BaseModel {
   name: string;
   amount: number; // cents
   period: BudgetPeriod;
-  start_date: string; // ISO 8601
-  end_date?: string | null; // ISO 8601
   is_active: boolean;
   category?: Category; // preloaded relation
 }
