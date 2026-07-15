@@ -826,6 +826,58 @@
                             "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
+                    "409": {
+                        "description": "Active budget already exists for this category and period",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Server error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/budgets/progress": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Get spending progress for every active budget in the current period, in one call",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "budgets"
+                ],
+                "summary": "Get progress for all active budgets",
+                "responses": {
+                    "200": {
+                        "description": "Active budgets progress",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "array",
+                                "items": {
+                                    "$ref": "#/definitions/kuberan_internal_services.BudgetProgress"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
                     "500": {
                         "description": "Server error",
                         "schema": {
@@ -855,7 +907,7 @@
                 "summary": "Get budget by ID",
                 "parameters": [
                     {
-                        "type": "integer",
+                        "type": "string",
                         "description": "Budget ID",
                         "name": "id",
                         "in": "path",
@@ -914,7 +966,7 @@
                 "summary": "Update budget",
                 "parameters": [
                     {
-                        "type": "integer",
+                        "type": "string",
                         "description": "Budget ID",
                         "name": "id",
                         "in": "path",
@@ -982,7 +1034,7 @@
                 "summary": "Delete budget",
                 "parameters": [
                     {
-                        "type": "integer",
+                        "type": "string",
                         "description": "Budget ID",
                         "name": "id",
                         "in": "path",
@@ -1043,7 +1095,7 @@
                 "summary": "Get budget progress",
                 "parameters": [
                     {
-                        "type": "integer",
+                        "type": "string",
                         "description": "Budget ID",
                         "name": "id",
                         "in": "path",
@@ -3792,17 +3844,13 @@
                 "amount",
                 "category_id",
                 "name",
-                "period",
-                "start_date"
+                "period"
             ],
             "properties": {
                 "amount": {
                     "type": "integer"
                 },
                 "category_id": {
-                    "type": "string"
-                },
-                "end_date": {
                     "type": "string"
                 },
                 "name": {
@@ -3812,9 +3860,6 @@
                 },
                 "period": {
                     "$ref": "#/definitions/kuberan_internal_models.BudgetPeriod"
-                },
-                "start_date": {
-                    "type": "string"
                 }
             }
         },
@@ -4325,8 +4370,8 @@
                 "amount": {
                     "type": "integer"
                 },
-                "end_date": {
-                    "type": "string"
+                "is_active": {
+                    "type": "boolean"
                 },
                 "name": {
                     "type": "string",
@@ -4650,9 +4695,6 @@
                 "deleted_at": {
                     "$ref": "#/definitions/gorm.DeletedAt"
                 },
-                "end_date": {
-                    "type": "string"
-                },
                 "id": {
                     "type": "string"
                 },
@@ -4664,9 +4706,6 @@
                 },
                 "period": {
                     "$ref": "#/definitions/kuberan_internal_models.BudgetPeriod"
-                },
-                "start_date": {
-                    "type": "string"
                 },
                 "updated_at": {
                     "type": "string"
