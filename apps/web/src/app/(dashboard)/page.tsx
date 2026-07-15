@@ -22,6 +22,7 @@ import { NetWorthChart } from "@/components/dashboard/net-worth-chart";
 import { CompositionCard } from "@/components/dashboard/composition-card";
 import { SpendingCard } from "@/components/dashboard/spending-card";
 import { CashflowCard } from "@/components/dashboard/cashflow-card";
+import { BudgetsCard } from "@/components/dashboard/budgets-card";
 import type { Account, Transaction } from "@/types/models";
 
 function DashboardSkeleton() {
@@ -220,6 +221,7 @@ export default function DashboardPage() {
             <NetWorthChart />
             <SpendingCard />
             <CashflowCard />
+            <BudgetsCard />
           </div>
 
           {/* Rail */}
