@@ -3,10 +3,12 @@ package services
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"image"
 	"image/color"
 	"image/png"
 	"io"
+	"strings"
 	"testing"
 	"time"
 
@@ -204,4 +206,103 @@ func TestAttachmentListOpenDelete(t *testing.T) {
 			t.Errorf("expected object gone from store after delete")
 		}
 	})
+}
+
+// TestMapNormalizeError verifies each storage sanitization sentinel maps to the
+// right client-facing AppError code, including when wrapped (errors.Is chain).
+func TestMapNormalizeError(t *testing.T) {
+	cases := []struct {
+		name     string
+		in       error
+		wantCode string
+	}{
+		{"unsupported type", storage.ErrUnsupportedMediaType, "UNSUPPORTED_MEDIA_TYPE"},
+		{"image too large", storage.ErrImageTooLarge, "PAYLOAD_TOO_LARGE"},
+		{"corrupt image", storage.ErrCorruptImage, "INVALID_INPUT"},
+		{"wrapped corrupt image", fmt.Errorf("decode: %w", storage.ErrCorruptImage), "INVALID_INPUT"},
+		{"unknown error", fmt.Errorf("some io failure"), "INTERNAL_ERROR"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			testutil.AssertAppError(t, mapNormalizeError(tc.in), tc.wantCode)
+		})
+	}
+}
+
+// TestExtensionFor verifies the canonical extension chosen for each normalized
+// content type, with the JPEG default covering transcoded/unknown output.
+func TestExtensionFor(t *testing.T) {
+	cases := []struct {
+		contentType string
+		want        string
+	}{
+		{storage.ContentTypePNG, ".png"},
+		{storage.ContentTypePDF, ".pdf"},
+		{storage.ContentTypeJPEG, ".jpg"},
+		{"application/octet-stream", ".jpg"}, // default branch
+	}
+	for _, tc := range cases {
+		t.Run(tc.contentType, func(t *testing.T) {
+			if got := extensionFor(tc.contentType); got != tc.want {
+				t.Errorf("extensionFor(%q) = %q, want %q", tc.contentType, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestSanitizeFileName covers path stripping, dot/slash-only names, control
+// character removal, whitespace trimming, and length capping.
+func TestSanitizeFileName(t *testing.T) {
+	cases := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{"plain", "receipt.png", "receipt.png"},
+		{"strips unix path", "/etc/passwd/receipt.png", "receipt.png"},
+		{"strips windows path", `C:\Users\evil\receipt.png`, "receipt.png"},
+		{"trims surrounding space", "  spaced.pdf  ", "spaced.pdf"},
+		{"dot only", ".", ""},
+		{"dotdot only", "..", ""},
+		{"slash only", "/", ""},
+		{"removes control chars", "re\x00ce\x1fip\x7ft.png", "receipt.png"},
+		{"caps overlong name", strings.Repeat("a", 300), strings.Repeat("a", 255)},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := sanitizeFileName(tc.in); got != tc.want {
+				t.Errorf("sanitizeFileName(%q) = %q, want %q", tc.in, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestAttachmentOpenMissingObject verifies Open surfaces ATTACHMENT_NOT_FOUND
+// when the metadata row exists but the underlying blob is gone from the store
+// (e.g. an out-of-band object deletion), rather than a 500.
+func TestAttachmentOpenMissingObject(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	defer testutil.TeardownTestDB(t, db)
+
+	user := testutil.CreateTestUser(t, db)
+	account := testutil.CreateTestCashAccount(t, db, user.ID)
+	tx := &models.Transaction{UserID: user.ID, AccountID: account.ID, Type: models.TransactionTypeExpense, Amount: 1000, Date: time.Now()}
+	if err := db.Create(tx).Error; err != nil {
+		t.Fatalf("create tx: %v", err)
+	}
+
+	store := storage.NewMemBlobStore()
+	svc := NewAttachmentService(db, store, defaultLimits())
+
+	data := smallPNG(t, 20, 20)
+	att, err := svc.Upload(user.ID, tx.ID, "receipt.png", "image/png", int64(len(data)), bytes.NewReader(data))
+	testutil.AssertNoError(t, err)
+
+	// Remove the object out-of-band, leaving a dangling metadata row.
+	if err := store.Delete(context.Background(), att.StorageKey); err != nil {
+		t.Fatalf("delete object: %v", err)
+	}
+
+	_, _, err = svc.Open(user.ID, att.ID)
+	testutil.AssertAppError(t, err, "ATTACHMENT_NOT_FOUND")
 }
