@@ -185,6 +185,10 @@ services:
     profiles:
       - backup
     env_file: .env.prod
+    # Off-host encrypted replication (plans/017 Phase 0): the RCLONE_CONFIG_*,
+    # HEALTHCHECK_URL, and RECEIPTS_BUCKET vars are supplied via .env.prod and
+    # consumed by backup.sh. RECEIPTS_BUCKET stays unset until receipts deploy
+    # (Phase 4 also adds `minio` to this service's network for the mirror).
     environment:
       # pg_dump requires a direct connection, not Supavisor's pooler (port 6543).
       # Override to port 5432 for direct access.

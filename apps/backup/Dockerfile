@@ -6,10 +6,13 @@ ARG TARGETARCH
 RUN sed -i 's|dl-cdn.alpinelinux.org|mirrors.edge.kernel.org|g' /etc/apk/repositories
 
 # Install dependencies
+# rclone + curl power the off-host encrypted push to R2 (see plans/017 Phase 0).
 RUN apk add --no-cache \
   postgresql17-client \
   ca-certificates \
   tzdata \
+  rclone \
+  curl \
   && update-ca-certificates
 
 # Install supercronic (cron replacement for containers)
