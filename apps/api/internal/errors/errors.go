@@ -108,3 +108,11 @@ var (
 	ErrLinkCodeExpired       = &AppError{Code: "LINK_CODE_EXPIRED", Message: "Link code has expired", StatusCode: http.StatusBadRequest}
 	ErrTelegramAlreadyLinked = &AppError{Code: "TELEGRAM_ALREADY_LINKED", Message: "This Telegram account is already linked to another user", StatusCode: http.StatusConflict}
 )
+
+// Attachment errors (transaction receipts, plan 017).
+var (
+	ErrAttachmentNotFound   = &AppError{Code: "ATTACHMENT_NOT_FOUND", Message: "Attachment not found", StatusCode: http.StatusNotFound}
+	ErrUnsupportedMediaType = &AppError{Code: "UNSUPPORTED_MEDIA_TYPE", Message: "Unsupported file type", StatusCode: http.StatusUnsupportedMediaType}
+	ErrPayloadTooLarge      = &AppError{Code: "PAYLOAD_TOO_LARGE", Message: "File exceeds the maximum allowed size", StatusCode: http.StatusRequestEntityTooLarge}
+	ErrAttachmentLimit      = &AppError{Code: "ATTACHMENT_LIMIT", Message: "Maximum number of attachments reached for this transaction", StatusCode: http.StatusConflict}
+)
