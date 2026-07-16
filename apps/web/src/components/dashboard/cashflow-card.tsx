@@ -17,11 +17,15 @@ import {
 } from "@/components/ui/tooltip";
 import { useMonthlySummary } from "@/hooks/use-transactions";
 import { useActiveMonth } from "@/hooks/use-active-month";
+import { useChartTheme } from "@/providers/chart-theme-provider";
+import { DitherFill } from "@/components/charts/dither-fill";
 import { formatCurrency } from "@/lib/format";
 
 export function CashflowCard() {
   const { data, isLoading } = useMonthlySummary(6);
   const { label: monthLabel, isCurrentMonth } = useActiveMonth();
+  const { chartTheme } = useChartTheme();
+  const isDither = chartTheme === "dither";
 
   const { income, expenses, net, trend, savingsRate } = useMemo(() => {
     const rows = data ?? [];
@@ -109,10 +113,16 @@ export function CashflowCard() {
         <div>
           <div className="flex h-2 w-full overflow-hidden rounded-full bg-muted">
             <div
-              className="h-full bg-positive"
+              className={`relative h-full overflow-hidden ${isDither ? "" : "bg-positive"}`}
               style={{ width: `${incomePct}%` }}
-            />
-            <div className="h-full flex-1 bg-negative" />
+            >
+              {isDither && <DitherFill color="green" />}
+            </div>
+            <div
+              className={`relative h-full flex-1 overflow-hidden ${isDither ? "" : "bg-negative"}`}
+            >
+              {isDither && <DitherFill color="red" />}
+            </div>
           </div>
           {savingsRate !== null && (
             <p className="mt-1.5 text-xs text-muted-foreground">
@@ -136,11 +146,19 @@ export function CashflowCard() {
                     <div className="flex flex-1 cursor-default flex-col items-center gap-1.5 rounded-md py-1 transition-colors hover:bg-accent/40">
                       <div className="flex h-10 w-full items-end justify-center">
                         <div
-                          className={`w-full max-w-6 rounded-sm ${
-                            m.net >= 0 ? "bg-positive/70" : "bg-negative/70"
+                          className={`relative w-full max-w-6 overflow-hidden rounded-sm ${
+                            isDither
+                              ? ""
+                              : m.net >= 0
+                                ? "bg-positive/70"
+                                : "bg-negative/70"
                           }`}
                           style={{ height: `${Math.max(m.height * 100, 4)}%` }}
-                        />
+                        >
+                          {isDither && (
+                            <DitherFill color={m.net >= 0 ? "green" : "red"} />
+                          )}
+                        </div>
                       </div>
                       <span className="text-[10px] text-muted-foreground">
                         {m.label}

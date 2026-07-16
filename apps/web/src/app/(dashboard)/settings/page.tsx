@@ -2,6 +2,7 @@
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { TelegramSettings } from "@/components/settings/telegram-settings";
+import { AppearanceSettings } from "@/components/settings/appearance-settings";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -99,11 +100,16 @@ export default function SettingsPage() {
       <Tabs defaultValue="profile" className="w-full">
         <TabsList>
           <TabsTrigger value="profile">Profile</TabsTrigger>
+          <TabsTrigger value="appearance">Appearance</TabsTrigger>
           <TabsTrigger value="telegram">Telegram bot</TabsTrigger>
         </TabsList>
 
         <TabsContent value="profile" className="mt-5">
           <ProfileTab />
+        </TabsContent>
+
+        <TabsContent value="appearance" className="mt-5">
+          <AppearanceSettings />
         </TabsContent>
 
         <TabsContent value="telegram" className="mt-5">

@@ -10,6 +10,10 @@ import {
 import { useAccounts } from "@/hooks/use-accounts";
 import { usePortfolio } from "@/hooks/use-investments";
 import { Skeleton } from "@/components/ui/skeleton";
+import { DitherFill } from "@/components/charts/dither-fill";
+import { ditherFill } from "@/lib/dither";
+import type { DitherColor } from "@/components/dither-kit/palette";
+import { useChartTheme } from "@/providers/chart-theme-provider";
 import { formatCurrency, formatPercentage } from "@/lib/format";
 import type { Account } from "@/types/models";
 
@@ -17,6 +21,7 @@ interface Segment {
   label: string;
   value: number;
   color: string;
+  ditherColor: DitherColor;
   pct: number;
   delta?: { text: string; up: boolean };
 }
@@ -24,6 +29,7 @@ interface Segment {
 export function CompositionCard() {
   const { data: accountsData, isLoading } = useAccounts();
   const { data: portfolio } = usePortfolio();
+  const { chartTheme } = useChartTheme();
 
   if (isLoading) {
     return (
@@ -58,12 +64,14 @@ export function CompositionCard() {
       label: "Cash",
       value: cash,
       color: "var(--chart-1)",
+      ditherColor: "green",
       pct: assets > 0 ? (cash / assets) * 100 : 0,
     },
     {
       label: "Investments",
       value: investments,
       color: "var(--chart-3)",
+      ditherColor: "purple",
       pct: assets > 0 ? (investments / assets) * 100 : 0,
       delta: portfolio
         ? {
@@ -85,9 +93,15 @@ export function CompositionCard() {
           {assetSegments.map((s) => (
             <div
               key={s.label}
-              style={{ width: `${Math.max(s.pct, 2)}%`, backgroundColor: s.color }}
-              className="h-full first:rounded-l-full last:rounded-r-full"
-            />
+              style={{
+                width: `${Math.max(s.pct, 2)}%`,
+                backgroundColor:
+                  chartTheme === "dither" ? undefined : s.color,
+              }}
+              className="relative h-full overflow-hidden first:rounded-l-full last:rounded-r-full"
+            >
+              {chartTheme === "dither" && <DitherFill color={s.ditherColor} />}
+            </div>
           ))}
         </div>
 
@@ -100,7 +114,12 @@ export function CompositionCard() {
               <span className="flex min-w-0 items-center gap-2">
                 <span
                   className="size-2.5 shrink-0 rounded-full"
-                  style={{ backgroundColor: s.color }}
+                  style={{
+                    backgroundColor:
+                      chartTheme === "dither"
+                        ? ditherFill(s.ditherColor)
+                        : s.color,
+                  }}
                 />
                 <span className="truncate text-sm text-muted-foreground">
                   {s.label}
@@ -131,7 +150,14 @@ export function CompositionCard() {
           {debt > 0 && (
             <div className="flex items-center justify-between gap-3">
               <span className="flex items-center gap-2">
-                <span className="size-2.5 shrink-0 rounded-full bg-negative" />
+                <span
+                  className="size-2.5 shrink-0 rounded-full bg-negative"
+                  style={
+                    chartTheme === "dither"
+                      ? { backgroundColor: ditherFill("red") }
+                      : undefined
+                  }
+                />
                 <span className="text-sm text-muted-foreground">Debt</span>
               </span>
               <span className="money shrink-0 text-sm font-medium text-negative">

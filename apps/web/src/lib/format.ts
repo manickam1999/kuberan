@@ -71,6 +71,18 @@ export function formatShortDateTime(iso: string): string {
 }
 
 /**
+ * Format a whole-unit number compactly for chart axes (e.g. 181000 -> "181K").
+ * Input is in display units (dollars), not cents.
+ * @param value - Numeric value in whole units
+ */
+export function formatCompact(value: number): string {
+  return new Intl.NumberFormat("en-US", {
+    notation: "compact",
+    maximumFractionDigits: 1,
+  }).format(value);
+}
+
+/**
  * Format a numeric percentage value.
  * @param value - Percentage value (e.g., 65.5 = "65.50%")
  */

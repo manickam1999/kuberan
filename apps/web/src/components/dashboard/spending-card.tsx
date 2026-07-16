@@ -1,12 +1,9 @@
 "use client";
 
 import { useMemo } from "react";
-import { Label, Pie, PieChart } from "recharts";
-import {
-  ChartContainer,
-  ChartTooltip,
-  type ChartConfig,
-} from "@/components/ui/chart";
+import { ThemedDonut, type DonutSlice } from "@/components/charts/themed-donut";
+import { DitherFill } from "@/components/charts/dither-fill";
+import { ditherColorAt, ditherFill } from "@/lib/dither";
 import {
   Card,
   CardContent,
@@ -17,10 +14,11 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { useSpendingByCategory } from "@/hooks/use-transactions";
 import { useActiveMonth } from "@/hooks/use-active-month";
+import { useChartTheme } from "@/providers/chart-theme-provider";
 import { formatCurrency } from "@/lib/format";
 
 const TOP_N = 5;
-const OTHERS_COLOR = "#8b8b95";
+const OTHERS_CLEAN_COLOR = "#8b8b95";
 
 export function SpendingCard() {
   const {
@@ -30,44 +28,37 @@ export function SpendingCard() {
     isCurrentMonth,
   } = useActiveMonth();
   const { data, isLoading } = useSpendingByCategory(fromDate, toDate);
+  const { chartTheme } = useChartTheme();
 
-  const { chartConfig, chartData, bars } = useMemo(() => {
+  const { slices, bars } = useMemo(() => {
     if (!data?.items)
       return {
-        chartConfig: {} as ChartConfig,
-        chartData: [],
-        bars: [] as { name: string; value: number; fill: string; pct: number }[],
+        slices: [] as DonutSlice[],
+        bars: [] as (DonutSlice & { pct: number })[],
       };
 
     const sorted = [...data.items];
     const top = sorted.slice(0, TOP_N);
     const rest = sorted.slice(TOP_N);
-    const items = [...top];
+    const items: DonutSlice[] = top.map((item, index) => ({
+      name: item.category_name,
+      value: item.total,
+      cleanColor: item.category_color,
+      ditherColor: ditherColorAt(index),
+    }));
     if (rest.length > 0) {
       items.push({
-        category_id: null,
-        category_name: "Others",
-        category_color: OTHERS_COLOR,
-        category_icon: "",
-        total: rest.reduce((s, x) => s + x.total, 0),
+        name: "Others",
+        value: rest.reduce((s, x) => s + x.total, 0),
+        cleanColor: OTHERS_CLEAN_COLOR,
+        ditherColor: "grey",
       });
     }
 
-    const config: ChartConfig = { total: { label: "Spending" } };
-    const cData = items.map((item) => ({
-      name: item.category_name,
-      value: item.total,
-      fill: item.category_color,
-    }));
-    const max = Math.max(1, ...items.map((i) => i.total));
-    const barList = items.map((item) => ({
-      name: item.category_name,
-      value: item.total,
-      fill: item.category_color,
-      pct: item.total / max,
-    }));
+    const max = Math.max(1, ...items.map((i) => i.value));
+    const barList = items.map((item) => ({ ...item, pct: item.value / max }));
 
-    return { chartConfig: config, chartData: cData, bars: barList };
+    return { slices: items, bars: barList };
   }, [data]);
 
   if (isLoading) {
@@ -102,6 +93,9 @@ export function SpendingCard() {
     );
   }
 
+  const swatch = (slice: DonutSlice) =>
+    chartTheme === "dither" ? ditherFill(slice.ditherColor) : slice.cleanColor;
+
   return (
     <Card>
       <CardHeader>
@@ -119,76 +113,20 @@ export function SpendingCard() {
         </div>
       </CardHeader>
       <CardContent className="flex flex-col items-center gap-6 sm:flex-row sm:items-center">
-        <ChartContainer
-          config={chartConfig}
-          className="aspect-square size-[150px] shrink-0"
-        >
-          <PieChart>
-            <ChartTooltip
-              cursor={false}
-              content={({ active, payload }) => {
-                if (!active || !payload?.length) return null;
-                const item = payload[0];
-                const value = item.value as number;
-                const pct =
-                  data.total_spent > 0
-                    ? ((value / data.total_spent) * 100).toFixed(1)
-                    : "0";
-                return (
-                  <div className="rounded-lg border border-border/50 bg-popover px-3 py-2 text-xs shadow-xl">
-                    <div className="flex items-center gap-2">
-                      <span
-                        className="size-2.5 rounded-[2px]"
-                        style={{ backgroundColor: item.payload.fill }}
-                      />
-                      <span className="font-medium">{item.name}</span>
-                    </div>
-                    <div className="mt-1 text-muted-foreground">
-                      {formatCurrency(value)} ({pct}%)
-                    </div>
-                  </div>
-                );
-              }}
-            />
-            <Pie
-              data={chartData}
-              dataKey="value"
-              nameKey="name"
-              innerRadius={52}
-              strokeWidth={4}
-            >
-              <Label
-                content={({ viewBox }) => {
-                  if (viewBox && "cx" in viewBox && "cy" in viewBox) {
-                    return (
-                      <text
-                        x={viewBox.cx}
-                        y={viewBox.cy}
-                        textAnchor="middle"
-                        dominantBaseline="middle"
-                      >
-                        <tspan
-                          x={viewBox.cx}
-                          y={viewBox.cy}
-                          className="fill-foreground text-sm font-semibold"
-                        >
-                          {formatCurrency(data.total_spent)}
-                        </tspan>
-                        <tspan
-                          x={viewBox.cx}
-                          y={(viewBox.cy || 0) + 16}
-                          className="fill-muted-foreground text-[10px]"
-                        >
-                          spent
-                        </tspan>
-                      </text>
-                    );
-                  }
-                }}
-              />
-            </Pie>
-          </PieChart>
-        </ChartContainer>
+        <ThemedDonut
+          data={slices}
+          size={150}
+          valueFormatter={(value) => formatCurrency(value)}
+          totalForPct={data.total_spent}
+          center={
+            <>
+              <span className="text-sm font-semibold tabular-nums">
+                {formatCurrency(data.total_spent)}
+              </span>
+              <span className="text-[10px] text-muted-foreground">spent</span>
+            </>
+          }
+        />
 
         <ul className="w-full flex-1 space-y-2.5">
           {bars.map((b) => (
@@ -197,7 +135,7 @@ export function SpendingCard() {
                 <span className="flex min-w-0 items-center gap-2">
                   <span
                     className="size-2.5 shrink-0 rounded-full"
-                    style={{ backgroundColor: b.fill }}
+                    style={{ backgroundColor: swatch(b) }}
                   />
                   <span className="truncate">{b.name}</span>
                 </span>
@@ -207,12 +145,17 @@ export function SpendingCard() {
               </div>
               <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
                 <div
-                  className="h-full rounded-full"
+                  className="relative h-full overflow-hidden rounded-full"
                   style={{
                     width: `${Math.max(b.pct * 100, 2)}%`,
-                    backgroundColor: b.fill,
+                    backgroundColor:
+                      chartTheme === "dither" ? undefined : b.cleanColor,
                   }}
-                />
+                >
+                  {chartTheme === "dither" && (
+                    <DitherFill color={b.ditherColor} />
+                  )}
+                </div>
               </div>
             </li>
           ))}

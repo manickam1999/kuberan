@@ -2,12 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { ArrowUpRight, ArrowDownRight } from "lucide-react";
-import { AreaChart, Area, XAxis, YAxis, CartesianGrid } from "recharts";
-import {
-  ChartContainer,
-  ChartTooltip,
-  type ChartConfig,
-} from "@/components/ui/chart";
+import { ThemedAreaChart } from "@/components/charts/themed-area-chart";
 import {
   Card,
   CardContent,
@@ -27,7 +22,6 @@ import {
   formatTime,
   formatShortDateTime,
 } from "@/lib/format";
-import { useIsMobile } from "@/hooks/use-mobile";
 import type { PortfolioSnapshot } from "@/types/models";
 
 interface PeriodOption {
@@ -98,10 +92,6 @@ const PERIOD_OPTIONS: readonly PeriodOption[] = [
   },
 ] as const;
 
-const chartConfig = {
-  net_worth: { label: "Net Worth", color: "var(--chart-1)" },
-} satisfies ChartConfig;
-
 /** Format a Date as YYYY-MM-DD using local date components (avoids UTC shift). */
 function toLocalDateString(d: Date): string {
   const year = d.getFullYear();
@@ -136,13 +126,12 @@ function toChartData(
   formatLabel: (iso: string) => string
 ) {
   return snapshots.map((s) => ({
-    date: formatLabel(s.recorded_at),
-    net_worth: s.total_net_worth / 100,
+    label: formatLabel(s.recorded_at),
+    value: s.total_net_worth / 100,
   }));
 }
 
 export function NetWorthChart() {
-  const isMobile = useIsMobile();
   const [period, setPeriod] = useState("1W");
 
   const selectedOpt = useMemo(
@@ -207,7 +196,7 @@ export function NetWorthChart() {
   // Change over the selected window (first vs last point), in cents.
   const periodChange = useMemo(() => {
     if (chartData.length < 2 || latestNetWorth === null) return null;
-    const startCents = chartData[0].net_worth * 100;
+    const startCents = chartData[0].value * 100;
     const deltaCents = latestNetWorth - startCents;
     const pct = startCents !== 0 ? (deltaCents / Math.abs(startCents)) * 100 : 0;
     return { deltaCents, pct };
@@ -296,66 +285,14 @@ export function NetWorthChart() {
             </p>
           </div>
         ) : (
-          <ChartContainer
-            config={chartConfig}
+          <ThemedAreaChart
+            data={chartData}
+            seriesLabel="Net Worth"
             className="h-[190px] md:h-[230px] w-full"
-          >
-            <AreaChart accessibilityLayer data={chartData}>
-              <defs>
-                <linearGradient
-                  id="fillNetWorth"
-                  x1="0"
-                  y1="0"
-                  x2="0"
-                  y2="1"
-                >
-                  <stop
-                    offset="0%"
-                    stopColor="var(--color-net_worth)"
-                    stopOpacity={0.4}
-                  />
-                  <stop
-                    offset="95%"
-                    stopColor="var(--color-net_worth)"
-                    stopOpacity={0.1}
-                  />
-                </linearGradient>
-              </defs>
-              <CartesianGrid vertical={false} />
-              <XAxis
-                dataKey="date"
-                tickLine={false}
-                axisLine={false}
-                tickMargin={8}
-                minTickGap={isMobile ? 50 : 30}
-              />
-              <YAxis
-                hide
-                domain={["dataMin - 100", "dataMax + 100"]}
-              />
-              <ChartTooltip
-                content={({ active, payload, label }) => {
-                  if (!active || !payload?.length) return null;
-                  const value = payload[0].value as number;
-                  return (
-                    <div className="border-border/50 bg-background rounded-lg border px-3 py-2 text-xs shadow-xl">
-                      <div className="font-medium">{label}</div>
-                      <div className="mt-1 font-mono font-medium tabular-nums">
-                        {formatCurrency(value * 100)}
-                      </div>
-                    </div>
-                  );
-                }}
-              />
-              <Area
-                type="monotone"
-                dataKey="net_worth"
-                stroke="var(--color-net_worth)"
-                fill="url(#fillNetWorth)"
-                strokeWidth={2}
-              />
-            </AreaChart>
-          </ChartContainer>
+            ditherColor="green"
+            cleanColor="var(--chart-1)"
+            valueFormatter={(v) => formatCurrency(v * 100)}
+          />
         )}
       </CardContent>
     </Card>
