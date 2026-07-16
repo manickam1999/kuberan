@@ -68,7 +68,7 @@ export function SpendingCard() {
           <CardTitle className="text-base">Spending</CardTitle>
         </CardHeader>
         <CardContent className="flex gap-6">
-          <Skeleton className="size-[150px] shrink-0 rounded-full" />
+          <Skeleton className="size-[200px] shrink-0 rounded-full" />
           <div className="flex-1 space-y-3">
             {Array.from({ length: 5 }).map((_, i) => (
               <Skeleton key={i} className="h-6 w-full" />
@@ -115,7 +115,7 @@ export function SpendingCard() {
       <CardContent className="flex flex-col items-center gap-6 sm:flex-row sm:items-center">
         <ThemedDonut
           data={slices}
-          size={150}
+          size={200}
           valueFormatter={(value) => formatCurrency(value)}
           totalForPct={data.total_spent}
           center={

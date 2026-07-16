@@ -99,7 +99,7 @@ export function AssetAllocationChart({
         <div className="flex flex-1 items-center justify-center py-2">
           <ThemedDonut
             data={slices}
-            size={160}
+            size={200}
             valueFormatter={(value) => formatCurrency(value)}
             totalForPct={totalValue}
             center={

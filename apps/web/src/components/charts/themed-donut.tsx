@@ -68,7 +68,8 @@ export function ThemedDonut({
           }, {})}
           dataKey="value"
           nameKey="name"
-          innerRadius={0.62}
+          innerRadius={0.78}
+          margins={{ top: 14, right: 14, bottom: 14, left: 14 }}
           bloom="low"
           bloomOnHover
         >
@@ -87,7 +88,7 @@ export function ThemedDonut({
               return acc;
             }, {}) satisfies ChartConfig
           }
-          className="size-full"
+          className="aspect-square size-full"
         >
           <RechartsPieChart>
             <ChartTooltip
