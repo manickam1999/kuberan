@@ -14,6 +14,7 @@ Built with a Go backend and Next.js frontend, organized as a monorepo.
 - **Securities & Pricing** -- Browse securities, view price history, pipeline API for automated price ingestion
 - **Portfolio Snapshots** -- Historical net worth tracking (cash + investments - debt) with time-series charts
 - **Categories** -- Hierarchical income/expense categories with icons and colors
+- **Receipt Attachments** -- Attach receipt images/PDFs to transactions, stored in a private S3-compatible object store (MinIO) with server-side sanitization; see [docs/receipts.md](docs/receipts.md)
 - **Telegram Bot** -- Link a Telegram account and interact with your finances via chat (`apps/bot`)
 - **Price Oracle** -- Standalone worker that ingests security prices and triggers portfolio snapshots via the pipeline API (`apps/oracle`)
 - **MCP Server** -- Read-only finance tools for MCP clients (e.g. Claude connectors), secured with OAuth 2.1 via Ory Hydra (`apps/api/cmd/mcp`)
@@ -44,7 +45,7 @@ Built with a Go backend and Next.js frontend, organized as a monorepo.
 │   ├── oracle/               # Go price-ingestion + snapshot worker
 │   └── backup/               # Cron-based pg_dump backup service
 ├── deploy/                   # Deployment scripts
-├── docs/                     # Documentation (MCP OAuth, database setup)
+├── docs/                     # Documentation (MCP OAuth, database setup, receipts)
 ├── ory/                      # Ory Hydra (OAuth authorization server) config
 ├── plans/                    # Architecture and upgrade plans
 ├── scripts/                  # Utility scripts (check-go.sh, etc.)

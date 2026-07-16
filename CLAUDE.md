@@ -17,7 +17,7 @@ Monorepo with five applications:
 │   ├── oracle/       # Go price-ingestion + snapshot worker (own Go module, uses the pipeline API)
 │   └── backup/       # Cron-based pg_dump backup service (shell + supercronic)
 ├── deploy/           # Deployment scripts (deploy.sh)
-├── docs/             # Documentation (mcp-oauth.md, database-setup.md)
+├── docs/             # Documentation (mcp-oauth.md, database-setup.md, receipts.md)
 ├── ory/              # Ory Hydra (OAuth 2.1 authorization server) config
 ├── plans/            # Architecture and upgrade plans
 ├── scripts/          # Shared scripts (check-go.sh, etc.)
