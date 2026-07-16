@@ -20,7 +20,10 @@ flowchart LR
 - `r2crypt` is an rclone **crypt** remote wrapping the `r2` S3 remote, so both
   filenames and contents are encrypted before leaving the host. Cloudflare
   stores only ciphertext.
-- The receipts mirror is a no-op until `RECEIPTS_BUCKET` is set (Phase 4).
+- The receipts mirror activates once receipts deploy (Phase 4): the backup
+  service sets `RECEIPTS_BUCKET` in `docker-compose.prod.yml`, and `minio-init`
+  enables versioning on the source MinIO bucket. It stays a no-op only while
+  the `RCLONE_CONFIG_MINIO_*` source remote is left unconfigured.
 
 ## One-time setup
 
@@ -35,8 +38,12 @@ flowchart LR
    ```
    Store the **plaintext** passphrases in an off-VPS password manager. Losing
    them makes every off-host copy permanently unrecoverable.
-4. **Populate `.env.prod`** with the `RCLONE_CONFIG_*`, `HEALTHCHECK_URL`, and
-   (Phase 4) `RECEIPTS_BUCKET` values documented in `.env.prod.example`.
+4. **Populate `.env.prod`** with the `RCLONE_CONFIG_*` and `HEALTHCHECK_URL`
+   values documented in `.env.prod.example`. For receipts (Phase 4), set the
+   `RCLONE_CONFIG_MINIO_*` source remote to the same scoped keys as
+   `STORAGE_ACCESS_KEY`/`STORAGE_SECRET_KEY`; `RECEIPTS_BUCKET` is supplied
+   automatically by the compose backup service, and MinIO source-bucket
+   versioning is enabled automatically by `minio-init`.
 5. **Create a healthcheck** (e.g. healthchecks.io) and set `HEALTHCHECK_URL`.
 
 ## Verifying a run
