@@ -226,10 +226,15 @@ services:
         mc mb --ignore-existing local/"$${STORAGE_BUCKET:-kuberan-receipts}" &&
         mc anonymous set none local/"$${STORAGE_BUCKET:-kuberan-receipts}" &&
         mc version enable local/"$${STORAGE_BUCKET:-kuberan-receipts}" &&
-        (mc admin user svcacct info local "$${STORAGE_ACCESS_KEY}" >/dev/null 2>&1 ||
+        BUCKET="$${STORAGE_BUCKET:-kuberan-receipts}" &&
+        printf '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":["s3:GetObject","s3:PutObject","s3:DeleteObject"],"Resource":["arn:aws:s3:::%s/*"]},{"Effect":"Allow","Action":["s3:ListBucket"],"Resource":["arn:aws:s3:::%s"]}]}' "$${BUCKET}" "$${BUCKET}" > /tmp/receipts-policy.json &&
+        (mc admin user svcacct info local "$${STORAGE_ACCESS_KEY}" >/dev/null 2>&1 &&
+        mc admin user svcacct edit --policy /tmp/receipts-policy.json
+        local "$${STORAGE_ACCESS_KEY}" ||
         mc admin user svcacct add
         --access-key "$${STORAGE_ACCESS_KEY}"
         --secret-key "$${STORAGE_SECRET_KEY}"
+        --policy /tmp/receipts-policy.json
         local "$${MINIO_ROOT_USER}")
     environment:
       - MINIO_ROOT_USER=${MINIO_ROOT_USER:?MINIO_ROOT_USER is required}

@@ -369,17 +369,26 @@ All under `/api/v1`, Bearer auth, user-scoped.
 
 ## Security checklist (first untrusted-binary path in the codebase)
 
-- [ ] Sniff magic bytes server-side; never trust client `Content-Type`/extension.
-- [ ] Allowlist: image/jpeg, image/png, image/webp, application/pdf (HEIC per R1).
-- [ ] `http.MaxBytesReader` cap + `MaxAttachmentsPerTx` cap.
-- [ ] Ownership check on every read/write/delete (`user_id == getUserID(c)`).
-- [ ] Re-encode raster images → strips EXIF/GPS + defuses decompression bombs.
-- [ ] Opaque random storage keys (no user filename in path); sanitize display name.
-- [ ] MinIO private (internal net only), scoped service account (not root), versioning on.
-- [ ] Serve headers: sniffed `Content-Type`, `Content-Disposition: inline`,
+- [x] Sniff magic bytes server-side; never trust client `Content-Type`/extension.
+- [x] Allowlist: image/jpeg, image/png, image/webp, application/pdf (HEIC per R1).
+- [x] `http.MaxBytesReader` cap + `MaxAttachmentsPerTx` cap.
+- [x] Ownership check on every read/write/delete (`user_id == getUserID(c)`).
+- [x] Re-encode raster images → strips EXIF/GPS + defuses decompression bombs.
+- [x] Opaque random storage keys (no user filename in path); sanitize display name.
+- [x] MinIO private (internal net only), scoped service account (not root), versioning on.
+      Scoped SA enforced via a least-privilege inline policy (`Get/Put/DeleteObject` +
+      `ListBucket` on the receipts bucket only) attached by `minio-init` in both
+      `docker-compose.yml` and `docker-compose.prod.yml`; verified end-to-end that the
+      account is denied admin/cross-bucket ops. (Previously the SA inherited root — audit H1.)
+- [x] Serve headers: sniffed `Content-Type`, `Content-Disposition: inline`,
       `X-Content-Type-Options: nosniff`, `Content-Security-Policy: default-src 'none'; sandbox`,
       `Cross-Origin-Resource-Policy: same-origin`, `Cache-Control: private`.
-- [ ] Run the `security-auditor` agent pass before merge.
+- [x] Run the `security-auditor` agent pass before merge. Findings: H1 (unscoped MinIO
+      SA — **fixed**, see above); H2 (PDF served inline, mitigated by CSP `sandbox` — accepted,
+      server-side PDF scrub deferred per R2-style nicety); H3 (versioned delete retains prior
+      versions + no orphan reconciler — accepted, add a noncurrent-version lifecycle rule in
+      ops); L2 (prod `CORS_ORIGIN=*` — pre-existing, set a real origin in prod). Items 1-6, 8
+      confirmed satisfied.
 
 ## Testing strategy
 
