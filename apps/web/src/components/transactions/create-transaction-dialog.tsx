@@ -2,12 +2,18 @@
 
 import { useState } from "react";
 import { toast } from "sonner";
+import { useQueryClient } from "@tanstack/react-query";
 import { ArrowDownRight, ArrowUpRight, ArrowLeftRight } from "lucide-react";
-import { ApiClientError } from "@/lib/api-client";
+import { ApiClientError, apiClient } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
 import { useAccounts } from "@/hooks/use-accounts";
-import { useCreateTransaction, useCreateTransfer } from "@/hooks/use-transactions";
+import {
+  useCreateTransaction,
+  useCreateTransfer,
+  transactionKeys,
+} from "@/hooks/use-transactions";
 import { useCategories } from "@/hooks/use-categories";
+import { StagedAttachments } from "@/components/transactions/transaction-attachments";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -94,6 +100,8 @@ export function CreateTransactionDialog({
   const [description, setDescription] = useState("");
   const [date, setDate] = useState(todayISO());
   const [error, setError] = useState("");
+  const [stagedFiles, setStagedFiles] = useState<File[]>([]);
+  const [uploading, setUploading] = useState(false);
 
   // Transfer-specific state
   const [fromAccountId, setFromAccountId] = useState<string>(
@@ -101,6 +109,7 @@ export function CreateTransactionDialog({
   );
   const [toAccountId, setToAccountId] = useState<string>("");
 
+  const queryClient = useQueryClient();
   const createTransaction = useCreateTransaction();
   const createTransfer = useCreateTransfer();
   const { data: accountsData } = useAccounts({ page_size: 100 });
@@ -116,7 +125,8 @@ export function CreateTransactionDialog({
     a.name.localeCompare(b.name)
   );
   const isTransfer = type === "transfer";
-  const isSubmitting = createTransaction.isPending || createTransfer.isPending;
+  const isSubmitting =
+    createTransaction.isPending || createTransfer.isPending || uploading;
 
   // For transfer: filter to accounts, exclude selected from-account for to-account
   const toAccounts = accounts.filter(
@@ -133,6 +143,7 @@ export function CreateTransactionDialog({
     setError("");
     setFromAccountId(defaultAccountId ?? "");
     setToAccountId("");
+    setStagedFiles([]);
   }
 
   function handleOpenChange(nextOpen: boolean) {
@@ -206,8 +217,9 @@ export function CreateTransactionDialog({
         return;
       }
 
-      createTransaction.mutate(
-        {
+      let created;
+      try {
+        created = await createTransaction.mutateAsync({
           account_id: accountId,
           type: type as TransactionType,
           amount,
@@ -215,16 +227,49 @@ export function CreateTransactionDialog({
             categoryId && categoryId !== "none" ? categoryId : undefined,
           description: description.trim() || undefined,
           date: date ? toRFC3339(date) : undefined,
-        },
-        {
-          onSuccess: () => {
-            toast.success("Transaction created");
-            handleOpenChange(false);
-          },
-          onError: (err) => setError(getErrorMessage(err)),
-        }
+        });
+      } catch (err) {
+        setError(getErrorMessage(err));
+        return;
+      }
+
+      await uploadStagedReceipts(created.id);
+      toast.success("Transaction created");
+      handleOpenChange(false);
+    }
+  }
+
+  // Two-step create: attachments can only be uploaded once the transaction
+  // exists, so we upload the staged files sequentially after the create
+  // mutation resolves. Individual failures are surfaced but don't block the
+  // rest — the transaction itself is already saved.
+  async function uploadStagedReceipts(txId: string) {
+    if (stagedFiles.length === 0) return;
+    setUploading(true);
+    let failures = 0;
+    for (const file of stagedFiles) {
+      const form = new FormData();
+      form.append("file", file);
+      try {
+        await apiClient.upload(
+          `/api/v1/transactions/${txId}/attachments`,
+          form
+        );
+      } catch {
+        failures += 1;
+      }
+    }
+    setUploading(false);
+    if (failures > 0) {
+      toast.error(
+        `${failures} of ${stagedFiles.length} receipt${
+          stagedFiles.length === 1 ? "" : "s"
+        } failed to upload`
       );
     }
+    // Refresh list rows so the paperclip indicator reflects the new receipts.
+    queryClient.invalidateQueries({ queryKey: transactionKeys.lists() });
+    queryClient.invalidateQueries({ queryKey: transactionKeys.userLists() });
   }
 
   return (
@@ -407,6 +452,15 @@ export function CreateTransactionDialog({
               disabled={isSubmitting}
             />
           </div>
+
+          {/* Receipts (expense/income only) */}
+          {!isTransfer && (
+            <StagedAttachments
+              files={stagedFiles}
+              onChange={setStagedFiles}
+              disabled={isSubmitting}
+            />
+          )}
 
           <DialogFooter className="mt-1">
             <Button type="submit" className="w-full" disabled={isSubmitting}>

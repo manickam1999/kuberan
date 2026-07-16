@@ -680,6 +680,41 @@ func TestGetUserTransactions(t *testing.T) {
 			t.Errorf("expected last transaction to be 'oldest', got %q", result.Data[2].Description)
 		}
 	})
+
+	t.Run("populates_attachments_count", func(t *testing.T) {
+		db := testutil.SetupTestDB(t)
+		defer testutil.TeardownTestDB(t, db)
+		acctSvc := NewAccountService(db)
+		txSvc := NewTransactionService(db, acctSvc)
+		user := testutil.CreateTestUser(t, db)
+		account := testutil.CreateTestCashAccount(t, db, user.ID)
+
+		withReceipts := testutil.CreateTestTransaction(t, db, user.ID, account.ID, models.TransactionTypeExpense, 1000)
+		without := testutil.CreateTestTransaction(t, db, user.ID, account.ID, models.TransactionTypeExpense, 500)
+
+		for i := 0; i < 2; i++ {
+			db.Create(&models.TransactionAttachment{
+				UserID: user.ID, TransactionID: withReceipts.ID,
+				StorageKey: "key", ContentType: "image/jpeg", ByteSize: 10,
+				ChecksumSHA256: "x",
+			})
+		}
+
+		page := pagination.PageRequest{Page: 1, PageSize: 20}
+		result, err := txSvc.GetUserTransactions(user.ID, page, TransactionFilter{})
+		testutil.AssertNoError(t, err)
+
+		counts := map[string]int{}
+		for _, tx := range result.Data {
+			counts[tx.ID] = tx.AttachmentsCount
+		}
+		if counts[withReceipts.ID] != 2 {
+			t.Errorf("expected attachments_count 2, got %d", counts[withReceipts.ID])
+		}
+		if counts[without.ID] != 0 {
+			t.Errorf("expected attachments_count 0, got %d", counts[without.ID])
+		}
+	})
 }
 
 func TestDeleteTransaction(t *testing.T) {

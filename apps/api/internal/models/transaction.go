@@ -34,4 +34,9 @@ type Transaction struct {
 	// Attachments are receipt images/PDFs. Preloaded only on detail queries
 	// (not on list). See plans/017-transaction-receipts.
 	Attachments []TransactionAttachment `gorm:"foreignKey:TransactionID" json:"attachments,omitempty"`
+
+	// AttachmentsCount is a derived (non-persisted) count of receipts, populated
+	// on list queries so the UI can show a paperclip indicator without loading
+	// the attachment rows. See plans/017-transaction-receipts.
+	AttachmentsCount int `gorm:"-" json:"attachments_count,omitempty"`
 }
