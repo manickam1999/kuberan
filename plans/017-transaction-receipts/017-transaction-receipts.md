@@ -1,7 +1,17 @@
 # Plan 017 — Transaction Receipt Attachments (+ off-host backup/DR)
 
-Status: **planned** (design frozen 2026-07-16, not yet implemented)
+Status: **implemented** (design frozen 2026-07-16; Phases 0–4 shipped 2026-07-17)
 Design report: `.lavish/transaction-receipts-plan.html` (gitignored, review artifact)
+
+All phases are complete: off-host encrypted R2 backup/DR (Phase 0), the `BlobStore`
+storage foundation + config + migration + model (Phase 1), the backend
+service/handler/routes with server-side sanitization and hardened serve headers
+(Phase 2), the receipt-attachment web UI (Phase 3), and production hardening with a
+private, versioned, least-privilege MinIO (Phase 4). The security checklist below is
+fully satisfied (`security-auditor` pass done, H1 fixed), the attachment service and
+handler paths are at 100% statement coverage (plan target 95% for this auth-adjacent
+path), and the lifecycle was verified end-to-end in a real browser against dev MinIO.
+Feature reference: `docs/receipts.md`; DR/restore drill: `RUNBOOK.md`.
 
 ## Goal
 
