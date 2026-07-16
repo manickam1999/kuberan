@@ -184,6 +184,40 @@ func TestAttachmentListDBError(t *testing.T) {
 	testutil.AssertAppError(t, err, "INTERNAL_ERROR")
 }
 
+// TestAttachmentDeleteRowDBError covers Delete's own ErrInternalServer branch:
+// the getOwned SELECT succeeds (the row exists and is owned) but the subsequent
+// soft-delete DELETE fails. A healthy SQLite DB never fails only the DELETE, so
+// a gorm Delete callback injects the error while leaving the prior SELECT intact.
+func TestAttachmentDeleteRowDBError(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	defer testutil.TeardownTestDB(t, db)
+	userID, txID := seedTxn(t, db)
+
+	att := &models.TransactionAttachment{
+		UserID:         userID,
+		TransactionID:  txID,
+		StorageKey:     userID + "/" + txID + "/obj.png",
+		FileName:       "r.png",
+		ContentType:    storage.ContentTypePNG,
+		ByteSize:       10,
+		ChecksumSHA256: "deadbeef",
+	}
+	if err := db.Create(att).Error; err != nil {
+		t.Fatalf("create attachment row: %v", err)
+	}
+
+	if err := db.Callback().Delete().Before("gorm:delete").Register("force_delete_error", func(tx *gorm.DB) {
+		tx.AddError(errors.New("boom: delete failed"))
+	}); err != nil {
+		t.Fatalf("register delete callback: %v", err)
+	}
+
+	store := storage.NewMemBlobStore()
+	svc := NewAttachmentService(db, store, defaultLimits())
+	err := svc.Delete(userID, att.ID)
+	testutil.AssertAppError(t, err, "INTERNAL_ERROR")
+}
+
 // TestAttachmentOpenDeleteDBError covers the getOwned ErrInternalServer branch
 // (a non-RecordNotFound lookup failure) reached through both Open and Delete.
 func TestAttachmentOpenDeleteDBError(t *testing.T) {
