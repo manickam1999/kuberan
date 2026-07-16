@@ -292,7 +292,7 @@ func parseTransactionFilter(c *gin.Context) (services.TransactionFilter, error) 
 	}
 
 	if v := c.Query("to_date"); v != "" {
-		t, err := parseFlexibleTime(v)
+		t, err := parseFlexibleEndTime(v)
 		if err != nil {
 			return filter, apperrors.WithMessage(apperrors.ErrInvalidInput, "invalid to_date format, use RFC3339 or YYYY-MM-DD")
 		}
@@ -527,7 +527,7 @@ func (h *TransactionHandler) GetSpendingByCategory(c *gin.Context) {
 		return
 	}
 
-	toTime, parseErr := parseFlexibleTime(toStr)
+	toTime, parseErr := parseFlexibleEndTime(toStr)
 	if parseErr != nil {
 		respondWithError(c, apperrors.WithMessage(apperrors.ErrInvalidInput, parseErr.Error()))
 		return

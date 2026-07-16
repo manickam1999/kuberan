@@ -23,6 +23,7 @@ import { CompositionCard } from "@/components/dashboard/composition-card";
 import { SpendingCard } from "@/components/dashboard/spending-card";
 import { CashflowCard } from "@/components/dashboard/cashflow-card";
 import { BudgetsCard } from "@/components/dashboard/budgets-card";
+import { TodayExpensesCard } from "@/components/dashboard/today-expenses-card";
 import type { Account, Transaction } from "@/types/models";
 
 function DashboardSkeleton() {
@@ -34,6 +35,7 @@ function DashboardSkeleton() {
         <Skeleton className="h-[220px] w-full" />
       </div>
       <div className="space-y-4">
+        <Skeleton className="h-[240px] w-full" />
         <Skeleton className="h-[240px] w-full" />
         <Skeleton className="h-[380px] w-full" />
       </div>
@@ -227,6 +229,7 @@ export default function DashboardPage() {
           {/* Rail */}
           <div className="min-w-0 space-y-4">
             <CompositionCard />
+            <TodayExpensesCard />
 
             <Card>
               <SectionCardHeader

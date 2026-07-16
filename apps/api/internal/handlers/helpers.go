@@ -26,6 +26,21 @@ func parseFlexibleTime(value string) (time.Time, error) {
 	return time.Time{}, errors.New("invalid date format, use RFC3339 (e.g. 2024-01-01T00:00:00Z) or YYYY-MM-DD")
 }
 
+// parseFlexibleEndTime parses a date/time string the same way as parseFlexibleTime,
+// but a date-only value is interpreted as the last instant of that day rather than
+// midnight. This makes it suitable for an inclusive upper bound ("to_date") of a
+// day range — e.g. from_date=to_date=2026-07-13 covers the whole day, not just its
+// first instant.
+func parseFlexibleEndTime(value string) (time.Time, error) {
+	if t, err := time.Parse(time.RFC3339, value); err == nil {
+		return t, nil
+	}
+	if t, err := time.Parse("2006-01-02", value); err == nil {
+		return t.Add(24*time.Hour - time.Nanosecond), nil
+	}
+	return time.Time{}, errors.New("invalid date format, use RFC3339 (e.g. 2024-01-01T00:00:00Z) or YYYY-MM-DD")
+}
+
 // getUserID extracts the authenticated user ID from the Gin context.
 // Returns ErrUnauthorized if not present.
 func getUserID(c *gin.Context) (string, error) {
