@@ -10,6 +10,7 @@ import (
 	"kuberan/internal/logger"
 	"kuberan/internal/middleware"
 	"kuberan/internal/services"
+	"kuberan/internal/storage"
 	"kuberan/internal/validator"
 	"net/http"
 	"os"
@@ -94,6 +95,17 @@ func run() error {
 	telegramService := services.NewTelegramService(db)
 	trustedClientService := services.NewTrustedClientService(db)
 
+	// Receipt attachments (plan 017): blob store + service. The store is only
+	// reachable through the ownership-checked API; MinIO stays private.
+	blobStore, err := storage.NewS3BlobStore(appConfig.StorageConfig())
+	if err != nil {
+		return fmt.Errorf("failed to initialize blob store: %w", err)
+	}
+	attachmentService := services.NewAttachmentService(db, blobStore, services.AttachmentLimits{
+		MaxUploadBytes:      appConfig.MaxUploadBytes,
+		MaxAttachmentsPerTx: appConfig.MaxAttachmentsPerTx,
+	})
+
 	// Hydra admin client for the OAuth login/consent bridge (private network only).
 	hydraAdmin := hydra.NewAdminClient(appConfig.HydraAdminURL)
 
@@ -104,6 +116,7 @@ func run() error {
 	accountHandler := handlers.NewAccountHandler(accountService, auditService)
 	categoryHandler := handlers.NewCategoryHandler(categoryService, auditService)
 	transactionHandler := handlers.NewTransactionHandler(transactionService, auditService)
+	attachmentHandler := handlers.NewAttachmentHandler(attachmentService, auditService, appConfig.MaxUploadBytes)
 	budgetHandler := handlers.NewBudgetHandler(budgetService, auditService)
 	investmentHandler := handlers.NewInvestmentHandler(investmentService, auditService)
 	securityHandler := handlers.NewSecurityHandler(securityService, auditService)
@@ -207,6 +220,10 @@ func run() error {
 	transactions.GET("/:id", transactionHandler.GetTransactionByID)
 	transactions.PUT("/:id", transactionHandler.UpdateTransaction)
 	transactions.DELETE("/:id", transactionHandler.DeleteTransaction)
+	transactions.POST("/:id/attachments", attachmentHandler.Upload)
+	transactions.GET("/:id/attachments", attachmentHandler.List)
+	transactions.GET("/:id/attachments/:aid", attachmentHandler.Download)
+	transactions.DELETE("/:id/attachments/:aid", attachmentHandler.Delete)
 
 	// Budget routes
 	budgets := protected.Group("/budgets")
