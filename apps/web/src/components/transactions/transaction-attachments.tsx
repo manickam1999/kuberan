@@ -11,6 +11,7 @@ import { Label } from "@/components/ui/label";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -18,7 +19,7 @@ import {
   useTransactionAttachments,
   useUploadAttachment,
   useDeleteAttachment,
-  useAttachmentBlob,
+  useAttachmentObjectUrl,
 } from "@/hooks/use-attachments";
 import type { Attachment } from "@/types/models";
 
@@ -71,7 +72,7 @@ function AttachmentTile({
   removing?: boolean;
 }) {
   const image = isImage(attachment.content_type);
-  const { data: url, isLoading } = useAttachmentBlob(
+  const { url, isLoading } = useAttachmentObjectUrl(
     attachment.transaction_id,
     attachment.id
   );
@@ -142,6 +143,9 @@ function AttachmentLightbox({
           <DialogTitle className="truncate">
             {attachment?.file_name}
           </DialogTitle>
+          <DialogDescription className="sr-only">
+            Full-size preview of the receipt {attachment?.file_name}.
+          </DialogDescription>
         </DialogHeader>
         {attachment && <LightboxImage attachment={attachment} />}
       </DialogContent>
@@ -150,7 +154,7 @@ function AttachmentLightbox({
 }
 
 function LightboxImage({ attachment }: { attachment: Attachment }) {
-  const { data: url, isLoading } = useAttachmentBlob(
+  const { url, isLoading } = useAttachmentObjectUrl(
     attachment.transaction_id,
     attachment.id
   );

@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { apiClient } from "@/lib/api-client";
 import type { Attachment } from "@/types/models";
 import type {
@@ -76,39 +76,60 @@ export function useDeleteAttachment(txId: string) {
   });
 }
 
-// Fetch an attachment's bytes as an authenticated object URL for use in <img>
-// or a lightbox. The token never appears in a URL. The object URL is revoked
-// when the consuming component unmounts (or the id changes). Gated by `enabled`
+// Fetch an attachment's bytes as an authenticated Blob. The token never appears
+// in a URL. The Blob is cached (and shared across observers of the same
+// attachment) so multiple previews reuse a single download. Gated by `enabled`
 // so the fetch only fires when a thumbnail/lightbox actually mounts.
+//
+// Do NOT create an object URL here: the cache is shared across every consumer of
+// the same key, but object-URL lifetime is per-consumer. Caching the URL and
+// revoking it on unmount would let one consumer (e.g. a closing lightbox) revoke
+// the URL another consumer (e.g. the still-mounted thumbnail) is showing, and
+// leave a dead URL in the cache. Derive object URLs per-consumer via
+// `useAttachmentObjectUrl` instead.
 export function useAttachmentBlob(
   txId: string,
   attachmentId: string,
   enabled = true
 ) {
-  const query = useQuery({
+  return useQuery({
     queryKey: attachmentKeys.blob(txId, attachmentId),
-    queryFn: async () => {
-      const blob = await apiClient.getBlob(
+    queryFn: () =>
+      apiClient.getBlob(
         `/api/v1/transactions/${txId}/attachments/${attachmentId}`
-      );
-      return URL.createObjectURL(blob);
-    },
+      ),
     enabled: enabled && !!txId && !!attachmentId,
-    staleTime: Infinity, // object URLs are stable for the blob's lifetime
+    staleTime: Infinity, // the bytes are immutable for the attachment's lifetime
   });
+}
 
-  // Revoke the object URL when it changes or the component unmounts, so we
-  // don't leak blob references.
-  const objectUrl = query.data;
+// Derive a per-consumer object URL from the shared cached Blob. Each mounting
+// component owns its own object URL and revokes exactly that URL on unmount (or
+// when the underlying blob/id changes), so consumers can't invalidate each
+// other's previews. Returns `{ url, isLoading }`.
+export function useAttachmentObjectUrl(
+  txId: string,
+  attachmentId: string,
+  enabled = true
+) {
+  const { data: blob, isLoading } = useAttachmentBlob(
+    txId,
+    attachmentId,
+    enabled
+  );
+  const [url, setUrl] = useState<string>();
+
   useEffect(() => {
-    return () => {
-      if (objectUrl) {
-        URL.revokeObjectURL(objectUrl);
-      }
-    };
-  }, [objectUrl]);
+    if (!blob) {
+      setUrl(undefined);
+      return;
+    }
+    const objectUrl = URL.createObjectURL(blob);
+    setUrl(objectUrl);
+    return () => URL.revokeObjectURL(objectUrl);
+  }, [blob]);
 
-  return query;
+  return { url, isLoading };
 }
 
 export type { Attachment };
