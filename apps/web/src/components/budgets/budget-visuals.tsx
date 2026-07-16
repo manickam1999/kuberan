@@ -1,5 +1,10 @@
+"use client";
+
 import { cn } from "@/lib/utils";
 import type { Budget, BudgetProgress } from "@/types/models";
+import { DitherFill } from "@/components/charts/dither-fill";
+import type { DitherColor } from "@/components/dither-kit/palette";
+import { useChartTheme } from "@/providers/chart-theme-provider";
 
 /**
  * Shared visual language for budgets. The page cards, dialogs, and dashboard
@@ -12,6 +17,13 @@ export function progressBarColor(percentage: number): string {
   if (percentage >= 90) return "bg-negative";
   if (percentage >= 75) return "bg-warning";
   return "bg-primary";
+}
+
+/** The dither-theme palette hue mirroring {@link progressBarColor}. */
+function ditherProgressColor(percentage: number): DitherColor {
+  if (percentage >= 90) return "red";
+  if (percentage >= 75) return "orange";
+  return "green";
 }
 
 /** Match a budget id against a batch-progress list. */
@@ -39,6 +51,7 @@ export function BudgetProgressBar({
   size = "md",
   className,
 }: BudgetProgressBarProps) {
+  const { chartTheme } = useChartTheme();
   const width = Math.min(Math.max(percentage, 0), 100);
   return (
     <div
@@ -50,11 +63,15 @@ export function BudgetProgressBar({
     >
       <div
         className={cn(
-          "h-full rounded-full transition-[width]",
-          progressBarColor(percentage)
+          "relative h-full overflow-hidden rounded-full transition-[width]",
+          chartTheme === "dither" ? "" : progressBarColor(percentage)
         )}
         style={{ width: `${width}%` }}
-      />
+      >
+        {chartTheme === "dither" && (
+          <DitherFill color={ditherProgressColor(percentage)} />
+        )}
+      </div>
     </div>
   );
 }

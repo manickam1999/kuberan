@@ -205,6 +205,20 @@
   --sidebar-ring: oklch(0.74 0.15 162);
 }
 
+/*
+ * "Dither" chart theme type — Geist Pixel (the pixel face dither-kit uses)
+ * across the whole app for one cohesive pixel identity. Set on the body so it
+ * cascades to every text node, and mapped onto the sans/mono tokens too so the
+ * `font-sans` / `font-mono` utilities (chart labels, figures, code) pick it up
+ * as well. Clean theme is untouched.
+ */
+html[data-chart-theme="dither"] body {
+  font-family: var(--font-geist-pixel-square), ui-monospace, monospace;
+  --font-geist-sans: var(--font-geist-pixel-square), ui-monospace, monospace;
+  --font-geist-mono: var(--font-geist-pixel-square), ui-monospace, monospace;
+  letter-spacing: -0.01em;
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;

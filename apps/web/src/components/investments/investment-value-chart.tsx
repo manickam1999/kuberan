@@ -1,12 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { AreaChart, Area, XAxis, YAxis, CartesianGrid } from "recharts";
-import {
-  ChartContainer,
-  ChartTooltip,
-  type ChartConfig,
-} from "@/components/ui/chart";
+import { ThemedAreaChart } from "@/components/charts/themed-area-chart";
 import {
   Card,
   CardContent,
@@ -26,10 +21,6 @@ const PERIOD_OPTIONS = [
   { value: "1Y", label: "1Y", months: 12 },
   { value: "ALL", label: "ALL", months: 120 },
 ] as const;
-
-const chartConfig = {
-  investment_value: { label: "Investment Value", color: "var(--chart-1)" },
-} satisfies ChartConfig;
 
 function getDateRange(months: number) {
   const to = new Date();
@@ -67,8 +58,8 @@ export function InvestmentValueChart() {
     // Reverse it for chart display (oldest to newest, left to right)
     return snapshotsData.data
       .map((s) => ({
-        date: formatDate(s.recorded_at),
-        investment_value: s.investment_value / 100,
+        label: formatDate(s.recorded_at),
+        value: s.investment_value / 100,
       }))
       .reverse();
   }, [snapshotsData]);
@@ -119,65 +110,14 @@ export function InvestmentValueChart() {
             </p>
           </div>
         ) : (
-          <ChartContainer
-            config={chartConfig}
+          <ThemedAreaChart
+            data={chartData}
+            seriesLabel="Investment Value"
             className="h-[220px] md:h-[280px] w-full"
-          >
-            <AreaChart accessibilityLayer data={chartData}>
-              <defs>
-                <linearGradient
-                  id="fillInvestmentValue"
-                  x1="0"
-                  y1="0"
-                  x2="0"
-                  y2="1"
-                >
-                  <stop
-                    offset="0%"
-                    stopColor="var(--color-investment_value)"
-                    stopOpacity={0.3}
-                  />
-                  <stop
-                    offset="95%"
-                    stopColor="var(--color-investment_value)"
-                    stopOpacity={0.05}
-                  />
-                </linearGradient>
-              </defs>
-              <CartesianGrid vertical={false} />
-              <XAxis
-                dataKey="date"
-                tickLine={false}
-                axisLine={false}
-                tickMargin={8}
-              />
-              <YAxis
-                hide
-                domain={["dataMin - 100", "dataMax + 100"]}
-              />
-              <ChartTooltip
-                content={({ active, payload, label }) => {
-                  if (!active || !payload?.length) return null;
-                  const value = payload[0].value as number;
-                  return (
-                    <div className="border-border/50 bg-background rounded-lg border px-3 py-2 text-xs shadow-xl">
-                      <div className="font-medium">{label}</div>
-                      <div className="mt-1 font-mono font-medium tabular-nums">
-                        {formatCurrency(value * 100)}
-                      </div>
-                    </div>
-                  );
-                }}
-              />
-              <Area
-                type="monotone"
-                dataKey="investment_value"
-                stroke="var(--color-investment_value)"
-                fill="url(#fillInvestmentValue)"
-                strokeWidth={2}
-              />
-            </AreaChart>
-          </ChartContainer>
+            ditherColor="green"
+            cleanColor="var(--chart-1)"
+            valueFormatter={(v) => formatCurrency(v * 100)}
+          />
         )}
       </CardContent>
     </Card>
