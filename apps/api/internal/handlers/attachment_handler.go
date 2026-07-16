@@ -8,8 +8,22 @@ import (
 	"github.com/gin-gonic/gin"
 
 	apperrors "kuberan/internal/errors"
+	"kuberan/internal/models"
 	"kuberan/internal/services"
 )
+
+// AttachmentResponse is the envelope returned when a single attachment is
+// created or fetched. It mirrors the gin.H{"attachment": ...} response shape
+// and gives swag a concrete type to document.
+type AttachmentResponse struct {
+	Attachment models.TransactionAttachment `json:"attachment"`
+}
+
+// AttachmentsResponse is the envelope returned when listing a transaction's
+// attachments. It mirrors the gin.H{"attachments": ...} response shape.
+type AttachmentsResponse struct {
+	Attachments []models.TransactionAttachment `json:"attachments"`
+}
 
 // AttachmentHandler handles transaction receipt attachment requests
 // (upload, list, download, delete). See plans/017-transaction-receipts.
@@ -39,7 +53,7 @@ func NewAttachmentHandler(attachmentService services.AttachmentServicer, auditSe
 // @Security    BearerAuth
 // @Param       id   path     string true "Transaction ID"
 // @Param       file formData file   true "Receipt file (max 10 MiB)"
-// @Success     201 {object} map[string]models.TransactionAttachment "Attachment created"
+// @Success     201 {object} AttachmentResponse "Attachment created"
 // @Failure     400 {object} ErrorResponse "Invalid input"
 // @Failure     401 {object} ErrorResponse "Unauthorized"
 // @Failure     404 {object} ErrorResponse "Transaction not found"
@@ -104,7 +118,7 @@ func (h *AttachmentHandler) Upload(c *gin.Context) {
 // @Produce     json
 // @Security    BearerAuth
 // @Param       id path string true "Transaction ID"
-// @Success     200 {object} map[string][]models.TransactionAttachment "Attachments"
+// @Success     200 {object} AttachmentsResponse "Attachments"
 // @Failure     400 {object} ErrorResponse "Invalid input"
 // @Failure     401 {object} ErrorResponse "Unauthorized"
 // @Failure     500 {object} ErrorResponse "Server error"

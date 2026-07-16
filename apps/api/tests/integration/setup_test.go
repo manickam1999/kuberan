@@ -52,6 +52,7 @@ func setupIsolatedDB(t *testing.T) *gorm.DB {
 		&models.Account{},
 		&models.Category{},
 		&models.Transaction{},
+		&models.TransactionAttachment{},
 		&models.Budget{},
 		&models.Security{},
 		&models.SecurityPrice{},
