@@ -71,6 +71,24 @@ func setupAttachmentRouter(handler *AttachmentHandler) *gin.Engine {
 	return r
 }
 
+// setupAttachmentRouterNoAuth wires the routes WITHOUT injecting a userID so
+// getUserID fails and each handler returns 401.
+func setupAttachmentRouterNoAuth(handler *AttachmentHandler) *gin.Engine {
+	r := gin.New()
+	r.POST("/transactions/:id/attachments", handler.Upload)
+	r.GET("/transactions/:id/attachments", handler.List)
+	r.GET("/transactions/:id/attachments/:aid", handler.Download)
+	r.DELETE("/transactions/:id/attachments/:aid", handler.Delete)
+	return r
+}
+
+// errReadCloser is a ReadCloser whose Read fails partway, exercising the
+// io.Copy error branch in Download after headers are already committed.
+type errReadCloser struct{}
+
+func (errReadCloser) Read(_ []byte) (int, error) { return 0, io.ErrUnexpectedEOF }
+func (errReadCloser) Close() error               { return nil }
+
 // multipartRequest builds a multipart/form-data POST with a single "file" field.
 func multipartRequest(t *testing.T, path, fieldName, fileName, contentType string, body []byte) *http.Request {
 	t.Helper()
@@ -176,6 +194,34 @@ func TestAttachmentHandler_Upload(t *testing.T) {
 			t.Fatalf("expected 415, got %d", rec.Code)
 		}
 	})
+
+	t.Run("returns 413 when body exceeds the cap", func(t *testing.T) {
+		// A tiny cap so the multipart body trips http.MaxBytesReader before the
+		// service is ever reached, producing a clean 413.
+		handler := NewAttachmentHandler(&mockAttachmentService{}, &mockAuditService{}, 8)
+		r := setupAttachmentRouter(handler)
+
+		req := multipartRequest(t, "/transactions/"+testTxID+"/attachments", "file", "big.jpg", "image/jpeg", bytes.Repeat([]byte("A"), 4096))
+		rec := httptest.NewRecorder()
+		r.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusRequestEntityTooLarge {
+			t.Fatalf("expected 413, got %d: %s", rec.Code, rec.Body.String())
+		}
+	})
+
+	t.Run("returns 401 when unauthenticated", func(t *testing.T) {
+		handler := NewAttachmentHandler(&mockAttachmentService{}, &mockAuditService{}, 10<<20)
+		r := setupAttachmentRouterNoAuth(handler)
+
+		req := multipartRequest(t, "/transactions/"+testTxID+"/attachments", "file", "r.jpg", "image/jpeg", []byte("x"))
+		rec := httptest.NewRecorder()
+		r.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusUnauthorized {
+			t.Fatalf("expected 401, got %d", rec.Code)
+		}
+	})
 }
 
 func TestAttachmentHandler_List(t *testing.T) {
@@ -199,6 +245,43 @@ func TestAttachmentHandler_List(t *testing.T) {
 	if len(atts) != 2 {
 		t.Fatalf("expected 2 attachments, got %d", len(atts))
 	}
+}
+
+func TestAttachmentHandler_ListErrors(t *testing.T) {
+	t.Run("returns 400 on invalid transaction ID", func(t *testing.T) {
+		handler := NewAttachmentHandler(&mockAttachmentService{}, &mockAuditService{}, 10<<20)
+		r := setupAttachmentRouter(handler)
+
+		rec := doRequest(r, "GET", "/transactions/not-a-uuid/attachments", "")
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("expected 400, got %d", rec.Code)
+		}
+	})
+
+	t.Run("propagates service error (500)", func(t *testing.T) {
+		svc := &mockAttachmentService{
+			listFn: func(_, _ string) ([]models.TransactionAttachment, error) {
+				return nil, apperrors.ErrInternalServer
+			},
+		}
+		handler := NewAttachmentHandler(svc, &mockAuditService{}, 10<<20)
+		r := setupAttachmentRouter(handler)
+
+		rec := doRequest(r, "GET", "/transactions/"+testTxID+"/attachments", "")
+		if rec.Code != http.StatusInternalServerError {
+			t.Fatalf("expected 500, got %d", rec.Code)
+		}
+	})
+
+	t.Run("returns 401 when unauthenticated", func(t *testing.T) {
+		handler := NewAttachmentHandler(&mockAttachmentService{}, &mockAuditService{}, 10<<20)
+		r := setupAttachmentRouterNoAuth(handler)
+
+		rec := doRequest(r, "GET", "/transactions/"+testTxID+"/attachments", "")
+		if rec.Code != http.StatusUnauthorized {
+			t.Fatalf("expected 401, got %d", rec.Code)
+		}
+	})
 }
 
 func TestAttachmentHandler_Download(t *testing.T) {
@@ -251,6 +334,53 @@ func TestAttachmentHandler_Download(t *testing.T) {
 			t.Fatalf("expected 404, got %d", rec.Code)
 		}
 	})
+
+	t.Run("returns 400 on invalid transaction ID", func(t *testing.T) {
+		handler := NewAttachmentHandler(&mockAttachmentService{}, &mockAuditService{}, 10<<20)
+		r := setupAttachmentRouter(handler)
+
+		rec := doRequest(r, "GET", "/transactions/not-a-uuid/attachments/"+testAttID, "")
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("expected 400, got %d", rec.Code)
+		}
+	})
+
+	t.Run("returns 400 on invalid attachment ID", func(t *testing.T) {
+		handler := NewAttachmentHandler(&mockAttachmentService{}, &mockAuditService{}, 10<<20)
+		r := setupAttachmentRouter(handler)
+
+		rec := doRequest(r, "GET", "/transactions/"+testTxID+"/attachments/not-a-uuid", "")
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("expected 400, got %d", rec.Code)
+		}
+	})
+
+	t.Run("commits 200 headers then aborts on a mid-stream read error", func(t *testing.T) {
+		svc := &mockAttachmentService{
+			openFn: func(_, aid string) (*models.TransactionAttachment, io.ReadCloser, error) {
+				return &models.TransactionAttachment{Base: models.Base{ID: aid}, ContentType: "image/png"}, errReadCloser{}, nil
+			},
+		}
+		handler := NewAttachmentHandler(svc, &mockAuditService{}, 10<<20)
+		r := setupAttachmentRouter(handler)
+
+		rec := doRequest(r, "GET", "/transactions/"+testTxID+"/attachments/"+testAttID, "")
+		// Status and headers are committed before io.Copy fails, so the client
+		// still sees 200 with the hardened headers; the copy error is logged.
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200 (headers already committed), got %d", rec.Code)
+		}
+	})
+
+	t.Run("returns 401 when unauthenticated", func(t *testing.T) {
+		handler := NewAttachmentHandler(&mockAttachmentService{}, &mockAuditService{}, 10<<20)
+		r := setupAttachmentRouterNoAuth(handler)
+
+		rec := doRequest(r, "GET", "/transactions/"+testTxID+"/attachments/"+testAttID, "")
+		if rec.Code != http.StatusUnauthorized {
+			t.Fatalf("expected 401, got %d", rec.Code)
+		}
+	})
 }
 
 func TestAttachmentHandler_Delete(t *testing.T) {
@@ -286,6 +416,36 @@ func TestAttachmentHandler_Delete(t *testing.T) {
 		rec := doRequest(r, "DELETE", "/transactions/"+testTxID+"/attachments/"+testAttID, "")
 		if rec.Code != http.StatusNotFound {
 			t.Fatalf("expected 404, got %d", rec.Code)
+		}
+	})
+
+	t.Run("returns 400 on invalid transaction ID", func(t *testing.T) {
+		handler := NewAttachmentHandler(&mockAttachmentService{}, &mockAuditService{}, 10<<20)
+		r := setupAttachmentRouter(handler)
+
+		rec := doRequest(r, "DELETE", "/transactions/not-a-uuid/attachments/"+testAttID, "")
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("expected 400, got %d", rec.Code)
+		}
+	})
+
+	t.Run("returns 400 on invalid attachment ID", func(t *testing.T) {
+		handler := NewAttachmentHandler(&mockAttachmentService{}, &mockAuditService{}, 10<<20)
+		r := setupAttachmentRouter(handler)
+
+		rec := doRequest(r, "DELETE", "/transactions/"+testTxID+"/attachments/not-a-uuid", "")
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("expected 400, got %d", rec.Code)
+		}
+	})
+
+	t.Run("returns 401 when unauthenticated", func(t *testing.T) {
+		handler := NewAttachmentHandler(&mockAttachmentService{}, &mockAuditService{}, 10<<20)
+		r := setupAttachmentRouterNoAuth(handler)
+
+		rec := doRequest(r, "DELETE", "/transactions/"+testTxID+"/attachments/"+testAttID, "")
+		if rec.Code != http.StatusUnauthorized {
+			t.Fatalf("expected 401, got %d", rec.Code)
 		}
 	})
 }
