@@ -248,8 +248,10 @@ type AttachmentServicer interface {
 	// List returns the attachment metadata for a user's transaction.
 	List(userID, txID string) ([]models.TransactionAttachment, error)
 	// Open returns an attachment's metadata and a byte stream the caller must
-	// Close. Ownership is checked before any bytes are read.
-	Open(userID, attachmentID string) (*models.TransactionAttachment, io.ReadCloser, error)
-	// Delete soft-deletes the metadata row and removes the stored object.
-	Delete(userID, attachmentID string) error
+	// Close. The attachment must belong to both the user and the given
+	// transaction; ownership is checked before any bytes are read.
+	Open(userID, txID, attachmentID string) (*models.TransactionAttachment, io.ReadCloser, error)
+	// Delete removes the metadata row and the stored object. The attachment must
+	// belong to both the user and the given transaction.
+	Delete(userID, txID, attachmentID string) error
 }

@@ -2,7 +2,7 @@
 
 import { useRef, useState } from "react";
 import { toast } from "sonner";
-import { FileText, Loader2, Plus, X } from "lucide-react";
+import { AlertTriangle, FileText, Loader2, Plus, X } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { ApiClientError } from "@/lib/api-client";
@@ -72,13 +72,15 @@ function AttachmentTile({
   removing?: boolean;
 }) {
   const image = isImage(attachment.content_type);
-  const { url, isLoading } = useAttachmentObjectUrl(
+  const { url, isLoading, isError, retry } = useAttachmentObjectUrl(
     attachment.transaction_id,
     attachment.id
   );
 
   function handleClick() {
-    if (image) {
+    if (isError) {
+      retry();
+    } else if (image) {
       onOpenImage(attachment);
     } else if (url) {
       window.open(url, "_blank", "noopener,noreferrer");
@@ -90,13 +92,20 @@ function AttachmentTile({
       <button
         type="button"
         onClick={handleClick}
-        disabled={!url}
-        title={attachment.file_name}
+        disabled={isLoading}
+        title={
+          isError
+            ? `${attachment.file_name} — failed to load, click to retry`
+            : attachment.file_name
+        }
         className={cn(
-          "flex size-20 items-center justify-center overflow-hidden rounded-lg border bg-muted/40 transition-colors hover:border-ring disabled:cursor-default"
+          "flex size-20 items-center justify-center overflow-hidden rounded-lg border bg-muted/40 transition-colors hover:border-ring disabled:cursor-default",
+          isError && "border-destructive/40"
         )}
       >
-        {image && url ? (
+        {isError ? (
+          <AlertTriangle className="size-5 text-destructive" />
+        ) : image && url ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
             src={url}
@@ -154,10 +163,23 @@ function AttachmentLightbox({
 }
 
 function LightboxImage({ attachment }: { attachment: Attachment }) {
-  const { url, isLoading } = useAttachmentObjectUrl(
+  const { url, isLoading, isError, retry } = useAttachmentObjectUrl(
     attachment.transaction_id,
     attachment.id
   );
+  if (isError) {
+    return (
+      <div className="flex h-64 flex-col items-center justify-center gap-3">
+        <AlertTriangle className="size-6 text-destructive" />
+        <p className="text-sm text-muted-foreground">
+          Couldn&apos;t load this receipt.
+        </p>
+        <Button type="button" variant="outline" size="sm" onClick={() => retry()}>
+          Try again
+        </Button>
+      </div>
+    );
+  }
   if (isLoading || !url) {
     return (
       <div className="flex h-64 items-center justify-center">
@@ -262,7 +284,7 @@ export function StagedAttachments({
         <ul className="flex flex-col gap-1.5">
           {files.map((file, index) => (
             <li
-              key={`${file.name}-${index}`}
+              key={`${file.name}-${file.size}-${file.lastModified}-${index}`}
               className="flex items-center gap-2 rounded-md border bg-muted/30 px-2.5 py-1.5 text-sm"
             >
               <FileText className="size-4 shrink-0 text-muted-foreground" />

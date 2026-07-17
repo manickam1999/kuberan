@@ -220,6 +220,16 @@ async function request<T>(
   }
 
   if (responseKind === "blob") {
+    // A successful binary fetch must not be a JSON error masquerading as 200;
+    // guard so a caller never renders a JSON body as a broken image.
+    const contentType = res.headers.get("Content-Type") ?? "";
+    if (contentType.includes("application/json")) {
+      throw new ApiClientError(
+        "UNEXPECTED_RESPONSE",
+        "Expected binary content but received JSON",
+        res.status
+      );
+    }
     return res.blob() as Promise<T>;
   }
 

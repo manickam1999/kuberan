@@ -138,7 +138,15 @@ properties:
   `ListBucket` on the receipts bucket only), **not** the root user.
 - Storage keys are opaque and random; the user's filename is sanitized for
   display and never used as a path.
-- Ownership is checked on every read, write, and delete.
+- Ownership is checked on every read, write, and delete, scoped to **both** the
+  user and the transaction in the path: an attachment can only be reached through
+  the transaction it actually belongs to, so the `:id` segment is authoritative
+  rather than decorative.
+- Deleting an attachment removes the metadata row and the stored object together
+  (a hard delete), so the row never dangles against bytes that are gone and the
+  receipt's bytes are actually purged (a privacy expectation). The off-host R2
+  bucket is versioned, so a noncurrent-version lifecycle rule there is the
+  retention/anti-tamper backstop; a periodic orphan reconciler is recommended in
+  ops for any object whose delete failed after the row was removed.
 - PDFs are served inline but sandboxed via CSP; a server-side PDF scrub is a
-  deferred nicety. Deletes are soft on a versioned bucket, so a noncurrent
-  version lifecycle rule in R2/MinIO is recommended in ops.
+  deferred nicety.

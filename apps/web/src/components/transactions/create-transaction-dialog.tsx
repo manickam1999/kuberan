@@ -14,6 +14,8 @@ import {
 } from "@/hooks/use-transactions";
 import { useCategories } from "@/hooks/use-categories";
 import { StagedAttachments } from "@/components/transactions/transaction-attachments";
+import { attachmentKeys } from "@/hooks/use-attachments";
+import type { AttachmentResponse } from "@/types/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -233,25 +235,39 @@ export function CreateTransactionDialog({
         return;
       }
 
-      await uploadStagedReceipts(created.id);
-      toast.success("Transaction created");
+      const total = stagedFiles.length;
+      const failures = await uploadStagedReceipts(created.id);
+      if (failures > 0) {
+        // The transaction is already saved; per plan R4 the receipts are
+        // recoverable from the edit dialog, so give one clear, actionable
+        // message rather than silently succeeding.
+        toast.error(
+          `Transaction saved, but ${failures} of ${total} receipt${
+            total === 1 ? "" : "s"
+          } failed to upload. Open the transaction to add ${
+            failures === 1 ? "it" : "them"
+          } again.`
+        );
+      } else {
+        toast.success("Transaction created");
+      }
       handleOpenChange(false);
     }
   }
 
   // Two-step create: attachments can only be uploaded once the transaction
   // exists, so we upload the staged files sequentially after the create
-  // mutation resolves. Individual failures are surfaced but don't block the
-  // rest — the transaction itself is already saved.
-  async function uploadStagedReceipts(txId: string) {
-    if (stagedFiles.length === 0) return;
+  // mutation resolves. Individual failures don't block the rest — the
+  // transaction itself is already saved. Returns the number that failed.
+  async function uploadStagedReceipts(txId: string): Promise<number> {
+    if (stagedFiles.length === 0) return 0;
     setUploading(true);
     let failures = 0;
     for (const file of stagedFiles) {
       const form = new FormData();
       form.append("file", file);
       try {
-        await apiClient.upload(
+        await apiClient.upload<AttachmentResponse>(
           `/api/v1/transactions/${txId}/attachments`,
           form
         );
@@ -260,16 +276,14 @@ export function CreateTransactionDialog({
       }
     }
     setUploading(false);
-    if (failures > 0) {
-      toast.error(
-        `${failures} of ${stagedFiles.length} receipt${
-          stagedFiles.length === 1 ? "" : "s"
-        } failed to upload`
-      );
-    }
-    // Refresh list rows so the paperclip indicator reflects the new receipts.
+    // Refresh every cache the new receipts touch: the transaction's own
+    // attachment list and detail (so the edit dialog opens fresh) plus the list
+    // rows that carry the paperclip indicator.
+    queryClient.invalidateQueries({ queryKey: attachmentKeys.list(txId) });
+    queryClient.invalidateQueries({ queryKey: transactionKeys.detail(txId) });
     queryClient.invalidateQueries({ queryKey: transactionKeys.lists() });
     queryClient.invalidateQueries({ queryKey: transactionKeys.userLists() });
+    return failures;
   }
 
   return (

@@ -235,7 +235,12 @@ services:
         --access-key "$${STORAGE_ACCESS_KEY}"
         --secret-key "$${STORAGE_SECRET_KEY}"
         --policy /tmp/receipts-policy.json
-        local "$${MINIO_ROOT_USER}")
+        local "$${MINIO_ROOT_USER}") &&
+        POLICY=$$(mc --json admin user svcacct info local "$${STORAGE_ACCESS_KEY}") &&
+        case "$$POLICY" in
+        *GetObject*) echo 'minio-init: least-privilege service-account policy verified' ;;
+        *) echo 'minio-init: ERROR service account is missing its scoped policy (would inherit root)' >&2; exit 1 ;;
+        esac
     environment:
       - MINIO_ROOT_USER=${MINIO_ROOT_USER:?MINIO_ROOT_USER is required}
       - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD is required}
@@ -250,6 +255,14 @@ services:
       dockerfile: Dockerfile
     profiles:
       - backup
+    # Wait for minio-init to finish so the receipts bucket and the scoped
+    # service account rclone mirrors with already exist. Without this, a host
+    # reboot could fire the backup cron before MinIO is provisioned, failing the
+    # receipts sync and spuriously tripping the dead-man's-switch even though the
+    # DB dump succeeded.
+    depends_on:
+      minio-init:
+        condition: service_completed_successfully
     env_file: .env.prod
     # Off-host encrypted replication (plans/017 Phase 0): the RCLONE_CONFIG_*,
     # HEALTHCHECK_URL, and RECEIPTS_BUCKET vars are supplied via .env.prod and

@@ -188,6 +188,7 @@ services:
         do echo 'waiting for minio...'; sleep 1; done &&
         mc mb --ignore-existing local/kuberan-receipts &&
         mc anonymous set none local/kuberan-receipts &&
+        mc version enable local/kuberan-receipts &&
         printf '%s' '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":["s3:GetObject","s3:PutObject","s3:DeleteObject"],"Resource":["arn:aws:s3:::kuberan-receipts/*"]},{"Effect":"Allow","Action":["s3:ListBucket"],"Resource":["arn:aws:s3:::kuberan-receipts"]}]}' > /tmp/receipts-policy.json &&
         (mc admin user svcacct info local "$${STORAGE_ACCESS_KEY:-kuberan-receipts}" >/dev/null 2>&1 &&
         mc admin user svcacct edit --policy /tmp/receipts-policy.json
@@ -196,7 +197,12 @@ services:
         --access-key "$${STORAGE_ACCESS_KEY:-kuberan-receipts}"
         --secret-key "$${STORAGE_SECRET_KEY:-kuberan-receipts-secret}"
         --policy /tmp/receipts-policy.json
-        local "$${MINIO_ROOT_USER:-minioadmin}")
+        local "$${MINIO_ROOT_USER:-minioadmin}") &&
+        POLICY=$$(mc --json admin user svcacct info local "$${STORAGE_ACCESS_KEY:-kuberan-receipts}") &&
+        case "$$POLICY" in
+        *GetObject*) echo 'minio-init: least-privilege service-account policy verified' ;;
+        *) echo 'minio-init: ERROR service account is missing its scoped policy (would inherit root)' >&2; exit 1 ;;
+        esac
     environment:
       - MINIO_ROOT_USER=${MINIO_ROOT_USER:-minioadmin}
       - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD:-minioadmin}

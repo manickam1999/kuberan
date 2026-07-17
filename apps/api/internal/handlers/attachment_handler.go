@@ -166,7 +166,8 @@ func (h *AttachmentHandler) Download(c *gin.Context) {
 		return
 	}
 
-	if _, err := parsePathID(c, "id"); err != nil {
+	txID, err := parsePathID(c, "id")
+	if err != nil {
 		respondWithError(c, err)
 		return
 	}
@@ -177,7 +178,7 @@ func (h *AttachmentHandler) Download(c *gin.Context) {
 		return
 	}
 
-	att, stream, err := h.attachmentService.Open(userID, aid)
+	att, stream, err := h.attachmentService.Open(userID, txID, aid)
 	if err != nil {
 		respondWithError(c, err)
 		return
@@ -221,7 +222,8 @@ func (h *AttachmentHandler) Delete(c *gin.Context) {
 		return
 	}
 
-	if _, err := parsePathID(c, "id"); err != nil {
+	txID, err := parsePathID(c, "id")
+	if err != nil {
 		respondWithError(c, err)
 		return
 	}
@@ -232,7 +234,7 @@ func (h *AttachmentHandler) Delete(c *gin.Context) {
 		return
 	}
 
-	if err := h.attachmentService.Delete(userID, aid); err != nil {
+	if err := h.attachmentService.Delete(userID, txID, aid); err != nil {
 		respondWithError(c, err)
 		return
 	}

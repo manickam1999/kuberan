@@ -172,7 +172,7 @@ func TestAttachmentOpenStoreError(t *testing.T) {
 	}
 
 	svc := NewAttachmentService(db, getErrStore{}, defaultLimits())
-	_, _, err := svc.Open(userID, att.ID)
+	_, _, err := svc.Open(userID, txID, att.ID)
 	testutil.AssertAppError(t, err, "INTERNAL_ERROR")
 }
 
@@ -186,8 +186,8 @@ func TestAttachmentListDBError(t *testing.T) {
 
 // TestAttachmentDeleteRowDBError covers Delete's own ErrInternalServer branch:
 // the getOwned SELECT succeeds (the row exists and is owned) but the subsequent
-// soft-delete DELETE fails. A healthy SQLite DB never fails only the DELETE, so
-// a gorm Delete callback injects the error while leaving the prior SELECT intact.
+// (hard) DELETE fails. A healthy SQLite DB never fails only the DELETE, so a
+// gorm Delete callback injects the error while leaving the prior SELECT intact.
 func TestAttachmentDeleteRowDBError(t *testing.T) {
 	db := testutil.SetupTestDB(t)
 	defer testutil.TeardownTestDB(t, db)
@@ -214,7 +214,7 @@ func TestAttachmentDeleteRowDBError(t *testing.T) {
 
 	store := storage.NewMemBlobStore()
 	svc := NewAttachmentService(db, store, defaultLimits())
-	err := svc.Delete(userID, att.ID)
+	err := svc.Delete(userID, txID, att.ID)
 	testutil.AssertAppError(t, err, "INTERNAL_ERROR")
 }
 
@@ -224,12 +224,12 @@ func TestAttachmentOpenDeleteDBError(t *testing.T) {
 	svc := NewAttachmentService(newBrokenDB(t), storage.NewMemBlobStore(), defaultLimits())
 
 	t.Run("open surfaces internal error on lookup failure", func(t *testing.T) {
-		_, _, err := svc.Open("u1", "a1")
+		_, _, err := svc.Open("u1", "t1", "a1")
 		testutil.AssertAppError(t, err, "INTERNAL_ERROR")
 	})
 
 	t.Run("delete surfaces internal error on lookup failure", func(t *testing.T) {
-		err := svc.Delete("u1", "a1")
+		err := svc.Delete("u1", "t1", "a1")
 		testutil.AssertAppError(t, err, "INTERNAL_ERROR")
 	})
 }

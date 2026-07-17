@@ -100,19 +100,22 @@ export function useAttachmentBlob(
       ),
     enabled: enabled && !!txId && !!attachmentId,
     staleTime: Infinity, // the bytes are immutable for the attachment's lifetime
+    // Receipt blobs are up to 10 MiB each; once no thumbnail/lightbox observes
+    // them, release them promptly rather than holding the default 5 minutes.
+    gcTime: 60_000,
   });
 }
 
 // Derive a per-consumer object URL from the shared cached Blob. Each mounting
 // component owns its own object URL and revokes exactly that URL on unmount (or
 // when the underlying blob/id changes), so consumers can't invalidate each
-// other's previews. Returns `{ url, isLoading }`.
+// other's previews. Returns `{ url, isLoading, isError, retry }`.
 export function useAttachmentObjectUrl(
   txId: string,
   attachmentId: string,
   enabled = true
 ) {
-  const { data: blob, isLoading } = useAttachmentBlob(
+  const { data: blob, isLoading, isError, refetch } = useAttachmentBlob(
     txId,
     attachmentId,
     enabled
@@ -129,7 +132,7 @@ export function useAttachmentObjectUrl(
     return () => URL.revokeObjectURL(objectUrl);
   }, [blob]);
 
-  return { url, isLoading };
+  return { url, isLoading, isError, retry: refetch };
 }
 
 export type { Attachment };

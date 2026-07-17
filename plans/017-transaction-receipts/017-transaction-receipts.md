@@ -250,7 +250,12 @@ type AttachmentServicer interface {
 - enforce `MaxAttachmentsPerTx` (count existing, non-deleted);
 - sniff + normalize + checksum (sha256) + generate opaque key `userID/txID/<uuid>.<ext>`;
 - **order:** `store.Put(...)` first, then DB `Create`; on DB error best-effort `store.Delete` the orphan;
-- `Delete`: soft-delete row + `store.Delete` object;
+- `Delete`: hard-delete the row + `store.Delete` the object (kept consistent: the
+  bytes are gone, so a soft-deleted row would dangle; deleting a receipt also
+  purges its bytes as a privacy expectation);
+- `Open`/`Delete` are scoped to both `user_id` **and** `transaction_id`, so the
+  `:id` path segment is authoritative (an attachment is only reachable through
+  the transaction it belongs to);
 - `Open`: ownership check, return metadata + `store.Get` stream.
 
 Errors: reuse `apperrors` sentinels (`ErrInvalidInput`, `ErrForbidden`/`ErrNotFound`);
@@ -265,7 +270,7 @@ add `ErrUnsupportedMediaType`, `ErrPayloadTooLarge`, `ErrAttachmentLimit` if not
 - `List(c)` — returns metadata array.
 - `Download(c)` — ownership-checked stream; set hardened headers (see Security);
   `io.Copy(c.Writer, stream)`.
-- `Delete(c)` — soft-delete + audit `DELETE_ATTACHMENT`; `204`.
+- `Delete(c)` — ownership + transaction-scoped delete + audit `DELETE_ATTACHMENT`; `204`.
 
 Use existing helpers `getUserID`, `parsePathID`, `respondWithError` (`handlers/helpers.go`).
 

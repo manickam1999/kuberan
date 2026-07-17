@@ -96,10 +96,20 @@ func run() error {
 	trustedClientService := services.NewTrustedClientService(db)
 
 	// Receipt attachments (plan 017): blob store + service. The store is only
-	// reachable through the ownership-checked API; MinIO stays private.
-	blobStore, err := storage.NewS3BlobStore(appConfig.StorageConfig())
-	if err != nil {
-		return fmt.Errorf("failed to initialize blob store: %w", err)
+	// reachable through the ownership-checked API; MinIO stays private. When no
+	// bucket is configured (e.g. a dev instance without MinIO) the API still
+	// boots with a disabled store: attachment requests fail cleanly rather than
+	// taking the whole server down.
+	var blobStore storage.BlobStore
+	if appConfig.StorageBucket == "" {
+		log.Warn("STORAGE_BUCKET not set; receipt attachments are disabled")
+		blobStore = storage.NewDisabledBlobStore()
+	} else {
+		s3Store, err := storage.NewS3BlobStore(appConfig.StorageConfig())
+		if err != nil {
+			return fmt.Errorf("failed to initialize blob store: %w", err)
+		}
+		blobStore = s3Store
 	}
 	attachmentService := services.NewAttachmentService(db, blobStore, services.AttachmentLimits{
 		MaxUploadBytes:      appConfig.MaxUploadBytes,

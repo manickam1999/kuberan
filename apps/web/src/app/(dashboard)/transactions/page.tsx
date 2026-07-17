@@ -55,7 +55,10 @@ function TransactionRow({
         </p>
         <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
           {(transaction.attachments_count ?? 0) > 0 && (
-            <Paperclip className="size-3 shrink-0" aria-label="Has receipts" />
+            <>
+              <Paperclip className="size-3 shrink-0" aria-hidden="true" />
+              <span className="sr-only">Has receipts</span>
+            </>
           )}
           <span className="truncate">{accountName}</span>
           {transaction.category && (

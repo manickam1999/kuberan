@@ -186,3 +186,43 @@ func TestAttachmentFlow_CrossUserIsolation(t *testing.T) {
 		t.Errorf("expected 404 for attacker delete of foreign attachment, got %d", rec.Code)
 	}
 }
+
+// TestAttachmentFlow_TransactionScoping verifies the :id path segment is
+// authoritative: an attachment can only be reached through the transaction it
+// actually belongs to, even for its own owner accessing another of their
+// transactions.
+func TestAttachmentFlow_TransactionScoping(t *testing.T) {
+	app := setupApp(t)
+	token, _, _ := app.registerUser(t, "scoping@test.com", "password123")
+	txA := app.createTxWithAccount(t, token)
+	txB := app.createTxWithAccount(t, token)
+
+	rec := app.uploadFile(
+		fmt.Sprintf("/api/v1/transactions/%s/attachments", txA),
+		"receipt.png", "image/png", makePNG(t), token)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("upload failed: %d %s", rec.Code, rec.Body.String())
+	}
+	attID := parseJSON(t, rec)["attachment"].(map[string]interface{})["id"].(string)
+
+	// Download through the wrong (but owned) transaction is 404.
+	rec = app.request("GET",
+		fmt.Sprintf("/api/v1/transactions/%s/attachments/%s", txB, attID), "", token)
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("expected 404 downloading via mismatched tx, got %d", rec.Code)
+	}
+
+	// Delete through the wrong transaction is 404 (and must not remove it).
+	rec = app.request("DELETE",
+		fmt.Sprintf("/api/v1/transactions/%s/attachments/%s", txB, attID), "", token)
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("expected 404 deleting via mismatched tx, got %d", rec.Code)
+	}
+
+	// The attachment is still reachable through its real transaction.
+	rec = app.request("GET",
+		fmt.Sprintf("/api/v1/transactions/%s/attachments/%s", txA, attID), "", token)
+	if rec.Code != http.StatusOK {
+		t.Errorf("expected 200 downloading via correct tx, got %d", rec.Code)
+	}
+}

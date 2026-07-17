@@ -176,7 +176,7 @@ func TestAttachmentListOpenDelete(t *testing.T) {
 	})
 
 	t.Run("open streams the stored bytes for the owner", func(t *testing.T) {
-		meta, rc, err := svc.Open(user.ID, att.ID)
+		meta, rc, err := svc.Open(user.ID, tx.ID, att.ID)
 		testutil.AssertNoError(t, err)
 		defer func() { _ = rc.Close() }()
 		got, err := io.ReadAll(rc)
@@ -188,13 +188,34 @@ func TestAttachmentListOpenDelete(t *testing.T) {
 
 	t.Run("open rejects a non-owner", func(t *testing.T) {
 		other := testutil.CreateTestUserWithEmail(t, db, "other@example.com")
-		_, _, err := svc.Open(other.ID, att.ID)
+		_, _, err := svc.Open(other.ID, tx.ID, att.ID)
+		testutil.AssertAppError(t, err, "ATTACHMENT_NOT_FOUND")
+	})
+
+	t.Run("open rejects a mismatched transaction", func(t *testing.T) {
+		// The attachment belongs to the user but to a different transaction: the
+		// :id path segment must be authoritative, so this is NOT_FOUND rather
+		// than a leak through any of the user's own transactions.
+		otherTx := &models.Transaction{UserID: user.ID, AccountID: account.ID, Type: models.TransactionTypeExpense, Amount: 500, Date: time.Now()}
+		if err := db.Create(otherTx).Error; err != nil {
+			t.Fatalf("create other tx: %v", err)
+		}
+		_, _, err := svc.Open(user.ID, otherTx.ID, att.ID)
+		testutil.AssertAppError(t, err, "ATTACHMENT_NOT_FOUND")
+	})
+
+	t.Run("delete rejects a mismatched transaction", func(t *testing.T) {
+		otherTx := &models.Transaction{UserID: user.ID, AccountID: account.ID, Type: models.TransactionTypeExpense, Amount: 500, Date: time.Now()}
+		if err := db.Create(otherTx).Error; err != nil {
+			t.Fatalf("create other tx: %v", err)
+		}
+		err := svc.Delete(user.ID, otherTx.ID, att.ID)
 		testutil.AssertAppError(t, err, "ATTACHMENT_NOT_FOUND")
 	})
 
 	t.Run("delete removes both the row and the object", func(t *testing.T) {
 		key := att.StorageKey
-		err := svc.Delete(user.ID, att.ID)
+		err := svc.Delete(user.ID, tx.ID, att.ID)
 		testutil.AssertNoError(t, err)
 
 		list, err := svc.List(user.ID, tx.ID)
@@ -303,6 +324,6 @@ func TestAttachmentOpenMissingObject(t *testing.T) {
 		t.Fatalf("delete object: %v", err)
 	}
 
-	_, _, err = svc.Open(user.ID, att.ID)
+	_, _, err = svc.Open(user.ID, tx.ID, att.ID)
 	testutil.AssertAppError(t, err, "ATTACHMENT_NOT_FOUND")
 }

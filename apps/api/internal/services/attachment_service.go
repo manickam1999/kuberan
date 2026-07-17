@@ -114,8 +114,8 @@ func (s *attachmentService) List(userID, txID string) ([]models.TransactionAttac
 
 // Open returns an attachment's metadata and a byte stream after an ownership
 // check. The caller must Close the returned reader.
-func (s *attachmentService) Open(userID, attachmentID string) (*models.TransactionAttachment, io.ReadCloser, error) {
-	att, err := s.getOwned(userID, attachmentID)
+func (s *attachmentService) Open(userID, txID, attachmentID string) (*models.TransactionAttachment, io.ReadCloser, error) {
+	att, err := s.getOwned(userID, txID, attachmentID)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -129,25 +129,31 @@ func (s *attachmentService) Open(userID, attachmentID string) (*models.Transacti
 	return att, rc, nil
 }
 
-// Delete soft-deletes the metadata row and best-effort removes the stored
-// object. A failed object delete does not fail the request: the row is already
-// gone and the orphan is reclaimable out-of-band.
-func (s *attachmentService) Delete(userID, attachmentID string) error {
-	att, err := s.getOwned(userID, attachmentID)
+// Delete removes the metadata row and best-effort removes the stored object.
+// The row is hard-deleted (not soft-deleted) so its state stays consistent with
+// the blob, which is gone for good: a soft-deleted row would point at bytes that
+// no longer exist. Deleting a receipt is also a privacy action, so the bytes are
+// removed rather than retained. A failed object delete does not fail the
+// request; the orphan is reclaimable out-of-band.
+func (s *attachmentService) Delete(userID, txID, attachmentID string) error {
+	att, err := s.getOwned(userID, txID, attachmentID)
 	if err != nil {
 		return err
 	}
-	if err := s.db.Delete(att).Error; err != nil {
+	if err := s.db.Unscoped().Delete(att).Error; err != nil {
 		return apperrors.Wrap(apperrors.ErrInternalServer, err)
 	}
 	_ = s.store.Delete(context.Background(), att.StorageKey) // best-effort
 	return nil
 }
 
-// getOwned loads an attachment and asserts it belongs to the user.
-func (s *attachmentService) getOwned(userID, attachmentID string) (*models.TransactionAttachment, error) {
+// getOwned loads an attachment and asserts it belongs to both the user and the
+// given transaction. Scoping on transaction_id keeps the :id path segment
+// authoritative rather than decorative: an attachment can only be reached
+// through the transaction it actually belongs to.
+func (s *attachmentService) getOwned(userID, txID, attachmentID string) (*models.TransactionAttachment, error) {
 	var att models.TransactionAttachment
-	if err := s.db.Where("id = ? AND user_id = ?", attachmentID, userID).First(&att).Error; err != nil {
+	if err := s.db.Where("id = ? AND user_id = ? AND transaction_id = ?", attachmentID, userID, txID).First(&att).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, apperrors.ErrAttachmentNotFound
 		}

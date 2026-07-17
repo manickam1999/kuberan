@@ -21,8 +21,8 @@ import (
 type mockAttachmentService struct {
 	uploadFn func(userID, txID, fileName, declaredType string, size int64, data io.Reader) (*models.TransactionAttachment, error)
 	listFn   func(userID, txID string) ([]models.TransactionAttachment, error)
-	openFn   func(userID, attachmentID string) (*models.TransactionAttachment, io.ReadCloser, error)
-	deleteFn func(userID, attachmentID string) error
+	openFn   func(userID, txID, attachmentID string) (*models.TransactionAttachment, io.ReadCloser, error)
+	deleteFn func(userID, txID, attachmentID string) error
 }
 
 func (m *mockAttachmentService) Upload(userID, txID, fileName, declaredType string, size int64, data io.Reader) (*models.TransactionAttachment, error) {
@@ -39,16 +39,16 @@ func (m *mockAttachmentService) List(userID, txID string) ([]models.TransactionA
 	return nil, nil
 }
 
-func (m *mockAttachmentService) Open(userID, attachmentID string) (*models.TransactionAttachment, io.ReadCloser, error) {
+func (m *mockAttachmentService) Open(userID, txID, attachmentID string) (*models.TransactionAttachment, io.ReadCloser, error) {
 	if m.openFn != nil {
-		return m.openFn(userID, attachmentID)
+		return m.openFn(userID, txID, attachmentID)
 	}
 	return &models.TransactionAttachment{Base: models.Base{ID: attachmentID}}, io.NopCloser(strings.NewReader("")), nil
 }
 
-func (m *mockAttachmentService) Delete(userID, attachmentID string) error {
+func (m *mockAttachmentService) Delete(userID, txID, attachmentID string) error {
 	if m.deleteFn != nil {
-		return m.deleteFn(userID, attachmentID)
+		return m.deleteFn(userID, txID, attachmentID)
 	}
 	return nil
 }
@@ -288,7 +288,7 @@ func TestAttachmentHandler_Download(t *testing.T) {
 	t.Run("streams bytes with hardened headers", func(t *testing.T) {
 		payload := "the-image-bytes"
 		svc := &mockAttachmentService{
-			openFn: func(_, aid string) (*models.TransactionAttachment, io.ReadCloser, error) {
+			openFn: func(_, _, aid string) (*models.TransactionAttachment, io.ReadCloser, error) {
 				return &models.TransactionAttachment{
 						Base:        models.Base{ID: aid},
 						ContentType: "image/png",
@@ -322,7 +322,7 @@ func TestAttachmentHandler_Download(t *testing.T) {
 
 	t.Run("returns 404 when not found", func(t *testing.T) {
 		svc := &mockAttachmentService{
-			openFn: func(_, _ string) (*models.TransactionAttachment, io.ReadCloser, error) {
+			openFn: func(_, _, _ string) (*models.TransactionAttachment, io.ReadCloser, error) {
 				return nil, nil, apperrors.ErrAttachmentNotFound
 			},
 		}
@@ -357,7 +357,7 @@ func TestAttachmentHandler_Download(t *testing.T) {
 
 	t.Run("commits 200 headers then aborts on a mid-stream read error", func(t *testing.T) {
 		svc := &mockAttachmentService{
-			openFn: func(_, aid string) (*models.TransactionAttachment, io.ReadCloser, error) {
+			openFn: func(_, _, aid string) (*models.TransactionAttachment, io.ReadCloser, error) {
 				return &models.TransactionAttachment{Base: models.Base{ID: aid}, ContentType: "image/png"}, errReadCloser{}, nil
 			},
 		}
@@ -387,7 +387,7 @@ func TestAttachmentHandler_Delete(t *testing.T) {
 	t.Run("returns 204 on success", func(t *testing.T) {
 		var deletedID string
 		svc := &mockAttachmentService{
-			deleteFn: func(_, aid string) error {
+			deleteFn: func(_, _, aid string) error {
 				deletedID = aid
 				return nil
 			},
@@ -406,7 +406,7 @@ func TestAttachmentHandler_Delete(t *testing.T) {
 
 	t.Run("returns 404 when not found", func(t *testing.T) {
 		svc := &mockAttachmentService{
-			deleteFn: func(_, _ string) error {
+			deleteFn: func(_, _, _ string) error {
 				return apperrors.ErrAttachmentNotFound
 			},
 		}
