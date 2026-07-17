@@ -18,7 +18,7 @@ Built with a Go backend and Next.js frontend, organized as a monorepo.
 - **Telegram Bot** -- Link a Telegram account and interact with your finances via chat (`apps/bot`)
 - **Price Oracle** -- Standalone worker that ingests security prices and triggers portfolio snapshots via the pipeline API (`apps/oracle`)
 - **MCP Server** -- Read-only finance tools for MCP clients (e.g. Claude connectors), secured with OAuth 2.1 via Ory Hydra (`apps/api/cmd/mcp`)
-- **Automated Backups** -- Cron-based pg_dump backup service with retention pruning (`apps/backup`)
+- **Automated Backups** -- Cron-based pg_dump backup service with retention pruning, plus off-host client-side-encrypted replication of the DB dumps and receipts bucket to Cloudflare R2 (`apps/backup`); see [docs/backup-and-dr.md](docs/backup-and-dr.md)
 - **Dark Mode** -- Dark-first UI with light and system theme support
 - **Audit Logging** -- All sensitive operations are logged for accountability
 
@@ -45,7 +45,7 @@ Built with a Go backend and Next.js frontend, organized as a monorepo.
 │   ├── oracle/               # Go price-ingestion + snapshot worker
 │   └── backup/               # Cron-based pg_dump backup service
 ├── deploy/                   # Deployment scripts
-├── docs/                     # Documentation (MCP OAuth, database setup, receipts)
+├── docs/                     # Documentation (MCP OAuth, database setup, receipts, backup & DR)
 ├── ory/                      # Ory Hydra (OAuth authorization server) config
 ├── plans/                    # Architecture and upgrade plans
 ├── scripts/                  # Utility scripts (check-go.sh, etc.)

@@ -11,7 +11,7 @@ private, versioned, least-privilege MinIO (Phase 4). The security checklist belo
 fully satisfied (`security-auditor` pass done, H1 fixed), the attachment service and
 handler paths are at 100% statement coverage (plan target 95% for this auth-adjacent
 path), and the lifecycle was verified end-to-end in a real browser against dev MinIO.
-Feature reference: `docs/receipts.md`; DR/restore drill: `RUNBOOK.md`.
+Feature reference: `docs/receipts.md`; DR/restore drill: `docs/backup-and-dr.md`.
 
 ## Goal
 
@@ -117,7 +117,7 @@ HEALTHCHECK_URL=https://hc-ping.com/<uuid>
   Losing them makes the off-host copy unrecoverable. Document in the runbook.
 - **R2 bucket versioning** enabled on `kuberan-backups` so a bad `sync` (or ransomware)
   can't erase history. Optional lifecycle rule to expire object versions > 90 days.
-- **Restore runbook** (`plans/017-transaction-receipts/RUNBOOK.md`): decrypt-copy from
+- **Restore runbook** (`docs/backup-and-dr.md`): decrypt-copy from
   R2, `pg_restore`, verify bucket. Drill it once before relying on it.
 
 ### Verification

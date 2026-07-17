@@ -29,7 +29,7 @@ flowchart LR
   is never exposed publicly. See [Serving & headers](#serving--headers).
 - **Off-host backup**: the receipts bucket is mirrored to Cloudflare R2,
   client-side encrypted, by the backup service. See
-  `plans/017-transaction-receipts/RUNBOOK.md`.
+  [backup-and-dr.md](backup-and-dr.md).
 
 ## Upload pipeline
 
@@ -67,22 +67,53 @@ Backend env vars (see `apps/api/internal/config/config.go`):
 | `MAX_ATTACHMENTS_PER_TX` | `10` | Per-transaction attachment cap |
 
 In production, `STORAGE_SECRET_KEY` must be set whenever `STORAGE_BUCKET` is
-configured (enforced by config validation). The API constructs the blob store
-unconditionally, so `STORAGE_BUCKET` must be set for the server to boot.
+configured (enforced by config validation). If `STORAGE_BUCKET` is left unset,
+the API boots with a **disabled blob store**: receipt uploads/downloads fail
+cleanly with a clear error and the rest of the app is unaffected.
 
-### Dev
+### Setup — dev
 
-`docker-compose.yml` runs a private `minio` service (unpublished S3 port) plus a
-one-shot `minio-init` that creates the `kuberan-receipts` bucket and mints a
-**scoped** service account (least-privilege inline policy, not root). The `api`
-service depends on `minio-init` completing and reads the `STORAGE_*` vars.
+Everything is pre-wired in `docker-compose.yml` with dev defaults, so the happy
+path is just:
 
-### Prod
+```sh
+npm run dev
+```
 
-`docker-compose.prod.yml` adds the same private `minio` + `minio-init`, but
-internal-only (never published through cloudflared), with **bucket versioning
-enabled**. `RECEIPTS_BUCKET` is set on the backup service so the off-host R2
-mirror activates. See the Phase 4 section of the plan and `.env.prod.example`.
+On startup, the one-shot `minio-init` creates the `kuberan-receipts` bucket,
+enables versioning, mints a **scoped** service account (least-privilege inline
+policy, not root), and then **asserts the policy attached** — exiting non-zero
+if not, which blocks `api` from starting (it `depends_on` `minio-init`
+completing). Verify:
+
+```sh
+docker compose logs minio-init | grep 'least-privilege'
+# -> minio-init: least-privilege service-account policy verified
+```
+
+The MinIO console is at <http://localhost:9001> (`minioadmin`/`minioadmin`); the
+S3 API on `:9000` is never published. To disable receipts locally, unset
+`STORAGE_BUCKET`.
+
+### Setup — prod
+
+1. Generate four secrets (`openssl rand -hex 24` each) — `MINIO_ROOT_USER`,
+   `MINIO_ROOT_PASSWORD`, `STORAGE_ACCESS_KEY`, `STORAGE_SECRET_KEY` — and put
+   them in `.env.prod`. The compose file uses `${STORAGE_ACCESS_KEY:?...}`, so a
+   missing scoped key fails the deploy fast.
+2. Deploy. `docker-compose.prod.yml` runs the same private `minio` + `minio-init`,
+   but **internal-only** (never published through cloudflared) with bucket
+   versioning enabled. Confirm provisioning:
+
+   ```sh
+   docker compose -f docker-compose.prod.yml logs minio-init | grep 'least-privilege'
+   ```
+
+3. `STORAGE_ENDPOINT` and `STORAGE_USE_PATH_STYLE` are hardcoded in the compose
+   files; only the credentials come from `.env.prod`.
+
+Off-host, encrypted backup of the receipts bucket (and the DB) to Cloudflare R2
+is set up separately — see [backup-and-dr.md](backup-and-dr.md).
 
 ## API
 
