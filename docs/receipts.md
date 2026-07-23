@@ -97,10 +97,19 @@ S3 API on `:9000` is never published. To disable receipts locally, unset
 
 ### Setup — prod
 
-1. Generate four secrets (`openssl rand -hex 24` each) — `MINIO_ROOT_USER`,
-   `MINIO_ROOT_PASSWORD`, `STORAGE_ACCESS_KEY`, `STORAGE_SECRET_KEY` — and put
-   them in `.env.prod`. The compose file uses `${STORAGE_ACCESS_KEY:?...}`, so a
-   missing scoped key fails the deploy fast.
+1. Generate the secrets and put them in `.env.prod`. Root creds have no length
+   cap, but MinIO caps **service-account** credentials, so the scoped keys must
+   fit: access key 3-20 chars, secret key 8-40 chars.
+
+   ```sh
+   openssl rand -hex 24   # MINIO_ROOT_USER
+   openssl rand -hex 24   # MINIO_ROOT_PASSWORD
+   openssl rand -hex 8    # STORAGE_ACCESS_KEY  (16 chars, <= 20)
+   openssl rand -hex 16   # STORAGE_SECRET_KEY  (32 chars, <= 40)
+   ```
+
+   The compose file uses `${STORAGE_ACCESS_KEY:?...}`, so a missing scoped key
+   fails the deploy fast.
 2. Deploy. `docker-compose.prod.yml` runs the same private `minio` + `minio-init`,
    but **internal-only** (never published through cloudflared) with bucket
    versioning enabled. Confirm provisioning:
