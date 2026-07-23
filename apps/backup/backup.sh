@@ -70,9 +70,9 @@ if [ -n "${RCLONE_CONFIG_R2CRYPT_REMOTE:-}" ]; then
     log "Off-host dump push complete."
 
     # Mirror the MinIO receipts bucket off-host (no-op until the receipts
-    # deploy sets RECEIPTS_BUCKET). rclone sync deletes remote extras, so R2
-    # bucket versioning must be enabled to survive a bad sync (see
-    # docs/backup-and-dr.md).
+    # deploy sets RECEIPTS_BUCKET). rclone sync deletes remote extras, and R2
+    # has no object versioning, so a bad sync is destructive; harden with a
+    # bucket lock and/or --backup-dir (see docs/backup-and-dr.md §1d).
     if [ -n "${RECEIPTS_BUCKET:-}" ]; then
         log "Mirroring receipts bucket ${RECEIPTS_BUCKET} off-host ..."
         rclone sync "minio:${RECEIPTS_BUCKET}" r2crypt:receipts/ --s3-no-check-bucket

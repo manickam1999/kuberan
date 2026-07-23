@@ -34,7 +34,7 @@ backup risk and provides the receipts DR the MinIO decision requires.
 | D4 | Limits | 10 MiB per file, 10 attachments per transaction. |
 | D5 | Serving | API-proxied, MinIO private, ownership-checked. Browser fetches bytes with the `Authorization` header then `createObjectURL` — token never in a URL. NOT presigned/signed-query URLs. Hardened response headers. |
 | D6 | Upload privacy | Re-encode raster images server-side to strip EXIF (GPS) + defuse decompression bombs. |
-| D7 | Backup/DR | Extend `apps/backup` with `rclone` + `crypt` to push DB dumps AND the MinIO bucket off-host to R2, client-side encrypted. Guard deletes with R2 versioning. Add failure alerting. Ships as Phase 0, independent of receipts. |
+| D7 | Backup/DR | Extend `apps/backup` with `rclone` + `crypt` to push DB dumps AND the MinIO bucket off-host to R2, client-side encrypted. Guard deletes with an R2 bucket lock + rclone `--backup-dir` (R2 has no object versioning). Add failure alerting. Ships as Phase 0, independent of receipts. |
 | D8 | Scope | Web UI first. Telegram bot + MCP upload are follow-ups (out of scope here). |
 
 ## Architecture
@@ -115,8 +115,11 @@ HEALTHCHECK_URL=https://hc-ping.com/<uuid>
 - **Crypt passphrase custody:** the `PASSWORD`/`PASSWORD2` values are produced by
   `rclone obscure` locally and must ALSO be stored in a password manager off the VPS.
   Losing them makes the off-host copy unrecoverable. Document in the runbook.
-- **R2 bucket versioning** enabled on `kuberan-backups` so a bad `sync` (or ransomware)
-  can't erase history. Optional lifecycle rule to expire object versions > 90 days.
+- **R2 bucket lock** on `kuberan-backups` so a bad `sync` (or ransomware) can't
+  erase history. (Correction: R2 has **no** object versioning — the original
+  plan assumed it did. R2's equivalent is a Bucket Lock retention/WORM policy;
+  and the destructive receipts `sync` should use rclone `--backup-dir`. See
+  `docs/backup-and-dr.md` §1d.)
 - **Restore runbook** (`docs/backup-and-dr.md`): decrypt-copy from
   R2, `pg_restore`, verify bucket. Drill it once before relying on it.
 

@@ -10,6 +10,13 @@ The on-host piece (`apps/backup/backup.sh`, cron via supercronic) already runs
 `pg_dump -Fc` into a host bind mount. This adds the **off-host** leg so a single
 disk loss can't take out the DB and every backup at once.
 
+The off-host copy is driven by [**rclone**](https://rclone.org/) — an
+open-source command-line tool for copying and syncing files to and between
+cloud / S3-compatible object stores (think "rsync for object storage"). It is
+already installed in the backup image (`apps/backup/Dockerfile`); you configure
+it entirely through environment variables (see §2), so there's no `rclone.conf`
+to manage.
+
 ## Topology
 
 ```mermaid
@@ -69,18 +76,23 @@ Access Key ID      → RCLONE_CONFIG_R2_ACCESS_KEY_ID
 Secret Access Key  → RCLONE_CONFIG_R2_SECRET_ACCESS_KEY
 ```
 
-### 1d. Enable versioning + retention (anti-tamper backstop)
+### 1d. Protect the off-host copy from tampering (bucket lock)
 
-The receipts mirror uses `rclone sync`, which **deletes remote extras** — a bad
-sync or ransomware could wipe history. Enable **Object Versioning** on the
-bucket under **Settings** so prior versions survive a destructive sync. (There
-is no `wrangler` versioning subcommand; it's a bucket Settings toggle / API
-call.) Then cap version growth with a lifecycle rule (Settings → Object
-Lifecycle Rules, or Wrangler):
+**R2 has no object versioning** — `PutBucketVersioning`/`GetBucketVersioning`
+are unimplemented in R2's S3 API, so there is no "restore a prior version" after
+a bad write. R2's equivalent protection is a **Bucket Lock**: a retention / WORM
+policy (bucket **Settings → Bucket Lock**, or the API) that blocks objects from
+being deleted or overwritten for a set period — or indefinitely. Apply one to
+`kuberan-backups` so the append-only DB dumps (pushed with `rclone copy`) can't
+be tampered with or deleted, even by a compromised host.
 
-```sh
-npx wrangler r2 bucket lifecycle add kuberan-backups expire-old --expire-days 90
-```
+The receipts mirror is the subtle case: it uses a destructive `rclone sync`
+(§2), which deletes remote objects that are gone from source. Because R2 can't
+version, a bad sync is otherwise unrecoverable, and a bucket lock would *reject*
+the sync's own deletes (fighting each other). The clean fix is to run that sync
+with rclone's `--backup-dir`, which **moves** would-be-deletions to a
+timestamped prefix instead of erasing them — a recovery trail without
+versioning. `backup.sh` does not do this yet; see the note in §2.
 
 ---
 
@@ -141,7 +153,8 @@ flowchart LR
   uses (`STORAGE_ACCESS_KEY`/`STORAGE_SECRET_KEY`), which already has
   `ListBucket` + `GetObject`.
 - **copy** (DB dumps) never deletes; local retention prunes them. **sync**
-  (receipts) mirrors deletes → this is why R2 versioning matters.
+  (receipts) mirrors deletes remote extras — and since R2 has no versioning
+  (§1d), a bad sync is destructive.
 
 ### Notes / gotchas
 
@@ -151,6 +164,11 @@ flowchart LR
   HEAD the bucket.
 - `RECEIPTS_BUCKET` is supplied by the compose `backup` service (`= STORAGE_BUCKET`);
   you don't set it by hand.
+- **Receipts mirror is destructive today.** `backup.sh` runs `rclone sync`
+  without `--backup-dir`, so a source-side loss propagates to R2 with no
+  recovery trail (R2 can't version). Hardening this — adding `--backup-dir` so
+  deletions are moved aside — is a recommended follow-up. The DB dumps use
+  `rclone copy` and are not exposed to this.
 
 ---
 
@@ -200,7 +218,7 @@ Verify the app boots against the scratch DB, then drop it.
 | Healthcheck flips to "down" | `pg_dump`, `rclone`, or connectivity failed | Read the backup container logs; the last `log` line marks the failing step. |
 | `rclone` auth error | Rotated/expired R2 token | Regenerate the R2 token, update `RCLONE_CONFIG_R2_*` in `.env.prod`, redeploy. |
 | Decrypt fails on restore | Wrong passphrase | Use the passphrase pair from the off-VPS password manager; both `PASSWORD` and `PASSWORD2` must match. |
-| Receipts mirror deleted objects | Bad `sync` | Recover prior object versions from R2 versioning (step 1d). |
+| Receipts mirror deleted objects | Bad `sync` (R2 has no versioning) | Recover from the `--backup-dir` trail if enabled; otherwise re-mirror from the live MinIO source bucket. Prevent recurrence per §1d. |
 
 ---
 
