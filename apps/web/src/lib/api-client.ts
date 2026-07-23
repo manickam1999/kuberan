@@ -129,16 +129,35 @@ async function attemptTokenRefresh(): Promise<boolean> {
   }
 }
 
+// How the caller wants the successful response body decoded.
+type ResponseKind = "json" | "blob";
+
 async function request<T>(
   method: string,
   path: string,
   body?: unknown,
-  query?: Record<string, string | number | boolean | undefined | null>
+  query?: Record<string, string | number | boolean | undefined | null>,
+  responseKind: ResponseKind = "json"
 ): Promise<T> {
   const url = `${API_BASE_URL}${path}${buildQueryString(query)}`;
-  const headers: Record<string, string> = {
-    "Content-Type": "application/json",
-  };
+
+  // FormData bodies must be sent as-is: the browser sets a multipart
+  // Content-Type with the correct boundary, so we must NOT set it ourselves
+  // (and must NOT JSON.stringify the body).
+  const isFormData =
+    typeof FormData !== "undefined" && body instanceof FormData;
+
+  const headers: Record<string, string> = {};
+  if (!isFormData && body !== undefined) {
+    headers["Content-Type"] = "application/json";
+  }
+
+  const encodedBody =
+    body === undefined
+      ? undefined
+      : isFormData
+        ? (body as FormData)
+        : JSON.stringify(body);
 
   let token = getAccessToken();
 
@@ -159,7 +178,7 @@ async function request<T>(
   let res = await fetch(url, {
     method,
     headers,
-    body: body !== undefined ? JSON.stringify(body) : undefined,
+    body: encodedBody,
   });
 
   // Attempt token refresh on 401 (unless this is already an auth request)
@@ -170,7 +189,7 @@ async function request<T>(
       res = await fetch(url, {
         method,
         headers,
-        body: body !== undefined ? JSON.stringify(body) : undefined,
+        body: encodedBody,
       });
     } else {
       clearTokens();
@@ -200,6 +219,20 @@ async function request<T>(
     return undefined as T;
   }
 
+  if (responseKind === "blob") {
+    // A successful binary fetch must not be a JSON error masquerading as 200;
+    // guard so a caller never renders a JSON body as a broken image.
+    const contentType = res.headers.get("Content-Type") ?? "";
+    if (contentType.includes("application/json")) {
+      throw new ApiClientError(
+        "UNEXPECTED_RESPONSE",
+        "Expected binary content but received JSON",
+        res.status
+      );
+    }
+    return res.blob() as Promise<T>;
+  }
+
   return res.json() as Promise<T>;
 }
 
@@ -222,6 +255,18 @@ export const apiClient = {
 
   del<T>(path: string): Promise<T> {
     return request<T>("DELETE", path);
+  },
+
+  // Multipart upload. Pass a FormData body; the browser sets the multipart
+  // Content-Type + boundary. Shares the auth/refresh path with other requests.
+  upload<T>(path: string, form: FormData): Promise<T> {
+    return request<T>("POST", path, form);
+  },
+
+  // Authenticated binary fetch (e.g. for rendering a private <img> via
+  // URL.createObjectURL). Sends the Bearer token, returns the raw Blob.
+  getBlob(path: string): Promise<Blob> {
+    return request<Blob>("GET", path, undefined, undefined, "blob");
   },
 };
 

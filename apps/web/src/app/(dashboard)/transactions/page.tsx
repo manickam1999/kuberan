@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { ChevronLeft, ChevronRight, Plus, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, Paperclip, Plus, X } from "lucide-react";
 
 import { useAccounts } from "@/hooks/use-accounts";
 import { useTransactions } from "@/hooks/use-transactions";
@@ -54,6 +54,12 @@ function TransactionRow({
           {transaction.description || v.label}
         </p>
         <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+          {(transaction.attachments_count ?? 0) > 0 && (
+            <>
+              <Paperclip className="size-3 shrink-0" aria-hidden="true" />
+              <span className="sr-only">Has receipts</span>
+            </>
+          )}
           <span className="truncate">{accountName}</span>
           {transaction.category && (
             <>

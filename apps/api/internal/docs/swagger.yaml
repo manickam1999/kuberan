@@ -56,6 +56,18 @@ definitions:
     - quantity
     - security_id
     type: object
+  internal_handlers.AttachmentResponse:
+    properties:
+      attachment:
+        $ref: '#/definitions/kuberan_internal_models.TransactionAttachment'
+    type: object
+  internal_handlers.AttachmentsResponse:
+    properties:
+      attachments:
+        items:
+          $ref: '#/definitions/kuberan_internal_models.TransactionAttachment'
+        type: array
+    type: object
   internal_handlers.AuthResponse:
     properties:
       access_token:
@@ -933,6 +945,19 @@ definitions:
         type: string
       amount:
         type: integer
+      attachments:
+        description: |-
+          Attachments are receipt images/PDFs. Preloaded only on detail queries
+          (not on list). See plans/017-transaction-receipts.
+        items:
+          $ref: '#/definitions/kuberan_internal_models.TransactionAttachment'
+        type: array
+      attachments_count:
+        description: |-
+          AttachmentsCount is a derived (non-persisted) count of receipts, populated
+          on list queries so the UI can show a paperclip indicator without loading
+          the attachment rows. See plans/017-transaction-receipts.
+        type: integer
       category:
         $ref: '#/definitions/kuberan_internal_models.Category'
       category_id:
@@ -954,6 +979,27 @@ definitions:
         type: string
       type:
         $ref: '#/definitions/kuberan_internal_models.TransactionType'
+      updated_at:
+        type: string
+      user_id:
+        type: string
+    type: object
+  kuberan_internal_models.TransactionAttachment:
+    properties:
+      byte_size:
+        type: integer
+      content_type:
+        type: string
+      created_at:
+        type: string
+      deleted_at:
+        $ref: '#/definitions/gorm.DeletedAt'
+      file_name:
+        type: string
+      id:
+        type: string
+      transaction_id:
+        type: string
       updated_at:
         type: string
       user_id:
@@ -3395,6 +3441,180 @@ paths:
       summary: Update transaction
       tags:
       - transactions
+  /transactions/{id}/attachments:
+    get:
+      description: List the receipt attachments for a transaction (metadata only,
+        no bytes)
+      parameters:
+      - description: Transaction ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Attachments
+          schema:
+            $ref: '#/definitions/internal_handlers.AttachmentsResponse'
+        "400":
+          description: Invalid input
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "500":
+          description: Server error
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List transaction attachments
+      tags:
+      - transactions
+      - attachments
+    post:
+      consumes:
+      - multipart/form-data
+      description: Upload a receipt image (JPEG, PNG, WebP) or PDF for a transaction.
+        The image is re-encoded server-side to strip EXIF metadata.
+      parameters:
+      - description: Transaction ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Receipt file (max 10 MiB)
+        in: formData
+        name: file
+        required: true
+        type: file
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Attachment created
+          schema:
+            $ref: '#/definitions/internal_handlers.AttachmentResponse'
+        "400":
+          description: Invalid input
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "404":
+          description: Transaction not found
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "409":
+          description: Attachment limit reached
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "413":
+          description: File too large
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "415":
+          description: Unsupported file type
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "500":
+          description: Server error
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Upload a transaction attachment
+      tags:
+      - transactions
+      - attachments
+  /transactions/{id}/attachments/{aid}:
+    delete:
+      description: Delete a receipt attachment (soft-deletes metadata and removes
+        the stored object)
+      parameters:
+      - description: Transaction ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Attachment ID
+        in: path
+        name: aid
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: Attachment deleted
+        "400":
+          description: Invalid input
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "404":
+          description: Attachment not found
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "500":
+          description: Server error
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Delete a transaction attachment
+      tags:
+      - transactions
+      - attachments
+    get:
+      description: Stream the raw bytes of a receipt attachment. Ownership is enforced.
+      parameters:
+      - description: Transaction ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Attachment ID
+        in: path
+        name: aid
+        required: true
+        type: string
+      produces:
+      - application/octet-stream
+      responses:
+        "200":
+          description: Raw attachment bytes
+        "400":
+          description: Invalid input
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "404":
+          description: Attachment not found
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "500":
+          description: Server error
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Download a transaction attachment
+      tags:
+      - transactions
+      - attachments
   /transactions/daily-spending:
     get:
       consumes:

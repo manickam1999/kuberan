@@ -1,5 +1,6 @@
 import type {
   Account,
+  Attachment,
   Budget,
   BudgetPeriod,
   BudgetProgress,
@@ -80,6 +81,16 @@ export interface CategoryResponse {
 
 export interface DeleteResponse {
   message: string;
+}
+
+// Attachment responses (receipt uploads). Upload returns the single created
+// item; list returns the metadata array. Bytes are fetched separately as a Blob.
+export interface AttachmentResponse {
+  attachment: Attachment;
+}
+
+export interface AttachmentsResponse {
+  attachments: Attachment[];
 }
 
 // Account requests

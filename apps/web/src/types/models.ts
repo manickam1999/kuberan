@@ -54,6 +54,19 @@ export interface Transaction extends BaseModel {
   account?: Account; // preloaded relation
   to_account?: Account | null; // preloaded relation for transfers
   category?: Category | null; // preloaded relation
+  attachments?: Attachment[]; // preloaded on detail queries only (not list)
+  attachments_count?: number; // populated on list queries for the paperclip indicator
+}
+
+// Receipt attachment (image/PDF) on a transaction. Bytes live in the blob
+// store (MinIO/S3); this is metadata only. The opaque storage_key is never
+// exposed. See plans/017-transaction-receipts.
+export interface Attachment extends BaseModel {
+  user_id: string; // UUIDv7
+  transaction_id: string; // UUIDv7
+  file_name: string;
+  content_type: string; // e.g. image/jpeg, application/pdf
+  byte_size: number; // bytes
 }
 
 // Category types

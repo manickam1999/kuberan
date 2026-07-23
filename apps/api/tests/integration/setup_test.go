@@ -1,10 +1,13 @@
 package integration
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"net/textproto"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -18,8 +21,13 @@ import (
 	"kuberan/internal/middleware"
 	"kuberan/internal/models"
 	"kuberan/internal/services"
+	"kuberan/internal/storage"
 	"kuberan/internal/validator"
 )
+
+// testMaxUploadBytes mirrors the production upload cap used by the attachment
+// path so the integration harness exercises the same MaxBytesReader behavior.
+const testMaxUploadBytes int64 = 10 << 20 // 10 MiB
 
 // testApp holds the full application stack for integration tests.
 type testApp struct {
@@ -52,6 +60,7 @@ func setupIsolatedDB(t *testing.T) *gorm.DB {
 		&models.Account{},
 		&models.Category{},
 		&models.Transaction{},
+		&models.TransactionAttachment{},
 		&models.Budget{},
 		&models.Security{},
 		&models.SecurityPrice{},
@@ -84,6 +93,10 @@ func setupApp(t *testing.T) *testApp {
 	securityService := services.NewSecurityService(db)
 	snapshotService := services.NewPortfolioSnapshotService(db)
 	auditService := services.NewAuditService(db)
+	attachmentService := services.NewAttachmentService(db, storage.NewMemBlobStore(), services.AttachmentLimits{
+		MaxUploadBytes:      testMaxUploadBytes,
+		MaxAttachmentsPerTx: 10,
+	})
 
 	// Handlers
 	authHandler := handlers.NewAuthHandler(userService, auditService)
@@ -94,6 +107,7 @@ func setupApp(t *testing.T) *testApp {
 	investmentHandler := handlers.NewInvestmentHandler(investmentService, auditService)
 	securityHandler := handlers.NewSecurityHandler(securityService, auditService)
 	snapshotHandler := handlers.NewPortfolioSnapshotHandler(snapshotService, auditService)
+	attachmentHandler := handlers.NewAttachmentHandler(attachmentService, auditService, testMaxUploadBytes)
 
 	// Router
 	router := gin.New()
@@ -128,6 +142,10 @@ func setupApp(t *testing.T) *testApp {
 	transactions.POST("/transfer", transactionHandler.CreateTransfer)
 	transactions.GET("/:id", transactionHandler.GetTransactionByID)
 	transactions.DELETE("/:id", transactionHandler.DeleteTransaction)
+	transactions.POST("/:id/attachments", attachmentHandler.Upload)
+	transactions.GET("/:id/attachments", attachmentHandler.List)
+	transactions.GET("/:id/attachments/:aid", attachmentHandler.Download)
+	transactions.DELETE("/:id/attachments/:aid", attachmentHandler.Delete)
 
 	categories := protected.Group("/categories")
 	categories.POST("", categoryHandler.CreateCategory)
@@ -174,6 +192,35 @@ func setupApp(t *testing.T) *testApp {
 func (app *testApp) request(method, path, body, token string) *httptest.ResponseRecorder {
 	req := httptest.NewRequest(method, path, strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	rec := httptest.NewRecorder()
+	app.Router.ServeHTTP(rec, req)
+	return rec
+}
+
+// uploadFile makes a multipart/form-data POST with a single "file" part to the
+// test router, mirroring how a browser uploads a receipt attachment.
+func (app *testApp) uploadFile(path, fileName, contentType string, content []byte, token string) *httptest.ResponseRecorder {
+	var buf bytes.Buffer
+	mw := multipart.NewWriter(&buf)
+	hdr := make(textproto.MIMEHeader)
+	hdr.Set("Content-Disposition", fmt.Sprintf(`form-data; name="file"; filename=%q`, fileName))
+	hdr.Set("Content-Type", contentType)
+	part, err := mw.CreatePart(hdr)
+	if err != nil {
+		panic(err)
+	}
+	if _, err := part.Write(content); err != nil {
+		panic(err)
+	}
+	if err := mw.Close(); err != nil {
+		panic(err)
+	}
+
+	req := httptest.NewRequest("POST", path, &buf)
+	req.Header.Set("Content-Type", mw.FormDataContentType())
 	if token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
