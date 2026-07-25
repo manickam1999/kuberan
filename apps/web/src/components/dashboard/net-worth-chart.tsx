@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { ArrowUpRight, ArrowDownRight } from "lucide-react";
+import { useAuth } from "@/hooks/use-auth";
 import { ThemedAreaChart } from "@/components/charts/themed-area-chart";
 import {
   Card,
@@ -132,6 +133,7 @@ function toChartData(
 }
 
 export function NetWorthChart() {
+  const { hideBalances } = useAuth();
   const [period, setPeriod] = useState("1W");
 
   const selectedOpt = useMemo(
@@ -229,7 +231,7 @@ export function NetWorthChart() {
             <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
               <CardTitle className="money text-3xl font-semibold sm:text-4xl">
                 {latestNetWorth !== null
-                  ? formatCurrency(latestNetWorth)
+                  ? formatCurrency(latestNetWorth, undefined, hideBalances)
                   : "—"}
               </CardTitle>
               {periodChange && (
@@ -246,7 +248,7 @@ export function NetWorthChart() {
                     <ArrowDownRight className="size-3.5" />
                   )}
                   {changeUp ? "+" : ""}
-                  {formatCurrency(periodChange.deltaCents)} (
+                  {formatCurrency(periodChange.deltaCents, undefined, hideBalances)} (
                   {changeUp ? "+" : ""}
                   {periodChange.pct.toFixed(1)}%)
                 </span>
@@ -291,7 +293,7 @@ export function NetWorthChart() {
             className="h-[190px] md:h-[230px] w-full"
             ditherColor="green"
             cleanColor="var(--chart-1)"
-            valueFormatter={(v) => formatCurrency(v * 100)}
+            valueFormatter={(v) => formatCurrency(v * 100, undefined, hideBalances)}
           />
         )}
       </CardContent>

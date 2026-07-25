@@ -66,6 +66,11 @@ export interface ProfileResponse {
   user: User;
 }
 
+// Request to update profile settings (PATCH /profile)
+export interface UpdateProfileSettingsRequest {
+  hide_balances: boolean;
+}
+
 // Single-item response wrappers (backend wraps single items in a key)
 export interface AccountResponse {
   account: Account;

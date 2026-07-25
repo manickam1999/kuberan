@@ -18,6 +18,7 @@ export interface User {
   last_name: string;
   is_active?: boolean;
   last_login_at?: string | null; // ISO 8601
+  hide_balances: boolean;
 }
 
 // Account types

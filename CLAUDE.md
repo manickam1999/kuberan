@@ -276,6 +276,7 @@ POST /oauth2/register          # Hardened RFC 7591 DCR proxy (alias: POST /api/v
 ```
 # User
 GET    /api/v1/profile
+PATCH  /api/v1/profile
 
 # Accounts
 POST   /api/v1/accounts/cash

@@ -15,6 +15,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useSpendingByCategory } from "@/hooks/use-transactions";
 import { useActiveMonth } from "@/hooks/use-active-month";
 import { useChartTheme } from "@/providers/chart-theme-provider";
+import { useAuth } from "@/hooks/use-auth";
 import { formatCurrency } from "@/lib/format";
 
 const TOP_N = 5;
@@ -29,6 +30,7 @@ export function SpendingCard() {
   } = useActiveMonth();
   const { data, isLoading } = useSpendingByCategory(fromDate, toDate);
   const { chartTheme } = useChartTheme();
+  const { hideBalances } = useAuth();
 
   const { slices, bars } = useMemo(() => {
     if (!data?.items)
@@ -116,12 +118,12 @@ export function SpendingCard() {
         <ThemedDonut
           data={slices}
           size={200}
-          valueFormatter={(value) => formatCurrency(value)}
+          valueFormatter={(value) => formatCurrency(value, undefined, hideBalances)}
           totalForPct={data.total_spent}
           center={
             <>
               <span className="text-sm font-semibold tabular-nums">
-                {formatCurrency(data.total_spent)}
+                {formatCurrency(data.total_spent, undefined, hideBalances)}
               </span>
               <span className="text-[10px] text-muted-foreground">spent</span>
             </>
@@ -140,7 +142,7 @@ export function SpendingCard() {
                   <span className="truncate">{b.name}</span>
                 </span>
                 <span className="money shrink-0 font-medium">
-                  {formatCurrency(b.value)}
+                  {formatCurrency(b.value, undefined, hideBalances)}
                 </span>
               </div>
               <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">

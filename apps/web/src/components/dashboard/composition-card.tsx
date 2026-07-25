@@ -14,6 +14,7 @@ import { DitherFill } from "@/components/charts/dither-fill";
 import { ditherFill } from "@/lib/dither";
 import type { DitherColor } from "@/components/dither-kit/palette";
 import { useChartTheme } from "@/providers/chart-theme-provider";
+import { useAuth } from "@/hooks/use-auth";
 import { formatCurrency, formatPercentage } from "@/lib/format";
 import type { Account } from "@/types/models";
 
@@ -30,6 +31,7 @@ export function CompositionCard() {
   const { data: accountsData, isLoading } = useAccounts();
   const { data: portfolio } = usePortfolio();
   const { chartTheme } = useChartTheme();
+  const { hideBalances } = useAuth();
 
   if (isLoading) {
     return (
@@ -142,7 +144,7 @@ export function CompositionCard() {
                 )}
               </span>
               <span className="money shrink-0 text-sm font-medium">
-                {formatCurrency(s.value)}
+                {formatCurrency(s.value, undefined, hideBalances)}
               </span>
             </div>
           ))}
@@ -161,7 +163,7 @@ export function CompositionCard() {
                 <span className="text-sm text-muted-foreground">Debt</span>
               </span>
               <span className="money shrink-0 text-sm font-medium text-negative">
-                −{formatCurrency(debt)}
+                −{formatCurrency(debt, undefined, hideBalances)}
               </span>
             </div>
           )}
@@ -170,7 +172,7 @@ export function CompositionCard() {
         <div className="flex items-center justify-between gap-3 border-t border-border/60 pt-3">
           <span className="text-sm font-medium">Net worth</span>
           <span className="money text-base font-semibold">
-            {formatCurrency(netWorth)}
+            {formatCurrency(netWorth, undefined, hideBalances)}
           </span>
         </div>
       </CardContent>

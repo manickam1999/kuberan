@@ -8,6 +8,7 @@ import {
   useState,
 } from "react";
 import type { ReactNode } from "react";
+import { toast } from "sonner";
 import type { User } from "@/types/models";
 import type {
   AuthResponse,
@@ -29,9 +30,11 @@ export interface AuthContextValue {
   user: User | null;
   isLoading: boolean;
   isAuthenticated: boolean;
+  hideBalances: boolean;
   login: (email: string, password: string) => Promise<void>;
   register: (data: RegisterRequest) => Promise<void>;
   logout: () => void;
+  toggleHideBalances: () => Promise<void>;
 }
 
 export const AuthContext = createContext<AuthContextValue | null>(null);
@@ -41,6 +44,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
 
   const isAuthenticated = user !== null;
+  const hideBalances = user?.hide_balances ?? false;
 
   // Fetch user profile using stored tokens
   const fetchProfile = useCallback(async (): Promise<User | null> => {
@@ -104,6 +108,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     []
   );
 
+  const toggleHideBalances = useCallback(async () => {
+    setUser((prev) => {
+      if (!prev) return prev;
+      const next = !prev.hide_balances;
+      apiClient
+        .patch<ProfileResponse>("/api/v1/profile", { hide_balances: next })
+        .catch(() => {
+          setUser((current) =>
+            current ? { ...current, hide_balances: !next } : current
+          );
+          toast.error("Failed to update balance visibility setting");
+        });
+      return { ...prev, hide_balances: next };
+    });
+  }, []);
+
   const logout = useCallback(() => {
     clearTokens();
     clearAuthCookie();
@@ -118,11 +138,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       user,
       isLoading,
       isAuthenticated,
+      hideBalances,
       login,
       register,
       logout,
+      toggleHideBalances,
     }),
-    [user, isLoading, isAuthenticated, login, register, logout]
+    [
+      user,
+      isLoading,
+      isAuthenticated,
+      hideBalances,
+      login,
+      register,
+      logout,
+      toggleHideBalances,
+    ]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

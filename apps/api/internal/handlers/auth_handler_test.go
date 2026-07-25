@@ -26,6 +26,7 @@ type mockUserService struct {
 	attemptLoginFn          func(email, password string) (*models.User, error)
 	storeRefreshTokenHashFn func(userID string, tokenHash string) error
 	getRefreshTokenHashFn   func(userID string) (string, error)
+	updateHideBalancesFn    func(userID string, hide bool) error
 }
 
 func (m *mockUserService) CreateUser(email, password, firstName, lastName string) (*models.User, error) {
@@ -75,6 +76,13 @@ func (m *mockUserService) GetRefreshTokenHash(userID string) (string, error) {
 		return m.getRefreshTokenHashFn(userID)
 	}
 	return "", nil
+}
+
+func (m *mockUserService) UpdateHideBalances(userID string, hide bool) error {
+	if m.updateHideBalancesFn != nil {
+		return m.updateHideBalancesFn(userID, hide)
+	}
+	return nil
 }
 
 type mockAuditService struct{}

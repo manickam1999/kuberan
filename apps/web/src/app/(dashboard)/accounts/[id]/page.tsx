@@ -17,6 +17,7 @@ import {
   Loader2,
 } from "lucide-react";
 import { useAccount, useUpdateAccount } from "@/hooks/use-accounts";
+import { useAuth } from "@/hooks/use-auth";
 import { useAccountTransactions } from "@/hooks/use-transactions";
 import { useAccountInvestments } from "@/hooks/use-investments";
 import { useCategories } from "@/hooks/use-categories";
@@ -204,6 +205,7 @@ export default function AccountDetailPage() {
 
   const { data: account, isLoading: accountLoading } = useAccount(accountId);
   const updateAccount = useUpdateAccount(accountId);
+  const { hideBalances } = useAuth();
   const isInvestmentAccount = account?.type === "investment";
   const { data: transactionsData, isLoading: transactionsLoading } =
     useAccountTransactions(isInvestmentAccount ? "" : accountId, {
@@ -273,7 +275,7 @@ export default function AccountDetailPage() {
             </Badge>
           </div>
           <p className="mt-2 text-3xl font-semibold">
-            {formatCurrency(account.balance, account.currency)}
+            {formatCurrency(account.balance, account.currency, hideBalances)}
           </p>
           {account.description && (
             <p className="mt-1 text-sm text-muted-foreground">
@@ -593,10 +595,10 @@ export default function AccountDetailPage() {
                             {inv.quantity}
                           </TableCell>
                           <TableCell className="text-right">
-                            {formatCurrency(inv.current_price)}
+                            {formatCurrency(inv.current_price, undefined, hideBalances)}
                           </TableCell>
                           <TableCell className="text-right font-medium">
-                            {formatCurrency(marketValue)}
+                            {formatCurrency(marketValue, undefined, hideBalances)}
                           </TableCell>
                           <TableCell
                             className={`text-right font-medium ${
@@ -606,7 +608,7 @@ export default function AccountDetailPage() {
                             }`}
                           >
                             {isPositive ? "+" : ""}
-                            {formatCurrency(gainLoss)}
+                            {formatCurrency(gainLoss, undefined, hideBalances)}
                           </TableCell>
                         </TableRow>
                       );

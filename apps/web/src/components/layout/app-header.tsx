@@ -1,6 +1,6 @@
 "use client";
 
-import { LogOut, Moon, Sun, Monitor, Search } from "lucide-react";
+import { Eye, EyeOff, LogOut, Moon, Sun, Monitor, Search } from "lucide-react";
 import { useTheme } from "next-themes";
 import { useAuth } from "@/hooks/use-auth";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -27,7 +27,7 @@ interface AppHeaderProps {
 }
 
 export function AppHeader({ onOpenCommandPalette }: AppHeaderProps) {
-  const { user, logout } = useAuth();
+  const { user, logout, hideBalances, toggleHideBalances } = useAuth();
   const { setTheme } = useTheme();
 
   return (
@@ -48,6 +48,21 @@ export function AppHeader({ onOpenCommandPalette }: AppHeaderProps) {
         <kbd className="pointer-events-none absolute top-1/2 right-2 hidden h-5 -translate-y-1/2 select-none items-center gap-0.5 rounded border bg-muted px-1.5 font-mono text-[10px] font-medium xl:flex">
           <span className="text-xs">⌘</span>K
         </kbd>
+      </Button>
+      <Button
+        variant="ghost"
+        size="icon"
+        onClick={toggleHideBalances}
+        aria-pressed={hideBalances}
+      >
+        {hideBalances ? (
+          <EyeOff className="size-4" />
+        ) : (
+          <Eye className="size-4" />
+        )}
+        <span className="sr-only">
+          {hideBalances ? "Show balances" : "Hide balances"}
+        </span>
       </Button>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
