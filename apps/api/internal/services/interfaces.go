@@ -1,6 +1,7 @@
 package services
 
 import (
+	"io"
 	"time"
 
 	"gorm.io/gorm"
@@ -228,4 +229,30 @@ type PortfolioSnapshotServicer interface {
 // AuditServicer defines the contract for audit logging.
 type AuditServicer interface {
 	Log(userID, action, resourceType, resourceID, ipAddress string, changes map[string]interface{})
+}
+
+// AttachmentLimits holds the per-request caps enforced by the attachment
+// service. It mirrors config.AttachmentConfig without coupling the services
+// package to the config package.
+type AttachmentLimits struct {
+	MaxUploadBytes      int64
+	MaxAttachmentsPerTx int
+}
+
+// AttachmentServicer defines the contract for transaction receipt attachments
+// (plan 017). All operations are user-scoped; ownership is enforced on every
+// read, write, and delete.
+type AttachmentServicer interface {
+	// Upload sniffs, sanitizes (EXIF strip + bomb defense), stores the bytes,
+	// and persists metadata for a receipt attached to the user's transaction.
+	Upload(userID, txID, fileName, declaredType string, size int64, data io.Reader) (*models.TransactionAttachment, error)
+	// List returns the attachment metadata for a user's transaction.
+	List(userID, txID string) ([]models.TransactionAttachment, error)
+	// Open returns an attachment's metadata and a byte stream the caller must
+	// Close. The attachment must belong to both the user and the given
+	// transaction; ownership is checked before any bytes are read.
+	Open(userID, txID, attachmentID string) (*models.TransactionAttachment, io.ReadCloser, error)
+	// Delete removes the metadata row and the stored object. The attachment must
+	// belong to both the user and the given transaction.
+	Delete(userID, txID, attachmentID string) error
 }

@@ -53,3 +53,37 @@ fi
 
 REMAINING=$(find "${BACKUP_DIR}" -name "kuberan_*.dump" -type f | wc -l | tr -d ' ')
 log "Backup complete. ${REMAINING} backup(s) on disk."
+
+# ---------------------------------------------------------------------------
+# Off-host, client-side-encrypted replication to R2 (plans/017 Phase 0).
+#
+# Guarded on RCLONE_CONFIG_R2CRYPT_REMOTE so local-only / self-hosted setups
+# that have not configured R2 keep working with on-disk backups only. The
+# rclone remotes ("r2", "r2crypt", "minio") are defined entirely via
+# RCLONE_CONFIG_* env vars, so no config file is needed. Because `set -e` is
+# active, any failure below aborts the script before the healthcheck ping,
+# leaving the dead-man's-switch silent so the monitor flips to "down".
+# ---------------------------------------------------------------------------
+if [ -n "${RCLONE_CONFIG_R2CRYPT_REMOTE:-}" ]; then
+    log "Pushing dump off-host to r2crypt:db/ ..."
+    rclone copy "${BACKUP_FILE}" r2crypt:db/ --s3-no-check-bucket
+    log "Off-host dump push complete."
+
+    # Mirror the MinIO receipts bucket off-host (no-op until the receipts
+    # deploy sets RECEIPTS_BUCKET). rclone sync deletes remote extras, and R2
+    # has no object versioning, so a bad sync is destructive; harden with a
+    # bucket lock and/or --backup-dir (see docs/backup-and-dr.md §1d).
+    if [ -n "${RECEIPTS_BUCKET:-}" ]; then
+        log "Mirroring receipts bucket ${RECEIPTS_BUCKET} off-host ..."
+        rclone sync "minio:${RECEIPTS_BUCKET}" r2crypt:receipts/ --s3-no-check-bucket
+        log "Receipts mirror complete."
+    fi
+else
+    log "R2 off-host replication not configured (RCLONE_CONFIG_R2CRYPT_REMOTE unset); skipping."
+fi
+
+# Dead-man's-switch: ping the healthcheck only on full success. Any earlier
+# failure (set -e) skips this, so a missed ping signals a broken backup run.
+if [ -n "${HEALTHCHECK_URL:-}" ]; then
+    curl -fsS -m 10 "${HEALTHCHECK_URL}" >/dev/null || log "WARN: healthcheck ping failed"
+fi

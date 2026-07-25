@@ -41,6 +41,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
+import { ExistingAttachments } from "@/components/transactions/transaction-attachments";
 import { formatCurrency, formatDate, toRFC3339 } from "@/lib/format";
 import type { Transaction, TransactionType } from "@/types/models";
 import type { UpdateTransactionRequest } from "@/types/api";
@@ -334,6 +335,9 @@ export function EditTransactionDialog({
                 />
               </div>
 
+              {/* Receipts */}
+              {transaction && <ExistingAttachments txId={transaction.id} />}
+
               <DialogFooter className="mt-1 flex-row justify-between gap-2">
                 <Button
                   type="button"
@@ -395,6 +399,9 @@ export function EditTransactionDialog({
                   {transaction ? formatDate(transaction.date) : ""}
                 </span>
               </div>
+
+              {/* Receipts */}
+              {transaction && <ExistingAttachments txId={transaction.id} />}
 
               <DialogFooter>
                 <Button

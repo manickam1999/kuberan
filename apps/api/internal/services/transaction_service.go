@@ -300,6 +300,10 @@ func (s *transactionService) GetAccountTransactions(userID, accountID string, pa
 		return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)
 	}
 
+	if err := s.populateAttachmentCounts(transactions); err != nil {
+		return nil, err
+	}
+
 	result := pagination.NewPageResponse(transactions, page.Page, page.PageSize, totalItems)
 	return &result, nil
 }
@@ -349,8 +353,49 @@ func (s *transactionService) GetUserTransactions(userID string, page pagination.
 		return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)
 	}
 
+	if err := s.populateAttachmentCounts(transactions); err != nil {
+		return nil, err
+	}
+
 	result := pagination.NewPageResponse(transactions, page.Page, page.PageSize, totalItems)
 	return &result, nil
+}
+
+// populateAttachmentCounts fills in the derived AttachmentsCount for the given
+// page of transactions using a single grouped query, so the list can render a
+// receipt indicator without preloading attachment rows. Soft-deleted
+// attachments are excluded by GORM's default scope.
+func (s *transactionService) populateAttachmentCounts(transactions []models.Transaction) error {
+	if len(transactions) == 0 {
+		return nil
+	}
+
+	ids := make([]string, len(transactions))
+	for i := range transactions {
+		ids[i] = transactions[i].ID
+	}
+
+	type countRow struct {
+		TransactionID string
+		Count         int
+	}
+	var rows []countRow
+	if err := s.db.Model(&models.TransactionAttachment{}).
+		Select("transaction_id, COUNT(*) AS count").
+		Where("transaction_id IN ?", ids).
+		Group("transaction_id").
+		Scan(&rows).Error; err != nil {
+		return apperrors.Wrap(apperrors.ErrInternalServer, err)
+	}
+
+	counts := make(map[string]int, len(rows))
+	for _, r := range rows {
+		counts[r.TransactionID] = r.Count
+	}
+	for i := range transactions {
+		transactions[i].AttachmentsCount = counts[transactions[i].ID]
+	}
+	return nil
 }
 
 // GetTransactionByID retrieves a transaction by ID for a specific user
