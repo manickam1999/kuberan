@@ -143,3 +143,11 @@ func (s *userService) GetRefreshTokenHash(userID string) (string, error) {
 	}
 	return user.RefreshTokenHash, nil
 }
+
+// UpdateHideBalances sets the user's dashboard balance-visibility preference.
+func (s *userService) UpdateHideBalances(userID string, hide bool) error {
+	if err := s.db.Model(&models.User{}).Where("id = ?", userID).Update("hide_balances", hide).Error; err != nil {
+		return apperrors.Wrap(apperrors.ErrInternalServer, err)
+	}
+	return nil
+}

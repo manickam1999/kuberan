@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Plus, Pin, ArrowRight, Coins, Scale, Wallet } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useAccounts, accountKeys } from "@/hooks/use-accounts";
+import { useAuth } from "@/hooks/use-auth";
 import { apiClient } from "@/lib/api-client";
 import { formatCurrency, formatPercentage } from "@/lib/format";
 import { accountVisual } from "@/lib/domain-visuals";
@@ -20,9 +21,11 @@ const GROUP_ORDER: AccountType[] = ["cash", "investment", "credit_card", "debt"]
 function AccountTile({
   account,
   onTogglePin,
+  hideBalances,
 }: {
   account: Account;
   onTogglePin: (id: string, pinned: boolean) => void;
+  hideBalances: boolean;
 }) {
   const v = accountVisual(account.type);
   const Icon = v.icon;
@@ -69,7 +72,7 @@ function AccountTile({
             isLiability ? "text-warning" : ""
           }`}
         >
-          {formatCurrency(account.balance, account.currency)}
+          {formatCurrency(account.balance, account.currency, hideBalances)}
         </p>
 
         {utilization !== null && account.credit_limit ? (
@@ -88,7 +91,7 @@ function AccountTile({
             </div>
             <p className="text-xs text-muted-foreground">
               {formatPercentage(utilization)} of{" "}
-              {formatCurrency(account.credit_limit, account.currency)} limit
+              {formatCurrency(account.credit_limit, account.currency, hideBalances)} limit
             </p>
           </div>
         ) : (
@@ -124,6 +127,7 @@ function AccountsSkeleton() {
 export default function AccountsPage() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const { data, isLoading } = useAccounts({ page_size: 100 });
+  const { hideBalances } = useAuth();
   const queryClient = useQueryClient();
 
   const accounts = data?.data ?? [];
@@ -183,21 +187,21 @@ export default function AccountsPage() {
           <div className="grid gap-4 sm:grid-cols-3">
             <StatCard
               label="Total assets"
-              value={formatCurrency(assets)}
+              value={formatCurrency(assets, undefined, hideBalances)}
               icon={Coins}
               tone="primary"
               sub="Cash + investments"
             />
             <StatCard
               label="Liabilities"
-              value={formatCurrency(liabilities)}
+              value={formatCurrency(liabilities, undefined, hideBalances)}
               icon={Scale}
               tone="warning"
               sub="Credit cards + debt"
             />
             <StatCard
               label="Net worth"
-              value={formatCurrency(netWorth)}
+              value={formatCurrency(netWorth, undefined, hideBalances)}
               icon={Wallet}
               tone="default"
               sub="Assets − liabilities"
@@ -220,7 +224,7 @@ export default function AccountsPage() {
                       </span>
                     </h2>
                     <span className="money text-sm text-muted-foreground">
-                      {formatCurrency(subtotal)}
+                      {formatCurrency(subtotal, undefined, hideBalances)}
                     </span>
                   </div>
                   <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
@@ -229,6 +233,7 @@ export default function AccountsPage() {
                         key={account.id}
                         account={account}
                         onTogglePin={handleTogglePin}
+                        hideBalances={hideBalances}
                       />
                     ))}
                   </div>

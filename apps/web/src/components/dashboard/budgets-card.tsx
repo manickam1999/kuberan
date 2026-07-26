@@ -12,6 +12,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useBudgets, useBudgetsProgress } from "@/hooks/use-budgets";
+import { useAuth } from "@/hooks/use-auth";
 import { formatCurrency, formatPercentage } from "@/lib/format";
 import {
   BudgetProgressBar,
@@ -28,6 +29,7 @@ export function BudgetsCard() {
   });
   const { data: progressList, isLoading: progressLoading } =
     useBudgetsProgress();
+  const { hideBalances } = useAuth();
 
   const isLoading = budgetsLoading || progressLoading;
 
@@ -112,7 +114,8 @@ export function BudgetsCard() {
                 <div className="flex items-center justify-between gap-3 text-sm">
                   <span className="truncate font-medium">{budget.name}</span>
                   <span className="money shrink-0 text-xs text-muted-foreground">
-                    {formatCurrency(spent)} / {formatCurrency(budget.amount)}
+                    {formatCurrency(spent, undefined, hideBalances)} /{" "}
+                    {formatCurrency(budget.amount, undefined, hideBalances)}
                   </span>
                 </div>
                 <BudgetProgressBar percentage={percentage} size="sm" />

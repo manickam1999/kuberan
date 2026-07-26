@@ -10,6 +10,7 @@ type User struct {
 	FirstName           string        `json:"first_name"`
 	LastName            string        `json:"last_name"`
 	IsActive            bool          `gorm:"default:true" json:"is_active"`
+	HideBalances        bool          `gorm:"default:false" json:"hide_balances"`
 	RefreshTokenHash    string        `gorm:"size:64" json:"-"`
 	FailedLoginAttempts int           `gorm:"default:0" json:"-"`
 	LockedUntil         *time.Time    `json:"-"`

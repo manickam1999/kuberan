@@ -65,7 +65,13 @@ function SectionCardHeader({
   );
 }
 
-function AccountsPanel({ accounts }: { accounts: Account[] }) {
+function AccountsPanel({
+  accounts,
+  hideBalances,
+}: {
+  accounts: Account[];
+  hideBalances: boolean;
+}) {
   const pinned = accounts.filter((a) => a.is_pinned);
   const shown = (pinned.length > 0 ? pinned : [...accounts])
     .sort((a, b) => Math.abs(b.balance) - Math.abs(a.balance))
@@ -97,7 +103,7 @@ function AccountsPanel({ accounts }: { accounts: Account[] }) {
                 <p className="text-xs text-muted-foreground">{v.label}</p>
               </div>
               <span className="money shrink-0 text-sm font-medium">
-                {formatCurrency(account.balance, account.currency)}
+                {formatCurrency(account.balance, account.currency, hideBalances)}
               </span>
             </Link>
           );
@@ -150,7 +156,7 @@ function TransactionRow({
 }
 
 export default function DashboardPage() {
-  const { user } = useAuth();
+  const { user, hideBalances } = useAuth();
   const [txDialogOpen, setTxDialogOpen] = useState(false);
   const [editTxOpen, setEditTxOpen] = useState(false);
   const [selectedTransaction, setSelectedTransaction] =
@@ -262,7 +268,7 @@ export default function DashboardPage() {
               </CardContent>
             </Card>
 
-            <AccountsPanel accounts={accounts} />
+            <AccountsPanel accounts={accounts} hideBalances={hideBalances} />
           </div>
         </div>
       )}

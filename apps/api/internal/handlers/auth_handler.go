@@ -92,10 +92,11 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		"access_token":  accessToken,
 		"refresh_token": refreshToken,
 		"user": gin.H{
-			"id":         user.ID,
-			"email":      user.Email,
-			"first_name": user.FirstName,
-			"last_name":  user.LastName,
+			"id":            user.ID,
+			"email":         user.Email,
+			"first_name":    user.FirstName,
+			"last_name":     user.LastName,
+			"hide_balances": user.HideBalances,
 		},
 	})
 }
@@ -140,10 +141,11 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		"access_token":  accessToken,
 		"refresh_token": refreshToken,
 		"user": gin.H{
-			"id":         user.ID,
-			"email":      user.Email,
-			"first_name": user.FirstName,
-			"last_name":  user.LastName,
+			"id":            user.ID,
+			"email":         user.Email,
+			"first_name":    user.FirstName,
+			"last_name":     user.LastName,
+			"hide_balances": user.HideBalances,
 		},
 	})
 }
@@ -205,10 +207,11 @@ func (h *AuthHandler) RefreshToken(c *gin.Context) {
 		"access_token":  accessToken,
 		"refresh_token": refreshToken,
 		"user": gin.H{
-			"id":         user.ID,
-			"email":      user.Email,
-			"first_name": user.FirstName,
-			"last_name":  user.LastName,
+			"id":            user.ID,
+			"email":         user.Email,
+			"first_name":    user.FirstName,
+			"last_name":     user.LastName,
+			"hide_balances": user.HideBalances,
 		},
 	})
 }
@@ -239,10 +242,69 @@ func (h *AuthHandler) GetProfile(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{
 		"user": gin.H{
-			"id":         user.ID,
-			"email":      user.Email,
-			"first_name": user.FirstName,
-			"last_name":  user.LastName,
+			"id":            user.ID,
+			"email":         user.Email,
+			"first_name":    user.FirstName,
+			"last_name":     user.LastName,
+			"hide_balances": user.HideBalances,
+		},
+	})
+}
+
+// UpdateProfileSettingsRequest represents the payload for updating profile settings.
+type UpdateProfileSettingsRequest struct {
+	HideBalances *bool `json:"hide_balances"`
+}
+
+// UpdateProfileSettings updates the authenticated user's profile settings.
+// @Summary     Update profile settings
+// @Description Update the authenticated user's profile settings (e.g. dashboard balance visibility)
+// @Tags        user
+// @Accept      json
+// @Produce     json
+// @Security    BearerAuth
+// @Param       request body UpdateProfileSettingsRequest true "Profile settings to update"
+// @Success     200 {object} UserResponse "Updated user profile"
+// @Failure     400 {object} ErrorResponse "Invalid input"
+// @Failure     401 {object} ErrorResponse "Unauthorized"
+// @Failure     500 {object} ErrorResponse "Server error"
+// @Router      /profile [patch]
+func (h *AuthHandler) UpdateProfileSettings(c *gin.Context) {
+	userID, err := getUserID(c)
+	if err != nil {
+		respondWithError(c, err)
+		return
+	}
+
+	var req UpdateProfileSettingsRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		respondWithError(c, apperrors.WithMessage(apperrors.ErrInvalidInput, err.Error()))
+		return
+	}
+
+	if req.HideBalances == nil {
+		respondWithError(c, apperrors.WithMessage(apperrors.ErrInvalidInput, "hide_balances is required"))
+		return
+	}
+
+	if err := h.userService.UpdateHideBalances(userID, *req.HideBalances); err != nil {
+		respondWithError(c, err)
+		return
+	}
+
+	user, err := h.userService.GetUserByID(userID)
+	if err != nil {
+		respondWithError(c, err)
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"user": gin.H{
+			"id":            user.ID,
+			"email":         user.Email,
+			"first_name":    user.FirstName,
+			"last_name":     user.LastName,
+			"hide_balances": user.HideBalances,
 		},
 	})
 }
