@@ -89,10 +89,13 @@ be tampered with or deleted, even by a compromised host.
 The receipts mirror is the subtle case: it uses a destructive `rclone sync`
 (§2), which deletes remote objects that are gone from source. Because R2 can't
 version, a bad sync is otherwise unrecoverable, and a bucket lock would *reject*
-the sync's own deletes (fighting each other). The clean fix is to run that sync
-with rclone's `--backup-dir`, which **moves** would-be-deletions to a
-timestamped prefix instead of erasing them — a recovery trail without
-versioning. `backup.sh` does not do this yet; see the note in §2.
+the sync's own deletes (fighting each other). So keep the two workloads apart:
+lock only the **`db/` prefix** (or put the dumps in a separate, fully-locked
+bucket), and leave the **`receipts/`** prefix unlocked so the mirror can run.
+Then make that mirror non-destructive with rclone's `--backup-dir`, which
+**moves** would-be-deletions to a timestamped prefix instead of erasing them — a
+recovery trail without versioning. `backup.sh` does not pass `--backup-dir`
+yet; see the note in §2.
 
 ---
 

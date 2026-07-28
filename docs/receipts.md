@@ -184,9 +184,11 @@ properties:
   rather than decorative.
 - Deleting an attachment removes the metadata row and the stored object together
   (a hard delete), so the row never dangles against bytes that are gone and the
-  receipt's bytes are actually purged (a privacy expectation). The off-host R2
-  bucket is versioned, so a noncurrent-version lifecycle rule there is the
-  retention/anti-tamper backstop; a periodic orphan reconciler is recommended in
-  ops for any object whose delete failed after the row was removed.
+  receipt's bytes are actually purged (a privacy expectation). The source MinIO
+  bucket has versioning on, so a delete leaves a recoverable noncurrent version
+  (bound by a MinIO ILM rule); a periodic orphan reconciler is recommended in
+  ops for any object whose delete failed after the row was removed. (The off-host
+  R2 copy is protected by a bucket lock, not versioning — R2 has none; see
+  [backup-and-dr.md](backup-and-dr.md).)
 - PDFs are served inline but sandboxed via CSP; a server-side PDF scrub is a
   deferred nicety.
