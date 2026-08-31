@@ -69,6 +69,9 @@ func setupIsolatedDB(t *testing.T) *gorm.DB {
 		&models.InvestmentTransaction{},
 		&models.AuditLog{},
 		&models.TrustedOAuthClient{},
+		&models.TransactionRule{},
+		&models.TransactionRuleCondition{},
+		&models.TransactionRuleAction{},
 	}
 	if err := db.AutoMigrate(allModels...); err != nil {
 		t.Fatalf("failed to migrate test database: %v", err)
@@ -87,7 +90,8 @@ func setupApp(t *testing.T) *testApp {
 	userService := services.NewUserService(db)
 	accountService := services.NewAccountService(db)
 	categoryService := services.NewCategoryService(db)
-	transactionService := services.NewTransactionService(db, accountService)
+	ruleService := services.NewRuleService(db, categoryService)
+	transactionService := services.NewTransactionService(db, accountService, ruleService)
 	budgetService := services.NewBudgetService(db)
 	investmentService := services.NewInvestmentService(db, accountService)
 	securityService := services.NewSecurityService(db)
@@ -104,6 +108,7 @@ func setupApp(t *testing.T) *testApp {
 	categoryHandler := handlers.NewCategoryHandler(categoryService, auditService)
 	transactionHandler := handlers.NewTransactionHandler(transactionService, auditService)
 	budgetHandler := handlers.NewBudgetHandler(budgetService, auditService)
+	ruleHandler := handlers.NewRuleHandler(ruleService, transactionService, auditService)
 	investmentHandler := handlers.NewInvestmentHandler(investmentService, auditService)
 	securityHandler := handlers.NewSecurityHandler(securityService, auditService)
 	snapshotHandler := handlers.NewPortfolioSnapshotHandler(snapshotService, auditService)
@@ -150,6 +155,17 @@ func setupApp(t *testing.T) *testApp {
 	categories := protected.Group("/categories")
 	categories.POST("", categoryHandler.CreateCategory)
 	categories.GET("", categoryHandler.GetUserCategories)
+	categories.DELETE("/:id", categoryHandler.DeleteCategory)
+
+	rules := protected.Group("/rules")
+	rules.POST("", ruleHandler.CreateRule)
+	rules.GET("", ruleHandler.GetRules)
+	rules.POST("/reorder", ruleHandler.ReorderRules)
+	rules.POST("/preview", ruleHandler.PreviewRule)
+	rules.GET("/:id", ruleHandler.GetRule)
+	rules.PUT("/:id", ruleHandler.UpdateRule)
+	rules.DELETE("/:id", ruleHandler.DeleteRule)
+	rules.POST("/:id/apply", ruleHandler.ApplyRule)
 
 	budgets := protected.Group("/budgets")
 	budgets.POST("", budgetHandler.CreateBudget)

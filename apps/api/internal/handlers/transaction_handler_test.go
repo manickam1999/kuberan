@@ -26,6 +26,8 @@ type mockTransactionService struct {
 	getSpendingByCategoryFn  func(userID string, from, to time.Time) (*services.SpendingByCategory, error)
 	getMonthlySummaryFn      func(userID string, months int) ([]services.MonthlySummaryItem, error)
 	getDailySpendingFn       func(userID string, from, to time.Time) ([]services.DailySpendingItem, error)
+	previewRuleMatchesFn     func(userID string, conditions []services.RuleConditionInput) (*services.RuleMatchPreview, error)
+	applyRuleFn              func(userID, ruleID string, opts services.ApplyRuleOptions) (*services.ApplyRuleResult, error)
 }
 
 func (m *mockTransactionService) CreateTransaction(userID, accountID string, categoryID *string, transactionType models.TransactionType, amount int64, description string, date time.Time) (*models.Transaction, error) {
@@ -98,6 +100,20 @@ func (m *mockTransactionService) GetDailySpending(userID string, from, to time.T
 		return m.getDailySpendingFn(userID, from, to)
 	}
 	return []services.DailySpendingItem{}, nil
+}
+
+func (m *mockTransactionService) PreviewRuleMatches(userID string, conditions []services.RuleConditionInput) (*services.RuleMatchPreview, error) {
+	if m.previewRuleMatchesFn != nil {
+		return m.previewRuleMatchesFn(userID, conditions)
+	}
+	return &services.RuleMatchPreview{Sample: []models.Transaction{}}, nil
+}
+
+func (m *mockTransactionService) ApplyRule(userID, ruleID string, opts services.ApplyRuleOptions) (*services.ApplyRuleResult, error) {
+	if m.applyRuleFn != nil {
+		return m.applyRuleFn(userID, ruleID, opts)
+	}
+	return &services.ApplyRuleResult{Sample: []models.Transaction{}}, nil
 }
 
 var _ services.TransactionServicer = (*mockTransactionService)(nil)

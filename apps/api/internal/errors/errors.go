@@ -90,6 +90,15 @@ var (
 	ErrBudgetAlreadyExists = &AppError{Code: "BUDGET_ALREADY_EXISTS", Message: "An active budget already exists for this category and period", StatusCode: http.StatusConflict}
 )
 
+// Transaction rule errors (plan 018).
+var (
+	ErrRuleNotFound             = &AppError{Code: "RULE_NOT_FOUND", Message: "Rule not found", StatusCode: http.StatusNotFound}
+	ErrRuleInvalid              = &AppError{Code: "RULE_INVALID", Message: "Invalid rule", StatusCode: http.StatusBadRequest}
+	ErrRuleConditionInvalid     = &AppError{Code: "RULE_CONDITION_INVALID", Message: "Invalid rule condition", StatusCode: http.StatusBadRequest}
+	ErrRuleActionInvalid        = &AppError{Code: "RULE_ACTION_INVALID", Message: "Invalid rule action", StatusCode: http.StatusBadRequest}
+	ErrRuleCategoryTypeMismatch = &AppError{Code: "RULE_CATEGORY_TYPE_MISMATCH", Message: "Rule's target category type does not match its transaction-type condition", StatusCode: http.StatusBadRequest}
+)
+
 // Investment errors.
 var (
 	ErrInvestmentNotFound = &AppError{Code: "INVESTMENT_NOT_FOUND", Message: "Investment not found", StatusCode: http.StatusNotFound}

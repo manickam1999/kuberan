@@ -203,10 +203,23 @@ func (s *categoryService) DeleteCategory(userID, categoryID string) error {
 		return apperrors.ErrCategoryHasChildren
 	}
 
-	// Soft-delete the category. Existing transactions keep their category_id
-	// reference to the soft-deleted category for historical records.
-	if err := s.db.Delete(category).Error; err != nil {
-		return apperrors.Wrap(apperrors.ErrInternalServer, err)
-	}
-	return nil
+	// Soft-delete the category and deactivate any auto-categorization rule that
+	// targets it (plan 018). The matcher already skips soft-deleted targets, but
+	// deactivating makes the dead rule visible in the UI rather than silently
+	// inert. Existing transactions keep their category_id reference for history.
+	return s.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Delete(category).Error; err != nil {
+			return apperrors.Wrap(apperrors.ErrInternalServer, err)
+		}
+
+		ruleIDs := tx.Model(&models.TransactionRuleAction{}).
+			Select("rule_id").
+			Where("category_id = ?", categoryID)
+		if err := tx.Model(&models.TransactionRule{}).
+			Where("user_id = ? AND id IN (?)", userID, ruleIDs).
+			Update("is_active", false).Error; err != nil {
+			return apperrors.Wrap(apperrors.ErrInternalServer, err)
+		}
+		return nil
+	})
 }

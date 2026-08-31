@@ -150,6 +150,89 @@ type TransactionServicer interface {
 	GetSpendingByCategory(userID string, from, to time.Time) (*SpendingByCategory, error)
 	GetMonthlySummary(userID string, months int) ([]MonthlySummaryItem, error)
 	GetDailySpending(userID string, from, to time.Time) ([]DailySpendingItem, error)
+	// Rule backfill/preview (plan 018). These live here because they read/write
+	// the transactions table; the pure matcher is shared via the rule service.
+	PreviewRuleMatches(userID string, conditions []RuleConditionInput) (*RuleMatchPreview, error)
+	ApplyRule(userID, ruleID string, opts ApplyRuleOptions) (*ApplyRuleResult, error)
+}
+
+// RuleConditionInput is a single AND-ed condition supplied when creating/updating
+// a rule or previewing matches.
+type RuleConditionInput struct {
+	Field     models.RuleField
+	Operator  models.RuleOperator
+	ValueText string
+	AmountMin *int64
+	AmountMax *int64
+}
+
+// RuleActionInput is a single action supplied when creating/updating a rule.
+type RuleActionInput struct {
+	ActionType models.RuleActionType
+	CategoryID *string
+	ValueText  string
+}
+
+// CreateRuleInput holds the fields for creating a rule.
+type CreateRuleInput struct {
+	Name       string
+	Priority   int
+	IsActive   *bool
+	Conditions []RuleConditionInput
+	Actions    []RuleActionInput
+}
+
+// UpdateRuleInput holds the optional fields for updating a rule. Nil pointers and
+// nil slices mean "leave unchanged"; a non-nil Conditions/Actions slice replaces
+// the rule's children wholesale.
+type UpdateRuleInput struct {
+	Name       *string
+	Priority   *int
+	IsActive   *bool
+	Conditions []RuleConditionInput
+	Actions    []RuleActionInput
+}
+
+// RuleApplyScope selects which existing transactions a backfill considers.
+type RuleApplyScope string
+
+const (
+	RuleApplyScopeUncategorized RuleApplyScope = "uncategorized"
+	RuleApplyScopeAll           RuleApplyScope = "all"
+)
+
+// ApplyRuleOptions configures a rule backfill over existing transactions.
+type ApplyRuleOptions struct {
+	Scope     RuleApplyScope
+	Overwrite bool // when Scope=all, overwrite an existing (non-nil) category
+	DryRun    bool // when true, count/sample only; write nothing
+}
+
+// ApplyRuleResult reports the outcome of a backfill.
+type ApplyRuleResult struct {
+	Count   int                  `json:"count"`   // transactions the rule would categorize
+	Applied int                  `json:"applied"` // transactions actually updated (0 on dry run)
+	Sample  []models.Transaction `json:"sample"`  // small preview of affected transactions
+}
+
+// RuleMatchPreview reports how many existing transactions match a set of
+// (unsaved) conditions, for the "matches N existing" UI.
+type RuleMatchPreview struct {
+	Count  int                  `json:"count"`
+	Sample []models.Transaction `json:"sample"`
+}
+
+// RuleServicer defines the contract for transaction-rule business logic (plan 018).
+type RuleServicer interface {
+	CreateRule(userID string, in CreateRuleInput) (*models.TransactionRule, error)
+	GetRule(userID, ruleID string) (*models.TransactionRule, error)
+	ListRules(userID string) ([]models.TransactionRule, error)
+	UpdateRule(userID, ruleID string, in UpdateRuleInput) (*models.TransactionRule, error)
+	DeleteRule(userID, ruleID string) error
+	ReorderRules(userID string, ruleIDs []string) ([]models.TransactionRule, error)
+	// ResolveForUser loads the user's active rules and returns the category the
+	// input transaction should receive (if any). Used by transaction creation.
+	ResolveForUser(userID string, in RuleInput) (RuleResult, error)
 }
 
 // BudgetProgress contains spending vs budget data for a budget's current period.

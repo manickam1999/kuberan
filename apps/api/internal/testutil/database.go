@@ -27,6 +27,9 @@ var allModels = []interface{}{
 	&models.TelegramLink{},
 	&models.TrustedOAuthClient{},
 	&models.TransactionAttachment{},
+	&models.TransactionRule{},
+	&models.TransactionRuleCondition{},
+	&models.TransactionRuleAction{},
 }
 
 // SetupTestDB creates an in-memory SQLite database with all models migrated.
