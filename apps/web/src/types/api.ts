@@ -255,6 +255,31 @@ export interface DailySpendingItem {
   total: number; // cents
 }
 
+export interface DailySummaryItem {
+  date: string; // "2026-02-01"
+  income: number; // cents
+  expenses: number; // cents
+}
+
+export interface TopExpenseItem {
+  id: string;
+  account_id: string;
+  account_name: string;
+  category_id: string | null; // UUIDv7
+  category_name: string;
+  category_color: string;
+  category_icon: string;
+  amount: number; // cents
+  description: string;
+  date: string; // ISO 8601
+}
+
+export interface TopExpenses {
+  items: TopExpenseItem[];
+  from_date: string; // ISO 8601
+  to_date: string; // ISO 8601
+}
+
 // Investment response wrappers
 export interface InvestmentResponse {
   investment: Investment;

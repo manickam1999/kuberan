@@ -10,6 +10,7 @@ import {
   PiggyBank,
   Database,
   TrendingUp,
+  BarChart3,
   Settings,
   type LucideIcon,
 } from "lucide-react";
@@ -51,6 +52,7 @@ const navSections: NavSection[] = [
       { title: "Transactions", href: "/transactions", icon: ArrowLeftRight },
       { title: "Categories", href: "/categories", icon: Tag },
       { title: "Budgets", href: "/budgets", icon: PiggyBank },
+      { title: "Analytics", href: "/analytics", icon: BarChart3 },
     ],
   },
   {
