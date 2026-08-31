@@ -85,6 +85,47 @@ export interface Category extends BaseModel {
   children?: Category[];
 }
 
+// Transaction rules (auto-categorization). See plans/018-transaction-rules-engine.
+export type RuleField = "description" | "amount" | "account_id" | "type";
+export type RuleOperator =
+  | "contains"
+  | "not_contains"
+  | "equals"
+  | "starts_with"
+  | "ends_with"
+  | "gt"
+  | "lt"
+  | "between";
+export type RuleActionType = "set_category";
+
+export interface RuleCondition {
+  id?: string; // UUIDv7 (present on read)
+  field: RuleField;
+  operator: RuleOperator;
+  value_text?: string | null; // description text / account UUID / type value
+  amount_min?: number | null; // cents (gt, between)
+  amount_max?: number | null; // cents (lt, between)
+}
+
+export interface RuleAction {
+  id?: string; // UUIDv7 (present on read)
+  action_type: RuleActionType;
+  category_id?: string | null; // UUIDv7, for set_category
+  value_text?: string; // reserved for future actions
+  category?: Category | null; // preloaded on read
+}
+
+// A rule = AND-ed conditions -> actions. Rules are OR-ed and evaluated
+// first-match-wins by (priority ASC, created_at ASC).
+export interface TransactionRule extends BaseModel {
+  user_id: string; // UUIDv7
+  name: string;
+  priority: number; // lower = evaluated first
+  is_active: boolean;
+  conditions: RuleCondition[];
+  actions: RuleAction[];
+}
+
 // Budget periods
 export type BudgetPeriod = "monthly" | "yearly";
 

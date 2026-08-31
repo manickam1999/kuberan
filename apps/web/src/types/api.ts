@@ -10,6 +10,10 @@ import type {
   PortfolioSummary,
   Security,
   Transaction,
+  TransactionRule,
+  RuleField,
+  RuleOperator,
+  RuleActionType,
   User,
   TransactionType,
   CategoryType,
@@ -191,6 +195,74 @@ export interface UpdateCategoryRequest {
   icon?: string;
   color?: string;
   parent_id?: string; // UUIDv7
+}
+
+// Transaction rule responses (plan 018)
+export interface RuleResponse {
+  rule: TransactionRule;
+}
+
+export interface RulesResponse {
+  rules: TransactionRule[];
+}
+
+// Rule request building blocks (mirror the backend service inputs)
+export interface RuleConditionInput {
+  field: RuleField;
+  operator: RuleOperator;
+  value_text?: string;
+  amount_min?: number | null; // cents
+  amount_max?: number | null; // cents
+}
+
+export interface RuleActionInput {
+  action_type: RuleActionType;
+  category_id?: string; // UUIDv7, for set_category
+  value_text?: string;
+}
+
+export interface CreateRuleRequest {
+  name: string;
+  priority?: number;
+  is_active?: boolean;
+  conditions: RuleConditionInput[];
+  actions: RuleActionInput[];
+}
+
+export interface UpdateRuleRequest {
+  name?: string;
+  priority?: number;
+  is_active?: boolean;
+  conditions?: RuleConditionInput[];
+  actions?: RuleActionInput[];
+}
+
+export interface ReorderRulesRequest {
+  rule_ids: string[];
+}
+
+export interface RulePreviewRequest {
+  conditions: RuleConditionInput[];
+}
+
+// Preview / apply results (match backend RuleMatchPreview / ApplyRuleResult)
+export interface RuleMatchPreview {
+  count: number;
+  sample: Transaction[];
+}
+
+export type RuleApplyScope = "uncategorized" | "all";
+
+export interface ApplyRuleRequest {
+  scope?: RuleApplyScope;
+  overwrite?: boolean;
+  dry_run?: boolean;
+}
+
+export interface ApplyRuleResult {
+  count: number;
+  applied: number;
+  sample: Transaction[];
 }
 
 // Budget responses
