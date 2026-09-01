@@ -230,6 +230,8 @@ func run() error {
 	transactions.GET("/spending-by-category", transactionHandler.GetSpendingByCategory)
 	transactions.GET("/monthly-summary", transactionHandler.GetMonthlySummary)
 	transactions.GET("/daily-spending", transactionHandler.GetDailySpending)
+	transactions.GET("/daily-summary", transactionHandler.GetDailySummary)
+	transactions.GET("/top-expenses", transactionHandler.GetTopExpenses)
 	transactions.GET("/:id", transactionHandler.GetTransactionByID)
 	transactions.PUT("/:id", transactionHandler.UpdateTransaction)
 	transactions.DELETE("/:id", transactionHandler.DeleteTransaction)

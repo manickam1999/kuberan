@@ -138,6 +138,34 @@ type MonthlySummaryItem struct {
 	Expenses int64  `json:"expenses"` // cents
 }
 
+// DailySummaryItem represents income and expense totals for a single day.
+type DailySummaryItem struct {
+	Date     string `json:"date"`     // "2026-02-01" format
+	Income   int64  `json:"income"`   // cents
+	Expenses int64  `json:"expenses"` // cents
+}
+
+// TopExpenseItem represents a single high-value expense transaction.
+type TopExpenseItem struct {
+	ID            string    `json:"id"`
+	AccountID     string    `json:"account_id"`
+	AccountName   string    `json:"account_name"`
+	CategoryID    *string   `json:"category_id"`
+	CategoryName  string    `json:"category_name"`
+	CategoryColor string    `json:"category_color"`
+	CategoryIcon  string    `json:"category_icon"`
+	Amount        int64     `json:"amount"` // cents
+	Description   string    `json:"description"`
+	Date          time.Time `json:"date"`
+}
+
+// TopExpenses represents the top-N expense transactions for a date range.
+type TopExpenses struct {
+	Items    []TopExpenseItem `json:"items"`
+	FromDate time.Time        `json:"from_date"`
+	ToDate   time.Time        `json:"to_date"`
+}
+
 // TransactionServicer defines the contract for transaction-related business logic.
 type TransactionServicer interface {
 	CreateTransaction(userID, accountID string, categoryID *string, transactionType models.TransactionType, amount int64, description string, date time.Time) (*models.Transaction, error)
@@ -150,6 +178,8 @@ type TransactionServicer interface {
 	GetSpendingByCategory(userID string, from, to time.Time) (*SpendingByCategory, error)
 	GetMonthlySummary(userID string, months int) ([]MonthlySummaryItem, error)
 	GetDailySpending(userID string, from, to time.Time) ([]DailySpendingItem, error)
+	GetDailySummary(userID string, from, to time.Time) ([]DailySummaryItem, error)
+	GetTopExpenses(userID string, from, to time.Time, limit int, categoryID *string) (*TopExpenses, error)
 	// Rule backfill/preview (plan 018). These live here because they read/write
 	// the transactions table; the pure matcher is shared via the rule service.
 	PreviewRuleMatches(userID string, conditions []RuleConditionInput) (*RuleMatchPreview, error)

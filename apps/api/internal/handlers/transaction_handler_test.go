@@ -28,6 +28,8 @@ type mockTransactionService struct {
 	getDailySpendingFn       func(userID string, from, to time.Time) ([]services.DailySpendingItem, error)
 	previewRuleMatchesFn     func(userID string, conditions []services.RuleConditionInput) (*services.RuleMatchPreview, error)
 	applyRuleFn              func(userID, ruleID string, opts services.ApplyRuleOptions) (*services.ApplyRuleResult, error)
+	getDailySummaryFn        func(userID string, from, to time.Time) ([]services.DailySummaryItem, error)
+	getTopExpensesFn         func(userID string, from, to time.Time, limit int, categoryID *string) (*services.TopExpenses, error)
 }
 
 func (m *mockTransactionService) CreateTransaction(userID, accountID string, categoryID *string, transactionType models.TransactionType, amount int64, description string, date time.Time) (*models.Transaction, error) {
@@ -116,6 +118,20 @@ func (m *mockTransactionService) ApplyRule(userID, ruleID string, opts services.
 	return &services.ApplyRuleResult{Sample: []models.Transaction{}}, nil
 }
 
+func (m *mockTransactionService) GetDailySummary(userID string, from, to time.Time) ([]services.DailySummaryItem, error) {
+	if m.getDailySummaryFn != nil {
+		return m.getDailySummaryFn(userID, from, to)
+	}
+	return []services.DailySummaryItem{}, nil
+}
+
+func (m *mockTransactionService) GetTopExpenses(userID string, from, to time.Time, limit int, categoryID *string) (*services.TopExpenses, error) {
+	if m.getTopExpensesFn != nil {
+		return m.getTopExpensesFn(userID, from, to, limit, categoryID)
+	}
+	return &services.TopExpenses{Items: []services.TopExpenseItem{}}, nil
+}
+
 var _ services.TransactionServicer = (*mockTransactionService)(nil)
 
 func setupTransactionRouter(handler *TransactionHandler) *gin.Engine {
@@ -127,6 +143,8 @@ func setupTransactionRouter(handler *TransactionHandler) *gin.Engine {
 	auth.GET("/transactions/spending-by-category", handler.GetSpendingByCategory)
 	auth.GET("/transactions/monthly-summary", handler.GetMonthlySummary)
 	auth.GET("/transactions/daily-spending", handler.GetDailySpending)
+	auth.GET("/transactions/daily-summary", handler.GetDailySummary)
+	auth.GET("/transactions/top-expenses", handler.GetTopExpenses)
 	auth.GET("/accounts/:id/transactions", handler.GetAccountTransactions)
 	auth.GET("/transactions/:id", handler.GetTransactionByID)
 	auth.PUT("/transactions/:id", handler.UpdateTransaction)
@@ -909,6 +927,213 @@ func TestTransactionHandler_GetDailySpending(t *testing.T) {
 
 		if rec.Code != http.StatusBadRequest {
 			t.Fatalf("expected 400, got %d: %s", rec.Code, rec.Body.String())
+		}
+	})
+}
+
+func TestTransactionHandler_GetDailySummary(t *testing.T) {
+	t.Run("returns_200_with_data", func(t *testing.T) {
+		txSvc := &mockTransactionService{
+			getDailySummaryFn: func(_ string, _, _ time.Time) ([]services.DailySummaryItem, error) {
+				return []services.DailySummaryItem{
+					{Date: "2026-02-01", Income: 10000, Expenses: 5000},
+					{Date: "2026-02-02", Income: 0, Expenses: 0},
+					{Date: "2026-02-03", Income: 0, Expenses: 1500},
+				}, nil
+			},
+		}
+		handler := NewTransactionHandler(txSvc, &mockAuditService{})
+		r := setupTransactionRouter(handler)
+
+		rec := doRequest(r, "GET", "/transactions/daily-summary?from_date=2026-02-01&to_date=2026-02-03", "")
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+		}
+		result := parseJSON(t, rec)
+		data := result["data"].([]interface{})
+		if len(data) != 3 {
+			t.Errorf("expected 3 items, got %d", len(data))
+		}
+	})
+
+	t.Run("returns_400_missing_from_date", func(t *testing.T) {
+		handler := NewTransactionHandler(&mockTransactionService{}, &mockAuditService{})
+		r := setupTransactionRouter(handler)
+
+		rec := doRequest(r, "GET", "/transactions/daily-summary?to_date=2026-02-03", "")
+
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("expected 400, got %d: %s", rec.Code, rec.Body.String())
+		}
+	})
+
+	t.Run("returns_400_missing_to_date", func(t *testing.T) {
+		handler := NewTransactionHandler(&mockTransactionService{}, &mockAuditService{})
+		r := setupTransactionRouter(handler)
+
+		rec := doRequest(r, "GET", "/transactions/daily-summary?from_date=2026-02-01", "")
+
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("expected 400, got %d: %s", rec.Code, rec.Body.String())
+		}
+	})
+
+	t.Run("returns_400_for_excessive_range", func(t *testing.T) {
+		handler := NewTransactionHandler(&mockTransactionService{}, &mockAuditService{})
+		r := setupTransactionRouter(handler)
+
+		rec := doRequest(r, "GET", "/transactions/daily-summary?from_date=2024-01-01&to_date=2026-02-03", "")
+
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("expected 400, got %d: %s", rec.Code, rec.Body.String())
+		}
+	})
+}
+
+func TestTransactionHandler_GetTopExpenses(t *testing.T) {
+	t.Run("returns_200_with_data", func(t *testing.T) {
+		txSvc := &mockTransactionService{
+			getTopExpensesFn: func(_ string, _, _ time.Time, _ int, _ *string) (*services.TopExpenses, error) {
+				return &services.TopExpenses{
+					Items: []services.TopExpenseItem{
+						{ID: "tx-1", Description: "big", Amount: 5000, AccountName: "Checking", CategoryName: "Uncategorized"},
+						{ID: "tx-2", Description: "medium", Amount: 3000, AccountName: "Checking", CategoryName: "Uncategorized"},
+					},
+				}, nil
+			},
+		}
+		handler := NewTransactionHandler(txSvc, &mockAuditService{})
+		r := setupTransactionRouter(handler)
+
+		rec := doRequest(r, "GET", "/transactions/top-expenses?from_date=2026-02-01&to_date=2026-02-28", "")
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+		}
+		result := parseJSON(t, rec)
+		items := result["items"].([]interface{})
+		if len(items) != 2 {
+			t.Errorf("expected 2 items, got %d", len(items))
+		}
+	})
+
+	t.Run("returns_400_missing_from_date", func(t *testing.T) {
+		handler := NewTransactionHandler(&mockTransactionService{}, &mockAuditService{})
+		r := setupTransactionRouter(handler)
+
+		rec := doRequest(r, "GET", "/transactions/top-expenses?to_date=2026-02-28", "")
+
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("expected 400, got %d: %s", rec.Code, rec.Body.String())
+		}
+	})
+
+	t.Run("returns_400_missing_to_date", func(t *testing.T) {
+		handler := NewTransactionHandler(&mockTransactionService{}, &mockAuditService{})
+		r := setupTransactionRouter(handler)
+
+		rec := doRequest(r, "GET", "/transactions/top-expenses?from_date=2026-02-01", "")
+
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("expected 400, got %d: %s", rec.Code, rec.Body.String())
+		}
+	})
+
+	t.Run("returns_400_invalid_date_format", func(t *testing.T) {
+		handler := NewTransactionHandler(&mockTransactionService{}, &mockAuditService{})
+		r := setupTransactionRouter(handler)
+
+		rec := doRequest(r, "GET", "/transactions/top-expenses?from_date=not-a-date&to_date=2026-02-28", "")
+
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("expected 400, got %d: %s", rec.Code, rec.Body.String())
+		}
+	})
+
+	t.Run("limit_clamped_to_max", func(t *testing.T) {
+		var capturedLimit int
+		txSvc := &mockTransactionService{
+			getTopExpensesFn: func(_ string, _, _ time.Time, limit int, _ *string) (*services.TopExpenses, error) {
+				capturedLimit = limit
+				return &services.TopExpenses{Items: []services.TopExpenseItem{}}, nil
+			},
+		}
+		handler := NewTransactionHandler(txSvc, &mockAuditService{})
+		r := setupTransactionRouter(handler)
+
+		rec := doRequest(r, "GET", "/transactions/top-expenses?from_date=2026-02-01&to_date=2026-02-28&limit=500", "")
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+		}
+		if capturedLimit != 100 {
+			t.Errorf("expected limit clamped to 100, got %d", capturedLimit)
+		}
+	})
+
+	t.Run("default_limit_when_omitted", func(t *testing.T) {
+		var capturedLimit int
+		txSvc := &mockTransactionService{
+			getTopExpensesFn: func(_ string, _, _ time.Time, limit int, _ *string) (*services.TopExpenses, error) {
+				capturedLimit = limit
+				return &services.TopExpenses{Items: []services.TopExpenseItem{}}, nil
+			},
+		}
+		handler := NewTransactionHandler(txSvc, &mockAuditService{})
+		r := setupTransactionRouter(handler)
+
+		rec := doRequest(r, "GET", "/transactions/top-expenses?from_date=2026-02-01&to_date=2026-02-28", "")
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+		}
+		if capturedLimit != 10 {
+			t.Errorf("expected default limit 10, got %d", capturedLimit)
+		}
+	})
+
+	t.Run("passes_through_category_id_when_present", func(t *testing.T) {
+		var capturedCategoryID *string
+		txSvc := &mockTransactionService{
+			getTopExpensesFn: func(_ string, _, _ time.Time, _ int, categoryID *string) (*services.TopExpenses, error) {
+				capturedCategoryID = categoryID
+				return &services.TopExpenses{Items: []services.TopExpenseItem{}}, nil
+			},
+		}
+		handler := NewTransactionHandler(txSvc, &mockAuditService{})
+		r := setupTransactionRouter(handler)
+
+		rec := doRequest(r, "GET", "/transactions/top-expenses?from_date=2026-02-01&to_date=2026-02-28&category_id=cat-1", "")
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+		}
+		if capturedCategoryID == nil || *capturedCategoryID != "cat-1" {
+			t.Errorf("expected category_id 'cat-1', got %v", capturedCategoryID)
+		}
+	})
+
+	t.Run("category_id_nil_when_omitted", func(t *testing.T) {
+		var capturedCategoryID *string
+		called := false
+		txSvc := &mockTransactionService{
+			getTopExpensesFn: func(_ string, _, _ time.Time, _ int, categoryID *string) (*services.TopExpenses, error) {
+				called = true
+				capturedCategoryID = categoryID
+				return &services.TopExpenses{Items: []services.TopExpenseItem{}}, nil
+			},
+		}
+		handler := NewTransactionHandler(txSvc, &mockAuditService{})
+		r := setupTransactionRouter(handler)
+
+		rec := doRequest(r, "GET", "/transactions/top-expenses?from_date=2026-02-01&to_date=2026-02-28", "")
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+		}
+		if !called || capturedCategoryID != nil {
+			t.Errorf("expected nil category_id when omitted, got %v", capturedCategoryID)
 		}
 	})
 }

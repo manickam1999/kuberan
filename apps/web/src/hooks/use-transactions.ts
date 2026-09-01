@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiClient } from "@/lib/api-client";
+import { localDayStartUTC, localDayEndUTC } from "@/lib/format";
 import type { Transaction } from "@/types/models";
 import type {
   PageResponse,
@@ -13,6 +14,8 @@ import type {
   SpendingByCategory,
   MonthlySummaryItem,
   DailySpendingItem,
+  DailySummaryItem,
+  TopExpenses,
 } from "@/types/api";
 import { accountKeys } from "./use-accounts";
 import { budgetKeys } from "./use-budgets";
@@ -33,6 +36,15 @@ export const transactionKeys = {
     [...transactionKeys.all, "monthlySummary", months] as const,
   dailySpending: (from: string, to: string) =>
     [...transactionKeys.all, "dailySpending", from, to] as const,
+  dailySummary: (from: string, to: string) =>
+    [...transactionKeys.all, "dailySummary", from, to] as const,
+  topExpenses: (
+    from: string,
+    to: string,
+    limit: number,
+    categoryId?: string
+  ) =>
+    [...transactionKeys.all, "topExpenses", from, to, limit, categoryId] as const,
 };
 
 export function useAccountTransactions(
@@ -157,7 +169,7 @@ export function useSpendingByCategory(from: string, to: string) {
     queryFn: () =>
       apiClient.get<SpendingByCategory>(
         "/api/v1/transactions/spending-by-category",
-        { from_date: from, to_date: to }
+        { from_date: localDayStartUTC(from), to_date: localDayEndUTC(to) }
       ),
   });
 }
@@ -180,8 +192,38 @@ export function useDailySpending(from: string, to: string) {
     queryFn: () =>
       apiClient.get<{ data: DailySpendingItem[] }>(
         "/api/v1/transactions/daily-spending",
-        { from_date: from, to_date: to }
+        { from_date: localDayStartUTC(from), to_date: localDayEndUTC(to) }
       ),
     select: (res) => res.data,
+  });
+}
+
+export function useDailySummary(from: string, to: string) {
+  return useQuery({
+    queryKey: transactionKeys.dailySummary(from, to),
+    queryFn: () =>
+      apiClient.get<{ data: DailySummaryItem[] }>(
+        "/api/v1/transactions/daily-summary",
+        { from_date: localDayStartUTC(from), to_date: localDayEndUTC(to) }
+      ),
+    select: (res) => res.data,
+  });
+}
+
+export function useTopExpenses(
+  from: string,
+  to: string,
+  limit = 10,
+  categoryId?: string
+) {
+  return useQuery({
+    queryKey: transactionKeys.topExpenses(from, to, limit, categoryId),
+    queryFn: () =>
+      apiClient.get<TopExpenses>("/api/v1/transactions/top-expenses", {
+        from_date: localDayStartUTC(from),
+        to_date: localDayEndUTC(to),
+        limit,
+        category_id: categoryId,
+      }),
   });
 }
