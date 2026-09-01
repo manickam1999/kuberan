@@ -13,6 +13,7 @@ import { SpendingCard } from "@/components/dashboard/spending-card";
 import { CashflowCard } from "@/components/dashboard/cashflow-card";
 import { TopExpensesList } from "@/components/analytics/top-expenses-list";
 import { DailySpendingCalendar } from "@/components/analytics/daily-spending-calendar";
+import { CashflowSankeyCard } from "@/components/analytics/cashflow-sankey-card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatCurrency } from "@/lib/format";
 
@@ -88,6 +89,8 @@ export default function AnalyticsPage() {
           />
         </div>
       )}
+
+      <CashflowSankeyCard />
 
       <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-3">
         <div className="min-w-0 lg:col-span-2">

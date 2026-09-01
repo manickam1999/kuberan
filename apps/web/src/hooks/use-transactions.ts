@@ -12,6 +12,7 @@ import type {
   CreateTransferRequest,
   UpdateTransactionRequest,
   SpendingByCategory,
+  Cashflow,
   MonthlySummaryItem,
   DailySpendingItem,
   DailySummaryItem,
@@ -32,6 +33,8 @@ export const transactionKeys = {
   detail: (id: string) => [...transactionKeys.details(), id] as const,
   spendingByCategory: (from: string, to: string) =>
     [...transactionKeys.all, "spendingByCategory", from, to] as const,
+  cashflow: (from: string, to: string) =>
+    [...transactionKeys.all, "cashflow", from, to] as const,
   monthlySummary: (months: number) =>
     [...transactionKeys.all, "monthlySummary", months] as const,
   dailySpending: (from: string, to: string) =>
@@ -171,6 +174,17 @@ export function useSpendingByCategory(from: string, to: string) {
         "/api/v1/transactions/spending-by-category",
         { from_date: localDayStartUTC(from), to_date: localDayEndUTC(to) }
       ),
+  });
+}
+
+export function useCashflow(from: string, to: string) {
+  return useQuery({
+    queryKey: transactionKeys.cashflow(from, to),
+    queryFn: () =>
+      apiClient.get<Cashflow>("/api/v1/transactions/cashflow", {
+        from_date: localDayStartUTC(from),
+        to_date: localDayEndUTC(to),
+      }),
   });
 }
 

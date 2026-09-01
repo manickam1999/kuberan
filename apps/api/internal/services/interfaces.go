@@ -125,6 +125,18 @@ type SpendingByCategory struct {
 	ToDate     time.Time                `json:"to_date"`
 }
 
+// Cashflow represents income and expense totals grouped by category for a date
+// range, used to render the income-to-expense cashflow Sankey. Only "income" and
+// "expense" transactions are aggregated; transfers and investments are excluded.
+type Cashflow struct {
+	Income        []SpendingByCategoryItem `json:"income"`
+	Expenses      []SpendingByCategoryItem `json:"expenses"`
+	TotalIncome   int64                    `json:"total_income"`   // cents
+	TotalExpenses int64                    `json:"total_expenses"` // cents
+	FromDate      time.Time                `json:"from_date"`
+	ToDate        time.Time                `json:"to_date"`
+}
+
 // DailySpendingItem represents expense total for a single day.
 type DailySpendingItem struct {
 	Date  string `json:"date"`  // "2026-02-01" format
@@ -176,6 +188,7 @@ type TransactionServicer interface {
 	UpdateTransaction(userID, transactionID string, updates TransactionUpdateFields) (*models.Transaction, error)
 	DeleteTransaction(userID, transactionID string) error
 	GetSpendingByCategory(userID string, from, to time.Time) (*SpendingByCategory, error)
+	GetCashflow(userID string, from, to time.Time) (*Cashflow, error)
 	GetMonthlySummary(userID string, months int) ([]MonthlySummaryItem, error)
 	GetDailySpending(userID string, from, to time.Time) ([]DailySpendingItem, error)
 	GetDailySummary(userID string, from, to time.Time) ([]DailySummaryItem, error)

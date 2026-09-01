@@ -228,6 +228,7 @@ func run() error {
 	transactions.POST("", transactionHandler.CreateTransaction)
 	transactions.POST("/transfer", transactionHandler.CreateTransfer)
 	transactions.GET("/spending-by-category", transactionHandler.GetSpendingByCategory)
+	transactions.GET("/cashflow", transactionHandler.GetCashflow)
 	transactions.GET("/monthly-summary", transactionHandler.GetMonthlySummary)
 	transactions.GET("/daily-spending", transactionHandler.GetDailySpending)
 	transactions.GET("/daily-summary", transactionHandler.GetDailySummary)

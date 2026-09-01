@@ -771,8 +771,11 @@ func getCategoryColorFromID(id string) string {
 	return categoryColorPalette[hash%uint64(len(categoryColorPalette))]
 }
 
-// GetSpendingByCategory returns expense totals grouped by category for a date range.
-func (s *transactionService) GetSpendingByCategory(userID string, from, to time.Time) (*SpendingByCategory, error) {
+// totalsByCategory groups transactions of a single type by category and enriches
+// each row with category metadata (name, color, icon). Rows are sorted by amount
+// descending. Uncategorized transactions collapse into a single "Uncategorized"
+// row. The returned slice is never nil.
+func (s *transactionService) totalsByCategory(userID string, txnType models.TransactionType, from, to time.Time) ([]SpendingByCategoryItem, int64, error) {
 	type categorySpend struct {
 		CategoryID *string
 		Total      int64
@@ -782,16 +785,15 @@ func (s *transactionService) GetSpendingByCategory(userID string, from, to time.
 	err := s.db.Model(&models.Transaction{}).
 		Select("category_id, COALESCE(SUM(amount), 0) as total").
 		Where("user_id = ? AND type = ? AND deleted_at IS NULL AND date BETWEEN ? AND ?",
-			userID, models.TransactionTypeExpense, from, to).
+			userID, txnType, from, to).
 		Group("category_id").
 		Scan(&results).Error
 	if err != nil {
-		return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)
+		return nil, 0, apperrors.Wrap(apperrors.ErrInternalServer, err)
 	}
 
-	var items []SpendingByCategoryItem
-	var totalSpent int64
-
+	var total int64
+	items := make([]SpendingByCategoryItem, 0, len(results))
 	for _, r := range results {
 		item := SpendingByCategoryItem{
 			CategoryID: r.CategoryID,
@@ -817,7 +819,7 @@ func (s *transactionService) GetSpendingByCategory(userID string, from, to time.
 			item.CategoryColor = "#9CA3AF"
 		}
 
-		totalSpent += r.Total
+		total += r.Total
 		items = append(items, item)
 	}
 
@@ -825,8 +827,14 @@ func (s *transactionService) GetSpendingByCategory(userID string, from, to time.
 		return items[i].Total > items[j].Total
 	})
 
-	if items == nil {
-		items = []SpendingByCategoryItem{}
+	return items, total, nil
+}
+
+// GetSpendingByCategory returns expense totals grouped by category for a date range.
+func (s *transactionService) GetSpendingByCategory(userID string, from, to time.Time) (*SpendingByCategory, error) {
+	items, totalSpent, err := s.totalsByCategory(userID, models.TransactionTypeExpense, from, to)
+	if err != nil {
+		return nil, err
 	}
 
 	return &SpendingByCategory{
@@ -834,6 +842,31 @@ func (s *transactionService) GetSpendingByCategory(userID string, from, to time.
 		TotalSpent: totalSpent,
 		FromDate:   from,
 		ToDate:     to,
+	}, nil
+}
+
+// GetCashflow returns income and expense totals grouped by category for a date
+// range, for rendering the income-to-expense cashflow Sankey. Transfers and
+// investment transactions are excluded (only "income" and "expense" types are
+// aggregated), so the flows reflect real cash entering and leaving.
+func (s *transactionService) GetCashflow(userID string, from, to time.Time) (*Cashflow, error) {
+	income, totalIncome, err := s.totalsByCategory(userID, models.TransactionTypeIncome, from, to)
+	if err != nil {
+		return nil, err
+	}
+
+	expenses, totalExpenses, err := s.totalsByCategory(userID, models.TransactionTypeExpense, from, to)
+	if err != nil {
+		return nil, err
+	}
+
+	return &Cashflow{
+		Income:        income,
+		Expenses:      expenses,
+		TotalIncome:   totalIncome,
+		TotalExpenses: totalExpenses,
+		FromDate:      from,
+		ToDate:        to,
 	}, nil
 }
 

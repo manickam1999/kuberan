@@ -24,6 +24,7 @@ type mockTransactionService struct {
 	updateTransactionFn      func(userID, transactionID string, updates services.TransactionUpdateFields) (*models.Transaction, error)
 	deleteTransactionFn      func(userID, transactionID string) error
 	getSpendingByCategoryFn  func(userID string, from, to time.Time) (*services.SpendingByCategory, error)
+	getCashflowFn            func(userID string, from, to time.Time) (*services.Cashflow, error)
 	getMonthlySummaryFn      func(userID string, months int) ([]services.MonthlySummaryItem, error)
 	getDailySpendingFn       func(userID string, from, to time.Time) ([]services.DailySpendingItem, error)
 	previewRuleMatchesFn     func(userID string, conditions []services.RuleConditionInput) (*services.RuleMatchPreview, error)
@@ -88,6 +89,16 @@ func (m *mockTransactionService) GetSpendingByCategory(userID string, from, to t
 		return m.getSpendingByCategoryFn(userID, from, to)
 	}
 	return &services.SpendingByCategory{Items: []services.SpendingByCategoryItem{}}, nil
+}
+
+func (m *mockTransactionService) GetCashflow(userID string, from, to time.Time) (*services.Cashflow, error) {
+	if m.getCashflowFn != nil {
+		return m.getCashflowFn(userID, from, to)
+	}
+	return &services.Cashflow{
+		Income:   []services.SpendingByCategoryItem{},
+		Expenses: []services.SpendingByCategoryItem{},
+	}, nil
 }
 
 func (m *mockTransactionService) GetMonthlySummary(userID string, months int) ([]services.MonthlySummaryItem, error) {
