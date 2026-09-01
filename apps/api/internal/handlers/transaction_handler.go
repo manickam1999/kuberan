@@ -643,6 +643,140 @@ func (h *TransactionHandler) GetDailySpending(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"data": result})
 }
 
+// GetDailySummary handles the retrieval of daily income and expense totals
+// @Summary     Get daily income and expense summary
+// @Description Get daily income and expense totals for a date range
+// @Tags        transactions
+// @Accept      json
+// @Produce     json
+// @Security    BearerAuth
+// @Param       from_date query string true "Start date (RFC3339 or YYYY-MM-DD)"
+// @Param       to_date   query string true "End date (RFC3339 or YYYY-MM-DD)"
+// @Success     200 {object} map[string]interface{} "Daily summary data"
+// @Failure     400 {object} ErrorResponse "Invalid input"
+// @Failure     401 {object} ErrorResponse "Unauthorized"
+// @Failure     500 {object} ErrorResponse "Server error"
+// @Router      /transactions/daily-summary [get]
+func (h *TransactionHandler) GetDailySummary(c *gin.Context) {
+	userID, err := getUserID(c)
+	if err != nil {
+		respondWithError(c, err)
+		return
+	}
+
+	fromStr := c.Query("from_date")
+	if fromStr == "" {
+		respondWithError(c, apperrors.WithMessage(apperrors.ErrInvalidInput, "from_date is required"))
+		return
+	}
+
+	toStr := c.Query("to_date")
+	if toStr == "" {
+		respondWithError(c, apperrors.WithMessage(apperrors.ErrInvalidInput, "to_date is required"))
+		return
+	}
+
+	fromTime, parseErr := parseFlexibleTime(fromStr)
+	if parseErr != nil {
+		respondWithError(c, apperrors.WithMessage(apperrors.ErrInvalidInput, parseErr.Error()))
+		return
+	}
+
+	toTime, parseErr := parseFlexibleTime(toStr)
+	if parseErr != nil {
+		respondWithError(c, apperrors.WithMessage(apperrors.ErrInvalidInput, parseErr.Error()))
+		return
+	}
+
+	if toTime.Sub(fromTime).Hours() > 366*24 {
+		respondWithError(c, apperrors.WithMessage(apperrors.ErrInvalidInput, "date range cannot exceed 366 days"))
+		return
+	}
+
+	result, err := h.transactionService.GetDailySummary(userID, fromTime, toTime)
+	if err != nil {
+		respondWithError(c, err)
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"data": result})
+}
+
+// GetTopExpenses handles the retrieval of the largest expense transactions in a date range
+// @Summary     Get top expenses
+// @Description Get the largest expense transactions for a date range
+// @Tags        transactions
+// @Accept      json
+// @Produce     json
+// @Security    BearerAuth
+// @Param       from_date query string true  "Start date (RFC3339 or YYYY-MM-DD)"
+// @Param       to_date   query string true  "End date (RFC3339 or YYYY-MM-DD)"
+// @Param       limit       query int    false "Max results (default 10, min 1, max 100)"
+// @Param       category_id query string false "Filter to a single category"
+// @Success     200 {object} services.TopExpenses "Top expense transactions"
+// @Failure     400 {object} ErrorResponse "Invalid input"
+// @Failure     401 {object} ErrorResponse "Unauthorized"
+// @Failure     500 {object} ErrorResponse "Server error"
+// @Router      /transactions/top-expenses [get]
+func (h *TransactionHandler) GetTopExpenses(c *gin.Context) {
+	userID, err := getUserID(c)
+	if err != nil {
+		respondWithError(c, err)
+		return
+	}
+
+	fromStr := c.Query("from_date")
+	if fromStr == "" {
+		respondWithError(c, apperrors.WithMessage(apperrors.ErrInvalidInput, "from_date is required"))
+		return
+	}
+
+	toStr := c.Query("to_date")
+	if toStr == "" {
+		respondWithError(c, apperrors.WithMessage(apperrors.ErrInvalidInput, "to_date is required"))
+		return
+	}
+
+	fromTime, parseErr := parseFlexibleTime(fromStr)
+	if parseErr != nil {
+		respondWithError(c, apperrors.WithMessage(apperrors.ErrInvalidInput, parseErr.Error()))
+		return
+	}
+
+	toTime, parseErr := parseFlexibleTime(toStr)
+	if parseErr != nil {
+		respondWithError(c, apperrors.WithMessage(apperrors.ErrInvalidInput, parseErr.Error()))
+		return
+	}
+
+	limit := 10
+	if v := c.Query("limit"); v != "" {
+		parsed, convErr := strconv.Atoi(v)
+		if convErr == nil {
+			limit = parsed
+		}
+	}
+	if limit < 1 {
+		limit = 1
+	}
+	if limit > 100 {
+		limit = 100
+	}
+
+	var categoryID *string
+	if v := c.Query("category_id"); v != "" {
+		categoryID = &v
+	}
+
+	result, err := h.transactionService.GetTopExpenses(userID, fromTime, toTime, limit, categoryID)
+	if err != nil {
+		respondWithError(c, err)
+		return
+	}
+
+	c.JSON(http.StatusOK, result)
+}
+
 // MessageResponse represents a simple message response
 type MessageResponse struct {
 	Message string `json:"message"`

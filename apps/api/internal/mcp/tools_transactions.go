@@ -55,6 +55,26 @@ func (s *Server) registerTransactionTools() {
 		),
 		s.handleGetDailySpending,
 	)
+
+	s.mcp.AddTool(
+		mcp.NewTool("get_daily_summary",
+			mcp.WithDescription("Get daily income and expense totals for a date range. Useful for a calendar-style view of cash flow."),
+			mcp.WithString("from_date", mcp.Required(), mcp.Description("Start date (YYYY-MM-DD)")),
+			mcp.WithString("to_date", mcp.Required(), mcp.Description("End date (YYYY-MM-DD)")),
+		),
+		s.handleGetDailySummary,
+	)
+
+	s.mcp.AddTool(
+		mcp.NewTool("get_top_expenses",
+			mcp.WithDescription("Get the largest expense transactions for a date range, ordered by amount descending."),
+			mcp.WithString("from_date", mcp.Required(), mcp.Description("Start date (YYYY-MM-DD)")),
+			mcp.WithString("to_date", mcp.Required(), mcp.Description("End date (YYYY-MM-DD)")),
+			mcp.WithNumber("limit", mcp.Description("Max results (default 10, max 100)")),
+			mcp.WithString("category_id", mcp.Description("Filter to a single category ID")),
+		),
+		s.handleGetTopExpenses,
+	)
 }
 
 func (s *Server) handleListTransactions(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -257,6 +277,102 @@ func (s *Server) handleGetDailySpending(ctx context.Context, req mcp.CallToolReq
 	sb.WriteString(fmt.Sprintf("Daily Spending (%s to %s):\n\n", fromStr, toStr))
 	for _, item := range items {
 		sb.WriteString(fmt.Sprintf("  %s  %12s\n", item.Date, formatCents(item.Total)))
+	}
+
+	return mcp.NewToolResultText(sb.String()), nil
+}
+
+func (s *Server) handleGetDailySummary(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	userID, err := getUserID(ctx)
+	if err != nil {
+		return errUnauthorized(), nil
+	}
+	if denied := requireScope(ctx, "read:transactions"); denied != nil {
+		return denied, nil
+	}
+
+	args := req.GetArguments()
+	fromStr, _ := args["from_date"].(string)
+	toStr, _ := args["to_date"].(string)
+
+	from, err := time.Parse("2006-01-02", fromStr)
+	if err != nil {
+		return mcp.NewToolResultError("invalid from_date format, expected YYYY-MM-DD"), nil
+	}
+	to, err := time.Parse("2006-01-02", toStr)
+	if err != nil {
+		return mcp.NewToolResultError("invalid to_date format, expected YYYY-MM-DD"), nil
+	}
+
+	items, err := s.services.Transactions.GetDailySummary(userID, from, to)
+	if err != nil {
+		return mcp.NewToolResultError("failed to get daily summary"), nil
+	}
+
+	if len(items) == 0 {
+		return mcp.NewToolResultText("No data for the requested period."), nil
+	}
+
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("Daily Summary (%s to %s):\n\n", fromStr, toStr))
+	for _, item := range items {
+		net := item.Income - item.Expenses
+		sb.WriteString(fmt.Sprintf("  %s  +%s  -%s  net %s\n",
+			item.Date, formatCents(item.Income), formatCents(item.Expenses), formatCents(net)))
+	}
+
+	return mcp.NewToolResultText(sb.String()), nil
+}
+
+func (s *Server) handleGetTopExpenses(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	userID, err := getUserID(ctx)
+	if err != nil {
+		return errUnauthorized(), nil
+	}
+	if denied := requireScope(ctx, "read:transactions"); denied != nil {
+		return denied, nil
+	}
+
+	args := req.GetArguments()
+	fromStr, _ := args["from_date"].(string)
+	toStr, _ := args["to_date"].(string)
+
+	from, err := time.Parse("2006-01-02", fromStr)
+	if err != nil {
+		return mcp.NewToolResultError("invalid from_date format, expected YYYY-MM-DD"), nil
+	}
+	to, err := time.Parse("2006-01-02", toStr)
+	if err != nil {
+		return mcp.NewToolResultError("invalid to_date format, expected YYYY-MM-DD"), nil
+	}
+
+	limit := 10
+	if v, ok := args["limit"].(float64); ok && v > 0 {
+		limit = int(v)
+		if limit > 100 {
+			limit = 100
+		}
+	}
+
+	var categoryID *string
+	if v, ok := args["category_id"].(string); ok && v != "" {
+		categoryID = &v
+	}
+
+	result, err := s.services.Transactions.GetTopExpenses(userID, from, to, limit, categoryID)
+	if err != nil {
+		return mcp.NewToolResultError("failed to get top expenses"), nil
+	}
+
+	if len(result.Items) == 0 {
+		return mcp.NewToolResultText("No expenses found for the requested period."), nil
+	}
+
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("Top Expenses (%s to %s):\n\n", fromStr, toStr))
+	for i, item := range result.Items {
+		sb.WriteString(fmt.Sprintf("  %2d. %-30s %12s  [%s / %s]  %s\n",
+			i+1, item.Description, formatCents(item.Amount), item.CategoryName, item.AccountName, item.Date.Format("2006-01-02")))
 	}
 
 	return mcp.NewToolResultText(sb.String()), nil

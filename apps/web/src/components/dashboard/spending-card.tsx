@@ -99,7 +99,7 @@ export function SpendingCard() {
     chartTheme === "dither" ? ditherFill(slice.ditherColor) : slice.cleanColor;
 
   return (
-    <Card>
+    <Card className="@container">
       <CardHeader>
         <div className="flex items-start justify-between gap-2">
           <div>
@@ -114,7 +114,7 @@ export function SpendingCard() {
           </span>
         </div>
       </CardHeader>
-      <CardContent className="flex flex-col items-center gap-6 sm:flex-row sm:items-center">
+      <CardContent className="flex flex-col items-center gap-6 @md:flex-row @md:items-center">
         <ThemedDonut
           data={slices}
           size={200}

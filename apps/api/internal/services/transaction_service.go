@@ -529,6 +529,52 @@ func (s *transactionService) GetDailySpending(userID string, from, to time.Time)
 	return items, nil
 }
 
+// GetDailySummary returns daily income and expense totals for a date range.
+func (s *transactionService) GetDailySummary(userID string, from, to time.Time) ([]DailySummaryItem, error) {
+	// Normalize to start/end of day
+	current := time.Date(from.Year(), from.Month(), from.Day(), 0, 0, 0, 0, time.UTC)
+	end := time.Date(to.Year(), to.Month(), to.Day(), 0, 0, 0, 0, time.UTC)
+
+	var items []DailySummaryItem
+
+	for !current.After(end) {
+		dayStart := current
+		dayEnd := current.Add(24*time.Hour - time.Nanosecond)
+
+		var income int64
+		if err := s.db.Model(&models.Transaction{}).
+			Select("COALESCE(SUM(amount), 0)").
+			Where("user_id = ? AND type = ? AND deleted_at IS NULL AND date BETWEEN ? AND ? AND description != ?",
+				userID, models.TransactionTypeIncome, dayStart, dayEnd, "Initial balance").
+			Scan(&income).Error; err != nil {
+			return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)
+		}
+
+		var expenses int64
+		if err := s.db.Model(&models.Transaction{}).
+			Select("COALESCE(SUM(amount), 0)").
+			Where("user_id = ? AND type = ? AND deleted_at IS NULL AND date BETWEEN ? AND ?",
+				userID, models.TransactionTypeExpense, dayStart, dayEnd).
+			Scan(&expenses).Error; err != nil {
+			return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)
+		}
+
+		items = append(items, DailySummaryItem{
+			Date:     dayStart.Format("2006-01-02"),
+			Income:   income,
+			Expenses: expenses,
+		})
+
+		current = current.AddDate(0, 0, 1)
+	}
+
+	if items == nil {
+		items = []DailySummaryItem{}
+	}
+
+	return items, nil
+}
+
 // categoryColorPalette provides fallback colors for categories that don't have a color set.
 // These are visually distinct and work well on both light and dark backgrounds.
 var categoryColorPalette = []string{
@@ -630,5 +676,77 @@ func (s *transactionService) GetSpendingByCategory(userID string, from, to time.
 		TotalSpent: totalSpent,
 		FromDate:   from,
 		ToDate:     to,
+	}, nil
+}
+
+// GetTopExpenses returns the largest expense transactions for a date range, ordered by amount descending.
+func (s *transactionService) GetTopExpenses(userID string, from, to time.Time, limit int, categoryID *string) (*TopExpenses, error) {
+	type expenseRow struct {
+		ID          string
+		AccountID   string
+		CategoryID  *string
+		Amount      int64
+		Description string
+		Date        time.Time
+	}
+
+	query := s.db.Model(&models.Transaction{}).
+		Select("id, account_id, category_id, amount, description, date").
+		Where("user_id = ? AND type = ? AND deleted_at IS NULL AND date BETWEEN ? AND ?",
+			userID, models.TransactionTypeExpense, from, to)
+	if categoryID != nil {
+		query = query.Where("category_id = ?", *categoryID)
+	}
+
+	var rows []expenseRow
+	err := query.
+		Order("amount DESC").
+		Limit(limit).
+		Scan(&rows).Error
+	if err != nil {
+		return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)
+	}
+
+	items := make([]TopExpenseItem, 0, len(rows))
+	for _, r := range rows {
+		item := TopExpenseItem{
+			ID:          r.ID,
+			AccountID:   r.AccountID,
+			CategoryID:  r.CategoryID,
+			Amount:      r.Amount,
+			Description: r.Description,
+			Date:        r.Date,
+		}
+
+		var account models.Account
+		if accErr := s.db.Select("name").Where("id = ?", r.AccountID).First(&account).Error; accErr == nil {
+			item.AccountName = account.Name
+		}
+
+		if r.CategoryID != nil {
+			var category models.Category
+			if catErr := s.db.Where("id = ?", *r.CategoryID).First(&category).Error; catErr != nil {
+				item.CategoryName = "Unknown Category"
+				item.CategoryColor = "#9CA3AF"
+			} else {
+				item.CategoryName = category.Name
+				item.CategoryColor = category.Color
+				item.CategoryIcon = category.Icon
+				if item.CategoryColor == "" {
+					item.CategoryColor = getCategoryColorFromID(*r.CategoryID)
+				}
+			}
+		} else {
+			item.CategoryName = "Uncategorized"
+			item.CategoryColor = "#9CA3AF"
+		}
+
+		items = append(items, item)
+	}
+
+	return &TopExpenses{
+		Items:    items,
+		FromDate: from,
+		ToDate:   to,
 	}, nil
 }

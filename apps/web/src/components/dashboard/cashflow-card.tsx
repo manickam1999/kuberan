@@ -76,7 +76,7 @@ export function CashflowCard() {
   const netUp = net >= 0;
 
   return (
-    <Card>
+    <Card className="@container">
       <CardHeader>
         <CardTitle className="text-base">Cash flow</CardTitle>
         <CardDescription>
@@ -85,23 +85,23 @@ export function CashflowCard() {
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        <div className="grid grid-cols-1 gap-2 sm:grid-cols-3 sm:gap-3">
-          <div className="flex items-baseline justify-between gap-2 sm:block">
+        <div className="grid grid-cols-1 gap-2 @md:grid-cols-3 @md:gap-3">
+          <div className="flex items-baseline justify-between gap-2 @md:block">
             <p className="text-xs text-muted-foreground">Income</p>
-            <p className="money text-base font-semibold text-positive sm:mt-0.5 sm:text-lg">
+            <p className="money text-base font-semibold text-positive @md:mt-0.5 @md:text-lg">
               {formatCurrency(income, undefined, hideBalances)}
             </p>
           </div>
-          <div className="flex items-baseline justify-between gap-2 sm:block">
+          <div className="flex items-baseline justify-between gap-2 @md:block">
             <p className="text-xs text-muted-foreground">Expenses</p>
-            <p className="money text-base font-semibold text-negative sm:mt-0.5 sm:text-lg">
+            <p className="money text-base font-semibold text-negative @md:mt-0.5 @md:text-lg">
               {formatCurrency(expenses, undefined, hideBalances)}
             </p>
           </div>
-          <div className="flex items-baseline justify-between gap-2 sm:block">
+          <div className="flex items-baseline justify-between gap-2 @md:block">
             <p className="text-xs text-muted-foreground">Net</p>
             <p
-              className={`money text-base font-semibold sm:mt-0.5 sm:text-lg ${
+              className={`money text-base font-semibold @md:mt-0.5 @md:text-lg ${
                 netUp ? "text-positive" : "text-negative"
               }`}
             >
