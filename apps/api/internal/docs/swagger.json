@@ -2783,6 +2783,493 @@
                         }
                     }
                 }
+            },
+            "patch": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Update the authenticated user's profile settings (e.g. dashboard balance visibility)",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "user"
+                ],
+                "summary": "Update profile settings",
+                "parameters": [
+                    {
+                        "description": "Profile settings to update",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.UpdateProfileSettingsRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Updated user profile",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.UserResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid input",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Server error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/rules": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "List all rules for the authenticated user in evaluation order",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "rules"
+                ],
+                "summary": "List transaction rules",
+                "responses": {
+                    "200": {
+                        "description": "Rules",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "array",
+                                "items": {
+                                    "$ref": "#/definitions/kuberan_internal_models.TransactionRule"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Server error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Create an auto-categorization rule (conditions AND-ed, first-match-wins)",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "rules"
+                ],
+                "summary": "Create a transaction rule",
+                "parameters": [
+                    {
+                        "description": "Rule details",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.CreateRuleRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Rule created",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "$ref": "#/definitions/kuberan_internal_models.TransactionRule"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid input",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Target category not found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Server error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/rules/preview": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Count existing transactions matching a set of unsaved conditions",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "rules"
+                ],
+                "summary": "Preview rule matches",
+                "parameters": [
+                    {
+                        "description": "Conditions to preview",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.PreviewRuleRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Match preview",
+                        "schema": {
+                            "$ref": "#/definitions/kuberan_internal_services.RuleMatchPreview"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid input",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/rules/reorder": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "rules"
+                ],
+                "summary": "Reorder transaction rules",
+                "parameters": [
+                    {
+                        "description": "Ordered rule IDs",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ReorderRulesRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Reordered rules",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "array",
+                                "items": {
+                                    "$ref": "#/definitions/kuberan_internal_models.TransactionRule"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid input",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/rules/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "rules"
+                ],
+                "summary": "Get a transaction rule",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Rule ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Rule",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "$ref": "#/definitions/kuberan_internal_models.TransactionRule"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Rule not found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "rules"
+                ],
+                "summary": "Update a transaction rule",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Rule ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Updated rule",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.UpdateRuleRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Updated rule",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "$ref": "#/definitions/kuberan_internal_models.TransactionRule"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid input",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Rule not found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "rules"
+                ],
+                "summary": "Delete a transaction rule",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Rule ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Rule deleted",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.MessageResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Rule not found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/rules/{id}/apply": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Backfill a rule over existing transactions (dry-run by default)",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "rules"
+                ],
+                "summary": "Apply a rule to existing transactions",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Rule ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Backfill options",
+                        "name": "request",
+                        "in": "body",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ApplyRuleRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Backfill result",
+                        "schema": {
+                            "$ref": "#/definitions/kuberan_internal_services.ApplyRuleResult"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid input",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Rule not found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    }
+                }
             }
         },
         "/securities": {
@@ -4022,6 +4509,23 @@
                 }
             }
         },
+        "internal_handlers.ApplyRuleRequest": {
+            "type": "object",
+            "properties": {
+                "dry_run": {
+                    "description": "default true",
+                    "type": "boolean"
+                },
+                "overwrite": {
+                    "description": "only meaningful with scope=all",
+                    "type": "boolean"
+                },
+                "scope": {
+                    "description": "uncategorized | all (default uncategorized)",
+                    "type": "string"
+                }
+            }
+        },
         "internal_handlers.AttachmentResponse": {
             "type": "object",
             "properties": {
@@ -4259,6 +4763,41 @@
                 }
             }
         },
+        "internal_handlers.CreateRuleRequest": {
+            "type": "object",
+            "required": [
+                "actions",
+                "conditions",
+                "name"
+            ],
+            "properties": {
+                "actions": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                        "$ref": "#/definitions/internal_handlers.RuleActionDTO"
+                    }
+                },
+                "conditions": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                        "$ref": "#/definitions/internal_handlers.RuleConditionDTO"
+                    }
+                },
+                "is_active": {
+                    "type": "boolean"
+                },
+                "name": {
+                    "type": "string",
+                    "maxLength": 120,
+                    "minLength": 1
+                },
+                "priority": {
+                    "type": "integer"
+                }
+            }
+        },
         "internal_handlers.CreateSecurityRequest": {
             "type": "object",
             "required": [
@@ -4400,6 +4939,21 @@
             "properties": {
                 "message": {
                     "type": "string"
+                }
+            }
+        },
+        "internal_handlers.PreviewRuleRequest": {
+            "type": "object",
+            "required": [
+                "conditions"
+            ],
+            "properties": {
+                "conditions": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                        "$ref": "#/definitions/internal_handlers.RuleConditionDTO"
+                    }
                 }
             }
         },
@@ -4576,6 +5130,61 @@
                 }
             }
         },
+        "internal_handlers.ReorderRulesRequest": {
+            "type": "object",
+            "required": [
+                "rule_ids"
+            ],
+            "properties": {
+                "rule_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "internal_handlers.RuleActionDTO": {
+            "type": "object",
+            "required": [
+                "action_type"
+            ],
+            "properties": {
+                "action_type": {
+                    "type": "string"
+                },
+                "category_id": {
+                    "type": "string"
+                },
+                "value_text": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_handlers.RuleConditionDTO": {
+            "type": "object",
+            "required": [
+                "field",
+                "operator"
+            ],
+            "properties": {
+                "amount_max": {
+                    "type": "integer"
+                },
+                "amount_min": {
+                    "type": "integer"
+                },
+                "field": {
+                    "type": "string"
+                },
+                "operator": {
+                    "type": "string"
+                },
+                "value_text": {
+                    "type": "string"
+                }
+            }
+        },
         "internal_handlers.TransactionResponse": {
             "type": "object",
             "properties": {
@@ -4685,6 +5294,44 @@
                 },
                 "parent_id": {
                     "type": "string"
+                }
+            }
+        },
+        "internal_handlers.UpdateProfileSettingsRequest": {
+            "type": "object",
+            "properties": {
+                "hide_balances": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "internal_handlers.UpdateRuleRequest": {
+            "type": "object",
+            "properties": {
+                "actions": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                        "$ref": "#/definitions/internal_handlers.RuleActionDTO"
+                    }
+                },
+                "conditions": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                        "$ref": "#/definitions/internal_handlers.RuleConditionDTO"
+                    }
+                },
+                "is_active": {
+                    "type": "boolean"
+                },
+                "name": {
+                    "type": "string",
+                    "maxLength": 120,
+                    "minLength": 1
+                },
+                "priority": {
+                    "type": "integer"
                 }
             }
         },
@@ -5245,6 +5892,53 @@
                 }
             }
         },
+        "kuberan_internal_models.RuleActionType": {
+            "type": "string",
+            "enum": [
+                "set_category"
+            ],
+            "x-enum-varnames": [
+                "RuleActionSetCategory"
+            ]
+        },
+        "kuberan_internal_models.RuleField": {
+            "type": "string",
+            "enum": [
+                "description",
+                "amount",
+                "account_id",
+                "type"
+            ],
+            "x-enum-varnames": [
+                "RuleFieldDescription",
+                "RuleFieldAmount",
+                "RuleFieldAccountID",
+                "RuleFieldType"
+            ]
+        },
+        "kuberan_internal_models.RuleOperator": {
+            "type": "string",
+            "enum": [
+                "contains",
+                "not_contains",
+                "equals",
+                "starts_with",
+                "ends_with",
+                "gt",
+                "lt",
+                "between"
+            ],
+            "x-enum-varnames": [
+                "RuleOpContains",
+                "RuleOpNotContains",
+                "RuleOpEquals",
+                "RuleOpStartsWith",
+                "RuleOpEndsWith",
+                "RuleOpGt",
+                "RuleOpLt",
+                "RuleOpBetween"
+            ]
+        },
         "kuberan_internal_models.Security": {
             "type": "object",
             "properties": {
@@ -5410,6 +6104,125 @@
                     "type": "string"
                 },
                 "user_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "kuberan_internal_models.TransactionRule": {
+            "type": "object",
+            "properties": {
+                "actions": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/kuberan_internal_models.TransactionRuleAction"
+                    }
+                },
+                "conditions": {
+                    "description": "Conditions and Actions are wholly-owned children, replaced on update.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/kuberan_internal_models.TransactionRuleCondition"
+                    }
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "deleted_at": {
+                    "$ref": "#/definitions/gorm.DeletedAt"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "is_active": {
+                    "type": "boolean"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "priority": {
+                    "description": "lower = evaluated first",
+                    "type": "integer"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "user_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "kuberan_internal_models.TransactionRuleAction": {
+            "type": "object",
+            "properties": {
+                "action_type": {
+                    "$ref": "#/definitions/kuberan_internal_models.RuleActionType"
+                },
+                "category": {
+                    "description": "Category is preloaded on reads so the matcher can check the target\ncategory's type without a DB call. Nil when the target is soft-deleted.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/kuberan_internal_models.Category"
+                        }
+                    ]
+                },
+                "category_id": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "deleted_at": {
+                    "$ref": "#/definitions/gorm.DeletedAt"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "rule_id": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "value_text": {
+                    "description": "reserved for future actions",
+                    "type": "string"
+                }
+            }
+        },
+        "kuberan_internal_models.TransactionRuleCondition": {
+            "type": "object",
+            "properties": {
+                "amount_max": {
+                    "description": "cents (lt, between)",
+                    "type": "integer"
+                },
+                "amount_min": {
+                    "description": "cents (gt, between)",
+                    "type": "integer"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "deleted_at": {
+                    "$ref": "#/definitions/gorm.DeletedAt"
+                },
+                "field": {
+                    "$ref": "#/definitions/kuberan_internal_models.RuleField"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "operator": {
+                    "$ref": "#/definitions/kuberan_internal_models.RuleOperator"
+                },
+                "rule_id": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "value_text": {
+                    "description": "text / account uuid / type value",
                     "type": "string"
                 }
             }
@@ -5636,6 +6449,26 @@
                 }
             }
         },
+        "kuberan_internal_services.ApplyRuleResult": {
+            "type": "object",
+            "properties": {
+                "applied": {
+                    "description": "transactions actually updated (0 on dry run)",
+                    "type": "integer"
+                },
+                "count": {
+                    "description": "transactions the rule would categorize",
+                    "type": "integer"
+                },
+                "sample": {
+                    "description": "small preview of affected transactions",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/kuberan_internal_models.Transaction"
+                    }
+                }
+            }
+        },
         "kuberan_internal_services.BudgetProgress": {
             "type": "object",
             "properties": {
@@ -5679,6 +6512,20 @@
                 },
                 "total_value": {
                     "type": "integer"
+                }
+            }
+        },
+        "kuberan_internal_services.RuleMatchPreview": {
+            "type": "object",
+            "properties": {
+                "count": {
+                    "type": "integer"
+                },
+                "sample": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/kuberan_internal_models.Transaction"
+                    }
                 }
             }
         },

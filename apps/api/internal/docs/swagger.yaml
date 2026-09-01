@@ -56,6 +56,18 @@ definitions:
     - quantity
     - security_id
     type: object
+  internal_handlers.ApplyRuleRequest:
+    properties:
+      dry_run:
+        description: default true
+        type: boolean
+      overwrite:
+        description: only meaningful with scope=all
+        type: boolean
+      scope:
+        description: uncategorized | all (default uncategorized)
+        type: string
+    type: object
   internal_handlers.AttachmentResponse:
     properties:
       attachment:
@@ -219,6 +231,31 @@ definitions:
     required:
     - name
     type: object
+  internal_handlers.CreateRuleRequest:
+    properties:
+      actions:
+        items:
+          $ref: '#/definitions/internal_handlers.RuleActionDTO'
+        minItems: 1
+        type: array
+      conditions:
+        items:
+          $ref: '#/definitions/internal_handlers.RuleConditionDTO'
+        minItems: 1
+        type: array
+      is_active:
+        type: boolean
+      name:
+        maxLength: 120
+        minLength: 1
+        type: string
+      priority:
+        type: integer
+    required:
+    - actions
+    - conditions
+    - name
+    type: object
   internal_handlers.CreateSecurityRequest:
     properties:
       asset_type:
@@ -316,6 +353,16 @@ definitions:
     properties:
       message:
         type: string
+    type: object
+  internal_handlers.PreviewRuleRequest:
+    properties:
+      conditions:
+        items:
+          $ref: '#/definitions/internal_handlers.RuleConditionDTO'
+        minItems: 1
+        type: array
+    required:
+    - conditions
     type: object
   internal_handlers.RecordBuyRequest:
     properties:
@@ -437,6 +484,42 @@ definitions:
     - email
     - password
     type: object
+  internal_handlers.ReorderRulesRequest:
+    properties:
+      rule_ids:
+        items:
+          type: string
+        type: array
+    required:
+    - rule_ids
+    type: object
+  internal_handlers.RuleActionDTO:
+    properties:
+      action_type:
+        type: string
+      category_id:
+        type: string
+      value_text:
+        type: string
+    required:
+    - action_type
+    type: object
+  internal_handlers.RuleConditionDTO:
+    properties:
+      amount_max:
+        type: integer
+      amount_min:
+        type: integer
+      field:
+        type: string
+      operator:
+        type: string
+      value_text:
+        type: string
+    required:
+    - field
+    - operator
+    type: object
   internal_handlers.TransactionResponse:
     properties:
       account_id:
@@ -514,6 +597,32 @@ definitions:
         type: string
       parent_id:
         type: string
+    type: object
+  internal_handlers.UpdateProfileSettingsRequest:
+    properties:
+      hide_balances:
+        type: boolean
+    type: object
+  internal_handlers.UpdateRuleRequest:
+    properties:
+      actions:
+        items:
+          $ref: '#/definitions/internal_handlers.RuleActionDTO'
+        minItems: 1
+        type: array
+      conditions:
+        items:
+          $ref: '#/definitions/internal_handlers.RuleConditionDTO'
+        minItems: 1
+        type: array
+      is_active:
+        type: boolean
+      name:
+        maxLength: 120
+        minLength: 1
+        type: string
+      priority:
+        type: integer
     type: object
   internal_handlers.UpdateTransactionRequest:
     properties:
@@ -889,6 +998,44 @@ definitions:
       user_id:
         type: string
     type: object
+  kuberan_internal_models.RuleActionType:
+    enum:
+    - set_category
+    type: string
+    x-enum-varnames:
+    - RuleActionSetCategory
+  kuberan_internal_models.RuleField:
+    enum:
+    - description
+    - amount
+    - account_id
+    - type
+    type: string
+    x-enum-varnames:
+    - RuleFieldDescription
+    - RuleFieldAmount
+    - RuleFieldAccountID
+    - RuleFieldType
+  kuberan_internal_models.RuleOperator:
+    enum:
+    - contains
+    - not_contains
+    - equals
+    - starts_with
+    - ends_with
+    - gt
+    - lt
+    - between
+    type: string
+    x-enum-varnames:
+    - RuleOpContains
+    - RuleOpNotContains
+    - RuleOpEquals
+    - RuleOpStartsWith
+    - RuleOpEndsWith
+    - RuleOpGt
+    - RuleOpLt
+    - RuleOpBetween
   kuberan_internal_models.Security:
     properties:
       asset_type:
@@ -1003,6 +1150,88 @@ definitions:
       updated_at:
         type: string
       user_id:
+        type: string
+    type: object
+  kuberan_internal_models.TransactionRule:
+    properties:
+      actions:
+        items:
+          $ref: '#/definitions/kuberan_internal_models.TransactionRuleAction'
+        type: array
+      conditions:
+        description: Conditions and Actions are wholly-owned children, replaced on
+          update.
+        items:
+          $ref: '#/definitions/kuberan_internal_models.TransactionRuleCondition'
+        type: array
+      created_at:
+        type: string
+      deleted_at:
+        $ref: '#/definitions/gorm.DeletedAt'
+      id:
+        type: string
+      is_active:
+        type: boolean
+      name:
+        type: string
+      priority:
+        description: lower = evaluated first
+        type: integer
+      updated_at:
+        type: string
+      user_id:
+        type: string
+    type: object
+  kuberan_internal_models.TransactionRuleAction:
+    properties:
+      action_type:
+        $ref: '#/definitions/kuberan_internal_models.RuleActionType'
+      category:
+        allOf:
+        - $ref: '#/definitions/kuberan_internal_models.Category'
+        description: |-
+          Category is preloaded on reads so the matcher can check the target
+          category's type without a DB call. Nil when the target is soft-deleted.
+      category_id:
+        type: string
+      created_at:
+        type: string
+      deleted_at:
+        $ref: '#/definitions/gorm.DeletedAt'
+      id:
+        type: string
+      rule_id:
+        type: string
+      updated_at:
+        type: string
+      value_text:
+        description: reserved for future actions
+        type: string
+    type: object
+  kuberan_internal_models.TransactionRuleCondition:
+    properties:
+      amount_max:
+        description: cents (lt, between)
+        type: integer
+      amount_min:
+        description: cents (gt, between)
+        type: integer
+      created_at:
+        type: string
+      deleted_at:
+        $ref: '#/definitions/gorm.DeletedAt'
+      field:
+        $ref: '#/definitions/kuberan_internal_models.RuleField'
+      id:
+        type: string
+      operator:
+        $ref: '#/definitions/kuberan_internal_models.RuleOperator'
+      rule_id:
+        type: string
+      updated_at:
+        type: string
+      value_text:
+        description: text / account uuid / type value
         type: string
     type: object
   kuberan_internal_models.TransactionType:
@@ -1152,6 +1381,20 @@ definitions:
       total_pages:
         type: integer
     type: object
+  kuberan_internal_services.ApplyRuleResult:
+    properties:
+      applied:
+        description: transactions actually updated (0 on dry run)
+        type: integer
+      count:
+        description: transactions the rule would categorize
+        type: integer
+      sample:
+        description: small preview of affected transactions
+        items:
+          $ref: '#/definitions/kuberan_internal_models.Transaction'
+        type: array
+    type: object
   kuberan_internal_services.BudgetProgress:
     properties:
       budget_id:
@@ -1181,6 +1424,15 @@ definitions:
         type: integer
       total_value:
         type: integer
+    type: object
+  kuberan_internal_services.RuleMatchPreview:
+    properties:
+      count:
+        type: integer
+      sample:
+        items:
+          $ref: '#/definitions/kuberan_internal_models.Transaction'
+        type: array
     type: object
   kuberan_internal_services.SpendingByCategory:
     properties:
@@ -3019,6 +3271,315 @@ paths:
       summary: Get user profile
       tags:
       - user
+    patch:
+      consumes:
+      - application/json
+      description: Update the authenticated user's profile settings (e.g. dashboard
+        balance visibility)
+      parameters:
+      - description: Profile settings to update
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_handlers.UpdateProfileSettingsRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Updated user profile
+          schema:
+            $ref: '#/definitions/internal_handlers.UserResponse'
+        "400":
+          description: Invalid input
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "500":
+          description: Server error
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Update profile settings
+      tags:
+      - user
+  /rules:
+    get:
+      description: List all rules for the authenticated user in evaluation order
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Rules
+          schema:
+            additionalProperties:
+              items:
+                $ref: '#/definitions/kuberan_internal_models.TransactionRule'
+              type: array
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "500":
+          description: Server error
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List transaction rules
+      tags:
+      - rules
+    post:
+      consumes:
+      - application/json
+      description: Create an auto-categorization rule (conditions AND-ed, first-match-wins)
+      parameters:
+      - description: Rule details
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_handlers.CreateRuleRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Rule created
+          schema:
+            additionalProperties:
+              $ref: '#/definitions/kuberan_internal_models.TransactionRule'
+            type: object
+        "400":
+          description: Invalid input
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "404":
+          description: Target category not found
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "500":
+          description: Server error
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Create a transaction rule
+      tags:
+      - rules
+  /rules/{id}:
+    delete:
+      parameters:
+      - description: Rule ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Rule deleted
+          schema:
+            $ref: '#/definitions/internal_handlers.MessageResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "404":
+          description: Rule not found
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Delete a transaction rule
+      tags:
+      - rules
+    get:
+      parameters:
+      - description: Rule ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Rule
+          schema:
+            additionalProperties:
+              $ref: '#/definitions/kuberan_internal_models.TransactionRule'
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "404":
+          description: Rule not found
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get a transaction rule
+      tags:
+      - rules
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: Rule ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Updated rule
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_handlers.UpdateRuleRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Updated rule
+          schema:
+            additionalProperties:
+              $ref: '#/definitions/kuberan_internal_models.TransactionRule'
+            type: object
+        "400":
+          description: Invalid input
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "404":
+          description: Rule not found
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Update a transaction rule
+      tags:
+      - rules
+  /rules/{id}/apply:
+    post:
+      consumes:
+      - application/json
+      description: Backfill a rule over existing transactions (dry-run by default)
+      parameters:
+      - description: Rule ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Backfill options
+        in: body
+        name: request
+        schema:
+          $ref: '#/definitions/internal_handlers.ApplyRuleRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Backfill result
+          schema:
+            $ref: '#/definitions/kuberan_internal_services.ApplyRuleResult'
+        "400":
+          description: Invalid input
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "404":
+          description: Rule not found
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Apply a rule to existing transactions
+      tags:
+      - rules
+  /rules/preview:
+    post:
+      consumes:
+      - application/json
+      description: Count existing transactions matching a set of unsaved conditions
+      parameters:
+      - description: Conditions to preview
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_handlers.PreviewRuleRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Match preview
+          schema:
+            $ref: '#/definitions/kuberan_internal_services.RuleMatchPreview'
+        "400":
+          description: Invalid input
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Preview rule matches
+      tags:
+      - rules
+  /rules/reorder:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Ordered rule IDs
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_handlers.ReorderRulesRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Reordered rules
+          schema:
+            additionalProperties:
+              items:
+                $ref: '#/definitions/kuberan_internal_models.TransactionRule'
+              type: array
+            type: object
+        "400":
+          description: Invalid input
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Reorder transaction rules
+      tags:
+      - rules
   /securities:
     get:
       consumes:
