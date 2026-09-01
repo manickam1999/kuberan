@@ -99,7 +99,7 @@ export default function AnalyticsPage() {
             toDate={toDate}
             hideBalances={hideBalances}
           />
-          <CashflowCard />
+          <CashflowCard title="Monthly trend" />
         </div>
 
         <div className="min-w-0 space-y-4">
