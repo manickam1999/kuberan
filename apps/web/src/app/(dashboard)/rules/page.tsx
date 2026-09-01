@@ -1,9 +1,11 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Reorder, useDragControls } from "motion/react";
 import {
   ArrowDown,
   ArrowUp,
+  GripVertical,
   MoreHorizontal,
   Pencil,
   Plus,
@@ -51,16 +53,37 @@ export default function RulesPage() {
     return (id: string) => map.get(id) ?? "Unknown account";
   }, [accountData]);
 
-  const list = rules ?? [];
+  // Local ordering so drag feels instant; the server call persists on drop.
+  const [ordered, setOrdered] = useState<TransactionRule[]>([]);
+  useEffect(() => {
+    if (rules) setOrdered(rules);
+  }, [rules]);
 
+  // Mirror the latest order in a ref so drag-end persists the final order
+  // regardless of render timing.
+  const orderedRef = useRef<TransactionRule[]>([]);
+  orderedRef.current = ordered;
+
+  function persist(next: TransactionRule[]) {
+    reorder.mutate(
+      next.map((r) => r.id),
+      {
+        onError: (err) => {
+          toast.error(getErrorMessage(err));
+          setOrdered(rules ?? []); // revert optimistic order
+        },
+      }
+    );
+  }
+
+  // Keyboard-accessible reorder from the row's menu.
   function move(index: number, direction: -1 | 1) {
     const target = index + direction;
-    if (target < 0 || target >= list.length) return;
-    const ids = list.map((r) => r.id);
-    [ids[index], ids[target]] = [ids[target], ids[index]];
-    reorder.mutate(ids, {
-      onError: (err) => toast.error(getErrorMessage(err)),
-    });
+    if (target < 0 || target >= ordered.length) return;
+    const next = [...ordered];
+    [next[index], next[target]] = [next[target], next[index]];
+    setOrdered(next);
+    persist(next);
   }
 
   return (
@@ -70,7 +93,7 @@ export default function RulesPage() {
           <h1 className="text-2xl font-semibold tracking-tight">Rules</h1>
           <p className="text-sm text-muted-foreground">
             Auto-categorize new transactions. Rules run top to bottom; the first
-            match wins.
+            match wins. Drag to reorder.
           </p>
         </div>
         <Button size="sm" onClick={() => setCreateOpen(true)}>
@@ -87,7 +110,7 @@ export default function RulesPage() {
             ))}
           </CardContent>
         </Card>
-      ) : list.length === 0 ? (
+      ) : ordered.length === 0 ? (
         <div className="flex flex-col items-center justify-center rounded-xl border border-dashed p-12 text-center">
           <h3 className="text-lg font-semibold">No rules yet</h3>
           <p className="mt-1 text-sm text-muted-foreground">
@@ -100,23 +123,29 @@ export default function RulesPage() {
         </div>
       ) : (
         <Card className="overflow-hidden py-0">
-          <div className="divide-y divide-border/50">
-            {list.map((rule, index) => (
+          <Reorder.Group
+            as="div"
+            axis="y"
+            values={ordered}
+            onReorder={setOrdered}
+            className="divide-y divide-border/50"
+          >
+            {ordered.map((rule, index) => (
               <RuleRow
                 key={rule.id}
                 rule={rule}
                 accountName={accountName}
                 isFirst={index === 0}
-                isLast={index === list.length - 1}
-                reordering={reorder.isPending}
+                isLast={index === ordered.length - 1}
                 onMoveUp={() => move(index, -1)}
                 onMoveDown={() => move(index, 1)}
+                onDragEnd={() => persist(orderedRef.current)}
                 onEdit={() => setEditRule(rule)}
                 onApply={() => setApplyRule(rule)}
                 onDelete={() => setDeleteRule(rule)}
               />
             ))}
-          </div>
+          </Reorder.Group>
         </Card>
       )}
 
@@ -151,9 +180,9 @@ interface RuleRowProps {
   accountName: (id: string) => string;
   isFirst: boolean;
   isLast: boolean;
-  reordering: boolean;
   onMoveUp: () => void;
   onMoveDown: () => void;
+  onDragEnd: () => void;
   onEdit: () => void;
   onApply: () => void;
   onDelete: () => void;
@@ -164,14 +193,15 @@ function RuleRow({
   accountName,
   isFirst,
   isLast,
-  reordering,
   onMoveUp,
   onMoveDown,
+  onDragEnd,
   onEdit,
   onApply,
   onDelete,
 }: RuleRowProps) {
   const updateRule = useUpdateRule(rule.id);
+  const dragControls = useDragControls();
 
   const summary = rule.conditions
     .map((c) => summarizeCondition(c, accountName))
@@ -185,29 +215,23 @@ function RuleRow({
   }
 
   return (
-    <div className="group flex items-center gap-3 px-4 py-3 transition-colors hover:bg-accent/40">
-      <div className="flex flex-col">
-        <Button
-          variant="ghost"
-          size="icon"
-          className="size-6"
-          onClick={onMoveUp}
-          disabled={isFirst || reordering}
-          aria-label="Move up"
-        >
-          <ArrowUp className="size-3.5" />
-        </Button>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="size-6"
-          onClick={onMoveDown}
-          disabled={isLast || reordering}
-          aria-label="Move down"
-        >
-          <ArrowDown className="size-3.5" />
-        </Button>
-      </div>
+    <Reorder.Item
+      as="div"
+      value={rule}
+      dragListener={false}
+      dragControls={dragControls}
+      onDragEnd={onDragEnd}
+      whileDrag={{ scale: 1.01 }}
+      className="group relative flex items-center gap-2 bg-card px-4 py-3 transition-colors hover:bg-accent/40"
+    >
+      <button
+        type="button"
+        aria-label="Drag to reorder"
+        onPointerDown={(e) => dragControls.start(e)}
+        className="flex size-7 shrink-0 cursor-grab touch-none items-center justify-center rounded-md text-muted-foreground/60 transition-colors hover:text-foreground active:cursor-grabbing"
+      >
+        <GripVertical className="size-4" />
+      </button>
 
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm font-medium">{rule.name}</p>
@@ -232,6 +256,15 @@ function RuleRow({
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
+            <DropdownMenuItem onClick={onMoveUp} disabled={isFirst}>
+              <ArrowUp className="size-4" />
+              Move up
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={onMoveDown} disabled={isLast}>
+              <ArrowDown className="size-4" />
+              Move down
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
             <DropdownMenuItem onClick={onEdit}>
               <Pencil className="size-4" />
               Edit
@@ -248,6 +281,6 @@ function RuleRow({
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
-    </div>
+    </Reorder.Item>
   );
 }
