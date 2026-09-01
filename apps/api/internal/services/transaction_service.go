@@ -17,13 +17,17 @@ import (
 type transactionService struct {
 	db             *gorm.DB
 	accountService AccountServicer
+	ruleService    RuleServicer
 }
 
-// NewTransactionService creates a new TransactionServicer.
-func NewTransactionService(db *gorm.DB, accountService AccountServicer) TransactionServicer {
+// NewTransactionService creates a new TransactionServicer. The ruleService is
+// used to auto-categorize new income/expense transactions and to run rule
+// backfills; the dependency is one-way (rules never depend on transactions).
+func NewTransactionService(db *gorm.DB, accountService AccountServicer, ruleService RuleServicer) TransactionServicer {
 	return &transactionService{
 		db:             db,
 		accountService: accountService,
+		ruleService:    ruleService,
 	}
 }
 
@@ -55,6 +59,21 @@ func (s *transactionService) CreateTransaction(
 	account, err := s.accountService.GetAccountByID(userID, accountID)
 	if err != nil {
 		return nil, err
+	}
+
+	// Auto-categorize via rules when the caller didn't specify a category and the
+	// transaction is a categorizable income/expense (plan 018). Resolved outside
+	// the write transaction so rule reads don't extend the account-row lock. A
+	// rule-resolution error never blocks transaction creation.
+	if categoryID == nil && isCategorizableType(transactionType) && s.ruleService != nil {
+		if res, rerr := s.ruleService.ResolveForUser(userID, RuleInput{
+			Description: description,
+			Amount:      amount,
+			AccountID:   accountID,
+			Type:        transactionType,
+		}); rerr == nil {
+			categoryID = res.CategoryID
+		}
 	}
 
 	var result *models.Transaction
@@ -164,6 +183,145 @@ func (s *transactionService) CreateTransfer(
 		return nil, err
 	}
 	return result, nil
+}
+
+// isCategorizableType reports whether a transaction type is eligible for
+// auto-categorization. Transfers and investment legs are excluded by design.
+func isCategorizableType(t models.TransactionType) bool {
+	return t == models.TransactionTypeIncome || t == models.TransactionTypeExpense
+}
+
+// ruleSampleLimit caps the number of sample transactions returned by preview/apply.
+const ruleSampleLimit = 10
+
+// candidateTransactions returns a user's categorizable (income/expense)
+// transactions, newest first. scope filters to uncategorized rows when given.
+func (s *transactionService) candidateTransactions(userID string, uncategorizedOnly bool) ([]models.Transaction, error) {
+	q := s.db.
+		Where("user_id = ? AND type IN ?", userID,
+			[]models.TransactionType{models.TransactionTypeIncome, models.TransactionTypeExpense})
+	if uncategorizedOnly {
+		q = q.Where("category_id IS NULL")
+	}
+	var txns []models.Transaction
+	if err := q.Order("date DESC, created_at DESC").Find(&txns).Error; err != nil {
+		return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)
+	}
+	return txns, nil
+}
+
+// txToRuleInput projects a transaction into the matcher's DB-free input.
+func txToRuleInput(t *models.Transaction) RuleInput {
+	return RuleInput{
+		Description: t.Description,
+		Amount:      t.Amount,
+		AccountID:   t.AccountID,
+		Type:        t.Type,
+	}
+}
+
+// PreviewRuleMatches counts existing transactions matching a set of unsaved
+// conditions, returning a small sample. Read-only; used by the rule builder UI.
+func (s *transactionService) PreviewRuleMatches(userID string, conditions []RuleConditionInput) (*RuleMatchPreview, error) {
+	modelConditions := inputsToConditions(conditions)
+
+	txns, err := s.candidateTransactions(userID, false)
+	if err != nil {
+		return nil, err
+	}
+
+	preview := &RuleMatchPreview{Sample: []models.Transaction{}}
+	for i := range txns {
+		if ConditionsMatch(modelConditions, txToRuleInput(&txns[i])) {
+			preview.Count++
+			if len(preview.Sample) < ruleSampleLimit {
+				preview.Sample = append(preview.Sample, txns[i])
+			}
+		}
+	}
+	return preview, nil
+}
+
+// ApplyRule backfills an existing rule over existing transactions. It resolves
+// each candidate through the shared matcher and applies a balance-neutral,
+// category-only update (never the balance-reversing UpdateTransaction path).
+// On dry run it reports the count and a sample without writing.
+func (s *transactionService) ApplyRule(userID, ruleID string, opts ApplyRuleOptions) (*ApplyRuleResult, error) {
+	rule, err := s.ruleService.GetRule(userID, ruleID)
+	if err != nil {
+		return nil, err
+	}
+
+	uncategorizedOnly := opts.Scope != RuleApplyScopeAll
+	txns, err := s.candidateTransactions(userID, uncategorizedOnly)
+	if err != nil {
+		return nil, err
+	}
+
+	// A backfill is an explicit action on a specific rule, so honor it even when
+	// the rule is paused (is_active=false). Target validity and type-safety are
+	// still enforced by the matcher (a deleted target category won't apply).
+	active := *rule
+	active.IsActive = true
+	rules := []models.TransactionRule{active}
+	result := &ApplyRuleResult{Sample: []models.Transaction{}}
+
+	var eligible []models.Transaction
+	for i := range txns {
+		t := &txns[i]
+		res := Match(rules, txToRuleInput(t))
+		if res.CategoryID == nil {
+			continue
+		}
+		// Skip if the target equals the current category (no-op) or the row is
+		// already categorized and overwrite wasn't requested.
+		if t.CategoryID != nil {
+			if !opts.Overwrite || *t.CategoryID == *res.CategoryID {
+				continue
+			}
+		}
+		result.Count++
+		if len(result.Sample) < ruleSampleLimit {
+			result.Sample = append(result.Sample, *t)
+		}
+		eligible = append(eligible, models.Transaction{Base: models.Base{ID: t.ID}, CategoryID: res.CategoryID})
+	}
+
+	if opts.DryRun || len(eligible) == 0 {
+		return result, nil
+	}
+
+	err = s.db.Transaction(func(tx *gorm.DB) error {
+		for i := range eligible {
+			if txErr := tx.Model(&models.Transaction{}).
+				Where("id = ? AND user_id = ?", eligible[i].ID, userID).
+				Update("category_id", eligible[i].CategoryID).Error; txErr != nil {
+				return apperrors.Wrap(apperrors.ErrInternalServer, txErr)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	result.Applied = len(eligible)
+	return result, nil
+}
+
+// inputsToConditions maps condition inputs into model conditions for the matcher.
+func inputsToConditions(conditions []RuleConditionInput) []models.TransactionRuleCondition {
+	out := make([]models.TransactionRuleCondition, len(conditions))
+	for i, c := range conditions {
+		out[i] = models.TransactionRuleCondition{
+			Field:     c.Field,
+			Operator:  c.Operator,
+			ValueText: c.ValueText,
+			AmountMin: c.AmountMin,
+			AmountMax: c.AmountMax,
+		}
+	}
+	return out
 }
 
 // reverseType flips income↔expense for balance reversal.

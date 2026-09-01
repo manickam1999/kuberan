@@ -2,8 +2,10 @@
 
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { ArrowDownRight, ArrowUpRight } from "lucide-react";
+import { ArrowDownRight, ArrowUpRight, Wand2 } from "lucide-react";
 import { ApiClientError } from "@/lib/api-client";
+import { RuleDialog } from "@/components/rules/rule-dialog";
+import { suggestConditionValue } from "@/lib/rule-format";
 import { cn } from "@/lib/utils";
 import { useAccounts } from "@/hooks/use-accounts";
 import {
@@ -44,7 +46,7 @@ import { Badge } from "@/components/ui/badge";
 import { ExistingAttachments } from "@/components/transactions/transaction-attachments";
 import { formatCurrency, formatDate, toRFC3339 } from "@/lib/format";
 import type { Transaction, TransactionType } from "@/types/models";
-import type { UpdateTransactionRequest } from "@/types/api";
+import type { RuleConditionInput, UpdateTransactionRequest } from "@/types/api";
 
 function getErrorMessage(error: unknown): string {
   if (error instanceof ApiClientError) {
@@ -81,6 +83,11 @@ export function EditTransactionDialog({
   const [date, setDate] = useState("");
   const [error, setError] = useState("");
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [ruleOpen, setRuleOpen] = useState(false);
+  const [ruleSeed, setRuleSeed] = useState<{
+    conditions: RuleConditionInput[];
+    categoryId?: string;
+  }>({ conditions: [] });
 
   const updateTransaction = useUpdateTransaction(transaction?.id ?? "");
   const deleteTransaction = useDeleteTransaction();
@@ -168,6 +175,20 @@ export function EditTransactionDialog({
       },
       onError: (err) => setError(getErrorMessage(err)),
     });
+  }
+
+  // Open the rule builder prefilled from this transaction (an editable
+  // "description contains <token>" condition + the current category).
+  function handleCreateRule() {
+    const token = suggestConditionValue(description);
+    setRuleSeed({
+      conditions: [
+        { field: "description", operator: "contains", value_text: token },
+      ],
+      categoryId: categoryId && categoryId !== "none" ? categoryId : undefined,
+    });
+    onOpenChange(false);
+    setRuleOpen(true);
   }
 
   function handleDelete() {
@@ -308,6 +329,17 @@ export function EditTransactionDialog({
                     ))}
                   </SelectContent>
                 </Select>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-auto self-start px-0 text-xs text-muted-foreground hover:bg-transparent hover:text-foreground"
+                  onClick={handleCreateRule}
+                  disabled={isSaving}
+                >
+                  <Wand2 className="size-3.5" />
+                  Create a rule to auto-categorize similar
+                </Button>
               </div>
 
               {/* Date */}
@@ -439,6 +471,14 @@ export function EditTransactionDialog({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Create-rule-from-transaction (plan 018, PR 3) */}
+      <RuleDialog
+        open={ruleOpen}
+        onOpenChange={setRuleOpen}
+        initialConditions={ruleSeed.conditions}
+        initialCategoryId={ruleSeed.categoryId}
+      />
     </>
   );
 }

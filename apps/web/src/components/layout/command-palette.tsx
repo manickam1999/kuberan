@@ -7,6 +7,7 @@ import {
   Wallet,
   ArrowLeftRight,
   Tag,
+  Filter,
   PiggyBank,
   Database,
   TrendingUp,
@@ -94,6 +95,10 @@ export const CommandPalette = forwardRef<CommandPaletteRef>(
             <CommandItem onSelect={() => navigateTo("/categories")}>
               <Tag />
               <span>Categories</span>
+            </CommandItem>
+            <CommandItem onSelect={() => navigateTo("/rules")}>
+              <Filter />
+              <span>Rules</span>
             </CommandItem>
             <CommandItem onSelect={() => navigateTo("/budgets")}>
               <PiggyBank />

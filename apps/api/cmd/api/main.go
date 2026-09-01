@@ -86,7 +86,8 @@ func run() error {
 	userService := services.NewUserService(db)
 	accountService := services.NewAccountService(db)
 	categoryService := services.NewCategoryService(db)
-	transactionService := services.NewTransactionService(db, accountService)
+	ruleService := services.NewRuleService(db, categoryService)
+	transactionService := services.NewTransactionService(db, accountService, ruleService)
 	budgetService := services.NewBudgetService(db)
 	investmentService := services.NewInvestmentService(db, accountService)
 	securityService := services.NewSecurityService(db)
@@ -128,6 +129,7 @@ func run() error {
 	transactionHandler := handlers.NewTransactionHandler(transactionService, auditService)
 	attachmentHandler := handlers.NewAttachmentHandler(attachmentService, auditService, appConfig.MaxUploadBytes)
 	budgetHandler := handlers.NewBudgetHandler(budgetService, auditService)
+	ruleHandler := handlers.NewRuleHandler(ruleService, transactionService, auditService)
 	investmentHandler := handlers.NewInvestmentHandler(investmentService, auditService)
 	securityHandler := handlers.NewSecurityHandler(securityService, auditService)
 	snapshotHandler := handlers.NewPortfolioSnapshotHandler(snapshotService, auditService)
@@ -248,6 +250,18 @@ func run() error {
 	budgets.PUT("/:id", budgetHandler.UpdateBudget)
 	budgets.DELETE("/:id", budgetHandler.DeleteBudget)
 	budgets.GET("/:id/progress", budgetHandler.GetBudgetProgress)
+
+	// Transaction rule routes (plan 018). Static routes are registered before the
+	// param route so Gin resolves /rules/reorder and /rules/preview correctly.
+	rules := protected.Group("/rules")
+	rules.POST("", ruleHandler.CreateRule)
+	rules.GET("", ruleHandler.GetRules)
+	rules.POST("/reorder", ruleHandler.ReorderRules)
+	rules.POST("/preview", ruleHandler.PreviewRule)
+	rules.GET("/:id", ruleHandler.GetRule)
+	rules.PUT("/:id", ruleHandler.UpdateRule)
+	rules.DELETE("/:id", ruleHandler.DeleteRule)
+	rules.POST("/:id/apply", ruleHandler.ApplyRule)
 
 	// Investment routes
 	investments := protected.Group("/investments")
