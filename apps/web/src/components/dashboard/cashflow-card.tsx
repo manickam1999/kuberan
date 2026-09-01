@@ -22,7 +22,7 @@ import { DitherFill } from "@/components/charts/dither-fill";
 import { useAuth } from "@/hooks/use-auth";
 import { formatCurrency } from "@/lib/format";
 
-export function CashflowCard() {
+export function CashflowCard({ title = "Cash flow" }: { title?: string }) {
   const { data, isLoading } = useMonthlySummary(6);
   const { label: monthLabel, isCurrentMonth } = useActiveMonth();
   const { chartTheme } = useChartTheme();
@@ -61,7 +61,7 @@ export function CashflowCard() {
     return (
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Cash flow</CardTitle>
+          <CardTitle className="text-base">{title}</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <Skeleton className="h-16 w-full" />
@@ -78,7 +78,7 @@ export function CashflowCard() {
   return (
     <Card className="@container">
       <CardHeader>
-        <CardTitle className="text-base">Cash flow</CardTitle>
+        <CardTitle className="text-base">{title}</CardTitle>
         <CardDescription>
           {monthLabel}
           {!isCurrentMonth && " · latest activity"}

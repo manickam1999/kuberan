@@ -93,12 +93,13 @@ export default function AnalyticsPage() {
       <CashflowSankeyCard />
 
       <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-3">
-        <div className="min-w-0 lg:col-span-2">
+        <div className="min-w-0 space-y-4 lg:col-span-2">
           <TopExpensesList
             fromDate={fromDate}
             toDate={toDate}
             hideBalances={hideBalances}
           />
+          <CashflowCard title="Monthly trend" />
         </div>
 
         <div className="min-w-0 space-y-4">
@@ -108,7 +109,6 @@ export default function AnalyticsPage() {
             hideBalances={hideBalances}
           />
           <SpendingCard />
-          <CashflowCard />
         </div>
       </div>
     </div>
