@@ -95,3 +95,15 @@ export function summarizeRuleTarget(rule: TransactionRule): string {
   const action = rule.actions?.[0];
   return action?.category?.name ?? "a category";
 }
+
+/**
+ * Suggest a "description contains" value from a transaction description for the
+ * "create rule from this transaction" flow. Picks the first alphabetic token of
+ * length >= 3 (usually the merchant name, e.g. "GRAB" from "GRAB *RIDE 8823"),
+ * falling back to the trimmed description. The user can edit it before saving.
+ */
+export function suggestConditionValue(description: string): string {
+  const tokens = description.match(/[A-Za-z]{3,}/g);
+  if (tokens && tokens.length > 0) return tokens[0];
+  return description.trim();
+}

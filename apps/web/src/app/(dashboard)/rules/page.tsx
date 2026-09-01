@@ -1,7 +1,15 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { ArrowDown, ArrowUp, Pencil, Plus, Trash2 } from "lucide-react";
+import {
+  ArrowDown,
+  ArrowUp,
+  MoreHorizontal,
+  Pencil,
+  Plus,
+  Trash2,
+  Wand2,
+} from "lucide-react";
 import { toast } from "sonner";
 import { ApiClientError } from "@/lib/api-client";
 import { useRules, useReorderRules, useUpdateRule } from "@/hooks/use-rules";
@@ -11,8 +19,16 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { RuleDialog } from "@/components/rules/rule-dialog";
 import { DeleteRuleDialog } from "@/components/rules/delete-rule-dialog";
+import { ApplyRuleDialog } from "@/components/rules/apply-rule-dialog";
 import type { TransactionRule } from "@/types/models";
 
 function getErrorMessage(error: unknown): string {
@@ -24,6 +40,7 @@ export default function RulesPage() {
   const [createOpen, setCreateOpen] = useState(false);
   const [editRule, setEditRule] = useState<TransactionRule | null>(null);
   const [deleteRule, setDeleteRule] = useState<TransactionRule | null>(null);
+  const [applyRule, setApplyRule] = useState<TransactionRule | null>(null);
 
   const { data: rules, isLoading } = useRules();
   const reorder = useReorderRules();
@@ -95,6 +112,7 @@ export default function RulesPage() {
                 onMoveUp={() => move(index, -1)}
                 onMoveDown={() => move(index, 1)}
                 onEdit={() => setEditRule(rule)}
+                onApply={() => setApplyRule(rule)}
                 onDelete={() => setDeleteRule(rule)}
               />
             ))}
@@ -117,6 +135,13 @@ export default function RulesPage() {
         }}
         rule={deleteRule}
       />
+      <ApplyRuleDialog
+        open={!!applyRule}
+        onOpenChange={(open) => {
+          if (!open) setApplyRule(null);
+        }}
+        rule={applyRule}
+      />
     </div>
   );
 }
@@ -130,6 +155,7 @@ interface RuleRowProps {
   onMoveUp: () => void;
   onMoveDown: () => void;
   onEdit: () => void;
+  onApply: () => void;
   onDelete: () => void;
 }
 
@@ -142,6 +168,7 @@ function RuleRow({
   onMoveUp,
   onMoveDown,
   onEdit,
+  onApply,
   onDelete,
 }: RuleRowProps) {
   const updateRule = useUpdateRule(rule.id);
@@ -197,18 +224,29 @@ function RuleRow({
         aria-label={rule.is_active ? "Disable rule" : "Enable rule"}
       />
 
-      <div className="flex gap-0.5 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
-        <Button variant="ghost" size="icon" className="size-8" onClick={onEdit}>
-          <Pencil className="size-4" />
-        </Button>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="size-8 text-muted-foreground hover:text-destructive"
-          onClick={onDelete}
-        >
-          <Trash2 className="size-4" />
-        </Button>
+      <div className="opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100 data-[state=open]:opacity-100">
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="ghost" size="icon" className="size-8" aria-label="Rule actions">
+              <MoreHorizontal className="size-4" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem onClick={onEdit}>
+              <Pencil className="size-4" />
+              Edit
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={onApply}>
+              <Wand2 className="size-4" />
+              Apply to existing…
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem variant="destructive" onClick={onDelete}>
+              <Trash2 className="size-4" />
+              Delete
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
     </div>
   );

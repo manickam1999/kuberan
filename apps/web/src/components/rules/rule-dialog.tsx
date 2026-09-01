@@ -77,6 +77,17 @@ function conditionsToDrafts(rule: TransactionRule): ConditionDraft[] {
   }));
 }
 
+// Map a persisted/public condition input back into an editable draft.
+function inputToDraft(c: RuleConditionInput): ConditionDraft {
+  return {
+    field: c.field,
+    operator: c.operator,
+    value_text: c.value_text ?? "",
+    amount_min: c.amount_min ?? 0,
+    amount_max: c.amount_max ?? 0,
+  };
+}
+
 // Normalize a draft into the wire shape, dropping fields irrelevant to the field/operator.
 function draftToInput(d: ConditionDraft): RuleConditionInput {
   if (d.field === "amount") {
@@ -98,7 +109,7 @@ interface RuleDialogProps {
   /** When provided, the dialog edits this rule; otherwise it creates a new one. */
   rule?: TransactionRule | null;
   /** Prefill for the "create rule from transaction" flow (PR 3). */
-  initialConditions?: ConditionDraft[];
+  initialConditions?: RuleConditionInput[];
   initialCategoryId?: string;
 }
 
@@ -142,7 +153,11 @@ export function RuleDialog({
       setCategoryId(rule.actions?.[0]?.category_id ?? "");
     } else {
       setName("");
-      setConditions(initialConditions?.length ? initialConditions : [newCondition()]);
+      setConditions(
+        initialConditions?.length
+          ? initialConditions.map(inputToDraft)
+          : [newCondition()]
+      );
       setCategoryId(initialCategoryId ?? "");
     }
     setError("");
