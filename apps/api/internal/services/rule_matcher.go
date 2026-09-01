@@ -135,14 +135,14 @@ func textConditionMatches(op models.RuleOperator, subject, value string) bool {
 
 // amountConditionMatches compares the amount (cents) using the numeric operators.
 // A missing bound (nil) means the condition cannot be satisfied.
-func amountConditionMatches(op models.RuleOperator, amount int64, min, max *int64) bool {
+func amountConditionMatches(op models.RuleOperator, amount int64, lo, hi *int64) bool {
 	switch op {
 	case models.RuleOpGt:
-		return min != nil && amount > *min
+		return lo != nil && amount > *lo
 	case models.RuleOpLt:
-		return max != nil && amount < *max
+		return hi != nil && amount < *hi
 	case models.RuleOpBetween:
-		return min != nil && max != nil && amount >= *min && amount <= *max
+		return lo != nil && hi != nil && amount >= *lo && amount <= *hi
 	default:
 		return false
 	}

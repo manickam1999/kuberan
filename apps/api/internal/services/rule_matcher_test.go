@@ -38,8 +38,8 @@ func rule(id string, priority int, cond []models.TransactionRuleCondition, actio
 	}
 }
 
-func cond(field models.RuleField, op models.RuleOperator, text string, min, max *int64) models.TransactionRuleCondition {
-	return models.TransactionRuleCondition{Field: field, Operator: op, ValueText: text, AmountMin: min, AmountMax: max}
+func cond(field models.RuleField, op models.RuleOperator, text string, lo, hi *int64) models.TransactionRuleCondition {
+	return models.TransactionRuleCondition{Field: field, Operator: op, ValueText: text, AmountMin: lo, AmountMax: hi}
 }
 
 func TestMatch_TextOperators(t *testing.T) {

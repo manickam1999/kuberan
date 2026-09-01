@@ -390,7 +390,8 @@ func isTextOperator(op models.RuleOperator) bool {
 // an update that touches only one child set can revalidate against the other.
 func conditionsToInputs(conditions []models.TransactionRuleCondition) []RuleConditionInput {
 	out := make([]RuleConditionInput, len(conditions))
-	for i, c := range conditions {
+	for i := range conditions {
+		c := &conditions[i]
 		out[i] = RuleConditionInput{
 			Field:     c.Field,
 			Operator:  c.Operator,
@@ -404,7 +405,8 @@ func conditionsToInputs(conditions []models.TransactionRuleCondition) []RuleCond
 
 func actionsToInputs(actions []models.TransactionRuleAction) []RuleActionInput {
 	out := make([]RuleActionInput, len(actions))
-	for i, a := range actions {
+	for i := range actions {
+		a := &actions[i]
 		out[i] = RuleActionInput{
 			ActionType: a.ActionType,
 			CategoryID: a.CategoryID,

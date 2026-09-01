@@ -399,7 +399,7 @@ func (h *RuleHandler) ApplyRule(c *gin.Context) {
 		}
 	}
 
-	scope := services.RuleApplyScopeUncategorized
+	var scope services.RuleApplyScope
 	switch req.Scope {
 	case "", string(services.RuleApplyScopeUncategorized):
 		scope = services.RuleApplyScopeUncategorized
