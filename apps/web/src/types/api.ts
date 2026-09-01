@@ -316,6 +316,15 @@ export interface SpendingByCategory {
   to_date: string; // ISO 8601
 }
 
+export interface Cashflow {
+  income: SpendingByCategoryItem[];
+  expenses: SpendingByCategoryItem[];
+  total_income: number; // cents
+  total_expenses: number; // cents
+  from_date: string; // ISO 8601
+  to_date: string; // ISO 8601
+}
+
 export interface MonthlySummaryItem {
   month: string; // "2026-02"
   income: number; // cents

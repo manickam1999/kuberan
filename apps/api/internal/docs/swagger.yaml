@@ -1408,6 +1408,27 @@ definitions:
       spent:
         type: integer
     type: object
+  kuberan_internal_services.Cashflow:
+    properties:
+      expenses:
+        items:
+          $ref: '#/definitions/kuberan_internal_services.SpendingByCategoryItem'
+        type: array
+      from_date:
+        type: string
+      income:
+        items:
+          $ref: '#/definitions/kuberan_internal_services.SpendingByCategoryItem'
+        type: array
+      to_date:
+        type: string
+      total_expenses:
+        description: cents
+        type: integer
+      total_income:
+        description: cents
+        type: integer
+    type: object
   kuberan_internal_services.PortfolioSummary:
     properties:
       gain_loss_pct:
@@ -1459,6 +1480,41 @@ definitions:
         type: string
       total:
         type: integer
+    type: object
+  kuberan_internal_services.TopExpenseItem:
+    properties:
+      account_id:
+        type: string
+      account_name:
+        type: string
+      amount:
+        description: cents
+        type: integer
+      category_color:
+        type: string
+      category_icon:
+        type: string
+      category_id:
+        type: string
+      category_name:
+        type: string
+      date:
+        type: string
+      description:
+        type: string
+      id:
+        type: string
+    type: object
+  kuberan_internal_services.TopExpenses:
+    properties:
+      from_date:
+        type: string
+      items:
+        items:
+          $ref: '#/definitions/kuberan_internal_services.TopExpenseItem'
+        type: array
+      to_date:
+        type: string
     type: object
   kuberan_internal_services.TypeSummary:
     properties:
@@ -4176,6 +4232,47 @@ paths:
       tags:
       - transactions
       - attachments
+  /transactions/cashflow:
+    get:
+      consumes:
+      - application/json
+      description: Get income and expense totals grouped by category for a date range
+        (excludes transfers and investments)
+      parameters:
+      - description: Start date (RFC3339 or YYYY-MM-DD)
+        in: query
+        name: from_date
+        required: true
+        type: string
+      - description: End date (RFC3339 or YYYY-MM-DD)
+        in: query
+        name: to_date
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Cashflow breakdown by category
+          schema:
+            $ref: '#/definitions/kuberan_internal_services.Cashflow'
+        "400":
+          description: Invalid input
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "500":
+          description: Server error
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get cashflow breakdown
+      tags:
+      - transactions
   /transactions/daily-spending:
     get:
       consumes:
@@ -4215,6 +4312,47 @@ paths:
       security:
       - BearerAuth: []
       summary: Get daily spending
+      tags:
+      - transactions
+  /transactions/daily-summary:
+    get:
+      consumes:
+      - application/json
+      description: Get daily income and expense totals for a date range
+      parameters:
+      - description: Start date (RFC3339 or YYYY-MM-DD)
+        in: query
+        name: from_date
+        required: true
+        type: string
+      - description: End date (RFC3339 or YYYY-MM-DD)
+        in: query
+        name: to_date
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Daily summary data
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Invalid input
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "500":
+          description: Server error
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get daily income and expense summary
       tags:
       - transactions
   /transactions/monthly-summary:
@@ -4286,6 +4424,54 @@ paths:
       security:
       - BearerAuth: []
       summary: Get spending by category
+      tags:
+      - transactions
+  /transactions/top-expenses:
+    get:
+      consumes:
+      - application/json
+      description: Get the largest expense transactions for a date range
+      parameters:
+      - description: Start date (RFC3339 or YYYY-MM-DD)
+        in: query
+        name: from_date
+        required: true
+        type: string
+      - description: End date (RFC3339 or YYYY-MM-DD)
+        in: query
+        name: to_date
+        required: true
+        type: string
+      - description: Max results (default 10, min 1, max 100)
+        in: query
+        name: limit
+        type: integer
+      - description: Filter to a single category
+        in: query
+        name: category_id
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Top expense transactions
+          schema:
+            $ref: '#/definitions/kuberan_internal_services.TopExpenses'
+        "400":
+          description: Invalid input
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "500":
+          description: Server error
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get top expenses
       tags:
       - transactions
   /transactions/transfer:
