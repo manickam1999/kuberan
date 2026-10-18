@@ -156,3 +156,32 @@ export function localDayEndUTC(dateStr: string): string {
   const [year, month, day] = dateStr.split("-").map(Number);
   return new Date(year, month - 1, day, 23, 59, 59, 999).toISOString();
 }
+
+/**
+ * Compute the first and last local calendar dates (YYYY-MM-DD) of a given month,
+ * plus a human-readable label like "October 2026".
+ *
+ * This is the canonical month-range helper shared by `useActiveMonth` and
+ * `useAnalyticsPeriod`. Dates are local calendar strings, not ISO instants,
+ * to avoid the UTC-shift class of bug documented in `localDayStartUTC`.
+ *
+ * @param year - Four-digit calendar year
+ * @param monthIndex - 0-based month index (0 = January, 11 = December)
+ */
+export function calendarMonthRange(
+  year: number,
+  monthIndex: number
+): { fromDate: string; toDate: string; label: string } {
+  const first = new Date(year, monthIndex, 1);
+  // Day 0 of the next month is the last day of this month.
+  const last = new Date(year, monthIndex + 1, 0);
+  const label = first.toLocaleDateString("en-US", {
+    month: "long",
+    year: "numeric",
+  });
+  return {
+    fromDate: toLocalDateString(first),
+    toDate: toLocalDateString(last),
+    label,
+  };
+}

@@ -22,9 +22,25 @@ import { DitherFill } from "@/components/charts/dither-fill";
 import { useAuth } from "@/hooks/use-auth";
 import { formatCurrency } from "@/lib/format";
 
-export function CashflowCard({ title = "Cash flow" }: { title?: string }) {
+interface CashflowCardProps {
+  title?: string;
+  fromDate?: string;
+  toDate?: string;
+  label?: string;
+  isActiveMonthDefault?: boolean;
+}
+
+export function CashflowCard({
+  title = "Cash flow",
+  ...props
+}: CashflowCardProps) {
   const { data, isLoading } = useMonthlySummary(6);
-  const { label: monthLabel, isCurrentMonth } = useActiveMonth();
+  const active = useActiveMonth();
+  const monthLabel = props.label ?? active.label;
+  const showLatestActivityHint =
+    props.fromDate && props.toDate
+      ? !!props.isActiveMonthDefault
+      : !active.isCurrentMonth;
   const { chartTheme } = useChartTheme();
   const { hideBalances } = useAuth();
   const isDither = chartTheme === "dither";
@@ -81,7 +97,7 @@ export function CashflowCard({ title = "Cash flow" }: { title?: string }) {
         <CardTitle className="text-base">{title}</CardTitle>
         <CardDescription>
           {monthLabel}
-          {!isCurrentMonth && " · latest activity"}
+          {showLatestActivityHint && " · latest activity"}
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">

@@ -71,13 +71,22 @@ function sideNodes(
   return { nodes, amounts };
 }
 
-export function CashflowSankeyCard() {
-  const {
-    fromDate,
-    toDate,
-    label: monthLabel,
-    isCurrentMonth,
-  } = useActiveMonth();
+interface CashflowSankeyCardProps {
+  fromDate?: string;
+  toDate?: string;
+  label?: string;
+  isActiveMonthDefault?: boolean;
+}
+
+export function CashflowSankeyCard(props: CashflowSankeyCardProps) {
+  const active = useActiveMonth();
+  const fromDate = props.fromDate ?? active.fromDate;
+  const toDate = props.toDate ?? active.toDate;
+  const monthLabel = props.label ?? active.label;
+  const showLatestActivityHint =
+    props.fromDate && props.toDate
+      ? !!props.isActiveMonthDefault
+      : !active.isCurrentMonth;
   const { data, isLoading } = useCashflow(fromDate, toDate);
   const { hideBalances } = useAuth();
 
@@ -178,7 +187,7 @@ export function CashflowSankeyCard() {
             <CardTitle className="text-base">Cash flow</CardTitle>
             <CardDescription>
               Income sources → spending · {monthLabel}
-              {!isCurrentMonth && " · latest activity"}
+              {showLatestActivityHint && " · latest activity"}
             </CardDescription>
           </div>
           {data && (data.total_income > 0 || data.total_expenses > 0) && (
