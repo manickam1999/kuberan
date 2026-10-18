@@ -21,13 +21,22 @@ import { formatCurrency } from "@/lib/format";
 const TOP_N = 5;
 const OTHERS_CLEAN_COLOR = "#8b8b95";
 
-export function SpendingCard() {
-  const {
-    fromDate,
-    toDate,
-    label: monthLabel,
-    isCurrentMonth,
-  } = useActiveMonth();
+interface SpendingCardProps {
+  fromDate?: string;
+  toDate?: string;
+  label?: string;
+  isActiveMonthDefault?: boolean;
+}
+
+export function SpendingCard(props: SpendingCardProps) {
+  const active = useActiveMonth();
+  const fromDate = props.fromDate ?? active.fromDate;
+  const toDate = props.toDate ?? active.toDate;
+  const monthLabel = props.label ?? active.label;
+  const showLatestActivityHint =
+    props.fromDate && props.toDate
+      ? !!props.isActiveMonthDefault
+      : !active.isCurrentMonth;
   const { data, isLoading } = useSpendingByCategory(fromDate, toDate);
   const { chartTheme } = useChartTheme();
   const { hideBalances } = useAuth();
@@ -106,7 +115,7 @@ export function SpendingCard() {
             <CardTitle className="text-base">Spending</CardTitle>
             <CardDescription>
               {monthLabel}
-              {!isCurrentMonth && " · latest activity"}
+              {showLatestActivityHint && " · latest activity"}
             </CardDescription>
           </div>
           <span className="text-xs text-muted-foreground">

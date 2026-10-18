@@ -2,7 +2,7 @@
 
 import { DollarSign, Receipt, Calculator, TrendingDown } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
-import { useActiveMonth } from "@/hooks/use-active-month";
+import { useAnalyticsPeriod } from "@/hooks/use-analytics-period";
 import {
   useSpendingByCategory,
   useTransactions,
@@ -14,13 +14,14 @@ import { CashflowCard } from "@/components/dashboard/cashflow-card";
 import { TopExpensesList } from "@/components/analytics/top-expenses-list";
 import { DailySpendingCalendar } from "@/components/analytics/daily-spending-calendar";
 import { CashflowSankeyCard } from "@/components/analytics/cashflow-sankey-card";
+import { PeriodSelector } from "@/components/analytics/period-selector";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatCurrency } from "@/lib/format";
 
 export default function AnalyticsPage() {
   const { hideBalances } = useAuth();
-  const { fromDate, toDate, label: monthLabel, isCurrentMonth } =
-    useActiveMonth();
+  const period = useAnalyticsPeriod();
+  const { fromDate, toDate, label, isActiveMonthDefault } = period;
 
   const { data: spending, isLoading: spendingLoading } = useSpendingByCategory(
     fromDate,
@@ -47,14 +48,11 @@ export default function AnalyticsPage() {
 
   return (
     <div className="space-y-5">
-      <div>
+      <div className="flex flex-wrap items-start justify-between gap-3">
         <h1 className="text-2xl font-semibold tracking-tight">
           Expense Analytics
         </h1>
-        <p className="text-sm text-muted-foreground">
-          {monthLabel}
-          {!isCurrentMonth && " · latest activity"}
-        </p>
+        <PeriodSelector period={period} />
       </div>
 
       {statsLoading ? (
@@ -90,7 +88,12 @@ export default function AnalyticsPage() {
         </div>
       )}
 
-      <CashflowSankeyCard />
+      <CashflowSankeyCard
+        fromDate={fromDate}
+        toDate={toDate}
+        label={label}
+        isActiveMonthDefault={isActiveMonthDefault}
+      />
 
       <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-3">
         <div className="min-w-0 space-y-4 lg:col-span-2">
@@ -99,7 +102,11 @@ export default function AnalyticsPage() {
             toDate={toDate}
             hideBalances={hideBalances}
           />
-          <CashflowCard title="Monthly trend" />
+          <CashflowCard
+            title="Monthly trend"
+            label="Last 6 months"
+            isActiveMonthDefault={false}
+          />
         </div>
 
         <div className="min-w-0 space-y-4">
@@ -108,7 +115,12 @@ export default function AnalyticsPage() {
             toDate={toDate}
             hideBalances={hideBalances}
           />
-          <SpendingCard />
+          <SpendingCard
+            fromDate={fromDate}
+            toDate={toDate}
+            label={label}
+            isActiveMonthDefault={isActiveMonthDefault}
+          />
         </div>
       </div>
     </div>
