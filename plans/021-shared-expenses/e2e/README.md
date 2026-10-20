@@ -7,7 +7,7 @@ Postgres 16, the API on :8080 and the production web build on :3000.
    Migrations run on start.
 2. Build and start the web app: `pnpm build && pnpm start -p 3000`.
 3. Seed a demo user with base data: `./seed.sh`.
-4. Run the scenario: `npm i playwright@1.56.1`, then `node run.mjs <out-dir> all`.
+4. Run the scenario: `npm i playwright@1.56.1`, then `node run.mjs <out-dir> all`. Set `PLAYWRIGHT_CHROMIUM_PATH` to use a preinstalled Chromium.
    `run.mjs` imports `steps-all.mjs` and writes screenshots to `<out-dir>/shots/`.
 
 The scenario covers:

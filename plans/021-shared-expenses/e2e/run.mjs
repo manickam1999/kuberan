@@ -1,7 +1,9 @@
 import { chromium } from "playwright";
 const S = process.argv[2];
 const step = process.argv[3] || "all";
-const browser = await chromium.launch({ executablePath: "/opt/pw-browsers/chromium-1194/chrome-linux/chrome" });
+// Set PLAYWRIGHT_CHROMIUM_PATH to use a preinstalled Chromium; otherwise Playwright uses its own.
+const executablePath = process.env.PLAYWRIGHT_CHROMIUM_PATH || undefined;
+const browser = await chromium.launch({ executablePath });
 const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 }, colorScheme: "dark" });
 const page = await ctx.newPage();
 const errors = [];

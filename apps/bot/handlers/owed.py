@@ -1,12 +1,12 @@
 from telegram import Update
 from telegram.ext import ContextTypes
 from api_client import KuberanAPIClient, UserAPIClient
-from utils.formatting import format_currency
+from utils.formatting import escape_markdown, format_currency
 import logging
 
 logger = logging.getLogger(__name__)
 
-MAX_COUNTERPARTIES = 10
+MAX_LISTED_COUNTERPARTIES = 10
 
 KIND_LABELS = {
     "split": "Split",
@@ -16,13 +16,6 @@ KIND_LABELS = {
     "deposit": "Deposit",
     "refund": "Refund",
 }
-
-
-def escape_markdown(text: str) -> str:
-    """Escape characters that are special in Telegram legacy Markdown."""
-    for ch in ("\\", "_", "*", "`", "["):
-        text = text.replace(ch, "\\" + ch)
-    return text
 
 
 def format_owed_message(summary: dict, currency: str) -> str:
@@ -38,7 +31,7 @@ def format_owed_message(summary: dict, currency: str) -> str:
 
     if by_counterparty:
         message += "*By person*\n"
-        for cp in by_counterparty[:MAX_COUNTERPARTIES]:
+        for cp in by_counterparty[:MAX_LISTED_COUNTERPARTIES]:
             name = escape_markdown(cp.get('counterparty_name') or 'Unknown')
             count = cp.get('open_count', 0)
             noun = "item" if count == 1 else "items"
@@ -46,7 +39,7 @@ def format_owed_message(summary: dict, currency: str) -> str:
                 f"• {name}: {format_currency(cp.get('outstanding', 0), currency)} "
                 f"({count} open {noun})\n"
             )
-        extra = len(by_counterparty) - MAX_COUNTERPARTIES
+        extra = len(by_counterparty) - MAX_LISTED_COUNTERPARTIES
         if extra > 0:
             message += f"…and {extra} more\n"
 
