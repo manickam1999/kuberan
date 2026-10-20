@@ -19,7 +19,7 @@ func (s *Server) registerTransactionTools() {
 			mcp.WithDescription("Search and list transactions with filters. Returns date, description, amount, category, and account."),
 			mcp.WithString("account_id", mcp.Description("Filter to a specific account ID")),
 			mcp.WithString("category_id", mcp.Description("Filter to a specific category ID")),
-			mcp.WithString("type", mcp.Description("Filter by type: 'income', 'expense', or 'transfer'")),
+			mcp.WithString("type", mcp.Description("Filter by type: 'income', 'expense', 'transfer', 'investment', or 'reimbursement' (a repayment received for a shared expense)")),
 			mcp.WithString("from_date", mcp.Description("Start date (YYYY-MM-DD)")),
 			mcp.WithString("to_date", mcp.Description("End date (YYYY-MM-DD)")),
 			mcp.WithNumber("min_amount", mcp.Description("Minimum amount in dollars")),
@@ -111,11 +111,12 @@ func (s *Server) handleListTransactions(ctx context.Context, req mcp.CallToolReq
 	}
 	if v, ok := args["type"].(string); ok && v != "" {
 		switch models.TransactionType(v) {
-		case models.TransactionTypeIncome, models.TransactionTypeExpense, models.TransactionTypeTransfer:
+		case models.TransactionTypeIncome, models.TransactionTypeExpense, models.TransactionTypeTransfer,
+			models.TransactionTypeInvestment, models.TransactionTypeReimbursement:
 			t := models.TransactionType(v)
 			filter.Type = &t
 		default:
-			return mcp.NewToolResultError("invalid type, expected one of: income, expense, transfer"), nil
+			return mcp.NewToolResultError("invalid type, expected one of: income, expense, transfer, investment, reimbursement"), nil
 		}
 	}
 	if v, ok := args["from_date"].(string); ok && v != "" {
@@ -161,10 +162,27 @@ func (s *Server) handleListTransactions(ctx context.Context, req mcp.CallToolReq
 			category,
 			t.Description,
 		))
+		if note := transactionNote(t); note != "" {
+			sb.WriteString("    " + note + "\n")
+		}
 		sb.WriteString(fmt.Sprintf("    ID: %s  Account: %s\n", t.ID, t.Account.Name))
 	}
 
 	return mcp.NewToolResultText(sb.String()), nil
+}
+
+// transactionNote returns an extra line describing shared-expense semantics
+// for a transaction, or "" when there is nothing to add. A set personal_amount
+// means only that share counts as the user's spending; reimbursements are
+// repayments received, not income.
+func transactionNote(t models.Transaction) string {
+	switch {
+	case t.Type == models.TransactionTypeReimbursement:
+		return "Repayment received for a shared expense (not income)"
+	case t.PersonalAmount != nil:
+		return fmt.Sprintf("Shared expense: your share %s of %s", formatCents(*t.PersonalAmount), formatCents(t.Amount))
+	}
+	return ""
 }
 
 func (s *Server) handleGetSpendingByCategory(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
