@@ -44,10 +44,11 @@ func (s *portfolioSnapshotService) ComputeAndRecordSnapshots(recordedAt time.Tim
 		if result.Error == nil {
 			// Already exists, update it
 			if err := s.db.Model(&existing).Updates(map[string]interface{}{
-				"total_net_worth":  snapshot.TotalNetWorth,
-				"cash_balance":     snapshot.CashBalance,
-				"investment_value": snapshot.InvestmentValue,
-				"debt_balance":     snapshot.DebtBalance,
+				"total_net_worth":       snapshot.TotalNetWorth,
+				"cash_balance":          snapshot.CashBalance,
+				"investment_value":      snapshot.InvestmentValue,
+				"debt_balance":          snapshot.DebtBalance,
+				"fixed_deposit_balance": snapshot.FixedDepositBalance,
 			}).Error; err != nil {
 				return count, apperrors.Wrap(apperrors.ErrInternalServer, err)
 			}
@@ -94,6 +95,15 @@ func (s *portfolioSnapshotService) computeSnapshot(userID string, recordedAt tim
 		investmentValue += int64(investments[i].Quantity * float64(prices[investments[i].SecurityID]))
 	}
 
+	// Fixed deposit balance: sum of active fixed_deposit account balances (plan 020, B8).
+	var fixedDepositBalance int64
+	if err := s.db.Model(&models.Account{}).
+		Where("user_id = ? AND type = ? AND is_active = ?", userID, models.AccountTypeFixedDeposit, true).
+		Select("COALESCE(SUM(balance), 0)").
+		Scan(&fixedDepositBalance).Error; err != nil {
+		return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)
+	}
+
 	// Debt balance: sum of debt + credit_card account balances
 	var debtBalance int64
 	if err := s.db.Model(&models.Account{}).
@@ -103,15 +113,16 @@ func (s *portfolioSnapshotService) computeSnapshot(userID string, recordedAt tim
 		return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)
 	}
 
-	totalNetWorth := cashBalance + investmentValue - debtBalance
+	totalNetWorth := cashBalance + investmentValue + fixedDepositBalance - debtBalance
 
 	return &models.PortfolioSnapshot{
-		UserID:          userID,
-		RecordedAt:      recordedAt,
-		TotalNetWorth:   totalNetWorth,
-		CashBalance:     cashBalance,
-		InvestmentValue: investmentValue,
-		DebtBalance:     debtBalance,
+		UserID:              userID,
+		RecordedAt:          recordedAt,
+		TotalNetWorth:       totalNetWorth,
+		CashBalance:         cashBalance,
+		InvestmentValue:     investmentValue,
+		DebtBalance:         debtBalance,
+		FixedDepositBalance: fixedDepositBalance,
 	}, nil
 }
 

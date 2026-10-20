@@ -185,6 +185,41 @@ func (s *categoryService) UpdateCategory(
 	return category, nil
 }
 
+// EnsureInterestIncomeCategory idempotently finds or creates the user's
+// "Interest Income" income category. It is used by the fixed-deposit service to
+// categorize periodic payouts and the interest leg of a realization.
+func (s *categoryService) EnsureInterestIncomeCategory(userID string) (*models.Category, error) {
+	const (
+		interestIncomeName  = "Interest Income"
+		interestIncomeIcon  = "landmark"
+		interestIncomeColor = "#2a9d8f"
+	)
+
+	var category models.Category
+	err := s.db.Where("user_id = ? AND name = ? AND type = ?", userID, interestIncomeName, models.CategoryTypeIncome).
+		First(&category).Error
+	if err == nil {
+		return &category, nil
+	}
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)
+	}
+
+	// Not found - create it.
+	category = models.Category{
+		UserID:      userID,
+		Name:        interestIncomeName,
+		Type:        models.CategoryTypeIncome,
+		Description: "Interest earned on fixed deposits and savings",
+		Icon:        interestIncomeIcon,
+		Color:       interestIncomeColor,
+	}
+	if err := s.db.Create(&category).Error; err != nil {
+		return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)
+	}
+	return &category, nil
+}
+
 // DeleteCategory deletes a category
 func (s *categoryService) DeleteCategory(userID, categoryID string) error {
 	// Get the category to ensure it exists and belongs to the user

@@ -72,6 +72,7 @@ func setupIsolatedDB(t *testing.T) *gorm.DB {
 		&models.TransactionRule{},
 		&models.TransactionRuleCondition{},
 		&models.TransactionRuleAction{},
+		&models.FixedDepositDetails{},
 	}
 	if err := db.AutoMigrate(allModels...); err != nil {
 		t.Fatalf("failed to migrate test database: %v", err)
@@ -88,8 +89,8 @@ func setupApp(t *testing.T) *testApp {
 
 	// Services
 	userService := services.NewUserService(db)
-	accountService := services.NewAccountService(db)
 	categoryService := services.NewCategoryService(db)
+	accountService := services.NewAccountService(db, categoryService)
 	ruleService := services.NewRuleService(db, categoryService)
 	transactionService := services.NewTransactionService(db, accountService, ruleService)
 	budgetService := services.NewBudgetService(db)
@@ -136,6 +137,9 @@ func setupApp(t *testing.T) *testApp {
 	accounts := protected.Group("/accounts")
 	accounts.POST("/cash", accountHandler.CreateCashAccount)
 	accounts.POST("/investment", accountHandler.CreateInvestmentAccount)
+	accounts.POST("/credit-card", accountHandler.CreateCreditCardAccount)
+	accounts.POST("/fixed-deposit", accountHandler.CreateFixedDepositAccount)
+	accounts.POST("/:id/fixed-deposit/close", accountHandler.CloseFixedDeposit)
 	accounts.GET("", accountHandler.GetUserAccounts)
 	accounts.GET("/:id", accountHandler.GetAccountByID)
 	accounts.PUT("/:id", accountHandler.UpdateAccount)

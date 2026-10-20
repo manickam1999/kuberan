@@ -11,12 +11,13 @@ import (
 
 // Config holds all oracle configuration values.
 type Config struct {
-	KuberanAPIURL    string
-	PipelineAPIKey   string
-	LogLevel         slog.Level
-	RequestTimeout   time.Duration
-	ComputeSnapshots bool
-	TargetCurrency   string // Target currency for all prices (default: "MYR")
+	KuberanAPIURL        string
+	PipelineAPIKey       string
+	LogLevel             slog.Level
+	RequestTimeout       time.Duration
+	ComputeSnapshots     bool
+	ProcessFixedDeposits bool
+	TargetCurrency       string // Target currency for all prices (default: "MYR")
 }
 
 // Load reads configuration from environment variables and validates required fields.
@@ -50,6 +51,12 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("invalid COMPUTE_SNAPSHOTS value: %w", err)
 	}
 	cfg.ComputeSnapshots = snapshots
+
+	processFixedDeposits, err := parseBool(os.Getenv("PROCESS_FIXED_DEPOSITS"), true)
+	if err != nil {
+		return nil, fmt.Errorf("invalid PROCESS_FIXED_DEPOSITS value: %w", err)
+	}
+	cfg.ProcessFixedDeposits = processFixedDeposits
 
 	cfg.TargetCurrency = strings.ToUpper(os.Getenv("TARGET_CURRENCY"))
 	if cfg.TargetCurrency == "" {

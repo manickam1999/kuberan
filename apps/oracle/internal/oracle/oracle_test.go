@@ -17,9 +17,10 @@ import (
 
 // mockClient implements SecurityClient for testing.
 type mockClient struct {
-	getSecuritiesFn    func(ctx context.Context) ([]client.Security, error)
-	recordPricesFn     func(ctx context.Context, prices []client.RecordPriceEntry) (int, error)
-	computeSnapshotsFn func(ctx context.Context) (int, error)
+	getSecuritiesFn        func(ctx context.Context) ([]client.Security, error)
+	recordPricesFn         func(ctx context.Context, prices []client.RecordPriceEntry) (int, error)
+	computeSnapshotsFn     func(ctx context.Context) (int, error)
+	processFixedDepositsFn func(ctx context.Context) (client.ProcessFixedDepositsResult, error)
 }
 
 func (m *mockClient) GetSecurities(ctx context.Context) ([]client.Security, error) {
@@ -32,6 +33,13 @@ func (m *mockClient) RecordPrices(ctx context.Context, prices []client.RecordPri
 
 func (m *mockClient) ComputeSnapshots(ctx context.Context) (int, error) {
 	return m.computeSnapshotsFn(ctx)
+}
+
+func (m *mockClient) ProcessFixedDeposits(ctx context.Context) (client.ProcessFixedDepositsResult, error) {
+	if m.processFixedDepositsFn != nil {
+		return m.processFixedDepositsFn(ctx)
+	}
+	return client.ProcessFixedDepositsResult{}, nil
 }
 
 // mockProvider implements provider.Provider for testing.
@@ -91,12 +99,19 @@ func newTestLogger() *slog.Logger {
 
 func defaultConfig(snapshots bool) *config.Config {
 	return &config.Config{
-		KuberanAPIURL:    "http://localhost:8080",
-		PipelineAPIKey:   "test-key",
-		RequestTimeout:   30 * time.Second,
-		ComputeSnapshots: snapshots,
-		TargetCurrency:   "MYR",
+		KuberanAPIURL:        "http://localhost:8080",
+		PipelineAPIKey:       "test-key",
+		RequestTimeout:       30 * time.Second,
+		ComputeSnapshots:     snapshots,
+		ProcessFixedDeposits: true,
+		TargetCurrency:       "MYR",
 	}
+}
+
+func defaultConfigNoFD(snapshots bool) *config.Config {
+	cfg := defaultConfig(snapshots)
+	cfg.ProcessFixedDeposits = false
+	return cfg
 }
 
 func TestOracle_Run_FullFlow(t *testing.T) {
@@ -604,7 +619,7 @@ func TestOracle_Run_SnapshotsDisabled(t *testing.T) {
 		},
 	}
 
-	orc := NewOracle(mc, []provider.Provider{mp}, nil, defaultConfig(false), newTestLogger())
+	orc := NewOracle(mc, []provider.Provider{mp}, nil, defaultConfigNoFD(false), newTestLogger())
 	result, err := orc.Run(context.Background())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -618,5 +633,146 @@ func TestOracle_Run_SnapshotsDisabled(t *testing.T) {
 	}
 	if result.SnapshotsRecorded != 0 {
 		t.Errorf("SnapshotsRecorded = %d, want 0", result.SnapshotsRecorded)
+	}
+}
+
+func TestOracle_Run_ProcessFixedDeposits(t *testing.T) {
+	now := time.Now().UTC()
+	fdCalled := false
+
+	mc := &mockClient{
+		getSecuritiesFn: func(_ context.Context) ([]client.Security, error) {
+			return []client.Security{
+				{ID: "sec-1", Symbol: "BTC", AssetType: "crypto", Currency: "USD"},
+			}, nil
+		},
+		recordPricesFn: func(_ context.Context, prices []client.RecordPriceEntry) (int, error) {
+			return len(prices), nil
+		},
+		computeSnapshotsFn: func(_ context.Context) (int, error) {
+			return 1, nil
+		},
+		processFixedDepositsFn: func(_ context.Context) (client.ProcessFixedDepositsResult, error) {
+			fdCalled = true
+			return client.ProcessFixedDepositsResult{PayoutsPosted: 3, FDsMatured: 1}, nil
+		},
+	}
+
+	mp := &mockProvider{
+		name:     "CoinGecko",
+		supports: func(at string) bool { return at == "crypto" },
+		fetchPrices: func(_ context.Context, secs []provider.Security) ([]provider.PriceResult, []provider.FetchError) {
+			return []provider.PriceResult{
+				{SecurityID: secs[0].ID, Price: 6700000, RecordedAt: now},
+			}, nil
+		},
+	}
+
+	orc := NewOracle(mc, []provider.Provider{mp}, nil, defaultConfig(true), newTestLogger())
+	result, err := orc.Run(context.Background())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !fdCalled {
+		t.Error("ProcessFixedDeposits was not called")
+	}
+	if result.FDPayoutsPosted != 3 {
+		t.Errorf("FDPayoutsPosted = %d, want 3", result.FDPayoutsPosted)
+	}
+	if result.FDsMatured != 1 {
+		t.Errorf("FDsMatured = %d, want 1", result.FDsMatured)
+	}
+}
+
+func TestOracle_Run_ProcessFixedDeposits_Disabled(t *testing.T) {
+	now := time.Now().UTC()
+	fdCalled := false
+
+	mc := &mockClient{
+		getSecuritiesFn: func(_ context.Context) ([]client.Security, error) {
+			return []client.Security{
+				{ID: "sec-1", Symbol: "BTC", AssetType: "crypto", Currency: "USD"},
+			}, nil
+		},
+		recordPricesFn: func(_ context.Context, prices []client.RecordPriceEntry) (int, error) {
+			return len(prices), nil
+		},
+		computeSnapshotsFn: func(_ context.Context) (int, error) {
+			return 1, nil
+		},
+		processFixedDepositsFn: func(_ context.Context) (client.ProcessFixedDepositsResult, error) {
+			fdCalled = true
+			return client.ProcessFixedDepositsResult{}, nil
+		},
+	}
+
+	mp := &mockProvider{
+		name:     "CoinGecko",
+		supports: func(at string) bool { return at == "crypto" },
+		fetchPrices: func(_ context.Context, secs []provider.Security) ([]provider.PriceResult, []provider.FetchError) {
+			return []provider.PriceResult{
+				{SecurityID: secs[0].ID, Price: 6700000, RecordedAt: now},
+			}, nil
+		},
+	}
+
+	cfg := defaultConfig(true)
+	cfg.ProcessFixedDeposits = false
+	orc := NewOracle(mc, []provider.Provider{mp}, nil, cfg, newTestLogger())
+	result, err := orc.Run(context.Background())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if fdCalled {
+		t.Error("ProcessFixedDeposits should not be called when disabled")
+	}
+	if result.FDPayoutsPosted != 0 {
+		t.Errorf("FDPayoutsPosted = %d, want 0", result.FDPayoutsPosted)
+	}
+}
+
+func TestOracle_Run_ProcessFixedDeposits_FailureNonFatal(t *testing.T) {
+	now := time.Now().UTC()
+
+	mc := &mockClient{
+		getSecuritiesFn: func(_ context.Context) ([]client.Security, error) {
+			return []client.Security{
+				{ID: "sec-1", Symbol: "BTC", AssetType: "crypto", Currency: "USD"},
+			}, nil
+		},
+		recordPricesFn: func(_ context.Context, prices []client.RecordPriceEntry) (int, error) {
+			return len(prices), nil
+		},
+		computeSnapshotsFn: func(_ context.Context) (int, error) {
+			return 1, nil
+		},
+		processFixedDepositsFn: func(_ context.Context) (client.ProcessFixedDepositsResult, error) {
+			return client.ProcessFixedDepositsResult{}, errors.New("fd service unavailable")
+		},
+	}
+
+	mp := &mockProvider{
+		name:     "CoinGecko",
+		supports: func(at string) bool { return at == "crypto" },
+		fetchPrices: func(_ context.Context, secs []provider.Security) ([]provider.PriceResult, []provider.FetchError) {
+			return []provider.PriceResult{
+				{SecurityID: secs[0].ID, Price: 6700000, RecordedAt: now},
+			}, nil
+		},
+	}
+
+	orc := NewOracle(mc, []provider.Provider{mp}, nil, defaultConfig(true), newTestLogger())
+	result, err := orc.Run(context.Background())
+	if err != nil {
+		t.Fatalf("FD failure should be non-fatal, got error: %v", err)
+	}
+
+	if result.PricesRecorded != 1 {
+		t.Errorf("PricesRecorded = %d, want 1", result.PricesRecorded)
+	}
+	if result.FDPayoutsPosted != 0 {
+		t.Errorf("FDPayoutsPosted = %d, want 0 on error", result.FDPayoutsPosted)
 	}
 }

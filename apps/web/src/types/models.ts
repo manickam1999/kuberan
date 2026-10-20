@@ -22,7 +22,33 @@ export interface User {
 }
 
 // Account types
-export type AccountType = "cash" | "investment" | "debt" | "credit_card";
+export type AccountType =
+  | "cash"
+  | "investment"
+  | "debt"
+  | "credit_card"
+  | "fixed_deposit";
+
+// Fixed deposit sub-types
+export type PayoutType = "cumulative" | "periodic";
+export type PayoutFrequency = "monthly" | "quarterly" | "semiannual" | "annual";
+export type Compounding = "monthly" | "quarterly" | "semiannual" | "annual";
+export type FixedDepositStatus = "active" | "matured" | "closed";
+
+/** Detail object nested under `account.fixed_deposit` when type === "fixed_deposit". */
+export interface FixedDepositDetails {
+  account_id: string; // UUIDv7
+  principal: number; // cents
+  start_date: string; // ISO 8601
+  maturity_date: string; // ISO 8601
+  payout_type: PayoutType;
+  payout_frequency?: PayoutFrequency; // required when payout_type === "periodic"
+  compounding: Compounding;
+  linked_account_id?: string; // UUIDv7 - cash account for periodic payouts
+  next_payout_date?: string; // ISO 8601
+  maturity_value: number; // cents
+  status: FixedDepositStatus;
+}
 
 export interface Account extends BaseModel {
   user_id: string; // UUIDv7
@@ -35,9 +61,10 @@ export interface Account extends BaseModel {
   is_pinned: boolean;
   broker?: string; // investment accounts
   account_number?: string; // investment accounts
-  interest_rate?: number; // debt/credit_card accounts (float)
+  interest_rate?: number; // debt/credit_card/fixed_deposit accounts (float, annual %)
   due_date?: string; // debt/credit_card accounts, ISO 8601
   credit_limit?: number; // credit_card accounts (cents)
+  fixed_deposit?: FixedDepositDetails; // fixed_deposit accounts only
 }
 
 // Transaction types

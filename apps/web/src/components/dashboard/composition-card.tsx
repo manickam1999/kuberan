@@ -56,8 +56,9 @@ export function CompositionCard() {
   const cash = sumByType("cash");
   const investmentAccounts = sumByType("investment");
   const investments = portfolio?.total_value ?? investmentAccounts;
+  const fixedDeposits = sumByType("fixed_deposit");
   const debt = sumByType("credit_card") + sumByType("debt");
-  const assets = cash + investments;
+  const assets = cash + investments + fixedDeposits;
   const netWorth = assets - debt;
   const gain = portfolio?.total_gain_loss ?? 0;
 
@@ -82,6 +83,13 @@ export function CompositionCard() {
           }
         : undefined,
     },
+    {
+      label: "Fixed deposits",
+      value: fixedDeposits,
+      color: "var(--info)",
+      ditherColor: "blue",
+      pct: assets > 0 ? (fixedDeposits / assets) * 100 : 0,
+    },
   ];
 
   return (
@@ -90,9 +98,9 @@ export function CompositionCard() {
         <CardTitle className="text-base">Composition</CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
-        {/* 100% stacked allocation bar */}
+        {/* 100% stacked allocation bar — hide zero-value segments */}
         <div className="flex h-2.5 w-full gap-0.5 overflow-hidden rounded-full">
-          {assetSegments.map((s) => (
+          {assetSegments.filter((s) => s.value > 0).map((s) => (
             <div
               key={s.label}
               style={{
@@ -108,7 +116,7 @@ export function CompositionCard() {
         </div>
 
         <div className="space-y-3">
-          {assetSegments.map((s) => (
+          {assetSegments.filter((s) => s.value > 0).map((s) => (
             <div
               key={s.label}
               className="flex items-center justify-between gap-3"

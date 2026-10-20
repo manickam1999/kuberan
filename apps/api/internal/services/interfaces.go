@@ -59,9 +59,60 @@ type AccountUpdateFields struct {
 	IsPinned      *bool
 	Broker        *string    // investment only
 	AccountNumber *string    // investment only
-	InterestRate  *float64   // credit_card only
+	InterestRate  *float64   // credit_card and fixed_deposit
 	DueDate       *time.Time // credit_card only
 	CreditLimit   *int64     // credit_card only
+
+	// Fixed deposit mutable fields (plan 020, B4). Principal and StartDate are
+	// immutable after creation and are intentionally absent here.
+	MaturityDate    *time.Time              // fixed_deposit only
+	PayoutType      *models.PayoutType      // fixed_deposit only
+	PayoutFrequency *models.PayoutFrequency // fixed_deposit only; required when PayoutType=periodic
+	LinkedAccountID *string                 // fixed_deposit only; pointer-to-nil clears the field
+	Compounding     *models.Compounding     // fixed_deposit only
+}
+
+// CreateFixedDepositParams holds the parameters for opening a new fixed deposit account.
+type CreateFixedDepositParams struct {
+	// Name is the display name of the FD account.
+	Name string
+	// Description is an optional description of the account.
+	Description string
+	// Currency is the ISO 4217 currency code (e.g. "USD"). Defaults to "USD" if empty.
+	Currency string
+	// SourceAccountID is the cash account from which the principal is transferred.
+	SourceAccountID string
+	// Principal is the amount to lock into the deposit, in cents. Must be > 0.
+	Principal int64
+	// InterestRate is the annual interest rate as a percentage (e.g. 3.5 for 3.5%).
+	InterestRate float64
+	// StartDate is the date the deposit opens.
+	StartDate time.Time
+	// MaturityDate is the date the deposit matures. Must be after StartDate.
+	MaturityDate time.Time
+	// PayoutType controls whether interest accumulates (cumulative) or is paid out
+	// on a schedule (periodic).
+	PayoutType models.PayoutType
+	// PayoutFrequency is required when PayoutType is periodic.
+	PayoutFrequency *models.PayoutFrequency
+	// Compounding is the compounding frequency used to project the maturity value.
+	Compounding models.Compounding
+	// LinkedAccountID is the optional cash account for periodic payouts. Required
+	// when PayoutType is periodic; optional for cumulative (defaults destination on close).
+	LinkedAccountID *string
+}
+
+// CloseFixedDepositParams holds the parameters for closing (realizing) a fixed deposit.
+type CloseFixedDepositParams struct {
+	// DestinationAccountID is the cash account that receives the principal and interest.
+	// If nil, the FD's LinkedAccountID is used.
+	DestinationAccountID *string
+	// InterestOverride, when non-nil, overrides the computed interest amount (cents).
+	// Allows the user to adjust the realized interest in the UI.
+	InterestOverride *int64
+	// Penalty is an optional penalty amount in cents deducted from the interest payout
+	// (e.g. for premature withdrawal). Defaults to 0. Never results in negative payout.
+	Penalty int64
 }
 
 // AccountServicer defines the contract for account-related business logic.
@@ -69,6 +120,12 @@ type AccountServicer interface {
 	CreateCashAccount(userID, name, description, currency string, initialBalance int64) (*models.Account, error)
 	CreateInvestmentAccount(userID, name, description, currency, broker, accountNumber string) (*models.Account, error)
 	CreateCreditCardAccount(userID, name, description, currency string, creditLimit int64, interestRate float64, dueDate *time.Time) (*models.Account, error)
+	// CreateFixedDepositAccount opens a new fixed deposit, transferring principal from a
+	// source cash account atomically (plan 020, B4).
+	CreateFixedDepositAccount(userID string, params CreateFixedDepositParams) (*models.Account, error)
+	// CloseFixedDeposit realizes a fixed deposit — returning principal and posting net
+	// interest as income — and marks the deposit closed (plan 020, B4).
+	CloseFixedDeposit(userID, accountID string, params CloseFixedDepositParams) (*models.Account, error)
 	GetUserAccounts(userID string, page pagination.PageRequest) (*pagination.PageResponse[models.Account], error)
 	GetAccountByID(userID, accountID string) (*models.Account, error)
 	UpdateAccount(userID, accountID string, updates AccountUpdateFields) (*models.Account, error)
@@ -83,6 +140,10 @@ type CategoryServicer interface {
 	GetCategoryByID(userID, categoryID string) (*models.Category, error)
 	UpdateCategory(userID, categoryID string, name, description, icon, color string, parentID *string) (*models.Category, error)
 	DeleteCategory(userID, categoryID string) error
+	// EnsureInterestIncomeCategory idempotently finds or creates the user's
+	// "Interest Income" income category (plan 020, B5). Used by the fixed-deposit
+	// service to categorize periodic payouts and realization interest.
+	EnsureInterestIncomeCategory(userID string) (*models.Category, error)
 }
 
 // TransactionUpdateFields holds optional fields for updating a transaction.

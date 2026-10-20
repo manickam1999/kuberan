@@ -8,6 +8,8 @@ import type {
   CreateCashAccountRequest,
   CreateInvestmentAccountRequest,
   CreateCreditCardAccountRequest,
+  CreateFixedDepositAccountRequest,
+  CloseFixedDepositRequest,
   UpdateAccountRequest,
 } from "@/types/api";
 
@@ -95,6 +97,39 @@ export function useUpdateAccount(id: string) {
     mutationFn: async (data: UpdateAccountRequest) => {
       const res = await apiClient.put<AccountResponse>(
         `/api/v1/accounts/${id}`,
+        data
+      );
+      return res.account;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: accountKeys.lists() });
+      queryClient.invalidateQueries({ queryKey: accountKeys.detail(id) });
+    },
+  });
+}
+
+export function useCreateFixedDepositAccount() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (data: CreateFixedDepositAccountRequest) => {
+      const res = await apiClient.post<AccountResponse>(
+        "/api/v1/accounts/fixed-deposit",
+        data
+      );
+      return res.account;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: accountKeys.lists() });
+    },
+  });
+}
+
+export function useCloseFixedDeposit(id: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (data: CloseFixedDepositRequest) => {
+      const res = await apiClient.post<AccountResponse>(
+        `/api/v1/accounts/${id}/fixed-deposit/close`,
         data
       );
       return res.account;

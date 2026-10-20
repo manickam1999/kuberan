@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { ApiClientError } from "@/lib/api-client";
-import { useUpdateAccount } from "@/hooks/use-accounts";
+import { useUpdateAccount, useAccounts } from "@/hooks/use-accounts";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -17,7 +17,15 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import type { Account } from "@/types/models";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { formatCurrency, formatDate } from "@/lib/format";
+import type { Account, PayoutType, PayoutFrequency, Compounding } from "@/types/models";
 import type { UpdateAccountRequest } from "@/types/api";
 
 const ACCOUNT_TYPE_LABELS: Record<string, string> = {
@@ -25,6 +33,7 @@ const ACCOUNT_TYPE_LABELS: Record<string, string> = {
   investment: "Investment",
   debt: "Debt",
   credit_card: "Credit Card",
+  fixed_deposit: "Fixed Deposit",
 };
 
 function getErrorMessage(error: unknown): string {
@@ -61,10 +70,21 @@ export function EditAccountDialog({
   const [interestRate, setInterestRate] = useState("");
   const [dueDate, setDueDate] = useState("");
   const [creditLimit, setCreditLimit] = useState(0);
+  // Fixed deposit fields
+  const [fdMaturityDate, setFdMaturityDate] = useState("");
+  const [fdPayoutType, setFdPayoutType] = useState<PayoutType>("cumulative");
+  const [fdPayoutFrequency, setFdPayoutFrequency] = useState<PayoutFrequency>("monthly");
+  const [fdCompounding, setFdCompounding] = useState<Compounding>("annual");
+  const [fdLinkedAccountId, setFdLinkedAccountId] = useState("");
   const [error, setError] = useState("");
 
   const updateAccount = useUpdateAccount(account?.id ?? "");
   const isSubmitting = updateAccount.isPending;
+
+  const { data: accountsData } = useAccounts({ page_size: 100 });
+  const cashAccounts = (accountsData?.data ?? []).filter(
+    (a) => a.type === "cash" && a.is_active
+  );
 
   // Sync form state when account changes
   useEffect(() => {
@@ -78,6 +98,13 @@ export function EditAccountDialog({
       setInterestRate(account.interest_rate?.toString() ?? "");
       setDueDate(account.due_date ? account.due_date.split("T")[0] : "");
       setCreditLimit(account.credit_limit ?? 0);
+      if (account.type === "fixed_deposit" && account.fixed_deposit) {
+        setFdMaturityDate(account.fixed_deposit.maturity_date.split("T")[0]);
+        setFdPayoutType(account.fixed_deposit.payout_type);
+        setFdPayoutFrequency(account.fixed_deposit.payout_frequency ?? "monthly");
+        setFdCompounding(account.fixed_deposit.compounding);
+        setFdLinkedAccountId(account.fixed_deposit.linked_account_id ?? "");
+      }
       setError("");
     }
   }, [account]);
@@ -128,6 +155,29 @@ export function EditAccountDialog({
       if (dueDate !== origDueDate) payload.due_date = dueDate || undefined;
       if (creditLimit !== (account.credit_limit ?? 0))
         payload.credit_limit = creditLimit;
+    }
+
+    // Fixed deposit-specific fields
+    if (account.type === "fixed_deposit" && account.fixed_deposit) {
+      const origMaturity = account.fixed_deposit.maturity_date.split("T")[0];
+      if (fdMaturityDate !== origMaturity)
+        payload.maturity_date = fdMaturityDate || undefined;
+      if (fdPayoutType !== account.fixed_deposit.payout_type)
+        payload.payout_type = fdPayoutType;
+      if (
+        fdPayoutType === "periodic" &&
+        fdPayoutFrequency !== (account.fixed_deposit.payout_frequency ?? "monthly")
+      )
+        payload.payout_frequency = fdPayoutFrequency;
+      if (fdCompounding !== account.fixed_deposit.compounding)
+        payload.compounding = fdCompounding;
+      const origLinked = account.fixed_deposit.linked_account_id ?? "";
+      if (fdLinkedAccountId !== origLinked)
+        payload.linked_account_id = fdLinkedAccountId || undefined;
+      // interest_rate is shared with credit_card — handle it for FD too
+      const parsedRate = interestRate ? parseFloat(interestRate) : 0;
+      if (parsedRate !== (account.interest_rate ?? 0))
+        payload.interest_rate = parsedRate;
     }
 
     if (Object.keys(payload).length === 0) {
@@ -282,6 +332,125 @@ export function EditAccountDialog({
                   onChange={(e) => setDueDate(e.target.value)}
                   disabled={isSubmitting}
                 />
+              </div>
+            </>
+          )}
+
+          {account?.type === "fixed_deposit" && account.fixed_deposit && (
+            <>
+              {/* Read-only FD fields */}
+              <div className="flex flex-col gap-2">
+                <Label>Principal</Label>
+                <div className="rounded-md border bg-muted/40 px-3 py-2 text-sm">
+                  {formatCurrency(account.fixed_deposit.principal, account.currency)}
+                </div>
+              </div>
+              <div className="flex flex-col gap-2">
+                <Label>Start Date</Label>
+                <div className="rounded-md border bg-muted/40 px-3 py-2 text-sm">
+                  {formatDate(account.fixed_deposit.start_date)}
+                </div>
+              </div>
+              {/* Editable FD fields */}
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="edit-fd-interest-rate">Interest Rate (%)</Label>
+                <Input
+                  id="edit-fd-interest-rate"
+                  type="number"
+                  min="0"
+                  max="100"
+                  step="0.01"
+                  placeholder="e.g., 3.5"
+                  value={interestRate}
+                  onChange={(e) => setInterestRate(e.target.value)}
+                  disabled={isSubmitting}
+                />
+              </div>
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="edit-fd-maturity-date">Maturity Date</Label>
+                <Input
+                  id="edit-fd-maturity-date"
+                  type="date"
+                  value={fdMaturityDate}
+                  onChange={(e) => setFdMaturityDate(e.target.value)}
+                  disabled={isSubmitting}
+                />
+              </div>
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="edit-fd-payout-type">Payout Type</Label>
+                <Select
+                  value={fdPayoutType}
+                  onValueChange={(v) => setFdPayoutType(v as PayoutType)}
+                  disabled={isSubmitting}
+                >
+                  <SelectTrigger id="edit-fd-payout-type" className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="cumulative">Cumulative (lump at maturity)</SelectItem>
+                    <SelectItem value="periodic">Periodic (interest payouts)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              {fdPayoutType === "periodic" && (
+                <div className="flex flex-col gap-2">
+                  <Label htmlFor="edit-fd-payout-freq">Payout Frequency</Label>
+                  <Select
+                    value={fdPayoutFrequency}
+                    onValueChange={(v) => setFdPayoutFrequency(v as PayoutFrequency)}
+                    disabled={isSubmitting}
+                  >
+                    <SelectTrigger id="edit-fd-payout-freq" className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="monthly">Monthly</SelectItem>
+                      <SelectItem value="quarterly">Quarterly</SelectItem>
+                      <SelectItem value="semiannual">Semi-annual</SelectItem>
+                      <SelectItem value="annual">Annual</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="edit-fd-compounding">Compounding</Label>
+                <Select
+                  value={fdCompounding}
+                  onValueChange={(v) => setFdCompounding(v as Compounding)}
+                  disabled={isSubmitting}
+                >
+                  <SelectTrigger id="edit-fd-compounding" className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="monthly">Monthly</SelectItem>
+                    <SelectItem value="quarterly">Quarterly</SelectItem>
+                    <SelectItem value="semiannual">Semi-annual</SelectItem>
+                    <SelectItem value="annual">Annual</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="edit-fd-linked-account">Linked Payout Account</Label>
+                <Select
+                  value={fdLinkedAccountId || "none"}
+                  onValueChange={(v) => setFdLinkedAccountId(v === "none" ? "" : v)}
+                  disabled={isSubmitting}
+                >
+                  <SelectTrigger id="edit-fd-linked-account" className="w-full">
+                    <SelectValue placeholder="None" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">None</SelectItem>
+                    {cashAccounts
+                      .filter((a) => a.id !== account.id)
+                      .map((a) => (
+                        <SelectItem key={a.id} value={a.id}>
+                          {a.name} ({a.currency})
+                        </SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
               </div>
             </>
           )}

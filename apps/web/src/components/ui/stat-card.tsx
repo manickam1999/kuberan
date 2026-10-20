@@ -3,7 +3,7 @@ import Link from "next/link";
 import { ArrowUpRight, ArrowDownRight, type LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-type Tone = "default" | "primary" | "positive" | "negative" | "warning" | "investment";
+type Tone = "default" | "primary" | "positive" | "negative" | "warning" | "investment" | "info";
 
 const toneChip: Record<Tone, string> = {
   default: "bg-muted text-muted-foreground",
@@ -12,6 +12,7 @@ const toneChip: Record<Tone, string> = {
   negative: "bg-negative-muted text-negative",
   warning: "bg-warning-muted text-warning",
   investment: "bg-investment-muted text-investment",
+  info: "bg-info-muted text-info",
 };
 
 const toneValue: Record<Tone, string> = {
@@ -21,6 +22,7 @@ const toneValue: Record<Tone, string> = {
   negative: "text-negative",
   warning: "text-warning",
   investment: "text-foreground",
+  info: "text-foreground",
 };
 
 export interface StatCardProps {

@@ -30,6 +30,7 @@ var allModels = []interface{}{
 	&models.TransactionRule{},
 	&models.TransactionRuleCondition{},
 	&models.TransactionRuleAction{},
+	&models.FixedDepositDetails{},
 }
 
 // SetupTestDB creates an in-memory SQLite database with all models migrated.

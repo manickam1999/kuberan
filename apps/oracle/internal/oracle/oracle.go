@@ -19,6 +19,7 @@ type SecurityClient interface {
 	GetSecurities(ctx context.Context) ([]client.Security, error)
 	RecordPrices(ctx context.Context, prices []client.RecordPriceEntry) (int, error)
 	ComputeSnapshots(ctx context.Context) (int, error)
+	ProcessFixedDeposits(ctx context.Context) (client.ProcessFixedDepositsResult, error)
 }
 
 // CurrencyConverter converts prices from one currency to the target currency.
@@ -36,6 +37,8 @@ type RunResult struct {
 	SecuritiesFetched int
 	PricesRecorded    int
 	SnapshotsRecorded int
+	FDPayoutsPosted   int
+	FDsMatured        int
 	Errors            []provider.FetchError
 	Duration          time.Duration
 }
@@ -207,6 +210,17 @@ func (o *Oracle) Run(ctx context.Context) (*RunResult, error) {
 			o.logger.Warn("failed to compute snapshots", "error", err)
 		} else {
 			result.SnapshotsRecorded = snapshots
+		}
+	}
+
+	// 8. Trigger fixed deposit processing if configured.
+	if o.config.ProcessFixedDeposits {
+		fdResult, err := o.client.ProcessFixedDeposits(ctx)
+		if err != nil {
+			o.logger.Warn("failed to process fixed deposits", "error", err)
+		} else {
+			result.FDPayoutsPosted = fdResult.PayoutsPosted
+			result.FDsMatured = fdResult.FDsMatured
 		}
 	}
 

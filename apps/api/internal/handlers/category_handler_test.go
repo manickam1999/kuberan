@@ -67,6 +67,10 @@ func (m *mockCategoryService) DeleteCategory(userID, categoryID string) error {
 	return nil
 }
 
+func (m *mockCategoryService) EnsureInterestIncomeCategory(userID string) (*models.Category, error) {
+	return &models.Category{}, nil
+}
+
 var _ services.CategoryServicer = (*mockCategoryService)(nil)
 
 func setupCategoryRouter(handler *CategoryHandler) *gin.Engine {
