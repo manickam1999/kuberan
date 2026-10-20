@@ -56,13 +56,13 @@ def handle(api_client: KuberanAPIClient):
 
             message = f"📈 *Monthly Summary - {month_name}*\n\n"
             message += f"💰 Income: {format_currency(income, currency)}\n"
-            message += f"💸 Expenses: {format_currency(expenses, currency)}\n"
+            message += f"💸 Spending: {format_currency(expenses, currency)}\n"
             message += f"━━━━━━━━━━━━━━━━\n"
 
             if net >= 0:
-                message += f"✅ Net: {format_currency(net, currency)}"
+                message += f"✅ Net (income − spending): {format_currency(net, currency)}"
             else:
-                message += f"⚠️ Net: {format_currency(net, currency)}"
+                message += f"⚠️ Net (income − spending): {format_currency(net, currency)}"
 
             await update.message.reply_text(message, parse_mode='Markdown')
 

@@ -198,3 +198,16 @@ class UserAPIClient:
         response.raise_for_status()
         result = response.json()
         return result.get('data', [])
+
+    def get_receivables_summary(self):
+        """Get the summary of open receivables (money others owe the user).
+
+        Returns a dict: {total_outstanding, by_kind, by_counterparty}.
+        """
+        response = requests.get(
+            f"{self.base_url}/api/v1/receivables/summary",
+            headers=self.headers,
+            timeout=10
+        )
+        response.raise_for_status()
+        return response.json()
