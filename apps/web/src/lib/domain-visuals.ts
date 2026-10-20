@@ -6,6 +6,7 @@ import {
   CreditCard,
   Landmark,
   TrendingUp,
+  Vault,
   Wallet,
   type LucideIcon,
 } from "lucide-react";
@@ -56,6 +57,13 @@ export const ACCOUNT_VISUALS: Record<AccountType, AccountVisual> = {
     text: "text-negative",
     chip: "bg-negative-muted text-negative",
     accent: "var(--negative)",
+  },
+  fixed_deposit: {
+    label: "Fixed Deposit",
+    icon: Vault,
+    text: "text-info",
+    chip: "bg-info-muted text-info",
+    accent: "var(--info)",
   },
 };
 

@@ -38,6 +38,7 @@ func main() {
 	logger.Info("oracle starting",
 		"target_currency", cfg.TargetCurrency,
 		"compute_snapshots", cfg.ComputeSnapshots,
+		"process_fixed_deposits", cfg.ProcessFixedDeposits,
 	)
 
 	orc := oracle.NewOracle(kuberanClient, providers, forexConverter, cfg, logger)
@@ -52,6 +53,8 @@ func main() {
 		"securities_fetched", result.SecuritiesFetched,
 		"prices_recorded", result.PricesRecorded,
 		"snapshots_recorded", result.SnapshotsRecorded,
+		"fd_payouts_posted", result.FDPayoutsPosted,
+		"fds_matured", result.FDsMatured,
 		"errors", len(result.Errors),
 		"duration", result.Duration.String(),
 	)

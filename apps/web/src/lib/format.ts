@@ -157,6 +157,44 @@ export function localDayEndUTC(dateStr: string): string {
   return new Date(year, month - 1, day, 23, 59, 59, 999).toISOString();
 }
 
+// ---- Fixed deposit enum labels ----
+
+import type { PayoutType, PayoutFrequency, Compounding } from "@/types/models";
+
+const PAYOUT_TYPE_LABELS: Record<PayoutType, string> = {
+  cumulative: "Cumulative",
+  periodic: "Periodic",
+};
+
+const PAYOUT_FREQUENCY_LABELS: Record<PayoutFrequency, string> = {
+  monthly: "Monthly",
+  quarterly: "Quarterly",
+  semiannual: "Semiannual",
+  annual: "Annual",
+};
+
+const COMPOUNDING_LABELS: Record<Compounding, string> = {
+  monthly: "Monthly",
+  quarterly: "Quarterly",
+  semiannual: "Semiannual",
+  annual: "Annual",
+};
+
+/** Human-readable label for a fixed deposit payout type. */
+export function formatPayoutType(value: PayoutType): string {
+  return PAYOUT_TYPE_LABELS[value] ?? value;
+}
+
+/** Human-readable label for a fixed deposit payout frequency. */
+export function formatPayoutFrequency(value: PayoutFrequency): string {
+  return PAYOUT_FREQUENCY_LABELS[value] ?? value;
+}
+
+/** Human-readable label for a fixed deposit compounding frequency. */
+export function formatCompounding(value: Compounding): string {
+  return COMPOUNDING_LABELS[value] ?? value;
+}
+
 /**
  * Compute the first and last local calendar dates (YYYY-MM-DD) of a given month,
  * plus a human-readable label like "October 2026".

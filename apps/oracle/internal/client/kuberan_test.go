@@ -223,6 +223,70 @@ func TestComputeSnapshots_Success(t *testing.T) {
 	}
 }
 
+func TestProcessFixedDeposits_Success(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Errorf("expected POST, got %s", r.Method)
+		}
+		if r.URL.Path != "/api/v1/pipeline/fixed-deposits/process" {
+			t.Errorf("unexpected path: %s", r.URL.Path)
+		}
+		if r.Header.Get("X-API-Key") != "test-key" {
+			t.Errorf("missing or wrong API key header")
+		}
+		if r.Header.Get("Content-Type") != "application/json" {
+			t.Errorf("expected Content-Type application/json, got %s", r.Header.Get("Content-Type"))
+		}
+
+		// Verify body has as_of field.
+		var body struct {
+			AsOf string `json:"as_of"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("decoding body: %v", err)
+		}
+		if body.AsOf == "" {
+			t.Error("expected as_of in body")
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]int{
+			"payouts_posted": 5,
+			"fds_matured":    2,
+		})
+	}))
+	defer server.Close()
+
+	c := NewKuberanClient(server.URL, "test-key", server.Client())
+	result, err := c.ProcessFixedDeposits(context.Background())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.PayoutsPosted != 5 {
+		t.Errorf("expected 5 payouts posted, got %d", result.PayoutsPosted)
+	}
+	if result.FDsMatured != 2 {
+		t.Errorf("expected 2 fds matured, got %d", result.FDsMatured)
+	}
+}
+
+func TestProcessFixedDeposits_Unauthorized(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "unauthorized"})
+	}))
+	defer server.Close()
+
+	c := NewKuberanClient(server.URL, "bad-key", server.Client())
+	_, err := c.ProcessFixedDeposits(context.Background())
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if want := "unexpected status 401"; !contains(err.Error(), want) {
+		t.Errorf("error %q should contain %q", err.Error(), want)
+	}
+}
+
 // contains checks if s contains substr.
 func contains(s, substr string) bool {
 	return len(s) >= len(substr) && searchString(s, substr)

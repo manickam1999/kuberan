@@ -5,8 +5,11 @@ import type {
   BudgetPeriod,
   BudgetProgress,
   Category,
+  Compounding,
   Investment,
   InvestmentTransaction,
+  PayoutFrequency,
+  PayoutType,
   PortfolioSummary,
   Security,
   Transaction,
@@ -127,6 +130,29 @@ export interface CreateCreditCardAccountRequest {
   due_date?: string;
 }
 
+/** POST /api/v1/accounts/fixed-deposit */
+export interface CreateFixedDepositAccountRequest {
+  name: string;
+  description?: string;
+  currency?: string; // ISO 4217
+  source_account_id: string; // UUIDv7 - cash account that funds the deposit
+  principal: number; // cents, > 0
+  interest_rate?: number; // annual %, float
+  start_date: string; // "YYYY-MM-DD"
+  maturity_date: string; // "YYYY-MM-DD", must be > start_date
+  payout_type: PayoutType;
+  payout_frequency?: PayoutFrequency; // required when payout_type === "periodic"
+  compounding: Compounding;
+  linked_account_id?: string; // UUIDv7 - destination for periodic payouts
+}
+
+/** POST /api/v1/accounts/:id/fixed-deposit/close */
+export interface CloseFixedDepositRequest {
+  destination_account_id?: string; // UUIDv7 - receives principal + interest
+  interest_override?: number; // cents - override suggested accrued interest
+  penalty?: number; // cents, default 0 (early-close fee)
+}
+
 export interface UpdateAccountRequest {
   name?: string;
   description?: string;
@@ -137,6 +163,12 @@ export interface UpdateAccountRequest {
   interest_rate?: number;
   due_date?: string;
   credit_limit?: number;
+  // Fixed deposit mutable fields
+  maturity_date?: string; // "YYYY-MM-DD"
+  payout_type?: PayoutType;
+  payout_frequency?: PayoutFrequency;
+  compounding?: Compounding;
+  linked_account_id?: string; // UUIDv7
 }
 
 // Transaction requests

@@ -15,13 +15,14 @@ import {
   ChevronRight,
   Pin,
   Loader2,
+  Vault,
 } from "lucide-react";
 import { useAccount, useUpdateAccount } from "@/hooks/use-accounts";
 import { useAuth } from "@/hooks/use-auth";
 import { useAccountTransactions } from "@/hooks/use-transactions";
 import { useAccountInvestments } from "@/hooks/use-investments";
 import { useCategories } from "@/hooks/use-categories";
-import { formatCurrency, formatDate } from "@/lib/format";
+import { formatCurrency, formatDate, formatPayoutType, formatPayoutFrequency, formatCompounding } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -53,6 +54,7 @@ import { CreateTransactionDialog } from "@/components/transactions/create-transa
 import { EditAccountDialog } from "@/components/accounts/edit-account-dialog";
 import { EditTransactionDialog } from "@/components/transactions/edit-transaction-dialog";
 import { AddInvestmentDialog } from "@/components/investments/add-investment-dialog";
+import { CloseFixedDepositDialog } from "@/components/accounts/close-fixed-deposit-dialog";
 import type { Transaction, TransactionType } from "@/types/models";
 import type { TransactionFilters } from "@/types/api";
 
@@ -61,6 +63,7 @@ const ACCOUNT_TYPE_LABELS: Record<string, string> = {
   investment: "Investment",
   debt: "Debt",
   credit_card: "Credit Card",
+  fixed_deposit: "Fixed deposit",
 };
 
 const TRANSACTION_TYPE_CONFIG: Record<
@@ -202,6 +205,7 @@ export default function AccountDetailPage() {
   const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
   const [addInvestmentOpen, setAddInvestmentOpen] = useState(false);
   const [investmentPage, setInvestmentPage] = useState(1);
+  const [closeFDOpen, setCloseFDOpen] = useState(false);
 
   const { data: account, isLoading: accountLoading } = useAccount(accountId);
   const updateAccount = useUpdateAccount(accountId);
@@ -251,6 +255,8 @@ export default function AccountDetailPage() {
       </div>
     );
   }
+
+  const isFixedDepositAccount = account.type === "fixed_deposit";
 
   return (
     <div className="space-y-6">
@@ -313,7 +319,7 @@ export default function AccountDetailPage() {
             <Pencil className="h-4 w-4" />
             <span className="ml-2">Edit</span>
           </Button>
-          {!isInvestmentAccount && (
+          {!isInvestmentAccount && !isFixedDepositAccount && (
             <Button size="sm" onClick={() => setTxDialogOpen(true)}>
               <Plus className="h-4 w-4" />
               <span className="ml-2">Add Transaction</span>
@@ -325,8 +331,93 @@ export default function AccountDetailPage() {
               <span className="ml-2">Add Investment</span>
             </Button>
           )}
+          {isFixedDepositAccount && account.fixed_deposit && account.fixed_deposit.status !== "closed" && (
+            <Button
+              size="sm"
+              variant={account.fixed_deposit.status === "matured" ? "default" : "outline"}
+              onClick={() => setCloseFDOpen(true)}
+            >
+              <Vault className="h-4 w-4" />
+              <span className="ml-2">
+                {account.fixed_deposit.status === "matured" ? "Record payout" : "Close early"}
+              </span>
+            </Button>
+          )}
         </div>
       </div>
+
+      {/* Fixed Deposit details panel */}
+      {isFixedDepositAccount && account.fixed_deposit && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Fixed Deposit Details</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div>
+                <p className="text-sm text-muted-foreground">Principal</p>
+                <p className="font-medium">{formatCurrency(account.fixed_deposit.principal, account.currency, hideBalances)}</p>
+              </div>
+              <div>
+                <p className="text-sm text-muted-foreground">Interest Rate</p>
+                <p className="font-medium">{account.interest_rate ?? 0}% p.a.</p>
+              </div>
+              <div>
+                <p className="text-sm text-muted-foreground">Start Date</p>
+                <p className="font-medium">{formatDate(account.fixed_deposit.start_date)}</p>
+              </div>
+              <div>
+                <p className="text-sm text-muted-foreground">Maturity Date</p>
+                <p className="font-medium">{formatDate(account.fixed_deposit.maturity_date)}</p>
+              </div>
+              <div>
+                <p className="text-sm text-muted-foreground">Payout Type</p>
+                <p className="font-medium">{formatPayoutType(account.fixed_deposit.payout_type)}</p>
+              </div>
+              {account.fixed_deposit.payout_frequency && (
+                <div>
+                  <p className="text-sm text-muted-foreground">Payout Frequency</p>
+                  <p className="font-medium">{formatPayoutFrequency(account.fixed_deposit.payout_frequency)}</p>
+                </div>
+              )}
+              <div>
+                <p className="text-sm text-muted-foreground">Compounding</p>
+                <p className="font-medium">{formatCompounding(account.fixed_deposit.compounding)}</p>
+              </div>
+              <div>
+                <p className="text-sm text-muted-foreground">Projected Maturity Value</p>
+                <p className="font-medium">{formatCurrency(account.fixed_deposit.maturity_value, account.currency, hideBalances)}</p>
+              </div>
+              <div className="sm:col-span-2">
+                <p className="text-sm text-muted-foreground">Status</p>
+                <Badge
+                  variant={account.fixed_deposit.status === "matured" ? "default" : account.fixed_deposit.status === "closed" ? "secondary" : "outline"}
+                  className={account.fixed_deposit.status === "matured" ? "bg-info text-info-foreground" : ""}
+                >
+                  {account.fixed_deposit.status === "matured" ? "Matured" : account.fixed_deposit.status === "closed" ? "Closed" : "Active"}
+                </Badge>
+              </div>
+            </div>
+            {/* Term progress bar */}
+            {account.fixed_deposit.status !== "closed" && (() => {
+              const start = new Date(account.fixed_deposit!.start_date.split("T")[0]).getTime();
+              const end = new Date(account.fixed_deposit!.maturity_date.split("T")[0]).getTime();
+              const progress = Math.min(Math.max(((Date.now() - start) / (end - start)) * 100, 0), 100);
+              return (
+                <div className="mt-4 space-y-1.5">
+                  <div className="flex justify-between text-xs text-muted-foreground">
+                    <span>Term progress</span>
+                    <span>{progress.toFixed(0)}%</span>
+                  </div>
+                  <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
+                    <div className="h-full rounded-full bg-info" style={{ width: `${Math.max(progress, 2)}%` }} />
+                  </div>
+                </div>
+              );
+            })()}
+          </CardContent>
+        </Card>
+      )}
 
       {/* Transactions section — hidden for investment accounts */}
       {!isInvestmentAccount && (
@@ -653,7 +744,7 @@ export default function AccountDetailPage() {
         </Card>
       )}
 
-      {!isInvestmentAccount && (
+      {!isInvestmentAccount && !isFixedDepositAccount && (
         <>
           <CreateTransactionDialog
             open={txDialogOpen}
@@ -679,6 +770,15 @@ export default function AccountDetailPage() {
           accountId={accountId}
           open={addInvestmentOpen}
           onOpenChange={setAddInvestmentOpen}
+        />
+      )}
+
+      {isFixedDepositAccount && account.fixed_deposit && (
+        <CloseFixedDepositDialog
+          account={account}
+          open={closeFDOpen}
+          onOpenChange={setCloseFDOpen}
+          onClosed={() => router.push("/accounts")}
         />
       )}
     </div>

@@ -84,14 +84,15 @@ func run() error {
 	// Initialize services
 	db := dbManager.DB()
 	userService := services.NewUserService(db)
-	accountService := services.NewAccountService(db)
 	categoryService := services.NewCategoryService(db)
+	accountService := services.NewAccountService(db, categoryService)
 	ruleService := services.NewRuleService(db, categoryService)
 	transactionService := services.NewTransactionService(db, accountService, ruleService)
 	budgetService := services.NewBudgetService(db)
 	investmentService := services.NewInvestmentService(db, accountService)
 	securityService := services.NewSecurityService(db)
 	snapshotService := services.NewPortfolioSnapshotService(db)
+	fdService := services.NewFixedDepositService(db, categoryService)
 	auditService := services.NewAuditService(db)
 	telegramService := services.NewTelegramService(db)
 	trustedClientService := services.NewTrustedClientService(db)
@@ -133,6 +134,7 @@ func run() error {
 	investmentHandler := handlers.NewInvestmentHandler(investmentService, auditService)
 	securityHandler := handlers.NewSecurityHandler(securityService, auditService)
 	snapshotHandler := handlers.NewPortfolioSnapshotHandler(snapshotService, auditService)
+	fdPipelineHandler := handlers.NewFixedDepositPipelineHandler(fdService)
 	telegramHandler := handlers.NewTelegramHandler(telegramService, auditService)
 
 	// Register custom validators before routes
@@ -211,16 +213,21 @@ func run() error {
 	protected.GET("/profile", authHandler.GetProfile)
 	protected.PATCH("/profile", authHandler.UpdateProfileSettings)
 
-	// Account routes
+	// Account routes.
+	// Static creation routes (/cash, /investment, /credit-card, /fixed-deposit) are
+	// registered before the param routes (/:id) so Gin resolves them as static siblings
+	// — the same pattern already in use for cash/investment/credit-card.
 	accounts := protected.Group("/accounts")
 	accounts.POST("/cash", accountHandler.CreateCashAccount)
 	accounts.POST("/investment", accountHandler.CreateInvestmentAccount)
 	accounts.POST("/credit-card", accountHandler.CreateCreditCardAccount)
+	accounts.POST("/fixed-deposit", accountHandler.CreateFixedDepositAccount)
 	accounts.GET("", accountHandler.GetUserAccounts)
 	accounts.GET("/:id", accountHandler.GetAccountByID)
 	accounts.PUT("/:id", accountHandler.UpdateAccount)
 	accounts.GET("/:id/transactions", transactionHandler.GetAccountTransactions)
 	accounts.GET("/:id/investments", investmentHandler.GetAccountInvestments)
+	accounts.POST("/:id/fixed-deposit/close", accountHandler.CloseFixedDeposit)
 
 	// Transaction routes
 	transactions := protected.Group("/transactions")
@@ -311,6 +318,7 @@ func run() error {
 	pipeline.POST("/securities", securityHandler.CreateSecurity)
 	pipeline.POST("/securities/prices", securityHandler.RecordPrices)
 	pipeline.POST("/snapshots", snapshotHandler.ComputeSnapshots)
+	pipeline.POST("/fixed-deposits/process", fdPipelineHandler.ProcessFixedDeposits)
 
 	// Create HTTP server
 	srv := &http.Server{

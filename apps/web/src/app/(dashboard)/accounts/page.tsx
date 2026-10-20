@@ -2,30 +2,33 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { Plus, Pin, ArrowRight, Coins, Scale, Wallet } from "lucide-react";
+import { Plus, Pin, ArrowRight, Coins, Scale, Wallet, Vault } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useAccounts, accountKeys } from "@/hooks/use-accounts";
 import { useAuth } from "@/hooks/use-auth";
 import { apiClient } from "@/lib/api-client";
-import { formatCurrency, formatPercentage } from "@/lib/format";
+import { formatCurrency, formatDate, formatPercentage } from "@/lib/format";
 import { accountVisual } from "@/lib/domain-visuals";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Card } from "@/components/ui/card";
 import { StatCard } from "@/components/ui/stat-card";
 import { CreateAccountDialog } from "@/components/accounts/create-account-dialog";
+import { CloseFixedDepositDialog } from "@/components/accounts/close-fixed-deposit-dialog";
 import type { Account, AccountType } from "@/types/models";
 
-const GROUP_ORDER: AccountType[] = ["cash", "investment", "credit_card", "debt"];
+const GROUP_ORDER: AccountType[] = ["cash", "investment", "fixed_deposit", "credit_card", "debt"];
 
 function AccountTile({
   account,
   onTogglePin,
   hideBalances,
+  onCloseFD,
 }: {
   account: Account;
   onTogglePin: (id: string, pinned: boolean) => void;
   hideBalances: boolean;
+  onCloseFD?: (account: Account) => void;
 }) {
   const v = accountVisual(account.type);
   const Icon = v.icon;
@@ -33,6 +36,16 @@ function AccountTile({
   const utilization =
     account.type === "credit_card" && account.credit_limit
       ? Math.min((account.balance / account.credit_limit) * 100, 100)
+      : null;
+
+  const fdProgress =
+    account.type === "fixed_deposit" && account.fixed_deposit
+      ? (() => {
+          const start = new Date(account.fixed_deposit.start_date.split("T")[0]).getTime();
+          const end = new Date(account.fixed_deposit.maturity_date.split("T")[0]).getTime();
+          const now = Date.now();
+          return Math.min(Math.max(((now - start) / (end - start)) * 100, 0), 100);
+        })()
       : null;
 
   return (
@@ -75,6 +88,43 @@ function AccountTile({
           {formatCurrency(account.balance, account.currency, hideBalances)}
         </p>
 
+        {account.type === "fixed_deposit" && account.fixed_deposit && (
+          <>
+            {account.fixed_deposit.status === "matured" && (
+              <span className="mt-1 inline-flex items-center rounded-full bg-info-muted px-2 py-0.5 text-xs font-medium text-info">
+                Matured
+              </span>
+            )}
+            {fdProgress !== null && (
+              <div className="mt-3 space-y-1.5">
+                <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
+                  <div
+                    className="h-full rounded-full bg-info"
+                    style={{ width: `${Math.max(fdProgress, 2)}%` }}
+                  />
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Matures {formatDate(account.fixed_deposit.maturity_date)} ·{" "}
+                  {formatCurrency(account.fixed_deposit.maturity_value, account.currency, hideBalances)} projected
+                </p>
+              </div>
+            )}
+            {account.fixed_deposit.status !== "closed" && onCloseFD && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  onCloseFD(account);
+                }}
+                className="mt-2 text-xs text-info hover:underline"
+              >
+                {account.fixed_deposit.status === "matured" ? "Record payout →" : "Close early →"}
+              </button>
+            )}
+          </>
+        )}
+
         {utilization !== null && account.credit_limit ? (
           <div className="mt-3 space-y-1.5">
             <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
@@ -94,14 +144,14 @@ function AccountTile({
               {formatCurrency(account.credit_limit, account.currency, hideBalances)} limit
             </p>
           </div>
-        ) : (
+        ) : account.type !== "fixed_deposit" ? (
           <p className="mt-3 flex items-center gap-1 text-xs text-muted-foreground">
             {account.currency}
             <span className="ml-auto inline-flex items-center gap-1 text-muted-foreground/70 opacity-0 transition-opacity group-hover:opacity-100">
               View <ArrowRight className="size-3" />
             </span>
           </p>
-        )}
+        ) : null}
       </Link>
     </Card>
   );
@@ -110,8 +160,8 @@ function AccountTile({
 function AccountsSkeleton() {
   return (
     <div className="space-y-8">
-      <div className="grid gap-4 sm:grid-cols-3">
-        {Array.from({ length: 3 }).map((_, i) => (
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        {Array.from({ length: 4 }).map((_, i) => (
           <Skeleton key={i} className="h-28" />
         ))}
       </div>
@@ -126,6 +176,7 @@ function AccountsSkeleton() {
 
 export default function AccountsPage() {
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [closeDialogAccount, setCloseDialogAccount] = useState<Account | null>(null);
   const { data, isLoading } = useAccounts({ page_size: 100 });
   const { hideBalances } = useAuth();
   const queryClient = useQueryClient();
@@ -141,7 +192,8 @@ export default function AccountsPage() {
     accounts
       .filter((a) => types.includes(a.type))
       .reduce((s, a) => s + a.balance, 0);
-  const assets = sumTypes(["cash", "investment"]);
+  const assets = sumTypes(["cash", "investment", "fixed_deposit"]);
+  const fixedDeposits = sumTypes(["fixed_deposit"]);
   const liabilities = sumTypes(["credit_card", "debt"]);
   const netWorth = assets - liabilities;
 
@@ -184,13 +236,20 @@ export default function AccountsPage() {
         </div>
       ) : (
         <>
-          <div className="grid gap-4 sm:grid-cols-3">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <StatCard
               label="Total assets"
               value={formatCurrency(assets, undefined, hideBalances)}
               icon={Coins}
               tone="primary"
-              sub="Cash + investments"
+              sub="Cash + investments + FDs"
+            />
+            <StatCard
+              label="Fixed deposits"
+              value={formatCurrency(fixedDeposits, undefined, hideBalances)}
+              icon={Vault}
+              tone="info"
+              sub="Locked term deposits"
             />
             <StatCard
               label="Liabilities"
@@ -234,6 +293,7 @@ export default function AccountsPage() {
                         account={account}
                         onTogglePin={handleTogglePin}
                         hideBalances={hideBalances}
+                        onCloseFD={setCloseDialogAccount}
                       />
                     ))}
                   </div>
@@ -245,6 +305,16 @@ export default function AccountsPage() {
       )}
 
       <CreateAccountDialog open={dialogOpen} onOpenChange={setDialogOpen} />
+
+      {closeDialogAccount && (
+        <CloseFixedDepositDialog
+          account={closeDialogAccount}
+          open={!!closeDialogAccount}
+          onOpenChange={(open) => {
+            if (!open) setCloseDialogAccount(null);
+          }}
+        />
+      )}
     </div>
   );
 }

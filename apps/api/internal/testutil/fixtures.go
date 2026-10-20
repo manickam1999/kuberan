@@ -229,6 +229,83 @@ func CreateTestSecurityPrice(t *testing.T, db *gorm.DB, securityID string, price
 	return sp
 }
 
+// FixedDepositParams holds optional overrides for CreateTestFixedDepositAccount.
+// Zero values fall back to sensible defaults.
+type FixedDepositParams struct {
+	Principal       int64
+	InterestRate    float64
+	StartDate       time.Time
+	MaturityDate    time.Time
+	PayoutType      models.PayoutType
+	PayoutFrequency *models.PayoutFrequency
+	LinkedAccountID *string
+	NextPayoutDate  *time.Time
+	Status          models.FixedDepositStatus
+}
+
+// CreateTestFixedDepositAccount creates a fixed_deposit account and its FixedDepositDetails
+// row for testing. The FD account's InterestRate is set from params.InterestRate.
+func CreateTestFixedDepositAccount(t *testing.T, db *gorm.DB, userID string, params FixedDepositParams) (*models.Account, *models.FixedDepositDetails) {
+	t.Helper()
+
+	principal := params.Principal
+	if principal == 0 {
+		principal = 100000 // $1000.00
+	}
+	rate := params.InterestRate
+	if rate == 0 {
+		rate = 5.0
+	}
+	start := params.StartDate
+	if start.IsZero() {
+		start = time.Now().AddDate(-1, 0, 0)
+	}
+	maturity := params.MaturityDate
+	if maturity.IsZero() {
+		maturity = time.Now().AddDate(1, 0, 0)
+	}
+	payoutType := params.PayoutType
+	if payoutType == "" {
+		payoutType = models.PayoutTypePeriodic
+	}
+	status := params.Status
+	if status == "" {
+		status = models.FixedDepositStatusActive
+	}
+
+	acct := &models.Account{
+		UserID:       userID,
+		Name:         fmt.Sprintf("Test FD Account %d", nextID()),
+		Type:         models.AccountTypeFixedDeposit,
+		Balance:      principal,
+		Currency:     "USD",
+		IsActive:     true,
+		InterestRate: rate,
+	}
+	if err := db.Create(acct).Error; err != nil {
+		t.Fatalf("failed to create FD account: %v", err)
+	}
+
+	fd := &models.FixedDepositDetails{
+		AccountID:       acct.ID,
+		Principal:       principal,
+		StartDate:       start,
+		MaturityDate:    maturity,
+		PayoutType:      payoutType,
+		PayoutFrequency: params.PayoutFrequency,
+		Compounding:     models.CompoundingMonthly,
+		LinkedAccountID: params.LinkedAccountID,
+		NextPayoutDate:  params.NextPayoutDate,
+		Status:          status,
+	}
+	if err := db.Create(fd).Error; err != nil {
+		t.Fatalf("failed to create FD details: %v", err)
+	}
+
+	acct.FixedDeposit = fd
+	return acct, fd
+}
+
 // CreateTestTelegramLink creates a linked TelegramLink for testing.
 func CreateTestTelegramLink(t *testing.T, db *gorm.DB, userID string, telegramUserID int64) *models.TelegramLink {
 	t.Helper()

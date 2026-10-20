@@ -17,13 +17,15 @@ import (
 // --- mock account service ---
 
 type mockAccountService struct {
-	createCashAccountFn       func(userID string, name, description, currency string, initialBalance int64) (*models.Account, error)
-	createInvestmentAccountFn func(userID string, name, description, currency, broker, accountNumber string) (*models.Account, error)
-	createCreditCardAccountFn func(userID string, name, description, currency string, creditLimit int64, interestRate float64, dueDate *time.Time) (*models.Account, error)
-	getUserAccountsFn         func(userID string, page pagination.PageRequest) (*pagination.PageResponse[models.Account], error)
-	getAccountByIDFn          func(userID, accountID string) (*models.Account, error)
-	updateAccountFn           func(userID, accountID string, updates services.AccountUpdateFields) (*models.Account, error)
-	updateAccountBalanceFn    func(tx *gorm.DB, account *models.Account, transactionType models.TransactionType, amount int64) error
+	createCashAccountFn         func(userID string, name, description, currency string, initialBalance int64) (*models.Account, error)
+	createInvestmentAccountFn   func(userID string, name, description, currency, broker, accountNumber string) (*models.Account, error)
+	createCreditCardAccountFn   func(userID string, name, description, currency string, creditLimit int64, interestRate float64, dueDate *time.Time) (*models.Account, error)
+	createFixedDepositAccountFn func(userID string, params services.CreateFixedDepositParams) (*models.Account, error)
+	closeFixedDepositFn         func(userID, accountID string, params services.CloseFixedDepositParams) (*models.Account, error)
+	getUserAccountsFn           func(userID string, page pagination.PageRequest) (*pagination.PageResponse[models.Account], error)
+	getAccountByIDFn            func(userID, accountID string) (*models.Account, error)
+	updateAccountFn             func(userID, accountID string, updates services.AccountUpdateFields) (*models.Account, error)
+	updateAccountBalanceFn      func(tx *gorm.DB, account *models.Account, transactionType models.TransactionType, amount int64) error
 }
 
 func (m *mockAccountService) CreateCashAccount(userID, name, description, currency string, initialBalance int64) (*models.Account, error) {
@@ -74,6 +76,20 @@ func (m *mockAccountService) UpdateAccountBalance(tx *gorm.DB, account *models.A
 		return m.updateAccountBalanceFn(tx, account, transactionType, amount)
 	}
 	return nil
+}
+
+func (m *mockAccountService) CreateFixedDepositAccount(userID string, params services.CreateFixedDepositParams) (*models.Account, error) {
+	if m.createFixedDepositAccountFn != nil {
+		return m.createFixedDepositAccountFn(userID, params)
+	}
+	return &models.Account{}, nil
+}
+
+func (m *mockAccountService) CloseFixedDeposit(userID, accountID string, params services.CloseFixedDepositParams) (*models.Account, error) {
+	if m.closeFixedDepositFn != nil {
+		return m.closeFixedDepositFn(userID, accountID, params)
+	}
+	return &models.Account{}, nil
 }
 
 // verify interface compliance

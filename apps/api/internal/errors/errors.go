@@ -125,3 +125,26 @@ var (
 	ErrPayloadTooLarge      = &AppError{Code: "PAYLOAD_TOO_LARGE", Message: "File exceeds the maximum allowed size", StatusCode: http.StatusRequestEntityTooLarge}
 	ErrAttachmentLimit      = &AppError{Code: "ATTACHMENT_LIMIT", Message: "Maximum number of attachments reached for this transaction", StatusCode: http.StatusConflict}
 )
+
+// Fixed deposit errors (plan 020).
+var (
+	// ErrInvalidAccountType is returned when an account is the wrong type for the
+	// requested operation (e.g. source account is not a cash account).
+	ErrInvalidAccountType = &AppError{Code: "INVALID_ACCOUNT_TYPE", Message: "Account type is not valid for this operation", StatusCode: http.StatusBadRequest}
+
+	// ErrSourceAccountInsufficient is returned when the source cash account does not
+	// have enough balance to fund the fixed deposit principal.
+	ErrSourceAccountInsufficient = &AppError{Code: "SOURCE_ACCOUNT_INSUFFICIENT", Message: "Source account has insufficient balance to fund this deposit", StatusCode: http.StatusBadRequest}
+
+	// ErrFixedDepositAlreadyClosed is returned when an operation is attempted on a
+	// fixed deposit that has already been closed.
+	ErrFixedDepositAlreadyClosed = &AppError{Code: "FIXED_DEPOSIT_ALREADY_CLOSED", Message: "Fixed deposit has already been closed", StatusCode: http.StatusConflict}
+
+	// ErrInvalidFixedDepositState is returned when the fixed deposit is not in a
+	// valid state for the requested operation.
+	ErrInvalidFixedDepositState = &AppError{Code: "INVALID_FIXED_DEPOSIT_STATE", Message: "Fixed deposit is not in a valid state for this operation", StatusCode: http.StatusBadRequest}
+
+	// ErrFixedDepositDetailsNotFound is returned when a fixed_deposit account is
+	// missing its associated fixed_deposit_details record.
+	ErrFixedDepositDetailsNotFound = &AppError{Code: "FIXED_DEPOSIT_DETAILS_NOT_FOUND", Message: "Fixed deposit details not found", StatusCode: http.StatusNotFound}
+)

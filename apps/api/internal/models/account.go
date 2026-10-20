@@ -10,10 +10,11 @@ import (
 type AccountType string
 
 const (
-	AccountTypeCash       AccountType = "cash"
-	AccountTypeInvestment AccountType = "investment"
-	AccountTypeDebt       AccountType = "debt"
-	AccountTypeCreditCard AccountType = "credit_card"
+	AccountTypeCash         AccountType = "cash"
+	AccountTypeInvestment   AccountType = "investment"
+	AccountTypeDebt         AccountType = "debt"
+	AccountTypeCreditCard   AccountType = "credit_card"
+	AccountTypeFixedDeposit AccountType = "fixed_deposit"
 )
 
 // Account represents a financial account in the system
@@ -37,6 +38,9 @@ type Account struct {
 	InterestRate float64   `json:"interest_rate,omitempty"`
 	DueDate      time.Time `json:"due_date,omitempty"`
 	CreditLimit  int64     `gorm:"type:bigint;default:0" json:"credit_limit,omitempty"`
+
+	// For fixed deposit accounts (also reuses InterestRate for the annual rate)
+	FixedDeposit *FixedDepositDetails `gorm:"foreignKey:AccountID" json:"fixed_deposit,omitempty"`
 
 	// Relationships
 	Transactions []Transaction `gorm:"foreignKey:AccountID" json:"transactions,omitempty"`
@@ -62,6 +66,12 @@ func (a *Account) BeforeCreate(tx *gorm.DB) error {
 	case AccountTypeCreditCard:
 		a.Broker = ""
 		a.AccountNumber = ""
+	case AccountTypeFixedDeposit:
+		// FD keeps interest_rate; clear fields that belong to other types.
+		a.Broker = ""
+		a.AccountNumber = ""
+		a.CreditLimit = 0
+		a.DueDate = time.Time{}
 	}
 	return nil
 }

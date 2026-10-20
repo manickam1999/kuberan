@@ -109,6 +109,53 @@ func (c *KuberanClient) RecordPrices(ctx context.Context, prices []RecordPriceEn
 	return result.PricesRecorded, nil
 }
 
+// ProcessFixedDepositsResult holds the counts returned by the pipeline FD processing endpoint.
+type ProcessFixedDepositsResult struct {
+	PayoutsPosted int
+	FDsMatured    int
+}
+
+// ProcessFixedDeposits triggers scheduled fixed-deposit processing and returns the result counts.
+func (c *KuberanClient) ProcessFixedDeposits(ctx context.Context) (ProcessFixedDepositsResult, error) {
+	body := struct {
+		AsOf string `json:"as_of"`
+	}{AsOf: time.Now().UTC().Format(time.RFC3339)}
+
+	jsonBody, err := json.Marshal(body)
+	if err != nil {
+		return ProcessFixedDepositsResult{}, fmt.Errorf("marshaling fixed deposits request: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/api/v1/pipeline/fixed-deposits/process", strings.NewReader(string(jsonBody)))
+	if err != nil {
+		return ProcessFixedDepositsResult{}, fmt.Errorf("creating request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-API-Key", c.apiKey)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return ProcessFixedDepositsResult{}, fmt.Errorf("processing fixed deposits: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		return ProcessFixedDepositsResult{}, fmt.Errorf("processing fixed deposits: unexpected status %d", resp.StatusCode)
+	}
+
+	var result struct {
+		PayoutsPosted int `json:"payouts_posted"`
+		FDsMatured    int `json:"fds_matured"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return ProcessFixedDepositsResult{}, fmt.Errorf("decoding fixed deposits response: %w", err)
+	}
+	return ProcessFixedDepositsResult{
+		PayoutsPosted: result.PayoutsPosted,
+		FDsMatured:    result.FDsMatured,
+	}, nil
+}
+
 // ComputeSnapshots triggers portfolio snapshot computation and returns the count recorded.
 func (c *KuberanClient) ComputeSnapshots(ctx context.Context) (int, error) {
 	body := struct {
