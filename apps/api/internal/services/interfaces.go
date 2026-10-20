@@ -240,9 +240,12 @@ type TopExpenseItem struct {
 
 // TopExpenses represents the top-N expense transactions for a date range.
 type TopExpenses struct {
-	Items    []TopExpenseItem `json:"items"`
-	FromDate time.Time        `json:"from_date"`
-	ToDate   time.Time        `json:"to_date"`
+	Items []TopExpenseItem `json:"items"`
+	// TotalCount is the number of expenses with a non-zero effective amount in
+	// the range (ignoring the limit), for count and average statistics.
+	TotalCount int64     `json:"total_count"`
+	FromDate   time.Time `json:"from_date"`
+	ToDate     time.Time `json:"to_date"`
 }
 
 // TransactionServicer defines the contract for transaction-related business logic.

@@ -2137,3 +2137,44 @@ func TestGetTopExpenses(t *testing.T) {
 		}
 	})
 }
+
+func TestGetSpendingByCategory_ExcludesZeroEffectiveTotals(t *testing.T) {
+	now := time.Now()
+	from := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)
+	to := from.AddDate(0, 1, -1).Add(23*time.Hour + 59*time.Minute + 59*time.Second)
+
+	db := testutil.SetupTestDB(t)
+	defer testutil.TeardownTestDB(t, db)
+	txSvc := NewTransactionService(db, NewAccountService(db), nil)
+	user := testutil.CreateTestUser(t, db)
+	account := testutil.CreateTestCashAccountWithBalance(t, db, user.ID, 100000)
+	travel := testutil.CreateTestCategory(t, db, user.ID, models.CategoryTypeExpense)
+	food := testutil.CreateTestCategory(t, db, user.ID, models.CategoryTypeExpense)
+
+	// Travel is entirely a work claim: the user's own share is 0.
+	tx, err := txSvc.CreateTransaction(user.ID, account.ID, &travel.ID, models.TransactionTypeExpense, 5000, "", from.Add(time.Hour))
+	testutil.AssertNoError(t, err)
+	zero := int64(0)
+	testutil.AssertNoError(t, db.Model(&models.Transaction{}).Where("id = ?", tx.ID).Update("personal_amount", zero).Error)
+
+	_, err = txSvc.CreateTransaction(user.ID, account.ID, &food.ID, models.TransactionTypeExpense, 1500, "", from.Add(2*time.Hour))
+	testutil.AssertNoError(t, err)
+
+	result, err := txSvc.GetSpendingByCategory(user.ID, from, to)
+	testutil.AssertNoError(t, err)
+	if len(result.Items) != 1 {
+		t.Fatalf("expected 1 item (zero-total category excluded), got %d", len(result.Items))
+	}
+	if result.Items[0].CategoryID == nil || *result.Items[0].CategoryID != food.ID {
+		t.Errorf("expected remaining item to be the food category")
+	}
+	if result.TotalSpent != 1500 {
+		t.Errorf("expected total_spent 1500, got %d", result.TotalSpent)
+	}
+
+	top, err := txSvc.GetTopExpenses(user.ID, from, to, 10, nil)
+	testutil.AssertNoError(t, err)
+	if top.TotalCount != 1 || len(top.Items) != 1 {
+		t.Errorf("expected total_count 1 and 1 item, got %d and %d", top.TotalCount, len(top.Items))
+	}
+}

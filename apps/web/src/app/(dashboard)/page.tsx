@@ -1,5 +1,6 @@
 "use client";
 
+import { YourShareText } from "@/components/receivables/shared-expense-indicators";
 import { useState } from "react";
 import Link from "next/link";
 import { Wallet, Plus, ArrowRight } from "lucide-react";
@@ -148,9 +149,12 @@ function TransactionRow({
           </p>
         </div>
       </div>
-      <span className={`money shrink-0 text-sm font-semibold ${v.text}`}>
-        {v.sign}
-        {formatCurrency(transaction.amount)}
+      <span className="shrink-0 text-right">
+        <span className={`money block text-sm font-semibold ${v.text}`}>
+          {v.sign}
+          {formatCurrency(transaction.amount)}
+        </span>
+        <YourShareText transaction={transaction} />
       </span>
     </button>
   );

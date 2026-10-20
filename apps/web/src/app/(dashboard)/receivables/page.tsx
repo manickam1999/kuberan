@@ -70,6 +70,8 @@ export default function ReceivablesPage() {
       total: number;
       count: number;
       openCount: number;
+      settledCount: number;
+      writtenOffCount: number;
     }
   >();
   for (const r of listData?.data ?? []) {
@@ -80,11 +82,15 @@ export default function ReceivablesPage() {
       total: 0,
       count: 0,
       openCount: 0,
+      settledCount: 0,
+      writtenOffCount: 0,
     };
     g.outstanding += r.outstanding;
     g.total += r.amount;
     g.count += 1;
     if (r.outstanding > 0) g.openCount += 1;
+    else if (r.status === "written_off") g.writtenOffCount += 1;
+    else g.settledCount += 1;
     groups.set(r.counterparty_key, g);
   }
   const counterpartyRows = Array.from(groups.values()).sort(
@@ -225,12 +231,18 @@ export default function ReceivablesPage() {
                         <div className="truncate text-sm font-medium">
                           {g.outstanding > 0
                             ? `${g.name} owes ${money(g.outstanding)}`
-                            : g.name}
+                            : `${g.name} · nothing owed`}
                         </div>
                         <div className="text-xs text-muted-foreground">
                           {g.outstanding > 0
                             ? `across ${plural(openCount, "item")}`
-                            : plural(g.count, "item")}
+                            : `${plural(g.count, "item")} · ${
+                                g.writtenOffCount === 0
+                                  ? "settled"
+                                  : g.settledCount === 0
+                                    ? "written off"
+                                    : "settled or written off"
+                              }`}
                         </div>
                       </div>
                     </button>

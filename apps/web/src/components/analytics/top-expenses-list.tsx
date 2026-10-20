@@ -168,7 +168,17 @@ export function TopExpensesList({
                     {formatDate(item.date)}
                   </TableCell>
                   <TableCell className="money text-right font-semibold text-negative">
-                    {formatCurrency(item.amount, undefined, hideBalances)}
+                    {formatCurrency(
+                      item.personal_amount ?? item.amount,
+                      undefined,
+                      hideBalances
+                    )}
+                    {item.personal_amount !== null &&
+                      item.personal_amount !== item.amount && (
+                        <div className="text-xs font-normal text-muted-foreground">
+                          of {formatCurrency(item.amount, undefined, hideBalances)}
+                        </div>
+                      )}
                   </TableCell>
                 </TableRow>
               ))}

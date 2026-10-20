@@ -121,6 +121,13 @@ export function EditTransactionDialog({
     freshTransaction && freshTransaction.id === transaction?.id
       ? freshTransaction
       : transaction;
+  // The detail query may not preload `account`; fall back to the list row,
+  // then to the accounts query, and never leave the value empty.
+  const accountName =
+    transaction?.account?.name ||
+    live?.account?.name ||
+    accounts.find((a) => a.id === transaction?.account_id)?.name ||
+    "Unknown account";
   const receivables = live?.receivables ?? [];
   const isShared = transaction?.type === "expense" && receivables.length > 0;
   const receivablesTotal = receivables.reduce((s, r) => s + r.amount, 0);
@@ -489,12 +496,16 @@ export function EditTransactionDialog({
               <div className="flex items-center justify-between">
                 <Label>Amount</Label>
                 <span className="money text-sm font-medium">
-                  {formatCurrency(transaction.amount, transaction.account?.currency)}
+                  {formatCurrency(
+                    transaction.amount,
+                    transaction.account?.currency ||
+                      accounts.find((a) => a.id === transaction.account_id)?.currency
+                  )}
                 </span>
               </div>
               <div className="flex items-center justify-between">
                 <Label>Received into</Label>
-                <span className="text-sm">{transaction.account?.name ?? "—"}</span>
+                <span className="text-sm">{accountName}</span>
               </div>
               <div className="flex items-center justify-between gap-4">
                 <Label>Description</Label>

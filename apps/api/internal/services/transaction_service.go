@@ -898,7 +898,8 @@ func getCategoryColorFromID(id string) string {
 // totalsByCategory groups transactions of a single type by category and enriches
 // each row with category metadata (name, color, icon). Rows are sorted by amount
 // descending. Uncategorized transactions collapse into a single "Uncategorized"
-// row. The returned slice is never nil.
+// row. Categories whose effective total is 0 (e.g. fully reimbursable expenses)
+// are omitted. The returned slice is never nil.
 func (s *transactionService) totalsByCategory(userID string, txnType models.TransactionType, from, to time.Time) ([]SpendingByCategoryItem, int64, error) {
 	type categorySpend struct {
 		CategoryID *string
@@ -911,6 +912,7 @@ func (s *transactionService) totalsByCategory(userID string, txnType models.Tran
 		Where("user_id = ? AND type = ? AND deleted_at IS NULL AND date BETWEEN ? AND ?",
 			userID, txnType, from, to).
 		Group("category_id").
+		Having("COALESCE(SUM(" + effectiveAmountSQL + "), 0) > 0").
 		Scan(&results).Error
 	if err != nil {
 		return nil, 0, apperrors.Wrap(apperrors.ErrInternalServer, err)
@@ -1017,6 +1019,11 @@ func (s *transactionService) GetTopExpenses(userID string, from, to time.Time, l
 		query = query.Where("category_id = ?", *categoryID)
 	}
 
+	var totalCount int64
+	if cntErr := query.Session(&gorm.Session{}).Count(&totalCount).Error; cntErr != nil {
+		return nil, apperrors.Wrap(apperrors.ErrInternalServer, cntErr)
+	}
+
 	var rows []expenseRow
 	err := query.
 		Order(effectiveAmountSQL + " DESC").
@@ -1065,8 +1072,9 @@ func (s *transactionService) GetTopExpenses(userID string, from, to time.Time, l
 	}
 
 	return &TopExpenses{
-		Items:    items,
-		FromDate: from,
-		ToDate:   to,
+		Items:      items,
+		TotalCount: totalCount,
+		FromDate:   from,
+		ToDate:     to,
 	}, nil
 }

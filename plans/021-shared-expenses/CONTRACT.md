@@ -200,7 +200,7 @@ Resets `written_off_amount` to 0. If there is nothing to undo, return 400 `INVAL
 - Report endpoints (spending-by-category, cashflow, monthly-summary, daily-spending,
   daily-summary, top-expenses, budget progress) use the effective amount. `top-expenses` items
   gain `personal_amount: number | null`; their `amount` stays the full amount, they are ordered
-  by the effective amount, and rows with an effective amount of 0 are excluded.
+  by the effective amount, and rows with an effective amount of 0 are excluded. The response also gains `total_count` (the number of expenses in range with a non-zero effective amount, ignoring `limit`; added after E2E). `spending-by-category` / cashflow omit categories whose effective total is 0.
 
 ## Errors (`{ "error": { "code", "message" } }`)
 

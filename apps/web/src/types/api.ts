@@ -396,6 +396,8 @@ export interface TopExpenseItem {
 
 export interface TopExpenses {
   items: TopExpenseItem[];
+  /** Expenses with a non-zero effective amount in the range (ignores limit). */
+  total_count: number;
   from_date: string; // ISO 8601
   to_date: string; // ISO 8601
 }
