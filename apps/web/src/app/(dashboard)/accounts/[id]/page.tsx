@@ -16,6 +16,7 @@ import {
   Pin,
   Loader2,
   Vault,
+  HandCoins,
 } from "lucide-react";
 import { useAccount, useUpdateAccount } from "@/hooks/use-accounts";
 import { useAuth } from "@/hooks/use-auth";
@@ -81,6 +82,12 @@ const TRANSACTION_TYPE_CONFIG: Record<
     label: "Investment",
     color: "text-purple-600",
     icon: TrendingUp,
+  },
+  // Repayment of a receivable: a credit to the account, never income.
+  reimbursement: {
+    label: "Repayment",
+    color: "text-emerald-600",
+    icon: HandCoins,
   },
 };
 
@@ -484,6 +491,7 @@ export default function AccountDetailPage() {
                     <SelectItem value="income">Income</SelectItem>
                     <SelectItem value="expense">Expense</SelectItem>
                     <SelectItem value="transfer">Transfer</SelectItem>
+                    <SelectItem value="reimbursement">Repayment</SelectItem>
                     <SelectItem value="investment">Investment</SelectItem>
                   </SelectContent>
                 </Select>

@@ -134,7 +134,12 @@ export default function TransactionsPage() {
     return Array.from(map.entries()).map(([date, txs]) => {
       const net = txs.reduce(
         (s, t) =>
-          t.type === "income" ? s + t.amount : t.type === "expense" ? s - t.amount : s,
+          // Repayments are inflows to the account (cash flow, not income or spending).
+          t.type === "income" || t.type === "reimbursement"
+            ? s + t.amount
+            : t.type === "expense"
+              ? s - t.amount
+              : s,
         0
       );
       return { date, txs, net };
@@ -211,6 +216,7 @@ export default function TransactionsPage() {
             <SelectItem value="income">Income</SelectItem>
             <SelectItem value="expense">Expense</SelectItem>
             <SelectItem value="transfer">Transfer</SelectItem>
+            <SelectItem value="reimbursement">Repayment</SelectItem>
             <SelectItem value="investment">Investment</SelectItem>
           </SelectContent>
         </Select>
@@ -307,6 +313,7 @@ export default function TransactionsPage() {
                 </span>
                 {group.net !== 0 && (
                   <span
+                    title="Net cash flow for the day (includes repayments)"
                     className={`money text-xs font-medium ${
                       group.net > 0 ? "text-positive" : "text-negative"
                     }`}

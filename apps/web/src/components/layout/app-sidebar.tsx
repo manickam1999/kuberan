@@ -12,6 +12,7 @@ import {
   Database,
   TrendingUp,
   BarChart3,
+  HandCoins,
   Settings,
   type LucideIcon,
 } from "lucide-react";
@@ -54,6 +55,7 @@ const navSections: NavSection[] = [
       { title: "Categories", href: "/categories", icon: Tag },
       { title: "Rules", href: "/rules", icon: Filter },
       { title: "Budgets", href: "/budgets", icon: PiggyBank },
+      { title: "Owed to me", href: "/receivables", icon: HandCoins },
       { title: "Analytics", href: "/analytics", icon: BarChart3 },
     ],
   },

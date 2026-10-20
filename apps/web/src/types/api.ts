@@ -20,6 +20,11 @@ import type {
   User,
   TransactionType,
   CategoryType,
+  Receivable,
+  ReceivableKind,
+  ReceivableSettlement,
+  ReceivableStatus,
+  ShareMode,
 } from "./models";
 
 // Pagination
@@ -382,7 +387,9 @@ export interface TopExpenseItem {
   category_name: string;
   category_color: string;
   category_icon: string;
-  amount: number; // cents
+  amount: number; // cents (full amount)
+  /** Cents the user bears; null when the expense is not shared. */
+  personal_amount: number | null;
   description: string;
   date: string; // ISO 8601
 }
@@ -501,4 +508,104 @@ export interface OAuthConsentDetails {
 export interface OAuthConsentAcceptRequest {
   consent_challenge: string;
   remember_client: boolean;
+}
+
+// ---- Receivables / shared expenses (plan 021) ----
+
+export interface ShareCounterpartyInput {
+  name: string;
+  /** cents; omit for `equal` and `full` modes */
+  amount?: number;
+}
+
+// POST /transactions/shared
+export interface CreateSharedExpenseRequest {
+  account_id: string; // UUIDv7
+  category_id?: string | null; // UUIDv7
+  amount: number; // cents, > 0
+  description?: string; // max 500
+  date?: string; // ISO 8601
+  kind: ReceivableKind;
+  mode: ShareMode;
+  counterparties: ShareCounterpartyInput[]; // 1..20
+}
+
+export interface ReceivableShareInput {
+  id?: string; // UUIDv7; omit to insert
+  name: string;
+  amount: number; // cents
+}
+
+// PUT /transactions/:id/receivables (diffed, not replaced)
+export interface UpdateReceivablesRequest {
+  kind?: ReceivableKind;
+  receivables: ReceivableShareInput[];
+}
+
+export interface ReceivableFilters extends PaginationParams {
+  /** A status, or "open" (pending | partially_paid). */
+  status?: ReceivableStatus | "open";
+  kind?: ReceivableKind;
+  /** A counterparty key (lowercased name). */
+  counterparty?: string;
+}
+
+export interface ReceivableResponse {
+  receivable: Receivable;
+}
+
+export interface SettleReceivableResponse {
+  receivable: Receivable;
+  settlement: ReceivableSettlement;
+}
+
+export interface SettleReceivableRequest {
+  account_id: string; // UUIDv7
+  amount: number; // cents
+  date?: string; // ISO 8601
+  description?: string;
+  write_off_remainder?: boolean;
+}
+
+export interface WriteOffReceivableRequest {
+  /** cents; defaults to the whole outstanding balance */
+  amount?: number;
+}
+
+export interface ReceivableKindSummary {
+  kind: ReceivableKind;
+  outstanding: number; // cents
+  open_count: number;
+}
+
+export interface ReceivableCounterpartySummary {
+  counterparty_key: string;
+  counterparty_name: string;
+  outstanding: number; // cents
+  open_count: number;
+  oldest_date: string; // ISO 8601
+}
+
+export interface ReceivablesSummary {
+  total_outstanding: number; // cents
+  by_kind: ReceivableKindSummary[];
+  by_counterparty: ReceivableCounterpartySummary[];
+}
+
+export interface Counterparty {
+  key: string;
+  name: string;
+}
+
+export interface CounterpartiesResponse {
+  counterparties: Counterparty[];
+}
+
+export interface RenameCounterpartyRequest {
+  from_key: string;
+  to_name: string;
+}
+
+export interface RenameCounterpartyResponse {
+  updated: number;
 }

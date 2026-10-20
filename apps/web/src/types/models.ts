@@ -68,7 +68,14 @@ export interface Account extends BaseModel {
 }
 
 // Transaction types
-export type TransactionType = "income" | "expense" | "transfer" | "investment";
+// "reimbursement" is server-created only (a receivable repayment); it is never
+// accepted by POST/PUT /transactions. It is a credit to an account, not income.
+export type TransactionType =
+  | "income"
+  | "expense"
+  | "transfer"
+  | "investment"
+  | "reimbursement";
 
 export interface Transaction extends BaseModel {
   user_id: string; // UUIDv7
@@ -84,6 +91,65 @@ export interface Transaction extends BaseModel {
   category?: Category | null; // preloaded relation
   attachments?: Attachment[]; // preloaded on detail queries only (not list)
   attachments_count?: number; // populated on list queries for the paperclip indicator
+  /** Cents the user actually bears; null when the expense is not shared. */
+  personal_amount: number | null;
+  /** Preloaded on list and detail for expenses (no settlements on list). */
+  receivables?: Receivable[];
+}
+
+// Shared expenses / receivables (plan 021)
+export type ReceivableKind =
+  | "split"
+  | "on_behalf"
+  | "claim"
+  | "loan"
+  | "deposit"
+  | "refund";
+export type ReceivableStatus =
+  | "pending"
+  | "partially_paid"
+  | "settled"
+  | "written_off";
+export type ShareMode = "equal" | "custom" | "full";
+
+/** Trimmed expense view embedded in receivables. */
+export interface ReceivableExpense {
+  id: string; // UUIDv7
+  description: string;
+  date: string; // ISO 8601
+  amount: number; // cents
+  personal_amount: number | null; // cents
+  account_id: string; // UUIDv7
+  category_id: string | null; // UUIDv7
+}
+
+/** One repayment against a receivable (backed by a reimbursement transaction). */
+export interface ReceivableSettlement {
+  id: string; // UUIDv7
+  receivable_id: string; // UUIDv7
+  transaction_id: string; // UUIDv7, the reimbursement transaction
+  account_id: string; // UUIDv7, account credited
+  amount: number; // cents
+  date: string; // ISO 8601
+  created_at: string; // ISO 8601
+}
+
+export interface Receivable {
+  id: string; // UUIDv7
+  user_id: string; // UUIDv7
+  transaction_id: string; // UUIDv7, the expense
+  counterparty_name: string;
+  counterparty_key: string;
+  kind: ReceivableKind;
+  amount: number; // cents, > 0
+  paid_amount: number; // cents
+  written_off_amount: number; // cents
+  outstanding: number; // cents, derived by the server
+  status: ReceivableStatus;
+  created_at: string; // ISO 8601
+  updated_at: string; // ISO 8601
+  settlements?: ReceivableSettlement[]; // GET /receivables/:id only
+  transaction?: ReceivableExpense; // on /receivables list + detail
 }
 
 // Receipt attachment (image/PDF) on a transaction. Bytes live in the blob
