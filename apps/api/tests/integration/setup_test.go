@@ -17,6 +17,7 @@ import (
 	"gorm.io/gorm"
 
 	"kuberan/internal/handlers"
+	"kuberan/internal/hydra"
 	"kuberan/internal/logger"
 	"kuberan/internal/middleware"
 	"kuberan/internal/models"
@@ -73,6 +74,8 @@ func setupIsolatedDB(t *testing.T) *gorm.DB {
 		&models.TransactionRuleCondition{},
 		&models.TransactionRuleAction{},
 		&models.FixedDepositDetails{},
+		&models.Receivable{},
+		&models.ReceivableSettlement{},
 	}
 	if err := db.AutoMigrate(allModels...); err != nil {
 		t.Fatalf("failed to migrate test database: %v", err)
@@ -93,6 +96,7 @@ func setupApp(t *testing.T) *testApp {
 	accountService := services.NewAccountService(db, categoryService)
 	ruleService := services.NewRuleService(db, categoryService)
 	transactionService := services.NewTransactionService(db, accountService, ruleService)
+	receivableService := services.NewReceivableService(db, accountService, ruleService)
 	budgetService := services.NewBudgetService(db)
 	investmentService := services.NewInvestmentService(db, accountService)
 	securityService := services.NewSecurityService(db)
@@ -103,107 +107,41 @@ func setupApp(t *testing.T) *testApp {
 		MaxAttachmentsPerTx: 10,
 	})
 
-	// Handlers
-	authHandler := handlers.NewAuthHandler(userService, auditService)
-	accountHandler := handlers.NewAccountHandler(accountService, auditService)
-	categoryHandler := handlers.NewCategoryHandler(categoryService, auditService)
-	transactionHandler := handlers.NewTransactionHandler(transactionService, auditService)
-	budgetHandler := handlers.NewBudgetHandler(budgetService, auditService)
-	ruleHandler := handlers.NewRuleHandler(ruleService, transactionService, auditService)
-	investmentHandler := handlers.NewInvestmentHandler(investmentService, auditService)
-	securityHandler := handlers.NewSecurityHandler(securityService, auditService)
-	snapshotHandler := handlers.NewPortfolioSnapshotHandler(snapshotService, auditService)
-	attachmentHandler := handlers.NewAttachmentHandler(attachmentService, auditService, testMaxUploadBytes)
+	fdService := services.NewFixedDepositService(db, categoryService)
+	telegramService := services.NewTelegramService(db)
+	trustedClientService := services.NewTrustedClientService(db)
 
-	// Router
+	// Hydra is never contacted by these tests; the OAuth routes are registered
+	// (as in production) but backed by an unreachable admin URL.
+	hydraAdmin := hydra.NewAdminClient("http://127.0.0.1:1")
+	oauthScopes := "read:accounts"
+
+	// Router: same global middleware ordering as cmd/api/main.go minus logging/CORS,
+	// then the production route table.
 	router := gin.New()
 	router.Use(gin.Recovery())
 	router.Use(middleware.ErrorHandler())
 
-	v1 := router.Group("/api/v1")
-
-	// Public auth routes
-	auth := v1.Group("/auth")
-	auth.POST("/register", authHandler.Register)
-	auth.POST("/login", authHandler.Login)
-	auth.POST("/refresh", authHandler.RefreshToken)
-
-	// Protected routes
-	protected := v1.Group("/")
-	protected.Use(middleware.AuthMiddleware())
-
-	protected.GET("/profile", authHandler.GetProfile)
-
-	accounts := protected.Group("/accounts")
-	accounts.POST("/cash", accountHandler.CreateCashAccount)
-	accounts.POST("/investment", accountHandler.CreateInvestmentAccount)
-	accounts.POST("/credit-card", accountHandler.CreateCreditCardAccount)
-	accounts.POST("/fixed-deposit", accountHandler.CreateFixedDepositAccount)
-	accounts.POST("/:id/fixed-deposit/close", accountHandler.CloseFixedDeposit)
-	accounts.GET("", accountHandler.GetUserAccounts)
-	accounts.GET("/:id", accountHandler.GetAccountByID)
-	accounts.PUT("/:id", accountHandler.UpdateAccount)
-	accounts.GET("/:id/transactions", transactionHandler.GetAccountTransactions)
-	accounts.GET("/:id/investments", investmentHandler.GetAccountInvestments)
-
-	transactions := protected.Group("/transactions")
-	transactions.POST("", transactionHandler.CreateTransaction)
-	transactions.POST("/transfer", transactionHandler.CreateTransfer)
-	transactions.GET("/:id", transactionHandler.GetTransactionByID)
-	transactions.DELETE("/:id", transactionHandler.DeleteTransaction)
-	transactions.POST("/:id/attachments", attachmentHandler.Upload)
-	transactions.GET("/:id/attachments", attachmentHandler.List)
-	transactions.GET("/:id/attachments/:aid", attachmentHandler.Download)
-	transactions.DELETE("/:id/attachments/:aid", attachmentHandler.Delete)
-
-	categories := protected.Group("/categories")
-	categories.POST("", categoryHandler.CreateCategory)
-	categories.GET("", categoryHandler.GetUserCategories)
-	categories.DELETE("/:id", categoryHandler.DeleteCategory)
-
-	rules := protected.Group("/rules")
-	rules.POST("", ruleHandler.CreateRule)
-	rules.GET("", ruleHandler.GetRules)
-	rules.POST("/reorder", ruleHandler.ReorderRules)
-	rules.POST("/preview", ruleHandler.PreviewRule)
-	rules.GET("/:id", ruleHandler.GetRule)
-	rules.PUT("/:id", ruleHandler.UpdateRule)
-	rules.DELETE("/:id", ruleHandler.DeleteRule)
-	rules.POST("/:id/apply", ruleHandler.ApplyRule)
-
-	budgets := protected.Group("/budgets")
-	budgets.POST("", budgetHandler.CreateBudget)
-	budgets.GET("", budgetHandler.GetBudgets)
-	budgets.GET("/progress", budgetHandler.GetBudgetsProgress)
-	budgets.GET("/:id", budgetHandler.GetBudget)
-	budgets.PUT("/:id", budgetHandler.UpdateBudget)
-	budgets.DELETE("/:id", budgetHandler.DeleteBudget)
-	budgets.GET("/:id/progress", budgetHandler.GetBudgetProgress)
-
-	investments := protected.Group("/investments")
-	investments.POST("", investmentHandler.AddInvestment)
-	investments.GET("", investmentHandler.GetAllInvestments)
-	investments.GET("/portfolio", investmentHandler.GetPortfolio)
-	investments.GET("/snapshots", snapshotHandler.GetSnapshots)
-	investments.GET("/:id", investmentHandler.GetInvestment)
-	investments.POST("/:id/buy", investmentHandler.RecordBuy)
-	investments.POST("/:id/sell", investmentHandler.RecordSell)
-	investments.POST("/:id/dividend", investmentHandler.RecordDividend)
-	investments.POST("/:id/split", investmentHandler.RecordSplit)
-	investments.GET("/:id/transactions", investmentHandler.GetInvestmentTransactions)
-
-	securities := protected.Group("/securities")
-	securities.GET("", securityHandler.ListSecurities)
-	securities.GET("/:id", securityHandler.GetSecurity)
-	securities.GET("/:id/prices", securityHandler.GetPriceHistory)
-
-	// Pipeline routes (use test API key for integration tests)
-	pipeline := v1.Group("/pipeline")
-	pipeline.Use(middleware.PipelineAuthMiddleware("test-pipeline-key"))
-	pipeline.GET("/securities", securityHandler.ListAllSecurities)
-	pipeline.POST("/securities", securityHandler.CreateSecurity)
-	pipeline.POST("/securities/prices", securityHandler.RecordPrices)
-	pipeline.POST("/snapshots", snapshotHandler.ComputeSnapshots)
+	handlers.RegisterRoutes(router, handlers.Routes{
+		Auth:                 handlers.NewAuthHandler(userService, auditService),
+		OAuth:                handlers.NewOAuthHandler(hydraAdmin, userService, trustedClientService, auditService, oauthScopes, "http://localhost:8081"),
+		Registration:         handlers.NewRegistrationHandler(hydraAdmin, auditService, oauthScopes),
+		Account:              handlers.NewAccountHandler(accountService, auditService),
+		Category:             handlers.NewCategoryHandler(categoryService, auditService),
+		Transaction:          handlers.NewTransactionHandler(transactionService, auditService),
+		Receivable:           handlers.NewReceivableHandler(receivableService, auditService),
+		Attachment:           handlers.NewAttachmentHandler(attachmentService, auditService, testMaxUploadBytes),
+		Budget:               handlers.NewBudgetHandler(budgetService, auditService),
+		Rule:                 handlers.NewRuleHandler(ruleService, transactionService, auditService),
+		Investment:           handlers.NewInvestmentHandler(investmentService, auditService),
+		Security:             handlers.NewSecurityHandler(securityService, auditService),
+		Snapshot:             handlers.NewPortfolioSnapshotHandler(snapshotService, auditService),
+		FixedDepositPipeline: handlers.NewFixedDepositPipelineHandler(fdService),
+		Telegram:             handlers.NewTelegramHandler(telegramService, auditService),
+	}, handlers.RouteSecrets{
+		BotInternalSecret: "test-bot-secret",
+		PipelineAPIKey:    "test-pipeline-key",
+	})
 
 	return &testApp{DB: db, Router: router}
 }

@@ -9,11 +9,13 @@ import {
   Tag,
   Filter,
   PiggyBank,
+  HandCoins,
   Database,
   TrendingUp,
   Plus,
   Receipt,
   FolderPlus,
+  Handshake,
 } from "lucide-react";
 import {
   CommandDialog,
@@ -26,6 +28,7 @@ import {
 } from "@/components/ui/command";
 import { CreateAccountDialog } from "@/components/accounts/create-account-dialog";
 import { CreateTransactionDialog } from "@/components/transactions/create-transaction-dialog";
+import { LendMoneyDialog } from "@/components/receivables/lend-money-dialog";
 import { CreateCategoryDialog } from "@/components/categories/create-category-dialog";
 
 export interface CommandPaletteRef {
@@ -46,6 +49,7 @@ export const CommandPalette = forwardRef<CommandPaletteRef>(
   const [createAccountOpen, setCreateAccountOpen] = useState(false);
   const [createTransactionOpen, setCreateTransactionOpen] = useState(false);
   const [createCategoryOpen, setCreateCategoryOpen] = useState(false);
+  const [lendOpen, setLendOpen] = useState(false);
 
   // Keyboard listener for Cmd+K / Ctrl+K
   useEffect(() => {
@@ -104,6 +108,10 @@ export const CommandPalette = forwardRef<CommandPaletteRef>(
               <PiggyBank />
               <span>Budgets</span>
             </CommandItem>
+            <CommandItem onSelect={() => navigateTo("/receivables")}>
+              <HandCoins />
+              <span>Owed to me</span>
+            </CommandItem>
             <CommandItem onSelect={() => navigateTo("/securities")}>
               <Database />
               <span>Securities</span>
@@ -125,6 +133,10 @@ export const CommandPalette = forwardRef<CommandPaletteRef>(
               <Receipt />
               <span>Add Transaction</span>
             </CommandItem>
+            <CommandItem onSelect={() => openDialog(setLendOpen)}>
+              <Handshake />
+              <span>Lend money</span>
+            </CommandItem>
             <CommandItem onSelect={() => openDialog(setCreateCategoryOpen)}>
               <FolderPlus />
               <span>Create Category</span>
@@ -142,6 +154,7 @@ export const CommandPalette = forwardRef<CommandPaletteRef>(
         open={createTransactionOpen}
         onOpenChange={setCreateTransactionOpen}
       />
+      <LendMoneyDialog open={lendOpen} onOpenChange={setLendOpen} />
       <CreateCategoryDialog
         open={createCategoryOpen}
         onOpenChange={setCreateCategoryOpen}

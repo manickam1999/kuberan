@@ -3,7 +3,7 @@ from telegram import Update
 from telegram.ext import Application, CommandHandler
 from config import config
 from api_client import KuberanAPIClient
-from handlers import balance, budgets, accounts, categories, summary, help_cmd
+from handlers import balance, budgets, accounts, categories, summary, help_cmd, owed
 from handlers.start import create_start_conversation
 from handlers.transaction_flow import create_transaction_conversation
 
@@ -41,6 +41,7 @@ def main():
     app.add_handler(CommandHandler("accounts", accounts.handle(api_client)))
     app.add_handler(CommandHandler("categories", categories.handle(api_client)))
     app.add_handler(CommandHandler("summary", summary.handle(api_client)))
+    app.add_handler(CommandHandler("owed", owed.handle(api_client)))
 
     # Start bot (run_polling manages its own event loop)
     logger.info("Starting Kuberan Telegram bot...")

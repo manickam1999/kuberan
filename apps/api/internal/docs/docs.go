@@ -184,6 +184,63 @@ const docTemplate = `{
                 }
             }
         },
+        "/accounts/fixed-deposit": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Open a new fixed deposit account. Principal is transferred from the specified source cash account atomically.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "accounts"
+                ],
+                "summary": "Create a fixed deposit account",
+                "parameters": [
+                    {
+                        "description": "Fixed deposit account details",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.CreateFixedDepositAccountRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Account created",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.AccountResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid input",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Server error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/accounts/investment": {
             "post": {
                 "security": [
@@ -357,6 +414,82 @@ const docTemplate = `{
                     },
                     "404": {
                         "description": "Account not found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Server error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/accounts/{id}/fixed-deposit/close": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Realize a fixed deposit: return principal to the destination account and post interest income. Handles both maturity realization and premature withdrawal.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "accounts"
+                ],
+                "summary": "Close a fixed deposit",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Fixed deposit account ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Close parameters",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.CloseFixedDepositRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Closed account",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.AccountResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid input or deposit state",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Account not found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Deposit already closed",
                         "schema": {
                             "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
@@ -2521,6 +2654,59 @@ const docTemplate = `{
                 }
             }
         },
+        "/pipeline/fixed-deposits/process": {
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Run scheduled fixed-deposit processing: post periodic interest payouts and flip matured FDs (pipeline endpoint)",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "pipeline"
+                ],
+                "summary": "Process fixed deposits",
+                "parameters": [
+                    {
+                        "description": "Processing parameters (as_of defaults to now)",
+                        "name": "request",
+                        "in": "body",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ProcessFixedDepositsRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "payouts_posted and fds_matured counts",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "integer"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid input",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Invalid API key",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/pipeline/securities": {
             "get": {
                 "security": [
@@ -2833,6 +3019,549 @@ const docTemplate = `{
                     },
                     "401": {
                         "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Server error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/receivables": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Get a paginated list of receivables ordered by expense date (newest first), each with its expense",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "receivables"
+                ],
+                "summary": "List receivables",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "pending, partially_paid, settled, written_off, or open (pending + partially_paid)",
+                        "name": "status",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "split, on_behalf, claim, loan, deposit or refund",
+                        "name": "kind",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Counterparty key",
+                        "name": "counterparty",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Page number (default 1)",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Items per page (default 20, max 100)",
+                        "name": "page_size",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Paginated receivables",
+                        "schema": {
+                            "$ref": "#/definitions/kuberan_internal_pagination.PageResponse-kuberan_internal_models_Receivable"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid input",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Server error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/receivables/counterparties": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Distinct counterparties whose key contains q, most recently used first (max 20)",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "receivables"
+                ],
+                "summary": "Counterparty autocomplete",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Search text",
+                        "name": "q",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Counterparty suggestions",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.CounterpartiesResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Server error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/receivables/counterparties/rename": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Rename every receivable of a counterparty key. Renaming onto an existing key merges them.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "receivables"
+                ],
+                "summary": "Rename a counterparty",
+                "parameters": [
+                    {
+                        "description": "Rename details",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.RenameCounterpartyRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Number of receivables updated",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.RenameCounterpartyResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid input",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Server error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/receivables/settlements/{id}": {
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Reverse a repayment: the reimbursement is removed, the account is debited and the receivable's outstanding balance is restored",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "receivables"
+                ],
+                "summary": "Delete a repayment",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Settlement ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Updated receivable",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ReceivableEnvelope"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid settlement ID",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Settlement not found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Server error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/receivables/summary": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Totals of open receivables per kind and per counterparty, plus a grand total",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "receivables"
+                ],
+                "summary": "Receivables summary",
+                "responses": {
+                    "200": {
+                        "description": "Receivables summary",
+                        "schema": {
+                            "$ref": "#/definitions/kuberan_internal_services.ReceivableSummary"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Server error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/receivables/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Get a receivable with its settlements and expense",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "receivables"
+                ],
+                "summary": "Get a receivable",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Receivable ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Receivable details",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ReceivableEnvelope"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid receivable ID",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Receivable not found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Server error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/receivables/{id}/settle": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Credit an account with a repayment (a reimbursement, not income) and reduce the receivable's outstanding balance",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "receivables"
+                ],
+                "summary": "Record a repayment",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Receivable ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Repayment details",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.SettleReceivableRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Repayment recorded",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.SettleResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid input, amount over outstanding or invalid account type",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Receivable or account not found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Server error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/receivables/{id}/write-off": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Forgive an amount (default: the whole outstanding balance). The forgiven amount becomes the user's spending on the original expense.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "receivables"
+                ],
+                "summary": "Write off a receivable",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Receivable ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Write-off details",
+                        "name": "request",
+                        "in": "body",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.WriteOffRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Updated receivable",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ReceivableEnvelope"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid input or amount over outstanding",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Receivable not found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Server error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Reset the receivable's written-off amount to zero",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "receivables"
+                ],
+                "summary": "Undo a write-off",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Receivable ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Updated receivable",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ReceivableEnvelope"
+                        }
+                    },
+                    "400": {
+                        "description": "Nothing to undo",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Receivable not found",
                         "schema": {
                             "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
@@ -3982,6 +4711,69 @@ const docTemplate = `{
                 }
             }
         },
+        "/transactions/shared": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Create an expense whose full amount leaves the account, with receivables for each counterparty. Only the user's own share counts as spending.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "receivables"
+                ],
+                "summary": "Create a shared expense",
+                "parameters": [
+                    {
+                        "description": "Shared expense details",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.CreateSharedExpenseRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Expense created with receivables",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.TransactionEnvelope"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid input, kind or shares",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Account or category not found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Server error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/transactions/spending-by-category": {
             "get": {
                 "security": [
@@ -4630,6 +5422,82 @@ const docTemplate = `{
                     }
                 }
             }
+        },
+        "/transactions/{id}/receivables": {
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Diff the receivables of an expense: entries with an id are updated, entries without are inserted, omitted unpaid receivables are removed (a paid one returns 409).",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "receivables"
+                ],
+                "summary": "Update an expense's receivables",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Transaction ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Receivables diff",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.UpdateReceivablesRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Updated expense",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.TransactionEnvelope"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid input, kind or shares",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Transaction or receivable not found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Receivable has payments",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Server error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
         }
     },
     "definitions": {
@@ -4793,6 +5661,21 @@ const docTemplate = `{
                 }
             }
         },
+        "internal_handlers.CloseFixedDepositRequest": {
+            "type": "object",
+            "properties": {
+                "destination_account_id": {
+                    "type": "string"
+                },
+                "interest_override": {
+                    "type": "integer"
+                },
+                "penalty": {
+                    "type": "integer",
+                    "minimum": 0
+                }
+            }
+        },
         "internal_handlers.CompleteLinkRequest": {
             "type": "object",
             "required": [
@@ -4825,6 +5708,17 @@ const docTemplate = `{
             "properties": {
                 "recorded_at": {
                     "type": "string"
+                }
+            }
+        },
+        "internal_handlers.CounterpartiesResponse": {
+            "type": "object",
+            "properties": {
+                "counterparties": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/kuberan_internal_services.CounterpartySuggestion"
+                    }
                 }
             }
         },
@@ -4940,6 +5834,77 @@ const docTemplate = `{
                 }
             }
         },
+        "internal_handlers.CreateFixedDepositAccountRequest": {
+            "type": "object",
+            "required": [
+                "compounding",
+                "maturity_date",
+                "name",
+                "payout_type",
+                "principal",
+                "source_account_id",
+                "start_date"
+            ],
+            "properties": {
+                "compounding": {
+                    "type": "string",
+                    "enum": [
+                        "monthly",
+                        "quarterly",
+                        "semiannual",
+                        "annual"
+                    ]
+                },
+                "currency": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string",
+                    "maxLength": 500
+                },
+                "interest_rate": {
+                    "type": "number",
+                    "maximum": 100,
+                    "minimum": 0
+                },
+                "linked_account_id": {
+                    "type": "string"
+                },
+                "maturity_date": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string",
+                    "maxLength": 100,
+                    "minLength": 1
+                },
+                "payout_frequency": {
+                    "type": "string",
+                    "enum": [
+                        "monthly",
+                        "quarterly",
+                        "semiannual",
+                        "annual"
+                    ]
+                },
+                "payout_type": {
+                    "type": "string",
+                    "enum": [
+                        "cumulative",
+                        "periodic"
+                    ]
+                },
+                "principal": {
+                    "type": "integer"
+                },
+                "source_account_id": {
+                    "type": "string"
+                },
+                "start_date": {
+                    "type": "string"
+                }
+            }
+        },
         "internal_handlers.CreateInvestmentAccountRequest": {
             "type": "object",
             "required": [
@@ -5047,6 +6012,54 @@ const docTemplate = `{
                 },
                 "yield_to_maturity": {
                     "type": "number"
+                }
+            }
+        },
+        "internal_handlers.CreateSharedExpenseRequest": {
+            "type": "object",
+            "required": [
+                "account_id",
+                "amount",
+                "kind",
+                "mode"
+            ],
+            "properties": {
+                "account_id": {
+                    "type": "string"
+                },
+                "amount": {
+                    "type": "integer"
+                },
+                "category_id": {
+                    "type": "string"
+                },
+                "counterparties": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_handlers.SharedCounterpartyRequest"
+                    }
+                },
+                "date": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string",
+                    "maxLength": 500
+                },
+                "kind": {
+                    "$ref": "#/definitions/kuberan_internal_models.ReceivableKind"
+                },
+                "mode": {
+                    "enum": [
+                        "equal",
+                        "custom",
+                        "full"
+                    ],
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/kuberan_internal_services.ShareMode"
+                        }
+                    ]
                 }
             }
         },
@@ -5159,6 +6172,36 @@ const docTemplate = `{
                     "items": {
                         "$ref": "#/definitions/internal_handlers.RuleConditionDTO"
                     }
+                }
+            }
+        },
+        "internal_handlers.ProcessFixedDepositsRequest": {
+            "type": "object",
+            "properties": {
+                "as_of": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_handlers.ReceivableEnvelope": {
+            "type": "object",
+            "properties": {
+                "receivable": {
+                    "$ref": "#/definitions/kuberan_internal_models.Receivable"
+                }
+            }
+        },
+        "internal_handlers.ReceivableShareRequest": {
+            "type": "object",
+            "properties": {
+                "amount": {
+                    "type": "integer"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
                 }
             }
         },
@@ -5335,6 +6378,29 @@ const docTemplate = `{
                 }
             }
         },
+        "internal_handlers.RenameCounterpartyRequest": {
+            "type": "object",
+            "required": [
+                "from_key",
+                "to_name"
+            ],
+            "properties": {
+                "from_key": {
+                    "type": "string"
+                },
+                "to_name": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_handlers.RenameCounterpartyResponse": {
+            "type": "object",
+            "properties": {
+                "updated": {
+                    "type": "integer"
+                }
+            }
+        },
         "internal_handlers.ReorderRulesRequest": {
             "type": "object",
             "required": [
@@ -5390,6 +6456,61 @@ const docTemplate = `{
                 }
             }
         },
+        "internal_handlers.SettleReceivableRequest": {
+            "type": "object",
+            "required": [
+                "account_id",
+                "amount"
+            ],
+            "properties": {
+                "account_id": {
+                    "type": "string"
+                },
+                "amount": {
+                    "type": "integer"
+                },
+                "date": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string",
+                    "maxLength": 500
+                },
+                "write_off_remainder": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "internal_handlers.SettleResponse": {
+            "type": "object",
+            "properties": {
+                "receivable": {
+                    "$ref": "#/definitions/kuberan_internal_models.Receivable"
+                },
+                "settlement": {
+                    "$ref": "#/definitions/kuberan_internal_models.ReceivableSettlement"
+                }
+            }
+        },
+        "internal_handlers.SharedCounterpartyRequest": {
+            "type": "object",
+            "properties": {
+                "amount": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_handlers.TransactionEnvelope": {
+            "type": "object",
+            "properties": {
+                "transaction": {
+                    "$ref": "#/definitions/kuberan_internal_models.Transaction"
+                }
+            }
+        },
         "internal_handlers.TransactionResponse": {
             "type": "object",
             "properties": {
@@ -5430,6 +6551,15 @@ const docTemplate = `{
                     "type": "string",
                     "maxLength": 100
                 },
+                "compounding": {
+                    "type": "string",
+                    "enum": [
+                        "monthly",
+                        "quarterly",
+                        "semiannual",
+                        "annual"
+                    ]
+                },
                 "credit_limit": {
                     "type": "integer",
                     "minimum": 0
@@ -5452,10 +6582,33 @@ const docTemplate = `{
                 "is_pinned": {
                     "type": "boolean"
                 },
+                "linked_account_id": {
+                    "type": "string"
+                },
+                "maturity_date": {
+                    "description": "Fixed deposit mutable fields (plan 020). Principal and start_date are\nimmutable after creation and are intentionally absent here.",
+                    "type": "string"
+                },
                 "name": {
                     "type": "string",
                     "maxLength": 100,
                     "minLength": 1
+                },
+                "payout_frequency": {
+                    "type": "string",
+                    "enum": [
+                        "monthly",
+                        "quarterly",
+                        "semiannual",
+                        "annual"
+                    ]
+                },
+                "payout_type": {
+                    "type": "string",
+                    "enum": [
+                        "cumulative",
+                        "periodic"
+                    ]
                 }
             }
         },
@@ -5507,6 +6660,23 @@ const docTemplate = `{
             "properties": {
                 "hide_balances": {
                     "type": "boolean"
+                }
+            }
+        },
+        "internal_handlers.UpdateReceivablesRequest": {
+            "type": "object",
+            "required": [
+                "receivables"
+            ],
+            "properties": {
+                "kind": {
+                    "$ref": "#/definitions/kuberan_internal_models.ReceivableKind"
+                },
+                "receivables": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_handlers.ReceivableShareRequest"
+                    }
                 }
             }
         },
@@ -5578,6 +6748,14 @@ const docTemplate = `{
                 },
                 "last_name": {
                     "type": "string"
+                }
+            }
+        },
+        "internal_handlers.WriteOffRequest": {
+            "type": "object",
+            "properties": {
+                "amount": {
+                    "type": "integer"
                 }
             }
         },
@@ -5731,6 +6909,14 @@ const docTemplate = `{
                 "due_date": {
                     "type": "string"
                 },
+                "fixed_deposit": {
+                    "description": "For fixed deposit accounts (also reuses InterestRate for the annual rate)",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/kuberan_internal_models.FixedDepositDetails"
+                        }
+                    ]
+                },
                 "id": {
                     "type": "string"
                 },
@@ -5777,13 +6963,15 @@ const docTemplate = `{
                 "cash",
                 "investment",
                 "debt",
-                "credit_card"
+                "credit_card",
+                "fixed_deposit"
             ],
             "x-enum-varnames": [
                 "AccountTypeCash",
                 "AccountTypeInvestment",
                 "AccountTypeDebt",
-                "AccountTypeCreditCard"
+                "AccountTypeCreditCard",
+                "AccountTypeFixedDeposit"
             ]
         },
         "kuberan_internal_models.AssetType": {
@@ -5934,6 +7122,111 @@ const docTemplate = `{
                 "CategoryTypeExpense"
             ]
         },
+        "kuberan_internal_models.Compounding": {
+            "type": "string",
+            "enum": [
+                "monthly",
+                "quarterly",
+                "semiannual",
+                "annual"
+            ],
+            "x-enum-varnames": [
+                "CompoundingMonthly",
+                "CompoundingQuarterly",
+                "CompoundingSemiannual",
+                "CompoundingAnnual"
+            ]
+        },
+        "kuberan_internal_models.FixedDepositDetails": {
+            "type": "object",
+            "properties": {
+                "account_id": {
+                    "description": "AccountID is the FK to the parent fixed_deposit account (unique 1:1).",
+                    "type": "string"
+                },
+                "compounding": {
+                    "description": "Compounding is the compounding frequency used for the projected maturity value calculation.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/kuberan_internal_models.Compounding"
+                        }
+                    ]
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "deleted_at": {
+                    "$ref": "#/definitions/gorm.DeletedAt"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "linked_account_id": {
+                    "description": "LinkedAccountID is the cash account that receives periodic interest payouts\nand is the default realization destination at close. Null for cumulative-only FDs.",
+                    "type": "string"
+                },
+                "maturity_date": {
+                    "description": "MaturityDate is the date the deposit matures (must be after StartDate).",
+                    "type": "string"
+                },
+                "maturity_value": {
+                    "description": "MaturityValue is the projected value at maturity in cents, computed and stored at create\n(and recomputed on any edit to rate/maturity/compounding). Treated as a projection;\nthe realized amount at close is authoritative.",
+                    "type": "integer"
+                },
+                "next_payout_date": {
+                    "description": "NextPayoutDate is the next date on which a periodic payout should be posted.\nThe scheduled job advances this atomically after each posting (idempotency gate).",
+                    "type": "string"
+                },
+                "payout_frequency": {
+                    "description": "PayoutFrequency is required when PayoutType == PayoutTypePeriodic.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/kuberan_internal_models.PayoutFrequency"
+                        }
+                    ]
+                },
+                "payout_type": {
+                    "description": "PayoutType determines whether interest is paid periodically or in a lump sum at maturity.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/kuberan_internal_models.PayoutType"
+                        }
+                    ]
+                },
+                "principal": {
+                    "description": "Principal is the amount locked in at opening, in cents.",
+                    "type": "integer"
+                },
+                "start_date": {
+                    "description": "StartDate is the date the deposit was opened.",
+                    "type": "string"
+                },
+                "status": {
+                    "description": "Status is the lifecycle state of the deposit.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/kuberan_internal_models.FixedDepositStatus"
+                        }
+                    ]
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "kuberan_internal_models.FixedDepositStatus": {
+            "type": "string",
+            "enum": [
+                "active",
+                "matured",
+                "closed"
+            ],
+            "x-enum-varnames": [
+                "FixedDepositStatusActive",
+                "FixedDepositStatusMatured",
+                "FixedDepositStatusClosed"
+            ]
+        },
         "kuberan_internal_models.Investment": {
             "type": "object",
             "properties": {
@@ -6071,6 +7364,32 @@ const docTemplate = `{
                 "InvestmentTransactionTransfer"
             ]
         },
+        "kuberan_internal_models.PayoutFrequency": {
+            "type": "string",
+            "enum": [
+                "monthly",
+                "quarterly",
+                "semiannual",
+                "annual"
+            ],
+            "x-enum-varnames": [
+                "PayoutFrequencyMonthly",
+                "PayoutFrequencyQuarterly",
+                "PayoutFrequencySemiannual",
+                "PayoutFrequencyAnnual"
+            ]
+        },
+        "kuberan_internal_models.PayoutType": {
+            "type": "string",
+            "enum": [
+                "cumulative",
+                "periodic"
+            ],
+            "x-enum-varnames": [
+                "PayoutTypeCumulative",
+                "PayoutTypePeriodic"
+            ]
+        },
         "kuberan_internal_models.PortfolioSnapshot": {
             "type": "object",
             "properties": {
@@ -6078,6 +7397,9 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "debt_balance": {
+                    "type": "integer"
+                },
+                "fixed_deposit_balance": {
                     "type": "integer"
                 },
                 "id": {
@@ -6096,6 +7418,164 @@ const docTemplate = `{
                     "type": "string"
                 }
             }
+        },
+        "kuberan_internal_models.Receivable": {
+            "type": "object",
+            "properties": {
+                "amount": {
+                    "type": "integer"
+                },
+                "counterparty_key": {
+                    "type": "string"
+                },
+                "counterparty_name": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "deleted_at": {
+                    "$ref": "#/definitions/gorm.DeletedAt"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "kind": {
+                    "$ref": "#/definitions/kuberan_internal_models.ReceivableKind"
+                },
+                "outstanding": {
+                    "description": "Outstanding is derived (amount - paid - written off) and never stored.\nCall ComputeOutstanding to populate it before serializing.",
+                    "type": "integer"
+                },
+                "paid_amount": {
+                    "type": "integer"
+                },
+                "settlements": {
+                    "description": "Settlements are loaded on the detail endpoint only.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/kuberan_internal_models.ReceivableSettlement"
+                    }
+                },
+                "status": {
+                    "$ref": "#/definitions/kuberan_internal_models.ReceivableStatus"
+                },
+                "transaction": {
+                    "description": "Transaction is the trimmed expense view attached by the service on the\nreceivables list and detail endpoints. It is not a GORM association.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/kuberan_internal_models.ReceivableExpense"
+                        }
+                    ]
+                },
+                "transaction_id": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "user_id": {
+                    "type": "string"
+                },
+                "written_off_amount": {
+                    "type": "integer"
+                }
+            }
+        },
+        "kuberan_internal_models.ReceivableExpense": {
+            "type": "object",
+            "properties": {
+                "account_id": {
+                    "type": "string"
+                },
+                "amount": {
+                    "type": "integer"
+                },
+                "category_id": {
+                    "type": "string"
+                },
+                "date": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "personal_amount": {
+                    "type": "integer"
+                }
+            }
+        },
+        "kuberan_internal_models.ReceivableKind": {
+            "type": "string",
+            "enum": [
+                "split",
+                "on_behalf",
+                "claim",
+                "loan",
+                "deposit",
+                "refund"
+            ],
+            "x-enum-varnames": [
+                "ReceivableKindSplit",
+                "ReceivableKindOnBehalf",
+                "ReceivableKindClaim",
+                "ReceivableKindLoan",
+                "ReceivableKindDeposit",
+                "ReceivableKindRefund"
+            ]
+        },
+        "kuberan_internal_models.ReceivableSettlement": {
+            "type": "object",
+            "properties": {
+                "account_id": {
+                    "type": "string"
+                },
+                "amount": {
+                    "type": "integer"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "date": {
+                    "type": "string"
+                },
+                "deleted_at": {
+                    "$ref": "#/definitions/gorm.DeletedAt"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "receivable_id": {
+                    "type": "string"
+                },
+                "transaction_id": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "written_off_amount": {
+                    "type": "integer"
+                }
+            }
+        },
+        "kuberan_internal_models.ReceivableStatus": {
+            "type": "string",
+            "enum": [
+                "pending",
+                "partially_paid",
+                "settled",
+                "written_off"
+            ],
+            "x-enum-varnames": [
+                "ReceivableStatusPending",
+                "ReceivableStatusPartiallyPaid",
+                "ReceivableStatusSettled",
+                "ReceivableStatusWrittenOff"
+            ]
         },
         "kuberan_internal_models.RuleActionType": {
             "type": "string",
@@ -6262,6 +7742,17 @@ const docTemplate = `{
                 },
                 "id": {
                     "type": "string"
+                },
+                "personal_amount": {
+                    "description": "PersonalAmount is the user's own share of an expense, in cents. NULL means\nthe whole Amount is theirs. It is server-maintained (plan 021, D6) and is\nalways serialized (null when unset). Reports aggregate\nCOALESCE(personal_amount, amount).",
+                    "type": "integer"
+                },
+                "receivables": {
+                    "description": "Receivables are the amounts owed back to the user for a shared expense.\nPreloaded on list and detail queries for expenses (plan 021).",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/kuberan_internal_models.Receivable"
+                    }
                 },
                 "to_account": {
                     "$ref": "#/definitions/kuberan_internal_models.Account"
@@ -6438,13 +7929,15 @@ const docTemplate = `{
                 "income",
                 "expense",
                 "transfer",
-                "investment"
+                "investment",
+                "reimbursement"
             ],
             "x-enum-varnames": [
                 "TransactionTypeIncome",
                 "TransactionTypeExpense",
                 "TransactionTypeTransfer",
-                "TransactionTypeInvestment"
+                "TransactionTypeInvestment",
+                "TransactionTypeReimbursement"
             ]
         },
         "kuberan_internal_pagination.PageResponse-kuberan_internal_models_Account": {
@@ -6569,6 +8062,29 @@ const docTemplate = `{
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/kuberan_internal_models.PortfolioSnapshot"
+                    }
+                },
+                "page": {
+                    "type": "integer"
+                },
+                "page_size": {
+                    "type": "integer"
+                },
+                "total_items": {
+                    "type": "integer"
+                },
+                "total_pages": {
+                    "type": "integer"
+                }
+            }
+        },
+        "kuberan_internal_pagination.PageResponse-kuberan_internal_models_Receivable": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/kuberan_internal_models.Receivable"
                     }
                 },
                 "page": {
@@ -6725,6 +8241,17 @@ const docTemplate = `{
                 }
             }
         },
+        "kuberan_internal_services.CounterpartySuggestion": {
+            "type": "object",
+            "properties": {
+                "key": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
         "kuberan_internal_services.PortfolioSummary": {
             "type": "object",
             "properties": {
@@ -6751,6 +8278,64 @@ const docTemplate = `{
                 }
             }
         },
+        "kuberan_internal_services.ReceivableCounterpartyTotal": {
+            "type": "object",
+            "properties": {
+                "counterparty_key": {
+                    "type": "string"
+                },
+                "counterparty_name": {
+                    "type": "string"
+                },
+                "oldest_date": {
+                    "description": "date of the oldest open expense",
+                    "type": "string"
+                },
+                "open_count": {
+                    "type": "integer"
+                },
+                "outstanding": {
+                    "description": "cents",
+                    "type": "integer"
+                }
+            }
+        },
+        "kuberan_internal_services.ReceivableKindTotal": {
+            "type": "object",
+            "properties": {
+                "kind": {
+                    "$ref": "#/definitions/kuberan_internal_models.ReceivableKind"
+                },
+                "open_count": {
+                    "type": "integer"
+                },
+                "outstanding": {
+                    "description": "cents",
+                    "type": "integer"
+                }
+            }
+        },
+        "kuberan_internal_services.ReceivableSummary": {
+            "type": "object",
+            "properties": {
+                "by_counterparty": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/kuberan_internal_services.ReceivableCounterpartyTotal"
+                    }
+                },
+                "by_kind": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/kuberan_internal_services.ReceivableKindTotal"
+                    }
+                },
+                "total_outstanding": {
+                    "description": "cents",
+                    "type": "integer"
+                }
+            }
+        },
         "kuberan_internal_services.RuleMatchPreview": {
             "type": "object",
             "properties": {
@@ -6764,6 +8349,19 @@ const docTemplate = `{
                     }
                 }
             }
+        },
+        "kuberan_internal_services.ShareMode": {
+            "type": "string",
+            "enum": [
+                "equal",
+                "custom",
+                "full"
+            ],
+            "x-enum-varnames": [
+                "ShareModeEqual",
+                "ShareModeCustom",
+                "ShareModeFull"
+            ]
         },
         "kuberan_internal_services.SpendingByCategory": {
             "type": "object",
@@ -6815,7 +8413,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "amount": {
-                    "description": "cents",
+                    "description": "cents, the full amount that left the account",
                     "type": "integer"
                 },
                 "category_color": {
@@ -6838,6 +8436,10 @@ const docTemplate = `{
                 },
                 "id": {
                     "type": "string"
+                },
+                "personal_amount": {
+                    "description": "cents, the user's own share; nil when not shared",
+                    "type": "integer"
                 }
             }
         },

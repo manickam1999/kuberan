@@ -26,6 +26,29 @@ func parseFlexibleTime(value string) (time.Time, error) {
 	return time.Time{}, errors.New("invalid date format, use RFC3339 (e.g. 2024-01-01T00:00:00Z) or YYYY-MM-DD")
 }
 
+// optionalUUID validates an optional UUID body field, treating nil and "" as absent.
+func optionalUUID(value *string, field string) (*string, error) {
+	if value == nil || *value == "" {
+		return nil, nil
+	}
+	if !uuid.IsValid(*value) {
+		return nil, apperrors.WithMessage(apperrors.ErrInvalidInput, "Invalid "+field+" format")
+	}
+	return value, nil
+}
+
+// parseOptionalDate parses an optional flexible date string; the zero time means "not provided".
+func parseOptionalDate(value *string) (time.Time, error) {
+	if value == nil || *value == "" {
+		return time.Time{}, nil
+	}
+	parsed, err := parseFlexibleTime(*value)
+	if err != nil {
+		return time.Time{}, apperrors.WithMessage(apperrors.ErrInvalidInput, err.Error())
+	}
+	return parsed, nil
+}
+
 // getUserID extracts the authenticated user ID from the Gin context.
 // Returns ErrUnauthorized if not present.
 func getUserID(c *gin.Context) (string, error) {

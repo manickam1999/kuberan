@@ -19,7 +19,7 @@ func (s *Server) registerTransactionTools() {
 			mcp.WithDescription("Search and list transactions with filters. Returns date, description, amount, category, and account."),
 			mcp.WithString("account_id", mcp.Description("Filter to a specific account ID")),
 			mcp.WithString("category_id", mcp.Description("Filter to a specific category ID")),
-			mcp.WithString("type", mcp.Description("Filter by type: 'income', 'expense', or 'transfer'")),
+			mcp.WithString("type", mcp.Description("Filter by type: 'income', 'expense', 'transfer', 'investment', or 'reimbursement' (a repayment received for a shared expense)")),
 			mcp.WithString("from_date", mcp.Description("Start date (YYYY-MM-DD)")),
 			mcp.WithString("to_date", mcp.Description("End date (YYYY-MM-DD)")),
 			mcp.WithNumber("min_amount", mcp.Description("Minimum amount in dollars")),
@@ -88,18 +88,7 @@ func (s *Server) handleListTransactions(ctx context.Context, req mcp.CallToolReq
 
 	args := req.GetArguments()
 
-	pageNum := 1
-	if v, ok := args["page"].(float64); ok && v > 0 {
-		pageNum = int(v)
-	}
-	pageSize := 20
-	if v, ok := args["page_size"].(float64); ok && v > 0 {
-		pageSize = int(v)
-		if pageSize > 100 {
-			pageSize = 100
-		}
-	}
-	page := pagination.PageRequest{Page: pageNum, PageSize: pageSize}
+	page := parsePage(args)
 
 	filter := services.TransactionFilter{}
 
@@ -111,11 +100,12 @@ func (s *Server) handleListTransactions(ctx context.Context, req mcp.CallToolReq
 	}
 	if v, ok := args["type"].(string); ok && v != "" {
 		switch models.TransactionType(v) {
-		case models.TransactionTypeIncome, models.TransactionTypeExpense, models.TransactionTypeTransfer:
+		case models.TransactionTypeIncome, models.TransactionTypeExpense, models.TransactionTypeTransfer,
+			models.TransactionTypeInvestment, models.TransactionTypeReimbursement:
 			t := models.TransactionType(v)
 			filter.Type = &t
 		default:
-			return mcp.NewToolResultError("invalid type, expected one of: income, expense, transfer"), nil
+			return mcp.NewToolResultError("invalid type, expected one of: income, expense, transfer, investment, reimbursement"), nil
 		}
 	}
 	if v, ok := args["from_date"].(string); ok && v != "" {
@@ -161,10 +151,48 @@ func (s *Server) handleListTransactions(ctx context.Context, req mcp.CallToolReq
 			category,
 			t.Description,
 		))
+		if note := transactionNote(t); note != "" {
+			sb.WriteString("    " + note + "\n")
+		}
 		sb.WriteString(fmt.Sprintf("    ID: %s  Account: %s\n", t.ID, t.Account.Name))
 	}
 
 	return mcp.NewToolResultText(sb.String()), nil
+}
+
+// parsePage reads the optional page (default 1) and page_size (default 20,
+// capped at 100) tool arguments.
+func parsePage(args map[string]interface{}) pagination.PageRequest {
+	page := pagination.PageRequest{Page: 1, PageSize: 20}
+	if v, ok := args["page"].(float64); ok && v > 0 {
+		page.Page = int(v)
+	}
+	if v, ok := args["page_size"].(float64); ok && v > 0 {
+		page.PageSize = int(v)
+		if page.PageSize > 100 {
+			page.PageSize = 100
+		}
+	}
+	return page
+}
+
+// transactionNote returns an extra line describing shared-expense semantics
+// for a transaction, or "" when there is nothing to add. A set personal_amount
+// means only that share counts as the user's spending; reimbursements are
+// repayments received, not income.
+func transactionNote(t models.Transaction) string {
+	switch {
+	case t.Type == models.TransactionTypeReimbursement:
+		return "Repayment received for a shared expense (not income)"
+	case t.PersonalAmount != nil:
+		return sharedExpenseNote(*t.PersonalAmount, t.Amount)
+	}
+	return ""
+}
+
+// sharedExpenseNote describes the user's share of a shared expense.
+func sharedExpenseNote(personal, amount int64) string {
+	return fmt.Sprintf("Shared expense: your share %s of %s", formatCents(personal), formatCents(amount))
 }
 
 func (s *Server) handleGetSpendingByCategory(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -371,8 +399,16 @@ func (s *Server) handleGetTopExpenses(ctx context.Context, req mcp.CallToolReque
 	var sb strings.Builder
 	sb.WriteString(fmt.Sprintf("Top Expenses (%s to %s):\n\n", fromStr, toStr))
 	for i, item := range result.Items {
+		// Items are ranked by the effective amount (the user's own share), so show that.
+		effective := item.Amount
+		if item.PersonalAmount != nil {
+			effective = *item.PersonalAmount
+		}
 		sb.WriteString(fmt.Sprintf("  %2d. %-30s %12s  [%s / %s]  %s\n",
-			i+1, item.Description, formatCents(item.Amount), item.CategoryName, item.AccountName, item.Date.Format("2006-01-02")))
+			i+1, item.Description, formatCents(effective), item.CategoryName, item.AccountName, item.Date.Format("2006-01-02")))
+		if item.PersonalAmount != nil {
+			sb.WriteString("      " + sharedExpenseNote(*item.PersonalAmount, item.Amount) + "\n")
+		}
 	}
 
 	return mcp.NewToolResultText(sb.String()), nil

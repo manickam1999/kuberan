@@ -7,6 +7,15 @@ import { ArrowDownRight, ArrowUpRight, ArrowLeftRight } from "lucide-react";
 import { ApiClientError, apiClient } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
 import { useAccounts } from "@/hooks/use-accounts";
+import { useCreateSharedExpense } from "@/hooks/use-receivables";
+import {
+  MoneyOwedBackSection,
+  initialOwedBackState,
+  owedShareMode,
+  visibleOwedRows,
+  type OwedBackState,
+} from "@/components/receivables/money-owed-back-section";
+import { buildSharedCounterparties } from "@/lib/shared-expense";
 import {
   useCreateTransaction,
   useCreateTransfer,
@@ -36,6 +45,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { toRFC3339 } from "@/lib/format";
+import { receivableErrorMessage } from "@/lib/receivable-format";
 import type { TransactionType } from "@/types/models";
 
 type DialogType = TransactionType | "transfer";
@@ -71,6 +81,8 @@ function getErrorMessage(error: unknown): string {
     if (error.code === "SAME_ACCOUNT") {
       return "Cannot transfer to the same account";
     }
+    const friendly = receivableErrorMessage(error.code);
+    if (friendly) return friendly;
     if (error.code === "INSUFFICIENT_BALANCE") {
       return "Insufficient balance for this transfer";
     }
@@ -104,6 +116,7 @@ export function CreateTransactionDialog({
   const [error, setError] = useState("");
   const [stagedFiles, setStagedFiles] = useState<File[]>([]);
   const [uploading, setUploading] = useState(false);
+  const [owed, setOwed] = useState<OwedBackState>(initialOwedBackState);
 
   // Transfer-specific state
   const [fromAccountId, setFromAccountId] = useState<string>(
@@ -114,6 +127,7 @@ export function CreateTransactionDialog({
   const queryClient = useQueryClient();
   const createTransaction = useCreateTransaction();
   const createTransfer = useCreateTransfer();
+  const createShared = useCreateSharedExpense();
   const { data: accountsData } = useAccounts({ page_size: 100 });
   const { data: categoriesData } = useCategories({
     page_size: 100,
@@ -127,8 +141,12 @@ export function CreateTransactionDialog({
     a.name.localeCompare(b.name)
   );
   const isTransfer = type === "transfer";
+  const sharedActive = type === "expense" && owed.enabled;
   const isSubmitting =
-    createTransaction.isPending || createTransfer.isPending || uploading;
+    createTransaction.isPending ||
+    createTransfer.isPending ||
+    createShared.isPending ||
+    uploading;
 
   // For transfer: filter to accounts, exclude selected from-account for to-account
   const toAccounts = accounts.filter(
@@ -146,6 +164,7 @@ export function CreateTransactionDialog({
     setFromAccountId(defaultAccountId ?? "");
     setToAccountId("");
     setStagedFiles([]);
+    setOwed(initialOwedBackState());
   }
 
   function handleOpenChange(nextOpen: boolean) {
@@ -221,15 +240,39 @@ export function CreateTransactionDialog({
 
       let created;
       try {
-        created = await createTransaction.mutateAsync({
-          account_id: accountId,
-          type: type as TransactionType,
-          amount,
-          category_id:
-            categoryId && categoryId !== "none" ? categoryId : undefined,
-          description: description.trim() || undefined,
-          date: date ? toRFC3339(date) : undefined,
-        });
+        if (sharedActive) {
+          const shareMode = owedShareMode(owed);
+          const built = buildSharedCounterparties({
+            amount,
+            mode: shareMode,
+            rows: visibleOwedRows(owed),
+          });
+          if (!built.ok) {
+            setError(built.error);
+            return;
+          }
+          created = await createShared.mutateAsync({
+            account_id: accountId,
+            category_id:
+              categoryId && categoryId !== "none" ? categoryId : undefined,
+            amount,
+            description: description.trim() || undefined,
+            date: date ? toRFC3339(date) : undefined,
+            kind: owed.mode,
+            mode: shareMode,
+            counterparties: built.counterparties,
+          });
+        } else {
+          created = await createTransaction.mutateAsync({
+            account_id: accountId,
+            type: type as TransactionType,
+            amount,
+            category_id:
+              categoryId && categoryId !== "none" ? categoryId : undefined,
+            description: description.trim() || undefined,
+            date: date ? toRFC3339(date) : undefined,
+          });
+        }
       } catch (err) {
         setError(getErrorMessage(err));
         return;
@@ -249,7 +292,7 @@ export function CreateTransactionDialog({
           } again.`
         );
       } else {
-        toast.success("Transaction created");
+        toast.success(sharedActive ? "Shared expense created" : "Transaction created");
       }
       handleOpenChange(false);
     }
@@ -466,6 +509,16 @@ export function CreateTransactionDialog({
               disabled={isSubmitting}
             />
           </div>
+
+          {/* Money owed back (expense only) */}
+          {type === "expense" && (
+            <MoneyOwedBackSection
+              state={owed}
+              onChange={setOwed}
+              amount={amount}
+              disabled={isSubmitting}
+            />
+          )}
 
           {/* Receipts (expense/income only) */}
           {!isTransfer && (

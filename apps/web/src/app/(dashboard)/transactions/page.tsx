@@ -20,6 +20,10 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { CreateTransactionDialog } from "@/components/transactions/create-transaction-dialog";
+import {
+  SharedKindBadge,
+  YourShareText,
+} from "@/components/receivables/shared-expense-indicators";
 import { EditTransactionDialog } from "@/components/transactions/edit-transaction-dialog";
 import type { Transaction, TransactionType } from "@/types/models";
 import type { UserTransactionFilters } from "@/types/api";
@@ -60,6 +64,7 @@ function TransactionRow({
               <span className="sr-only">Has receipts</span>
             </>
           )}
+          <SharedKindBadge transaction={transaction} />
           <span className="truncate">{accountName}</span>
           {transaction.category && (
             <>
@@ -77,9 +82,12 @@ function TransactionRow({
           )}
         </div>
       </div>
-      <span className={`money shrink-0 text-sm font-semibold ${v.text}`}>
-        {v.sign}
-        {formatCurrency(transaction.amount)}
+      <span className="shrink-0 text-right">
+        <span className={`money block text-sm font-semibold ${v.text}`}>
+          {v.sign}
+          {formatCurrency(transaction.amount)}
+        </span>
+        <YourShareText transaction={transaction} />
       </span>
     </button>
   );
@@ -134,7 +142,12 @@ export default function TransactionsPage() {
     return Array.from(map.entries()).map(([date, txs]) => {
       const net = txs.reduce(
         (s, t) =>
-          t.type === "income" ? s + t.amount : t.type === "expense" ? s - t.amount : s,
+          // Repayments are inflows to the account (cash flow, not income or spending).
+          t.type === "income" || t.type === "reimbursement"
+            ? s + t.amount
+            : t.type === "expense"
+              ? s - t.amount
+              : s,
         0
       );
       return { date, txs, net };
@@ -211,6 +224,7 @@ export default function TransactionsPage() {
             <SelectItem value="income">Income</SelectItem>
             <SelectItem value="expense">Expense</SelectItem>
             <SelectItem value="transfer">Transfer</SelectItem>
+            <SelectItem value="reimbursement">Repayment</SelectItem>
             <SelectItem value="investment">Investment</SelectItem>
           </SelectContent>
         </Select>
@@ -307,6 +321,7 @@ export default function TransactionsPage() {
                 </span>
                 {group.net !== 0 && (
                   <span
+                    title="Net cash flow for the day (includes repayments)"
                     className={`money text-xs font-medium ${
                       group.net > 0 ? "text-positive" : "text-negative"
                     }`}

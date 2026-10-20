@@ -72,14 +72,13 @@ func (h *TransactionHandler) CreateTransaction(c *gin.Context) {
 		return
 	}
 
-	transactionDate := time.Now()
-	if req.Date != nil && *req.Date != "" {
-		parsed, parseErr := parseFlexibleTime(*req.Date)
-		if parseErr != nil {
-			respondWithError(c, apperrors.WithMessage(apperrors.ErrInvalidInput, parseErr.Error()))
-			return
-		}
-		transactionDate = parsed
+	transactionDate, err := parseOptionalDate(req.Date)
+	if err != nil {
+		respondWithError(c, err)
+		return
+	}
+	if transactionDate.IsZero() {
+		transactionDate = time.Now()
 	}
 
 	transaction, err := h.transactionService.CreateTransaction(
@@ -138,14 +137,13 @@ func (h *TransactionHandler) CreateTransfer(c *gin.Context) {
 		return
 	}
 
-	transferDate := time.Now()
-	if req.Date != nil && *req.Date != "" {
-		parsed, parseErr := parseFlexibleTime(*req.Date)
-		if parseErr != nil {
-			respondWithError(c, apperrors.WithMessage(apperrors.ErrInvalidInput, parseErr.Error()))
-			return
-		}
-		transferDate = parsed
+	transferDate, err := parseOptionalDate(req.Date)
+	if err != nil {
+		respondWithError(c, err)
+		return
+	}
+	if transferDate.IsZero() {
+		transferDate = time.Now()
 	}
 
 	transaction, err := h.transactionService.CreateTransfer(
@@ -303,10 +301,11 @@ func parseTransactionFilter(c *gin.Context) (services.TransactionFilter, error) 
 		txType := models.TransactionType(v)
 		switch txType {
 		case models.TransactionTypeIncome, models.TransactionTypeExpense,
-			models.TransactionTypeTransfer, models.TransactionTypeInvestment:
+			models.TransactionTypeTransfer, models.TransactionTypeInvestment,
+			models.TransactionTypeReimbursement:
 			filter.Type = &txType
 		default:
-			return filter, apperrors.WithMessage(apperrors.ErrInvalidInput, "invalid type, must be income, expense, transfer, or investment")
+			return filter, apperrors.WithMessage(apperrors.ErrInvalidInput, "invalid type, must be income, expense, transfer, investment, or reimbursement")
 		}
 	}
 
@@ -431,13 +430,13 @@ func (h *TransactionHandler) UpdateTransaction(c *gin.Context) {
 	}
 
 	// Parse date if provided
-	if req.Date != nil && *req.Date != "" {
-		parsed, parseErr := parseFlexibleTime(*req.Date)
-		if parseErr != nil {
-			respondWithError(c, apperrors.WithMessage(apperrors.ErrInvalidInput, parseErr.Error()))
-			return
-		}
-		updateFields.Date = &parsed
+	parsedDate, err := parseOptionalDate(req.Date)
+	if err != nil {
+		respondWithError(c, err)
+		return
+	}
+	if !parsedDate.IsZero() {
+		updateFields.Date = &parsedDate
 	}
 
 	transaction, err := h.transactionService.UpdateTransaction(userID, txID, updateFields)

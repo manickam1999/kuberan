@@ -331,29 +331,57 @@ func (s *accountService) updateFixedDepositDetails(account *models.Account, fiel
 	return nil
 }
 
-// UpdateAccountBalance updates the balance of an account based on transaction
-func (s *accountService) UpdateAccountBalance(tx *gorm.DB, account *models.Account, transactionType models.TransactionType, amount int64) error {
-	// Update the balance based on transaction type and account type
-	// Credit cards: positive balance = amount owed (expense increases, income/payment decreases)
-	// All others: income adds, expense subtracts
-	switch transactionType {
-	case models.TransactionTypeIncome:
-		if account.Type == models.AccountTypeCreditCard {
-			account.Balance -= amount
-		} else {
-			account.Balance += amount
-		}
+// isLiabilityAccount reports whether an account's balance represents an amount
+// owed (credit_card and debt), so signs are inverted: expenses increase the
+// balance and income/repayments decrease it.
+func isLiabilityAccount(t models.AccountType) bool {
+	return t == models.AccountTypeCreditCard || t == models.AccountTypeDebt
+}
+
+// balanceDelta returns the signed change to an account's balance for a
+// transaction of the given type. Income and reimbursement credit the account,
+// expense debits it; liability accounts (credit_card, debt) are inverted. The
+// bool is false for types that do not have a single-leg balance effect.
+func balanceDelta(accountType models.AccountType, txnType models.TransactionType, amount int64) (int64, bool) {
+	var delta int64
+	switch txnType {
+	case models.TransactionTypeIncome, models.TransactionTypeReimbursement:
+		delta = amount
 	case models.TransactionTypeExpense:
-		if account.Type == models.AccountTypeCreditCard {
-			account.Balance += amount
-		} else {
-			account.Balance -= amount
-		}
+		delta = -amount
+	default:
+		return 0, false
+	}
+	if isLiabilityAccount(accountType) {
+		delta = -delta
+	}
+	return delta, true
+}
+
+// ApplyBalanceDelta applies the balance effect of a transaction to an account
+// with a relative SQL update (balance = balance + delta) instead of writing an
+// absolute value, so it never overwrites a concurrent change. The caller passes
+// the account's type (it already holds the locked account row), which avoids a
+// re-read. Only income, expense and reimbursement are supported. This is the
+// only way account balances are changed after creation (plan 021, D10): callers
+// lock the account row inside their DB transaction first (lockAccounts).
+func (s *accountService) ApplyBalanceDelta(tx *gorm.DB, accountID string, accountType models.AccountType, txnType models.TransactionType, amount int64) error {
+	if amount < 0 {
+		return apperrors.WithMessage(apperrors.ErrInvalidInput, "amount must not be negative")
+	}
+	delta, ok := balanceDelta(accountType, txnType, amount)
+	if !ok {
+		return apperrors.ErrInvalidTransactionType
 	}
 
-	// Save the updated balance
-	if err := tx.Model(account).Update("balance", account.Balance).Error; err != nil {
-		return apperrors.Wrap(apperrors.ErrInternalServer, err)
+	res := tx.Model(&models.Account{}).
+		Where("id = ?", accountID).
+		UpdateColumn("balance", gorm.Expr("balance + ?", delta))
+	if res.Error != nil {
+		return apperrors.Wrap(apperrors.ErrInternalServer, res.Error)
+	}
+	if res.RowsAffected == 0 {
+		return apperrors.ErrAccountNotFound
 	}
 	return nil
 }
@@ -470,6 +498,16 @@ func (s *accountService) CreateFixedDepositAccount(userID string, params CreateF
 
 	var fdAccount models.Account
 	err = s.db.Transaction(func(tx *gorm.DB) error {
+		// 0. Lock the source account and re-check its balance on the locked row.
+		locked, txErr := lockAccounts(tx, userID, []string{sourceAccount.ID}, true)
+		if txErr != nil {
+			return txErr
+		}
+		sourceAccount = locked[sourceAccount.ID]
+		if sourceAccount.Balance < params.Principal {
+			return apperrors.ErrSourceAccountInsufficient
+		}
+
 		// 1. Create the FD account with balance 0.
 		fdAccount = models.Account{
 			UserID:       userID,
@@ -522,16 +560,15 @@ func (s *accountService) CreateFixedDepositAccount(userID string, params CreateF
 		}
 
 		// Debit source.
-		sourceAccount.Balance -= params.Principal
-		if txErr := tx.Model(sourceAccount).Update("balance", sourceAccount.Balance).Error; txErr != nil {
-			return apperrors.Wrap(apperrors.ErrInternalServer, txErr)
+		if txErr := s.ApplyBalanceDelta(tx, sourceAccount.ID, sourceAccount.Type, models.TransactionTypeExpense, params.Principal); txErr != nil {
+			return txErr
 		}
 
 		// Credit FD (brings it to principal).
-		fdAccount.Balance += params.Principal
-		if txErr := tx.Model(&fdAccount).Update("balance", fdAccount.Balance).Error; txErr != nil {
-			return apperrors.Wrap(apperrors.ErrInternalServer, txErr)
+		if txErr := s.ApplyBalanceDelta(tx, fdAccount.ID, fdAccount.Type, models.TransactionTypeIncome, params.Principal); txErr != nil {
+			return txErr
 		}
+		fdAccount.Balance += params.Principal
 
 		// Attach details to the account so callers get them back.
 		fdAccount.FixedDeposit = &details
@@ -643,6 +680,24 @@ func (s *accountService) CloseFixedDeposit(userID, accountID string, params Clos
 	principal := details.Principal
 
 	err = s.db.Transaction(func(tx *gorm.DB) error {
+		// 0. Lock the FD and destination accounts (in id order) and re-check that
+		// the deposit is still open, so a concurrent close cannot pay out twice.
+		// The FD may already be inactive, so the lock does not filter on it.
+		locked, txErr := lockAccounts(tx, userID, []string{fdAccount.ID, destAccount.ID}, false)
+		if txErr != nil {
+			return txErr
+		}
+		if !locked[destAccount.ID].IsActive {
+			return apperrors.ErrAccountNotFound
+		}
+		var current models.FixedDepositDetails
+		if txErr := tx.Where("account_id = ?", fdAccount.ID).First(&current).Error; txErr != nil {
+			return apperrors.Wrap(apperrors.ErrInternalServer, txErr)
+		}
+		if current.Status == models.FixedDepositStatusClosed {
+			return apperrors.ErrFixedDepositAlreadyClosed
+		}
+
 		// 1. Transfer principal FD -> destination (FD balance -> 0).
 		transferTx := &models.Transaction{
 			UserID:      userID,
@@ -658,15 +713,14 @@ func (s *accountService) CloseFixedDeposit(userID, accountID string, params Clos
 		}
 
 		// Debit FD (balance -> 0).
-		fdAccount.Balance -= principal
-		if txErr := tx.Model(&fdAccount).Update("balance", fdAccount.Balance).Error; txErr != nil {
-			return apperrors.Wrap(apperrors.ErrInternalServer, txErr)
+		if txErr := s.ApplyBalanceDelta(tx, fdAccount.ID, fdAccount.Type, models.TransactionTypeExpense, principal); txErr != nil {
+			return txErr
 		}
+		fdAccount.Balance = locked[fdAccount.ID].Balance - principal
 
 		// Credit destination.
-		destAccount.Balance += principal
-		if txErr := tx.Model(destAccount).Update("balance", destAccount.Balance).Error; txErr != nil {
-			return apperrors.Wrap(apperrors.ErrInternalServer, txErr)
+		if txErr := s.ApplyBalanceDelta(tx, destAccount.ID, destAccount.Type, models.TransactionTypeIncome, principal); txErr != nil {
+			return txErr
 		}
 
 		// 2. Post interest income transaction (if any) to destination.
@@ -685,9 +739,8 @@ func (s *accountService) CloseFixedDeposit(userID, accountID string, params Clos
 			}
 
 			// Credit destination balance for the interest income.
-			destAccount.Balance += netInterest
-			if txErr := tx.Model(destAccount).Update("balance", destAccount.Balance).Error; txErr != nil {
-				return apperrors.Wrap(apperrors.ErrInternalServer, txErr)
+			if txErr := s.ApplyBalanceDelta(tx, destAccount.ID, destAccount.Type, models.TransactionTypeIncome, netInterest); txErr != nil {
+				return txErr
 			}
 		}
 

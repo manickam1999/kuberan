@@ -16,6 +16,8 @@ import {
   Pin,
   Loader2,
   Vault,
+  HandCoins,
+  Handshake,
 } from "lucide-react";
 import { useAccount, useUpdateAccount } from "@/hooks/use-accounts";
 import { useAuth } from "@/hooks/use-auth";
@@ -50,6 +52,12 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import {
+  SharedKindBadge,
+  YourShareText,
+} from "@/components/receivables/shared-expense-indicators";
+import { LendMoneyDialog } from "@/components/receivables/lend-money-dialog";
+import { isSettlementAccountType } from "@/lib/receivable-format";
 import { CreateTransactionDialog } from "@/components/transactions/create-transaction-dialog";
 import { EditAccountDialog } from "@/components/accounts/edit-account-dialog";
 import { EditTransactionDialog } from "@/components/transactions/edit-transaction-dialog";
@@ -81,6 +89,12 @@ const TRANSACTION_TYPE_CONFIG: Record<
     label: "Investment",
     color: "text-purple-600",
     icon: TrendingUp,
+  },
+  // Repayment of a receivable: a credit to the account, never income.
+  reimbursement: {
+    label: "Repayment",
+    color: "text-emerald-600",
+    icon: HandCoins,
   },
 };
 
@@ -119,7 +133,7 @@ function TransactionsTableRow({
 
   return (
     <TableRow className={onClick ? "cursor-pointer" : ""} onClick={onClick}>
-      <TableCell className="text-muted-foreground">
+      <TableCell className="whitespace-nowrap text-muted-foreground">
         {formatDate(transaction.date)}
       </TableCell>
       <TableCell>
@@ -128,6 +142,7 @@ function TransactionsTableRow({
             <Icon className={`h-3 w-3 ${config.color}`} />
           </div>
           {transaction.description || config.label}
+          <SharedKindBadge transaction={transaction} />
         </div>
       </TableCell>
       <TableCell>
@@ -143,6 +158,7 @@ function TransactionsTableRow({
       <TableCell className={`text-right font-medium ${config.color}`}>
         {isNegative ? "-" : "+"}
         {formatCurrency(transaction.amount)}
+        <YourShareText transaction={transaction} />
       </TableCell>
     </TableRow>
   );
@@ -174,7 +190,8 @@ function TransactionListItem({
             {transaction.description || config.label}
           </p>
           <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-            <span>{formatDate(transaction.date)}</span>
+            <span className="whitespace-nowrap">{formatDate(transaction.date)}</span>
+            <SharedKindBadge transaction={transaction} />
             {transaction.category && (
               <>
                 <span>·</span>
@@ -184,9 +201,10 @@ function TransactionListItem({
           </div>
         </div>
       </div>
-      <span className={`text-sm font-medium shrink-0 ml-3 ${config.color}`}>
+      <span className={`text-sm font-medium shrink-0 ml-3 text-right ${config.color}`}>
         {isNegative ? "-" : "+"}
         {formatCurrency(transaction.amount)}
+        <YourShareText transaction={transaction} />
       </span>
     </div>
   );
@@ -200,6 +218,7 @@ export default function AccountDetailPage() {
   const [page, setPage] = useState(1);
   const [filters, setFilters] = useState<TransactionFilters>({});
   const [txDialogOpen, setTxDialogOpen] = useState(false);
+  const [lendOpen, setLendOpen] = useState(false);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [editTxOpen, setEditTxOpen] = useState(false);
   const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
@@ -325,6 +344,14 @@ export default function AccountDetailPage() {
               <span className="ml-2">Add Transaction</span>
             </Button>
           )}
+          {!isInvestmentAccount &&
+            !isFixedDepositAccount &&
+            isSettlementAccountType(account.type) && (
+              <Button size="sm" variant="outline" onClick={() => setLendOpen(true)}>
+                <Handshake className="h-4 w-4" />
+                <span className="ml-2">Lend money</span>
+              </Button>
+            )}
           {isInvestmentAccount && (
             <Button size="sm" onClick={() => setAddInvestmentOpen(true)}>
               <Plus className="h-4 w-4" />
@@ -484,6 +511,7 @@ export default function AccountDetailPage() {
                     <SelectItem value="income">Income</SelectItem>
                     <SelectItem value="expense">Expense</SelectItem>
                     <SelectItem value="transfer">Transfer</SelectItem>
+                    <SelectItem value="reimbursement">Repayment</SelectItem>
                     <SelectItem value="investment">Investment</SelectItem>
                   </SelectContent>
                 </Select>
@@ -749,6 +777,11 @@ export default function AccountDetailPage() {
           <CreateTransactionDialog
             open={txDialogOpen}
             onOpenChange={setTxDialogOpen}
+            defaultAccountId={accountId}
+          />
+          <LendMoneyDialog
+            open={lendOpen}
+            onOpenChange={setLendOpen}
             defaultAccountId={accountId}
           />
           <EditTransactionDialog

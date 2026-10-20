@@ -5,7 +5,6 @@ import { useAuth } from "@/hooks/use-auth";
 import { useAnalyticsPeriod } from "@/hooks/use-analytics-period";
 import {
   useSpendingByCategory,
-  useTransactions,
   useTopExpenses,
 } from "@/hooks/use-transactions";
 import { StatCard } from "@/components/ui/stat-card";
@@ -27,12 +26,6 @@ export default function AnalyticsPage() {
     fromDate,
     toDate
   );
-  const { data: expenseCount, isLoading: countLoading } = useTransactions({
-    type: "expense",
-    from_date: fromDate,
-    to_date: toDate,
-    page_size: 1,
-  });
   const { data: topExpense, isLoading: topExpenseLoading } = useTopExpenses(
     fromDate,
     toDate,
@@ -40,11 +33,15 @@ export default function AnalyticsPage() {
   );
 
   const totalSpent = spending?.total_spent ?? 0;
-  const totalItems = expenseCount?.total_items ?? 0;
+  // Count only expenses with a non-zero effective amount (personal share).
+  const totalItems = topExpense?.total_count ?? 0;
   const avgAmount = totalItems > 0 ? Math.round(totalSpent / totalItems) : 0;
-  const largestAmount = topExpense?.items[0]?.amount ?? 0;
+  const largestAmount = (() => {
+    const top = topExpense?.items[0];
+    return top ? (top.personal_amount ?? top.amount) : 0;
+  })();
 
-  const statsLoading = spendingLoading || countLoading || topExpenseLoading;
+  const statsLoading = spendingLoading || topExpenseLoading;
 
   return (
     <div className="space-y-5">

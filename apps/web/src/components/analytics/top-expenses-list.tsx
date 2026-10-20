@@ -31,6 +31,28 @@ import { formatCurrency, formatDate } from "@/lib/format";
 
 const LIMIT_OPTIONS = [10, 20, 50];
 
+/** Effective amount (what counts as spending) plus an "of <total>" line when shared. */
+function ExpenseAmount({
+  amount,
+  personalAmount,
+  hideBalances,
+}: {
+  amount: number;
+  personalAmount: number | null;
+  hideBalances: boolean;
+}) {
+  return (
+    <>
+      {formatCurrency(personalAmount ?? amount, undefined, hideBalances)}
+      {personalAmount !== null && personalAmount !== amount && (
+        <span className="block whitespace-nowrap text-xs font-normal text-muted-foreground">
+          of {formatCurrency(amount, undefined, hideBalances)}
+        </span>
+      )}
+    </>
+  );
+}
+
 export function TopExpensesList({
   fromDate,
   toDate,
@@ -120,6 +142,40 @@ export function TopExpensesList({
             No expenses recorded
           </p>
         ) : (
+          <>
+          {/* Phones: stacked rows so the amount is never scrolled off-screen. */}
+          <ul className="divide-y sm:hidden">
+            {items.map((item, index) => (
+              <li key={item.id}>
+                <button
+                  type="button"
+                  className="flex w-full items-start gap-3 py-3 text-left"
+                  onClick={() => setSelectedId(item.id)}
+                >
+                  <span className="w-5 shrink-0 pt-0.5 text-sm text-muted-foreground">
+                    {index + 1}
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-medium">
+                      {item.description || "—"}
+                    </span>
+                    <span className="block truncate text-xs text-muted-foreground">
+                      {formatDate(item.date)} · {item.category_name} ·{" "}
+                      {item.account_name}
+                    </span>
+                  </span>
+                  <span className="money shrink-0 text-right text-sm font-semibold text-negative">
+                    <ExpenseAmount
+                      amount={item.amount}
+                      personalAmount={item.personal_amount}
+                      hideBalances={hideBalances}
+                    />
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
+          <div className="hidden sm:block">
           <Table>
             <TableHeader>
               <TableRow>
@@ -168,12 +224,18 @@ export function TopExpensesList({
                     {formatDate(item.date)}
                   </TableCell>
                   <TableCell className="money text-right font-semibold text-negative">
-                    {formatCurrency(item.amount, undefined, hideBalances)}
+                    <ExpenseAmount
+                      amount={item.amount}
+                      personalAmount={item.personal_amount}
+                      hideBalances={hideBalances}
+                    />
                   </TableCell>
                 </TableRow>
               ))}
             </TableBody>
           </Table>
+          </div>
+          </>
         )}
       </CardContent>
 

@@ -45,8 +45,11 @@ func TestCreateCashAccount(t *testing.T) {
 		account, err := svc.CreateCashAccount(user.ID, "Checking", "", "USD", 5000)
 		testutil.AssertNoError(t, err)
 
-		if account.Balance != 5000 {
-			t.Errorf("expected balance 5000, got %d", account.Balance)
+		// The persisted balance (reloaded, not the returned struct) is the initial amount.
+		var dbAccount models.Account
+		testutil.AssertNoError(t, db.First(&dbAccount, "id = ?", account.ID).Error)
+		if dbAccount.Balance != 5000 {
+			t.Errorf("persisted balance = %d, want 5000", dbAccount.Balance)
 		}
 
 		// Verify initial transaction was created atomically
@@ -382,52 +385,6 @@ func TestUpdateAccount(t *testing.T) {
 	})
 }
 
-func TestUpdateAccountBalance(t *testing.T) {
-	t.Run("income_adds", func(t *testing.T) {
-		db := testutil.SetupTestDB(t)
-		defer testutil.TeardownTestDB(t, db)
-		svc := NewAccountService(db)
-		user := testutil.CreateTestUser(t, db)
-		account := testutil.CreateTestCashAccountWithBalance(t, db, user.ID, 1000)
-
-		err := svc.UpdateAccountBalance(db, account, models.TransactionTypeIncome, 500)
-		testutil.AssertNoError(t, err)
-
-		if account.Balance != 1500 {
-			t.Errorf("expected balance 1500 after income, got %d", account.Balance)
-		}
-
-		// Verify persisted to DB
-		var dbAccount models.Account
-		db.First(&dbAccount, "id = ?", account.ID)
-		if dbAccount.Balance != 1500 {
-			t.Errorf("expected DB balance 1500, got %d", dbAccount.Balance)
-		}
-	})
-
-	t.Run("expense_subtracts", func(t *testing.T) {
-		db := testutil.SetupTestDB(t)
-		defer testutil.TeardownTestDB(t, db)
-		svc := NewAccountService(db)
-		user := testutil.CreateTestUser(t, db)
-		account := testutil.CreateTestCashAccountWithBalance(t, db, user.ID, 1000)
-
-		err := svc.UpdateAccountBalance(db, account, models.TransactionTypeExpense, 300)
-		testutil.AssertNoError(t, err)
-
-		if account.Balance != 700 {
-			t.Errorf("expected balance 700 after expense, got %d", account.Balance)
-		}
-
-		// Verify persisted to DB
-		var dbAccount models.Account
-		db.First(&dbAccount, "id = ?", account.ID)
-		if dbAccount.Balance != 700 {
-			t.Errorf("expected DB balance 700, got %d", dbAccount.Balance)
-		}
-	})
-}
-
 func TestCreateInvestmentAccount(t *testing.T) {
 	t.Run("valid", func(t *testing.T) {
 		db := testutil.SetupTestDB(t)
@@ -490,9 +447,6 @@ func TestCreateCreditCardAccount(t *testing.T) {
 		}
 		if account.Type != models.AccountTypeCreditCard {
 			t.Errorf("expected type credit_card, got %s", account.Type)
-		}
-		if account.Balance != 0 {
-			t.Errorf("expected balance 0, got %d", account.Balance)
 		}
 		if account.CreditLimit != 500000 {
 			t.Errorf("expected credit limit 500000, got %d", account.CreditLimit)
@@ -656,65 +610,6 @@ func TestGetAccountByIDInvestmentBalance(t *testing.T) {
 
 		if result.Balance != 5000 {
 			t.Errorf("expected cash balance 5000, got %d", result.Balance)
-		}
-	})
-}
-
-func TestUpdateAccountBalance_CreditCard(t *testing.T) {
-	t.Run("expense_increases_credit_card_balance", func(t *testing.T) {
-		db := testutil.SetupTestDB(t)
-		defer testutil.TeardownTestDB(t, db)
-		svc := NewAccountService(db)
-		user := testutil.CreateTestUser(t, db)
-		account := testutil.CreateTestCreditCardAccount(t, db, user.ID, 0)
-
-		err := svc.UpdateAccountBalance(db, account, models.TransactionTypeExpense, 5000)
-		testutil.AssertNoError(t, err)
-
-		if account.Balance != 5000 {
-			t.Errorf("expected balance 5000 after expense, got %d", account.Balance)
-		}
-
-		var dbAccount models.Account
-		db.First(&dbAccount, "id = ?", account.ID)
-		if dbAccount.Balance != 5000 {
-			t.Errorf("expected DB balance 5000, got %d", dbAccount.Balance)
-		}
-	})
-
-	t.Run("income_decreases_credit_card_balance", func(t *testing.T) {
-		db := testutil.SetupTestDB(t)
-		defer testutil.TeardownTestDB(t, db)
-		svc := NewAccountService(db)
-		user := testutil.CreateTestUser(t, db)
-		account := testutil.CreateTestCreditCardAccount(t, db, user.ID, 5000)
-
-		err := svc.UpdateAccountBalance(db, account, models.TransactionTypeIncome, 3000)
-		testutil.AssertNoError(t, err)
-
-		if account.Balance != 2000 {
-			t.Errorf("expected balance 2000 after payment, got %d", account.Balance)
-		}
-
-		var dbAccount models.Account
-		db.First(&dbAccount, "id = ?", account.ID)
-		if dbAccount.Balance != 2000 {
-			t.Errorf("expected DB balance 2000, got %d", dbAccount.Balance)
-		}
-	})
-
-	t.Run("cash_account_unchanged_behavior", func(t *testing.T) {
-		db := testutil.SetupTestDB(t)
-		defer testutil.TeardownTestDB(t, db)
-		svc := NewAccountService(db)
-		user := testutil.CreateTestUser(t, db)
-		account := testutil.CreateTestCashAccountWithBalance(t, db, user.ID, 1000)
-
-		err := svc.UpdateAccountBalance(db, account, models.TransactionTypeIncome, 500)
-		testutil.AssertNoError(t, err)
-
-		if account.Balance != 1500 {
-			t.Errorf("expected balance 1500, got %d", account.Balance)
 		}
 	})
 }

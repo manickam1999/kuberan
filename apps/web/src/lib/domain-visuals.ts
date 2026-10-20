@@ -3,6 +3,7 @@ import {
   ArrowDownRight,
   ArrowUpRight,
   Banknote,
+  HandCoins,
   CreditCard,
   Landmark,
   TrendingUp,
@@ -108,6 +109,14 @@ export const TRANSACTION_VISUALS: Record<TransactionType, TransactionVisual> = {
     text: "text-investment",
     chip: "bg-investment-muted text-investment",
     sign: "",
+  },
+  // Repayment of a receivable: money back into an account, not income.
+  reimbursement: {
+    label: "Repayment",
+    icon: HandCoins,
+    text: "text-positive",
+    chip: "bg-positive-muted text-positive",
+    sign: "+",
   },
 };
 

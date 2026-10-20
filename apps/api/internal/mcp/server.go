@@ -27,6 +27,7 @@ type Services struct {
 	Budgets      services.BudgetServicer
 	Investments  services.InvestmentServicer
 	Snapshots    services.PortfolioSnapshotServicer
+	Receivables  services.ReceivableServicer
 }
 
 type userIDKey struct{}
@@ -156,6 +157,7 @@ func Run(svc Services, addr string, oauth OAuthConfig, validator TokenValidator)
 	s.registerBudgetTools()
 	s.registerInvestmentTools()
 	s.registerSnapshotTools()
+	s.registerReceivableTools()
 
 	mcpHandler := server.NewStreamableHTTPServer(s.mcp,
 		server.WithHTTPContextFunc(makeAuthFromRequest(validator)),

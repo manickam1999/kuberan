@@ -451,8 +451,13 @@ func (s *investmentService) RecordBuy(
 			return apperrors.Wrap(apperrors.ErrInternalServer, txErr)
 		}
 
-		// Deduct from funding account
+		// Deduct from funding account (row-locked, relative update; plan 021, D10)
 		if fundingAccount != nil {
+			accounts, txErr := lockAccounts(tx, userID, []string{fundingAccountID}, true)
+			if txErr != nil {
+				return txErr
+			}
+			locked := accounts[fundingAccountID]
 			cashTx := models.Transaction{
 				UserID:      userID,
 				AccountID:   fundingAccountID,
@@ -464,7 +469,7 @@ func (s *investmentService) RecordBuy(
 			if txErr := tx.Create(&cashTx).Error; txErr != nil {
 				return apperrors.Wrap(apperrors.ErrInternalServer, txErr)
 			}
-			if txErr := s.accountService.UpdateAccountBalance(tx, fundingAccount, models.TransactionTypeExpense, totalAmount); txErr != nil {
+			if txErr := s.accountService.ApplyBalanceDelta(tx, locked.ID, locked.Type, models.TransactionTypeExpense, totalAmount); txErr != nil {
 				return txErr
 			}
 		}
@@ -547,8 +552,13 @@ func (s *investmentService) RecordSell(
 			return apperrors.Wrap(apperrors.ErrInternalServer, txErr)
 		}
 
-		// Credit deposit account with net proceeds
+		// Credit deposit account with net proceeds (row-locked, relative update)
 		if depositAccount != nil {
+			accounts, txErr := lockAccounts(tx, userID, []string{depositAccountID}, true)
+			if txErr != nil {
+				return txErr
+			}
+			locked := accounts[depositAccountID]
 			cashTx := models.Transaction{
 				UserID:      userID,
 				AccountID:   depositAccountID,
@@ -560,7 +570,7 @@ func (s *investmentService) RecordSell(
 			if txErr := tx.Create(&cashTx).Error; txErr != nil {
 				return apperrors.Wrap(apperrors.ErrInternalServer, txErr)
 			}
-			if txErr := s.accountService.UpdateAccountBalance(tx, depositAccount, models.TransactionTypeIncome, totalAmount); txErr != nil {
+			if txErr := s.accountService.ApplyBalanceDelta(tx, locked.ID, locked.Type, models.TransactionTypeIncome, totalAmount); txErr != nil {
 				return txErr
 			}
 		}

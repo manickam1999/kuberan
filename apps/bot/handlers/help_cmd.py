@@ -23,7 +23,8 @@ def handle():
 /budgets - View budget status
 
 *Reports*
-/summary - Monthly income/expense summary
+/summary - Monthly income/spending summary
+/owed - See who owes you money (shared expenses)
 
 *Help*
 /help - Show this help message

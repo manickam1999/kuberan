@@ -38,3 +38,14 @@ def format_account_type(account_type: str) -> str:
 def format_percentage(value: float) -> str:
     """Format percentage value"""
     return f"{value:.1f}%"
+
+
+def escape_markdown(text: str) -> str:
+    """Escape the characters Telegram legacy Markdown treats as entity markers.
+
+    Legacy Markdown only supports escaping _, *, ` and [ (a backslash before
+    any other character is shown literally), so backslashes are left as-is.
+    """
+    for ch in ("_", "*", "`", "["):
+        text = text.replace(ch, "\\" + ch)
+    return text

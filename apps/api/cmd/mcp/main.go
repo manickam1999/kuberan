@@ -47,6 +47,7 @@ func run() error {
 	budgetService := services.NewBudgetService(db)
 	investmentService := services.NewInvestmentService(db, accountService)
 	snapshotService := services.NewPortfolioSnapshotService(db)
+	receivableService := services.NewReceivableService(db, accountService, ruleService)
 
 	// MCP_PORT accepts either a bare port ("8081") or a full listen address
 	// (":8081", "0.0.0.0:8081"). Normalize to a valid net.Listen address.
@@ -73,6 +74,7 @@ func run() error {
 		Budgets:      budgetService,
 		Investments:  investmentService,
 		Snapshots:    snapshotService,
+		Receivables:  receivableService,
 	}, addr, mcpserver.OAuthConfig{
 		Issuer:      cfg.HydraIssuerURL,
 		ResourceURL: cfg.MCPResourceURL,
