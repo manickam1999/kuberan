@@ -331,29 +331,73 @@ func (s *accountService) updateFixedDepositDetails(account *models.Account, fiel
 	return nil
 }
 
-// UpdateAccountBalance updates the balance of an account based on transaction
-func (s *accountService) UpdateAccountBalance(tx *gorm.DB, account *models.Account, transactionType models.TransactionType, amount int64) error {
-	// Update the balance based on transaction type and account type
-	// Credit cards: positive balance = amount owed (expense increases, income/payment decreases)
-	// All others: income adds, expense subtracts
-	switch transactionType {
-	case models.TransactionTypeIncome:
-		if account.Type == models.AccountTypeCreditCard {
-			account.Balance -= amount
-		} else {
-			account.Balance += amount
-		}
+// isLiabilityAccount reports whether an account's balance represents an amount
+// owed (credit_card and debt), so signs are inverted: expenses increase the
+// balance and income/repayments decrease it.
+func isLiabilityAccount(t models.AccountType) bool {
+	return t == models.AccountTypeCreditCard || t == models.AccountTypeDebt
+}
+
+// balanceDelta returns the signed change to an account's balance for a
+// transaction of the given type. Income and reimbursement credit the account,
+// expense debits it; liability accounts (credit_card, debt) are inverted. The
+// bool is false for types that do not have a single-leg balance effect.
+func balanceDelta(accountType models.AccountType, txnType models.TransactionType, amount int64) (int64, bool) {
+	var delta int64
+	switch txnType {
+	case models.TransactionTypeIncome, models.TransactionTypeReimbursement:
+		delta = amount
 	case models.TransactionTypeExpense:
-		if account.Type == models.AccountTypeCreditCard {
-			account.Balance += amount
-		} else {
-			account.Balance -= amount
-		}
+		delta = -amount
+	default:
+		return 0, false
+	}
+	if isLiabilityAccount(accountType) {
+		delta = -delta
+	}
+	return delta, true
+}
+
+// UpdateAccountBalance updates the balance of an account based on transaction.
+// Liability accounts (credit_card, debt) hold the amount owed: an expense
+// increases the balance, while income and reimbursements decrease it.
+// Transaction types without a single-leg balance effect are ignored.
+func (s *accountService) UpdateAccountBalance(tx *gorm.DB, account *models.Account, transactionType models.TransactionType, amount int64) error {
+	delta, ok := balanceDelta(account.Type, transactionType, amount)
+	if ok {
+		account.Balance += delta
 	}
 
 	// Save the updated balance
 	if err := tx.Model(account).Update("balance", account.Balance).Error; err != nil {
 		return apperrors.Wrap(apperrors.ErrInternalServer, err)
+	}
+	return nil
+}
+
+// ApplyBalanceDelta applies the balance effect of a transaction to an account
+// with a relative SQL update (balance = balance + delta) instead of writing an
+// absolute value, so it never overwrites a concurrent change. The caller passes
+// the account's type (it already holds the locked account row), which avoids a
+// re-read. Only income, expense and reimbursement are supported; the sign rules
+// match UpdateAccountBalance.
+func (s *accountService) ApplyBalanceDelta(tx *gorm.DB, accountID string, accountType models.AccountType, txnType models.TransactionType, amount int64) error {
+	if amount < 0 {
+		return apperrors.WithMessage(apperrors.ErrInvalidInput, "amount must not be negative")
+	}
+	delta, ok := balanceDelta(accountType, txnType, amount)
+	if !ok {
+		return apperrors.ErrInvalidTransactionType
+	}
+
+	res := tx.Model(&models.Account{}).
+		Where("id = ?", accountID).
+		UpdateColumn("balance", gorm.Expr("balance + ?", delta))
+	if res.Error != nil {
+		return apperrors.Wrap(apperrors.ErrInternalServer, res.Error)
+	}
+	if res.RowsAffected == 0 {
+		return apperrors.ErrAccountNotFound
 	}
 	return nil
 }

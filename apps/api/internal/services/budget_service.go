@@ -205,7 +205,7 @@ func (s *budgetService) GetBudgetProgress(userID, budgetID string) (*BudgetProgr
 	// Sum expense transactions for this category within the period
 	var spent int64
 	err = s.db.Model(&models.Transaction{}).
-		Select("COALESCE(SUM(amount), 0)").
+		Select("COALESCE(SUM("+effectiveAmountSQL+"), 0)").
 		Where("user_id = ? AND category_id = ? AND type = ? AND date BETWEEN ? AND ?",
 			userID, budget.CategoryID, models.TransactionTypeExpense, periodStart, periodEnd).
 		Scan(&spent).Error
@@ -253,7 +253,7 @@ func (s *budgetService) GetActiveBudgetsProgress(userID string) ([]BudgetProgres
 		}
 		var rows []categorySpend
 		if err := s.db.Model(&models.Transaction{}).
-			Select("category_id, COALESCE(SUM(amount), 0) AS total").
+			Select("category_id, COALESCE(SUM("+effectiveAmountSQL+"), 0) AS total").
 			Where("user_id = ? AND category_id IN ? AND type = ? AND date BETWEEN ? AND ?",
 				userID, categoryIDs, models.TransactionTypeExpense, periodStart, periodEnd).
 			Group("category_id").

@@ -148,3 +148,33 @@ var (
 	// missing its associated fixed_deposit_details record.
 	ErrFixedDepositDetailsNotFound = &AppError{Code: "FIXED_DEPOSIT_DETAILS_NOT_FOUND", Message: "Fixed deposit details not found", StatusCode: http.StatusNotFound}
 )
+
+// Receivable errors (plan 021).
+var (
+	// ErrReceivableNotFound is returned when a receivable does not exist or is not owned by the user.
+	ErrReceivableNotFound = &AppError{Code: "RECEIVABLE_NOT_FOUND", Message: "Receivable not found", StatusCode: http.StatusNotFound}
+
+	// ErrSettlementNotFound is returned when a receivable settlement does not exist or is not owned by the user.
+	ErrSettlementNotFound = &AppError{Code: "SETTLEMENT_NOT_FOUND", Message: "Settlement not found", StatusCode: http.StatusNotFound}
+
+	// ErrReceivableHasSettlements is returned when deleting a shared expense that has repayments recorded.
+	ErrReceivableHasSettlements = &AppError{Code: "RECEIVABLE_HAS_SETTLEMENTS", Message: "Delete the repayments for this expense first", StatusCode: http.StatusConflict}
+
+	// ErrReceivableHasPayments is returned when removing a receivable that already has payments.
+	ErrReceivableHasPayments = &AppError{Code: "RECEIVABLE_HAS_PAYMENTS", Message: "Cannot remove a receivable that has payments", StatusCode: http.StatusConflict}
+
+	// ErrSettlementExceedsOutstanding is returned when a repayment is larger than the outstanding balance.
+	ErrSettlementExceedsOutstanding = &AppError{Code: "SETTLEMENT_EXCEEDS_OUTSTANDING", Message: "Repayment exceeds the outstanding amount", StatusCode: http.StatusBadRequest}
+
+	// ErrWriteOffExceedsOutstanding is returned when a write-off is larger than the outstanding balance.
+	ErrWriteOffExceedsOutstanding = &AppError{Code: "WRITE_OFF_EXCEEDS_OUTSTANDING", Message: "Write-off exceeds the outstanding amount", StatusCode: http.StatusBadRequest}
+
+	// ErrInvalidShares is returned when the counterparty shares of an expense are invalid.
+	ErrInvalidShares = &AppError{Code: "INVALID_SHARES", Message: "Invalid shares", StatusCode: http.StatusBadRequest}
+
+	// ErrInvalidSettlementAccount is returned when a repayment targets an account type that cannot receive one.
+	ErrInvalidSettlementAccount = &AppError{Code: "INVALID_SETTLEMENT_ACCOUNT", Message: "Repayments can only be credited to cash, credit card or debt accounts", StatusCode: http.StatusBadRequest}
+
+	// ErrInvalidReceivableKind is returned when a receivable kind is not supported.
+	ErrInvalidReceivableKind = &AppError{Code: "INVALID_RECEIVABLE_KIND", Message: "Invalid receivable kind", StatusCode: http.StatusBadRequest}
+)

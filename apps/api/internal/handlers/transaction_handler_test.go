@@ -228,6 +228,28 @@ func TestTransactionHandler_CreateTransaction(t *testing.T) {
 		}
 	})
 
+	t.Run("returns 400 on reimbursement type (server-created only)", func(t *testing.T) {
+		called := false
+		txSvc := &mockTransactionService{
+			createTransactionFn: func(_, _ string, _ *string, _ models.TransactionType, _ int64, _ string, _ time.Time) (*models.Transaction, error) {
+				called = true
+				return &models.Transaction{}, nil
+			},
+		}
+		handler := NewTransactionHandler(txSvc, &mockAuditService{})
+		r := setupTransactionRouter(handler)
+
+		rec := doRequest(r, "POST", "/transactions",
+			`{"account_id":"00000000-0000-0000-0000-000000000001","type":"reimbursement","amount":1000}`)
+
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("expected 400, got %d: %s", rec.Code, rec.Body.String())
+		}
+		if called {
+			t.Error("service must not be called for a reimbursement")
+		}
+	})
+
 	t.Run("returns 404 when account not found", func(t *testing.T) {
 		txSvc := &mockTransactionService{
 			createTransactionFn: func(_, _ string, _ *string, _ models.TransactionType, _ int64, _ string, _ time.Time) (*models.Transaction, error) {
@@ -381,6 +403,28 @@ func TestTransactionHandler_GetAccountTransactions(t *testing.T) {
 		}
 		if capturedFilter.MaxAmount == nil || *capturedFilter.MaxAmount != 5000 {
 			t.Errorf("expected max_amount=5000, got %v", capturedFilter.MaxAmount)
+		}
+	})
+
+	t.Run("accepts reimbursement type filter", func(t *testing.T) {
+		var capturedFilter services.TransactionFilter
+		txSvc := &mockTransactionService{
+			getAccountTransactionsFn: func(_, _ string, page pagination.PageRequest, filter services.TransactionFilter) (*pagination.PageResponse[models.Transaction], error) {
+				capturedFilter = filter
+				resp := pagination.NewPageResponse([]models.Transaction{}, page.Page, page.PageSize, 0)
+				return &resp, nil
+			},
+		}
+		handler := NewTransactionHandler(txSvc, &mockAuditService{})
+		r := setupTransactionRouter(handler)
+
+		rec := doRequest(r, "GET", "/accounts/00000000-0000-0000-0000-000000000001/transactions?type=reimbursement", "")
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+		}
+		if capturedFilter.Type == nil || *capturedFilter.Type != models.TransactionTypeReimbursement {
+			t.Errorf("expected reimbursement filter, got %v", capturedFilter.Type)
 		}
 	})
 
@@ -655,6 +699,17 @@ func TestTransactionHandler_UpdateTransaction(t *testing.T) {
 		r := setupTransactionRouter(handler)
 
 		rec := doRequest(r, "PUT", "/transactions/00000000-0000-0000-0000-000000000001", `{"amount":-1}`)
+
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("expected 400, got %d: %s", rec.Code, rec.Body.String())
+		}
+	})
+
+	t.Run("returns_400_for_reimbursement_type", func(t *testing.T) {
+		handler := NewTransactionHandler(&mockTransactionService{}, &mockAuditService{})
+		r := setupTransactionRouter(handler)
+
+		rec := doRequest(r, "PUT", "/transactions/00000000-0000-0000-0000-000000000001", `{"type":"reimbursement"}`)
 
 		if rec.Code != http.StatusBadRequest {
 			t.Fatalf("expected 400, got %d: %s", rec.Code, rec.Body.String())

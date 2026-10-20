@@ -130,6 +130,11 @@ type AccountServicer interface {
 	GetAccountByID(userID, accountID string) (*models.Account, error)
 	UpdateAccount(userID, accountID string, updates AccountUpdateFields) (*models.Account, error)
 	UpdateAccountBalance(tx *gorm.DB, account *models.Account, transactionType models.TransactionType, amount int64) error
+	// ApplyBalanceDelta applies a transaction's balance effect with a relative
+	// update (balance = balance + delta) on accountID, whose type the caller
+	// supplies. Income and reimbursement credit, expense debits; credit_card and
+	// debt accounts are inverted. Safe under concurrency (plan 021, D10).
+	ApplyBalanceDelta(tx *gorm.DB, accountID string, accountType models.AccountType, txnType models.TransactionType, amount int64) error
 }
 
 // CategoryServicer defines the contract for category-related business logic.
@@ -220,16 +225,17 @@ type DailySummaryItem struct {
 
 // TopExpenseItem represents a single high-value expense transaction.
 type TopExpenseItem struct {
-	ID            string    `json:"id"`
-	AccountID     string    `json:"account_id"`
-	AccountName   string    `json:"account_name"`
-	CategoryID    *string   `json:"category_id"`
-	CategoryName  string    `json:"category_name"`
-	CategoryColor string    `json:"category_color"`
-	CategoryIcon  string    `json:"category_icon"`
-	Amount        int64     `json:"amount"` // cents
-	Description   string    `json:"description"`
-	Date          time.Time `json:"date"`
+	ID             string    `json:"id"`
+	AccountID      string    `json:"account_id"`
+	AccountName    string    `json:"account_name"`
+	CategoryID     *string   `json:"category_id"`
+	CategoryName   string    `json:"category_name"`
+	CategoryColor  string    `json:"category_color"`
+	CategoryIcon   string    `json:"category_icon"`
+	Amount         int64     `json:"amount"`          // cents, the full amount that left the account
+	PersonalAmount *int64    `json:"personal_amount"` // cents, the user's own share; nil when not shared
+	Description    string    `json:"description"`
+	Date           time.Time `json:"date"`
 }
 
 // TopExpenses represents the top-N expense transactions for a date range.

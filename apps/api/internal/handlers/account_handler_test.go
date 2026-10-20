@@ -78,6 +78,10 @@ func (m *mockAccountService) UpdateAccountBalance(tx *gorm.DB, account *models.A
 	return nil
 }
 
+func (m *mockAccountService) ApplyBalanceDelta(_ *gorm.DB, _ string, _ models.AccountType, _ models.TransactionType, _ int64) error {
+	return nil
+}
+
 func (m *mockAccountService) CreateFixedDepositAccount(userID string, params services.CreateFixedDepositParams) (*models.Account, error) {
 	if m.createFixedDepositAccountFn != nil {
 		return m.createFixedDepositAccountFn(userID, params)

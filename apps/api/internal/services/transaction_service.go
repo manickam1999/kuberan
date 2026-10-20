@@ -31,6 +31,12 @@ func NewTransactionService(db *gorm.DB, accountService AccountServicer, ruleServ
 	}
 }
 
+// effectiveAmountSQL is the SQL expression for the amount that counts as the
+// user's own spending: the personal share of a shared expense, or the full amount
+// when the expense is not shared (personal_amount IS NULL). Every spending
+// aggregate over expenses must sum this instead of the raw amount (plan 021, D1).
+const effectiveAmountSQL = "COALESCE(personal_amount, amount)"
+
 // CreateTransaction creates a new transaction for a user's account
 func (s *transactionService) CreateTransaction(
 	userID string,
@@ -150,7 +156,7 @@ func (s *transactionService) CreateTransfer(
 		return nil, err
 	}
 
-	if fromAccount.Type != models.AccountTypeCreditCard && fromAccount.Balance < amount {
+	if !isLiabilityAccount(fromAccount.Type) && fromAccount.Balance < amount {
 		return nil, apperrors.ErrInsufficientBalance
 	}
 
@@ -324,12 +330,18 @@ func inputsToConditions(conditions []RuleConditionInput) []models.TransactionRul
 	return out
 }
 
-// reverseType flips income↔expense for balance reversal.
-func reverseType(t models.TransactionType) models.TransactionType {
-	if t == models.TransactionTypeIncome {
-		return models.TransactionTypeExpense
+// reverseType returns the transaction type that undoes the balance effect of t:
+// income→expense, expense→income and reimbursement→expense. Any other type has no
+// single-leg reversal and yields ErrInvalidTransactionType.
+func reverseType(t models.TransactionType) (models.TransactionType, error) {
+	switch t {
+	case models.TransactionTypeIncome, models.TransactionTypeReimbursement:
+		return models.TransactionTypeExpense, nil
+	case models.TransactionTypeExpense:
+		return models.TransactionTypeIncome, nil
+	default:
+		return "", apperrors.ErrInvalidTransactionType
 	}
-	return models.TransactionTypeIncome
 }
 
 // UpdateTransaction updates an existing income/expense transaction.
@@ -340,15 +352,19 @@ func (s *transactionService) UpdateTransaction(userID, transactionID string, upd
 		return nil, err
 	}
 
-	// Reject transfers and investment transactions
-	if transaction.Type == models.TransactionTypeTransfer || transaction.Type == models.TransactionTypeInvestment {
+	// Reject transfers, investment transactions and reimbursements (the latter are
+	// managed through their receivable settlement)
+	if transaction.Type == models.TransactionTypeTransfer ||
+		transaction.Type == models.TransactionTypeInvestment ||
+		transaction.Type == models.TransactionTypeReimbursement {
 		return nil, apperrors.ErrTransactionNotEditable
 	}
 
-	// If type change requested, reject changes to/from transfer or investment
+	// If type change requested, reject changes to/from transfer, investment or reimbursement
 	if updates.Type != nil {
 		newType := *updates.Type
-		if newType == models.TransactionTypeTransfer || newType == models.TransactionTypeInvestment {
+		if newType == models.TransactionTypeTransfer || newType == models.TransactionTypeInvestment ||
+			newType == models.TransactionTypeReimbursement {
 			return nil, apperrors.ErrInvalidTypeChange
 		}
 	}
@@ -372,6 +388,11 @@ func (s *transactionService) UpdateTransaction(userID, transactionID string, upd
 		newAmount = *updates.Amount
 	}
 
+	reversal, err := reverseType(oldType)
+	if err != nil {
+		return nil, err
+	}
+
 	// Fetch old account
 	oldAccount, err := s.accountService.GetAccountByID(userID, oldAccountID)
 	if err != nil {
@@ -391,7 +412,7 @@ func (s *transactionService) UpdateTransaction(userID, transactionID string, upd
 
 	err = s.db.Transaction(func(tx *gorm.DB) error {
 		// Reverse old impact on old account
-		if txErr := s.accountService.UpdateAccountBalance(tx, oldAccount, reverseType(oldType), oldAmount); txErr != nil {
+		if txErr := s.accountService.UpdateAccountBalance(tx, oldAccount, reversal, oldAmount); txErr != nil {
 			return txErr
 		}
 
@@ -575,6 +596,11 @@ func (s *transactionService) DeleteTransaction(userID, transactionID string) err
 		return err
 	}
 
+	// Reimbursements are removed by deleting their receivable settlement.
+	if transaction.Type == models.TransactionTypeReimbursement {
+		return apperrors.ErrTransactionNotEditable
+	}
+
 	account, err := s.accountService.GetAccountByID(userID, transaction.AccountID)
 	if err != nil {
 		return err
@@ -632,7 +658,7 @@ func (s *transactionService) GetMonthlySummary(userID string, months int) ([]Mon
 
 		var expenses int64
 		if err := s.db.Model(&models.Transaction{}).
-			Select("COALESCE(SUM(amount), 0)").
+			Select("COALESCE(SUM("+effectiveAmountSQL+"), 0)").
 			Where("user_id = ? AND type = ? AND deleted_at IS NULL AND date BETWEEN ? AND ?",
 				userID, models.TransactionTypeExpense, monthStart, monthEnd).
 			Scan(&expenses).Error; err != nil {
@@ -665,7 +691,7 @@ func (s *transactionService) GetDailySpending(userID string, from, to time.Time)
 
 		var total int64
 		if err := s.db.Model(&models.Transaction{}).
-			Select("COALESCE(SUM(amount), 0)").
+			Select("COALESCE(SUM("+effectiveAmountSQL+"), 0)").
 			Where("user_id = ? AND type = ? AND deleted_at IS NULL AND date BETWEEN ? AND ?",
 				userID, models.TransactionTypeExpense, dayStart, dayEnd).
 			Scan(&total).Error; err != nil {
@@ -710,7 +736,7 @@ func (s *transactionService) GetDailySummary(userID string, from, to time.Time) 
 
 		var expenses int64
 		if err := s.db.Model(&models.Transaction{}).
-			Select("COALESCE(SUM(amount), 0)").
+			Select("COALESCE(SUM("+effectiveAmountSQL+"), 0)").
 			Where("user_id = ? AND type = ? AND deleted_at IS NULL AND date BETWEEN ? AND ?",
 				userID, models.TransactionTypeExpense, dayStart, dayEnd).
 			Scan(&expenses).Error; err != nil {
@@ -783,7 +809,7 @@ func (s *transactionService) totalsByCategory(userID string, txnType models.Tran
 
 	var results []categorySpend
 	err := s.db.Model(&models.Transaction{}).
-		Select("category_id, COALESCE(SUM(amount), 0) as total").
+		Select("category_id, COALESCE(SUM("+effectiveAmountSQL+"), 0) as total").
 		Where("user_id = ? AND type = ? AND deleted_at IS NULL AND date BETWEEN ? AND ?",
 			userID, txnType, from, to).
 		Group("category_id").
@@ -870,28 +896,32 @@ func (s *transactionService) GetCashflow(userID string, from, to time.Time) (*Ca
 	}, nil
 }
 
-// GetTopExpenses returns the largest expense transactions for a date range, ordered by amount descending.
+// GetTopExpenses returns the largest expense transactions for a date range, ordered
+// by effective (personal) amount descending. Expenses whose effective amount is 0
+// (fully reimbursable) are excluded. Amount is always the full amount.
 func (s *transactionService) GetTopExpenses(userID string, from, to time.Time, limit int, categoryID *string) (*TopExpenses, error) {
 	type expenseRow struct {
-		ID          string
-		AccountID   string
-		CategoryID  *string
-		Amount      int64
-		Description string
-		Date        time.Time
+		ID             string
+		AccountID      string
+		CategoryID     *string
+		Amount         int64
+		PersonalAmount *int64
+		Description    string
+		Date           time.Time
 	}
 
 	query := s.db.Model(&models.Transaction{}).
-		Select("id, account_id, category_id, amount, description, date").
+		Select("id, account_id, category_id, amount, personal_amount, description, date").
 		Where("user_id = ? AND type = ? AND deleted_at IS NULL AND date BETWEEN ? AND ?",
-			userID, models.TransactionTypeExpense, from, to)
+			userID, models.TransactionTypeExpense, from, to).
+		Where(effectiveAmountSQL + " > 0")
 	if categoryID != nil {
 		query = query.Where("category_id = ?", *categoryID)
 	}
 
 	var rows []expenseRow
 	err := query.
-		Order("amount DESC").
+		Order(effectiveAmountSQL + " DESC").
 		Limit(limit).
 		Scan(&rows).Error
 	if err != nil {
@@ -901,12 +931,13 @@ func (s *transactionService) GetTopExpenses(userID string, from, to time.Time, l
 	items := make([]TopExpenseItem, 0, len(rows))
 	for _, r := range rows {
 		item := TopExpenseItem{
-			ID:          r.ID,
-			AccountID:   r.AccountID,
-			CategoryID:  r.CategoryID,
-			Amount:      r.Amount,
-			Description: r.Description,
-			Date:        r.Date,
+			ID:             r.ID,
+			AccountID:      r.AccountID,
+			CategoryID:     r.CategoryID,
+			Amount:         r.Amount,
+			PersonalAmount: r.PersonalAmount,
+			Description:    r.Description,
+			Date:           r.Date,
 		}
 
 		var account models.Account

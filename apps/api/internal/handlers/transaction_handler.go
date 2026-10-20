@@ -303,10 +303,11 @@ func parseTransactionFilter(c *gin.Context) (services.TransactionFilter, error) 
 		txType := models.TransactionType(v)
 		switch txType {
 		case models.TransactionTypeIncome, models.TransactionTypeExpense,
-			models.TransactionTypeTransfer, models.TransactionTypeInvestment:
+			models.TransactionTypeTransfer, models.TransactionTypeInvestment,
+			models.TransactionTypeReimbursement:
 			filter.Type = &txType
 		default:
-			return filter, apperrors.WithMessage(apperrors.ErrInvalidInput, "invalid type, must be income, expense, transfer, or investment")
+			return filter, apperrors.WithMessage(apperrors.ErrInvalidInput, "invalid type, must be income, expense, transfer, investment, or reimbursement")
 		}
 	}
 
