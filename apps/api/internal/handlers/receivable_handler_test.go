@@ -154,26 +154,17 @@ func (m *mockReceivableService) RenameCounterparty(userID, fromKey, toName strin
 
 var _ services.ReceivableServicer = (*mockReceivableService)(nil)
 
-// setupReceivableRouter registers the routes exactly like cmd/api/main.go so
-// route collisions between static segments and /:id would surface here.
+// setupReceivableRouter registers the receivable and transaction routes through
+// the same functions cmd/api/main.go uses (RegisterRoutes), so a deleted route or
+// a static-vs-/:id collision surfaces here.
 func setupReceivableRouter(h *ReceivableHandler) *gin.Engine {
 	r := gin.New()
 	auth := r.Group("", injectUserID("test-user-1"))
-
-	transactions := auth.Group("/transactions")
-	transactions.POST("/shared", h.CreateSharedExpense)
-	transactions.PUT("/:id/receivables", h.UpdateReceivables)
-
-	receivables := auth.Group("/receivables")
-	receivables.GET("", h.ListReceivables)
-	receivables.GET("/summary", h.GetReceivablesSummary)
-	receivables.GET("/counterparties", h.ListCounterparties)
-	receivables.POST("/counterparties/rename", h.RenameCounterparty)
-	receivables.DELETE("/settlements/:id", h.DeleteSettlement)
-	receivables.GET("/:id", h.GetReceivable)
-	receivables.POST("/:id/settle", h.SettleReceivable)
-	receivables.POST("/:id/write-off", h.WriteOffReceivable)
-	receivables.DELETE("/:id/write-off", h.UndoWriteOff)
+	// Only the receivable handler is wired; the other handlers are nil, which is
+	// safe because the transaction-route registration just binds method values.
+	routes := Routes{Receivable: h}
+	registerTransactionRoutes(auth, routes)
+	registerReceivableRoutes(auth, routes)
 	return r
 }
 

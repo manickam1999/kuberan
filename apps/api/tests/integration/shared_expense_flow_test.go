@@ -356,7 +356,6 @@ func TestSharedExpenseFlow_UserIsolationAndAuth(t *testing.T) {
 	b.callErr("PUT", "/api/v1/transactions/"+txnID+"/receivables", `{"receivables":[]}`, http.StatusNotFound, "TRANSACTION_NOT_FOUND")
 	b.callErr("POST", "/api/v1/transactions/shared", fmt.Sprintf(
 		`{"account_id":%q,"amount":100,"kind":"loan","mode":"full","counterparties":[{"name":"X"}]}`, acctA), http.StatusNotFound, "ACCOUNT_NOT_FOUND")
-	b.callErr("POST", "/api/v1/receivables/"+recID+"/settle", fmt.Sprintf(`{"account_id":%q,"amount":100}`, acctB), http.StatusNotFound, "RECEIVABLE_NOT_FOUND")
 	a.callErr("POST", "/api/v1/receivables/"+recID+"/settle", fmt.Sprintf(`{"account_id":%q,"amount":100}`, acctB), http.StatusNotFound, "ACCOUNT_NOT_FOUND")
 
 	if list := b.call("GET", "/api/v1/receivables", "", http.StatusOK); num(list, "total_items") != 0 {

@@ -295,8 +295,19 @@ func TestUpdateTransaction_SharedExpense(t *testing.T) {
 		testutil.AssertNoError(t, err)
 		e.wantBalance(e.cash.ID, recCashStart+2000)
 		e.wantBalance(other.ID, 20000-6000)
-		if s.AccountID != e.cash.ID {
-			t.Errorf("settlement account = %s", s.AccountID)
+		// Reload from the DB: the in-memory struct returned by Settle proves nothing.
+		var settlement models.ReceivableSettlement
+		testutil.AssertNoError(t, e.db.First(&settlement, "id = ?", s.ID).Error)
+		if settlement.AccountID != e.cash.ID {
+			t.Errorf("persisted settlement account = %s, want cash %s", settlement.AccountID, e.cash.ID)
+		}
+		var reimb models.Transaction
+		testutil.AssertNoError(t, e.db.First(&reimb, "id = ?", settlement.TransactionID).Error)
+		if reimb.AccountID != e.cash.ID {
+			t.Errorf("persisted reimbursement account = %s, want cash %s", reimb.AccountID, e.cash.ID)
+		}
+		if reimb.Type != models.TransactionTypeReimbursement || reimb.Amount != 2000 {
+			t.Errorf("reimbursement = %s %d, want reimbursement 2000", reimb.Type, reimb.Amount)
 		}
 	})
 	t.Run("description and date edits keep the share", func(t *testing.T) {

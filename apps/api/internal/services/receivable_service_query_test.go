@@ -457,7 +457,7 @@ func TestReceivables_UserIsolation(t *testing.T) {
 	e.check()
 	e.wantBalance(e.cash.ID, recCashStart-6000+500)
 	e.wantPersonal(x.ID, 2000)
-	if theirAcct.Balance != 500000 || e.balance(theirAcct.ID) != 500000 {
-		t.Errorf("their balance changed to %d", e.balance(theirAcct.ID))
+	if got := e.balance(theirAcct.ID); got != 500000 {
+		t.Errorf("their balance changed to %d", got)
 	}
 }

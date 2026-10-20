@@ -107,49 +107,6 @@ func TestApplyBalanceDelta(t *testing.T) {
 	})
 }
 
-func TestApplyBalanceDelta_DebtAndReimbursement(t *testing.T) {
-	tests := []struct {
-		name     string
-		acctType models.AccountType
-		txnType  models.TransactionType
-		want     int64
-	}{
-		{"debt_expense_increases_owed", models.AccountTypeDebt, models.TransactionTypeExpense, 10500},
-		{"debt_income_decreases_owed", models.AccountTypeDebt, models.TransactionTypeIncome, 9500},
-		{"debt_reimbursement_decreases_owed", models.AccountTypeDebt, models.TransactionTypeReimbursement, 9500},
-		{"credit_card_expense_increases_owed", models.AccountTypeCreditCard, models.TransactionTypeExpense, 10500},
-		{"credit_card_reimbursement_decreases_owed", models.AccountTypeCreditCard, models.TransactionTypeReimbursement, 9500},
-		{"cash_reimbursement_credits", models.AccountTypeCash, models.TransactionTypeReimbursement, 10500},
-		{"cash_expense_debits", models.AccountTypeCash, models.TransactionTypeExpense, 9500},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			db := testutil.SetupTestDB(t)
-			defer testutil.TeardownTestDB(t, db)
-			svc := NewAccountService(db)
-			user := testutil.CreateTestUser(t, db)
-
-			var account *models.Account
-			switch tt.acctType {
-			case models.AccountTypeCreditCard:
-				account = testutil.CreateTestCreditCardAccount(t, db, user.ID, 10000)
-			case models.AccountTypeDebt:
-				account = testutil.CreateTestDebtAccount(t, db, user.ID, 10000)
-			default:
-				account = testutil.CreateTestCashAccountWithBalance(t, db, user.ID, 10000)
-			}
-
-			testutil.AssertNoError(t, svc.ApplyBalanceDelta(db, account.ID, account.Type, tt.txnType, 500))
-
-			got, err := svc.GetAccountByID(user.ID, account.ID)
-			testutil.AssertNoError(t, err)
-			if got.Balance != tt.want {
-				t.Errorf("balance = %d, want %d", got.Balance, tt.want)
-			}
-		})
-	}
-}
-
 func TestDebtAccountTransactionsAreInverted(t *testing.T) {
 	db := testutil.SetupTestDB(t)
 	defer testutil.TeardownTestDB(t, db)

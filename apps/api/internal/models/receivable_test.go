@@ -81,14 +81,15 @@ func TestReceivableDeriveStatus(t *testing.T) {
 		name                     string
 		amount, paid, writtenOff int64
 		want                     ReceivableStatus
+		wantOut                  int64
 	}{
-		{"pending", 1000, 0, 0, ReceivableStatusPending},
-		{"partially_paid", 1000, 400, 0, ReceivableStatusPartiallyPaid},
-		{"partially_written_off", 1000, 0, 300, ReceivableStatusPartiallyPaid},
-		{"paid_and_written_off_partial", 1000, 400, 300, ReceivableStatusPartiallyPaid},
-		{"settled", 1000, 1000, 0, ReceivableStatusSettled},
-		{"written_off_fully", 1000, 0, 1000, ReceivableStatusWrittenOff},
-		{"paid_then_written_off_remainder", 1000, 850, 150, ReceivableStatusWrittenOff},
+		{"pending", 1000, 0, 0, ReceivableStatusPending, 1000},
+		{"partially_paid", 1000, 400, 0, ReceivableStatusPartiallyPaid, 600},
+		{"partially_written_off", 1000, 0, 300, ReceivableStatusPartiallyPaid, 700},
+		{"paid_and_written_off_partial", 1000, 400, 300, ReceivableStatusPartiallyPaid, 300},
+		{"settled", 1000, 1000, 0, ReceivableStatusSettled, 0},
+		{"written_off_fully", 1000, 0, 1000, ReceivableStatusWrittenOff, 0},
+		{"paid_then_written_off_remainder", 1000, 850, 150, ReceivableStatusWrittenOff, 0},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -96,8 +97,8 @@ func TestReceivableDeriveStatus(t *testing.T) {
 			if got := r.DeriveStatus(); got != tt.want {
 				t.Errorf("DeriveStatus() = %q, want %q", got, tt.want)
 			}
-			if got, want := r.ComputeOutstanding(), tt.amount-tt.paid-tt.writtenOff; got != want || r.Outstanding != want {
-				t.Errorf("ComputeOutstanding() = %d (field %d), want %d", got, r.Outstanding, want)
+			if got := r.ComputeOutstanding(); got != tt.wantOut || r.Outstanding != tt.wantOut {
+				t.Errorf("ComputeOutstanding() = %d (field %d), want %d", got, r.Outstanding, tt.wantOut)
 			}
 		})
 	}

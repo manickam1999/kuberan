@@ -289,13 +289,13 @@ func TestGetTopExpensesShowsEffectiveAmount(t *testing.T) {
 			dinnerLine = line
 		}
 	}
-	if !strings.Contains(dinnerLine, formatCents(2000)) || strings.Contains(dinnerLine, formatCents(9000)) {
+	if !strings.Contains(dinnerLine, "$20.00") || strings.Contains(dinnerLine, "$90.00") {
 		t.Errorf("shared row must show the effective amount, got line %q", dinnerLine)
 	}
-	if !strings.Contains(text, "your share "+formatCents(2000)+" of "+formatCents(9000)) {
+	if !strings.Contains(text, "your share $20.00 of $90.00") {
 		t.Errorf("missing share note in:\n%s", text)
 	}
-	if !strings.Contains(text, formatCents(1500)) {
+	if !strings.Contains(text, "$15.00") {
 		t.Errorf("unshared row must show its full amount in:\n%s", text)
 	}
 }

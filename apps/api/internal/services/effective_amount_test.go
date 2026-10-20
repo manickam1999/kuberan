@@ -133,30 +133,42 @@ func TestEffectiveAmount_TopExpenses(t *testing.T) {
 
 	t.Run("orders_by_effective_amount_and_keeps_full_amount", func(t *testing.T) {
 		f := newSharedFixture(t, from.Add(time.Hour))
-		// A 1500 expense ranks between the shared expense (effective 2000) and the 1000 coffee.
+		// Unshared expenses of 2500 and 1500 bracket the shared expense (amount 6000,
+		// effective 2000): ordering by effective amount gives 2500, shared, 1500, 1000,
+		// whereas ordering by raw amount would put the shared expense first.
 		acct := testutil.CreateTestCashAccountWithBalance(t, f.db, f.userID, 100000)
-		_, err := f.txSvc.CreateTransaction(f.userID, acct.ID, &f.catID, models.TransactionTypeExpense, 1500, "mid", from.Add(3*time.Hour))
+		big, err := f.txSvc.CreateTransaction(f.userID, acct.ID, &f.catID, models.TransactionTypeExpense, 2500, "big", from.Add(2*time.Hour))
+		testutil.AssertNoError(t, err)
+		mid, err := f.txSvc.CreateTransaction(f.userID, acct.ID, &f.catID, models.TransactionTypeExpense, 1500, "mid", from.Add(3*time.Hour))
 		testutil.AssertNoError(t, err)
 
 		res, err := f.txSvc.GetTopExpenses(f.userID, from, to, 10, nil)
 		testutil.AssertNoError(t, err)
-		if len(res.Items) != 3 {
-			t.Fatalf("expected 3 items, got %d", len(res.Items))
+		if len(res.Items) != 4 {
+			t.Fatalf("expected 4 items, got %d", len(res.Items))
 		}
-		if res.Items[0].ID != f.sharedID {
-			t.Errorf("expected shared expense first (effective 2000), got %q", res.Items[0].Description)
+		gotIDs := []string{res.Items[0].ID, res.Items[1].ID, res.Items[2].ID}
+		wantIDs := []string{big.ID, f.sharedID, mid.ID}
+		for i := range wantIDs {
+			if gotIDs[i] != wantIDs[i] {
+				t.Fatalf("order mismatch at %d: got descriptions %q, %q, %q, %q; want big(2500), shared(eff 2000), mid(1500), coffee(1000)",
+					i, res.Items[0].Description, res.Items[1].Description, res.Items[2].Description, res.Items[3].Description)
+			}
 		}
-		if res.Items[0].Amount != 6000 {
-			t.Errorf("amount = %d, want full amount 6000", res.Items[0].Amount)
+		if res.Items[3].Description != "coffee" || res.Items[3].Amount != 1000 {
+			t.Errorf("fourth item = %+v, want the 1000 coffee", res.Items[3])
 		}
-		if res.Items[0].PersonalAmount == nil || *res.Items[0].PersonalAmount != 2000 {
-			t.Errorf("personal_amount = %v, want 2000", res.Items[0].PersonalAmount)
+		if res.Items[0].Amount != 2500 || res.Items[0].PersonalAmount != nil {
+			t.Errorf("first item = %+v, want unshared 2500", res.Items[0])
 		}
-		if res.Items[1].Amount != 1500 || res.Items[1].PersonalAmount != nil {
-			t.Errorf("second item = %+v, want unshared 1500", res.Items[1])
+		if res.Items[1].Amount != 6000 {
+			t.Errorf("amount = %d, want full amount 6000", res.Items[1].Amount)
 		}
-		if res.Items[2].Amount != 1000 {
-			t.Errorf("third item amount = %d, want 1000", res.Items[2].Amount)
+		if res.Items[1].PersonalAmount == nil || *res.Items[1].PersonalAmount != 2000 {
+			t.Errorf("personal_amount = %v, want 2000", res.Items[1].PersonalAmount)
+		}
+		if res.Items[2].Amount != 1500 || res.Items[2].PersonalAmount != nil {
+			t.Errorf("third item = %+v, want unshared 1500", res.Items[2])
 		}
 	})
 

@@ -138,7 +138,7 @@ type ReceivableSettlement struct {
 	// WrittenOffAmount is the amount written off by the same settle call
 	// (write_off_remainder). Deleting the settlement reverses it together with
 	// the payment. Zero for a plain settlement.
-	WrittenOffAmount int64 `gorm:"type:bigint;not null;default:0;check:receivable_settlements_written_off_check,written_off_amount >= 0" json:"written_off_amount"`
+	WrittenOffAmount int64 `gorm:"type:bigint;not null;default:0;check:receivable_settlements_written_off_amount_check,written_off_amount >= 0" json:"written_off_amount"`
 }
 
 // NormalizeCounterpartyKey returns the grouping key for a raw counterparty name

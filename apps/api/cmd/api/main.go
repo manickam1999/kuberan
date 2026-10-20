@@ -181,162 +181,27 @@ func run() error {
 		c.JSON(http.StatusOK, gin.H{"status": "ok", "database": "connected"})
 	})
 
-	// API v1 group
-	v1 := router.Group("/api/v1")
-
-	// Public routes
-	auth := v1.Group("/auth")
-	auth.POST("/register", authHandler.Register)
-	auth.POST("/login", authHandler.Login)
-	auth.POST("/refresh", authHandler.RefreshToken)
-
-	// OAuth login/consent bridge (public: driven by the apps/web pages during the
-	// Hydra authorization flow, before a Kuberan session exists). See plan 15.
-	oauth := v1.Group("/oauth")
-	oauth.POST("/login", oauthHandler.Login)
-	oauth.POST("/login/reject", oauthHandler.RejectLogin)
-	oauth.GET("/consent", oauthHandler.GetConsent)
-	oauth.POST("/consent/accept", oauthHandler.AcceptConsent)
-	oauth.POST("/consent/reject", oauthHandler.RejectConsent)
-	// Hardened DCR proxy: public clients only, restricted grants, capped scopes,
-	// audited + alerted (Phase 5). Served at the RFC-standard /oauth2/register path
-	// that Hydra advertises as its registration_endpoint ({issuer}/oauth2/register),
-	// so cloudflared can route DCR through this proxy via simple path matching
-	// (no path rewriting) instead of hitting Hydra's public endpoint directly.
-	// The /api/v1/oauth/register alias is retained for internal/test callers.
-	router.POST("/oauth2/register", registrationHandler.Register)
-	oauth.POST("/register", registrationHandler.Register)
-
-	// Protected routes
-	protected := v1.Group("/")
-	protected.Use(middleware.AuthMiddleware())
-
-	// User profile
-	protected.GET("/profile", authHandler.GetProfile)
-	protected.PATCH("/profile", authHandler.UpdateProfileSettings)
-
-	// Account routes.
-	// Static creation routes (/cash, /investment, /credit-card, /fixed-deposit) are
-	// registered before the param routes (/:id) so Gin resolves them as static siblings
-	// — the same pattern already in use for cash/investment/credit-card.
-	accounts := protected.Group("/accounts")
-	accounts.POST("/cash", accountHandler.CreateCashAccount)
-	accounts.POST("/investment", accountHandler.CreateInvestmentAccount)
-	accounts.POST("/credit-card", accountHandler.CreateCreditCardAccount)
-	accounts.POST("/fixed-deposit", accountHandler.CreateFixedDepositAccount)
-	accounts.GET("", accountHandler.GetUserAccounts)
-	accounts.GET("/:id", accountHandler.GetAccountByID)
-	accounts.PUT("/:id", accountHandler.UpdateAccount)
-	accounts.GET("/:id/transactions", transactionHandler.GetAccountTransactions)
-	accounts.GET("/:id/investments", investmentHandler.GetAccountInvestments)
-	accounts.POST("/:id/fixed-deposit/close", accountHandler.CloseFixedDeposit)
-
-	// Transaction routes
-	transactions := protected.Group("/transactions")
-	transactions.GET("", transactionHandler.GetUserTransactions)
-	transactions.POST("", transactionHandler.CreateTransaction)
-	transactions.POST("/transfer", transactionHandler.CreateTransfer)
-	transactions.POST("/shared", receivableHandler.CreateSharedExpense)
-	transactions.GET("/spending-by-category", transactionHandler.GetSpendingByCategory)
-	transactions.GET("/cashflow", transactionHandler.GetCashflow)
-	transactions.GET("/monthly-summary", transactionHandler.GetMonthlySummary)
-	transactions.GET("/daily-spending", transactionHandler.GetDailySpending)
-	transactions.GET("/daily-summary", transactionHandler.GetDailySummary)
-	transactions.GET("/top-expenses", transactionHandler.GetTopExpenses)
-	transactions.GET("/:id", transactionHandler.GetTransactionByID)
-	transactions.PUT("/:id", transactionHandler.UpdateTransaction)
-	transactions.PUT("/:id/receivables", receivableHandler.UpdateReceivables)
-	transactions.DELETE("/:id", transactionHandler.DeleteTransaction)
-	transactions.POST("/:id/attachments", attachmentHandler.Upload)
-	transactions.GET("/:id/attachments", attachmentHandler.List)
-	transactions.GET("/:id/attachments/:aid", attachmentHandler.Download)
-	transactions.DELETE("/:id/attachments/:aid", attachmentHandler.Delete)
-
-	// Receivable routes (plan 021). Static segments (/summary, /counterparties,
-	// /settlements/:id) are registered alongside the param routes; Gin resolves
-	// static siblings before /:id.
-	receivables := protected.Group("/receivables")
-	receivables.GET("", receivableHandler.ListReceivables)
-	receivables.GET("/summary", receivableHandler.GetReceivablesSummary)
-	receivables.GET("/counterparties", receivableHandler.ListCounterparties)
-	receivables.POST("/counterparties/rename", receivableHandler.RenameCounterparty)
-	receivables.DELETE("/settlements/:id", receivableHandler.DeleteSettlement)
-	receivables.GET("/:id", receivableHandler.GetReceivable)
-	receivables.POST("/:id/settle", receivableHandler.SettleReceivable)
-	receivables.POST("/:id/write-off", receivableHandler.WriteOffReceivable)
-	receivables.DELETE("/:id/write-off", receivableHandler.UndoWriteOff)
-
-	// Budget routes
-	budgets := protected.Group("/budgets")
-	budgets.POST("", budgetHandler.CreateBudget)
-	budgets.GET("", budgetHandler.GetBudgets)
-	// Static route registered before the param routes so Gin resolves it correctly.
-	budgets.GET("/progress", budgetHandler.GetBudgetsProgress)
-	budgets.GET("/:id", budgetHandler.GetBudget)
-	budgets.PUT("/:id", budgetHandler.UpdateBudget)
-	budgets.DELETE("/:id", budgetHandler.DeleteBudget)
-	budgets.GET("/:id/progress", budgetHandler.GetBudgetProgress)
-
-	// Transaction rule routes (plan 018). Static routes are registered before the
-	// param route so Gin resolves /rules/reorder and /rules/preview correctly.
-	rules := protected.Group("/rules")
-	rules.POST("", ruleHandler.CreateRule)
-	rules.GET("", ruleHandler.GetRules)
-	rules.POST("/reorder", ruleHandler.ReorderRules)
-	rules.POST("/preview", ruleHandler.PreviewRule)
-	rules.GET("/:id", ruleHandler.GetRule)
-	rules.PUT("/:id", ruleHandler.UpdateRule)
-	rules.DELETE("/:id", ruleHandler.DeleteRule)
-	rules.POST("/:id/apply", ruleHandler.ApplyRule)
-
-	// Investment routes
-	investments := protected.Group("/investments")
-	investments.POST("", investmentHandler.AddInvestment)
-	investments.GET("", investmentHandler.GetAllInvestments)
-	investments.GET("/portfolio", investmentHandler.GetPortfolio)
-	investments.GET("/snapshots", snapshotHandler.GetSnapshots)
-	investments.GET("/:id", investmentHandler.GetInvestment)
-	investments.POST("/:id/buy", investmentHandler.RecordBuy)
-	investments.POST("/:id/sell", investmentHandler.RecordSell)
-	investments.POST("/:id/dividend", investmentHandler.RecordDividend)
-	investments.POST("/:id/split", investmentHandler.RecordSplit)
-	investments.GET("/:id/transactions", investmentHandler.GetInvestmentTransactions)
-
-	// Security routes (authenticated)
-	securities := protected.Group("/securities")
-	securities.GET("", securityHandler.ListSecurities)
-	securities.GET("/:id", securityHandler.GetSecurity)
-	securities.GET("/:id/prices", securityHandler.GetPriceHistory)
-
-	// Category routes
-	categories := protected.Group("/categories")
-	categories.POST("", categoryHandler.CreateCategory)
-	categories.GET("", categoryHandler.GetUserCategories)
-	categories.GET("/:id", categoryHandler.GetCategoryByID)
-	categories.PUT("/:id", categoryHandler.UpdateCategory)
-	categories.DELETE("/:id", categoryHandler.DeleteCategory)
-
-	// Telegram routes
-	telegram := protected.Group("/telegram")
-	telegram.GET("/link", telegramHandler.GetLink)
-	telegram.POST("/generate-code", telegramHandler.GenerateCode)
-	telegram.DELETE("/unlink", telegramHandler.Unlink)
-
-	// Internal routes (for bot service communication)
-	internal := v1.Group("/internal")
-	internal.Use(middleware.InternalAuthMiddleware(appConfig.BotInternalSecret))
-	internal.POST("/telegram/complete-link", telegramHandler.CompleteLink)
-	internal.GET("/telegram/resolve/:telegram_user_id", telegramHandler.ResolveUser)
-	internal.POST("/telegram/activity/:telegram_user_id", telegramHandler.RecordActivity)
-
-	// Pipeline routes (API key auth, no JWT)
-	pipeline := v1.Group("/pipeline")
-	pipeline.Use(middleware.PipelineAuthMiddleware(appConfig.PipelineAPIKey))
-	pipeline.GET("/securities", securityHandler.ListAllSecurities)
-	pipeline.POST("/securities", securityHandler.CreateSecurity)
-	pipeline.POST("/securities/prices", securityHandler.RecordPrices)
-	pipeline.POST("/snapshots", snapshotHandler.ComputeSnapshots)
-	pipeline.POST("/fixed-deposits/process", fdPipelineHandler.ProcessFixedDeposits)
+	// Register every route (single source of truth shared with the tests).
+	handlers.RegisterRoutes(router, handlers.Routes{
+		Auth:                 authHandler,
+		OAuth:                oauthHandler,
+		Registration:         registrationHandler,
+		Account:              accountHandler,
+		Category:             categoryHandler,
+		Transaction:          transactionHandler,
+		Receivable:           receivableHandler,
+		Attachment:           attachmentHandler,
+		Budget:               budgetHandler,
+		Rule:                 ruleHandler,
+		Investment:           investmentHandler,
+		Security:             securityHandler,
+		Snapshot:             snapshotHandler,
+		FixedDepositPipeline: fdPipelineHandler,
+		Telegram:             telegramHandler,
+	}, handlers.RouteSecrets{
+		BotInternalSecret: appConfig.BotInternalSecret,
+		PipelineAPIKey:    appConfig.PipelineAPIKey,
+	})
 
 	// Create HTTP server
 	srv := &http.Server{

@@ -39,10 +39,71 @@ func bumpAfterFirstTxnInsert(t *testing.T, db *gorm.DB, accountID string, delta 
 	}
 	testutil.AssertNoError(t, db.Callback().Create().After("gorm:create").Register(name, bump))
 	testutil.AssertNoError(t, db.Callback().Update().After("gorm:update").Register(name, bump))
+	// Soft deletes run through the Delete chain, not the Update chain.
+	testutil.AssertNoError(t, db.Callback().Delete().After("gorm:delete").Register(name, bump))
 	return func() {
 		_ = db.Callback().Create().Remove(name)
 		_ = db.Callback().Update().Remove(name)
+		_ = db.Callback().Delete().Remove(name)
 	}
+}
+
+// bumpAfterAccountLock registers a callback that, once, adds delta to the
+// account's balance right after the writer's locking read of that account. That
+// is the worst moment for a writer that later stores an absolute balance: the
+// balance it read under the lock is stale by the time it writes. Unlike
+// bumpAfterFirstTxnInsert it does not depend on where the writer touches the
+// transactions table, so it also covers writers that debit/credit before any
+// insert/update/delete (UpdateTransaction's reversal, DeleteSettlement).
+func bumpAfterAccountLock(t *testing.T, db *gorm.DB, accountID string, delta int64) (restore func()) {
+	t.Helper()
+	done := false
+	const name = "test:concurrent_bump_after_lock"
+	testutil.AssertNoError(t, db.Callback().Query().After("gorm:query").Register(name, func(tx *gorm.DB) {
+		if done || tx.Error != nil || tx.Statement.Table != "accounts" {
+			return
+		}
+		if _, locking := tx.Statement.Clauses["FOR"]; !locking {
+			return
+		}
+		if loaded, ok := tx.Statement.Dest.(*models.Account); !ok || loaded.ID != accountID {
+			return
+		}
+		done = true
+		if _, err := tx.Statement.ConnPool.ExecContext(tx.Statement.Context,
+			"UPDATE accounts SET balance = balance + ? WHERE id = ?", delta, accountID); err != nil {
+			_ = tx.AddError(err)
+		}
+	}))
+	return func() { _ = db.Callback().Query().Remove(name) }
+}
+
+// beforeFirstLock runs fn (raw SQL on the writer's own connection) right before
+// the first locking read of the operation, simulating another writer that
+// committed after the caller's up-front reads but before the row locks were
+// taken. fn runs inside the operation's DB transaction, so when the operation
+// fails the simulated change is rolled back with it.
+func beforeFirstLock(t *testing.T, db *gorm.DB, fn func(exec func(query string, args ...any) error)) (restore func()) {
+	t.Helper()
+	done := false
+	const name = "test:before_first_lock"
+	testutil.AssertNoError(t, db.Callback().Query().Before("gorm:query").Register(name, func(tx *gorm.DB) {
+		if done {
+			return
+		}
+		if _, locking := tx.Statement.Clauses["FOR"]; !locking {
+			return
+		}
+		done = true
+		fn(func(query string, args ...any) error {
+			_, err := tx.Statement.ConnPool.ExecContext(tx.Statement.Context, query, args...)
+			if err != nil {
+				_ = tx.AddError(err)
+			}
+			return err
+		})
+	}))
+	return func() { _ = db.Callback().Query().Remove(name) }
 }
 
 // drainBeforeFirstLock sets the account's balance to newBalance right before the
@@ -134,6 +195,50 @@ func TestBalanceWritersKeepConcurrentChanges(t *testing.T) {
 		_, err = e.updateTxn(x.ID, TransactionUpdateFields{Amount: &amount})
 		testutil.AssertNoError(t, err)
 		e.wantBalance(e.cash.ID, recCashStart-500+concurrentBump)
+	})
+
+	t.Run("Settle credits relatively", func(t *testing.T) {
+		e := newRecEnv(t)
+		x := e.split(6000, "Alex", "Sam")
+		defer bumpAfterAccountLock(t, e.db, e.cash.ID, concurrentBump)()
+		e.initial[e.cash.ID] += concurrentBump // the injected change is part of the ledger
+		e.mustSettle(x.Receivables[0].ID, 2000)
+		e.wantBalance(e.cash.ID, recCashStart-6000+2000+concurrentBump)
+	})
+
+	t.Run("DeleteSettlement debits relatively", func(t *testing.T) {
+		e := newRecEnv(t)
+		x := e.split(6000, "Alex", "Sam")
+		_, s := e.mustSettle(x.Receivables[0].ID, 2000)
+		defer bumpAfterAccountLock(t, e.db, e.cash.ID, concurrentBump)()
+		e.initial[e.cash.ID] += concurrentBump
+		_, err := e.delSettlement(s.ID)
+		testutil.AssertNoError(t, err)
+		e.wantBalance(e.cash.ID, recCashStart-6000+concurrentBump)
+	})
+
+	t.Run("DeleteTransaction restores relatively", func(t *testing.T) {
+		e := newRecEnv(t)
+		x, err := e.txn.CreateTransaction(e.user.ID, e.cash.ID, nil, models.TransactionTypeExpense, 300, "coffee", time.Now())
+		testutil.AssertNoError(t, err)
+		defer bumpAfterFirstTxnInsert(t, e.db, e.cash.ID, concurrentBump)() // fires on the soft delete
+		e.initial[e.cash.ID] += concurrentBump
+		testutil.AssertNoError(t, e.deleteTxn(x.ID))
+		e.wantBalance(e.cash.ID, recCashStart+concurrentBump)
+	})
+
+	t.Run("UpdateTransaction reverses the old account relatively", func(t *testing.T) {
+		e := newRecEnv(t)
+		other := e.track(testutil.CreateTestCashAccountWithBalance(t, e.db, e.user.ID, 20000))
+		x, err := e.txn.CreateTransaction(e.user.ID, e.cash.ID, nil, models.TransactionTypeExpense, 300, "coffee", time.Now())
+		testutil.AssertNoError(t, err)
+		// The bump lands on the old account after it is locked, before the reversal is written.
+		defer bumpAfterAccountLock(t, e.db, e.cash.ID, concurrentBump)()
+		e.initial[e.cash.ID] += concurrentBump
+		_, err = e.updateTxn(x.ID, TransactionUpdateFields{AccountID: &other.ID})
+		testutil.AssertNoError(t, err)
+		e.wantBalance(e.cash.ID, recCashStart+concurrentBump)
+		e.wantBalance(other.ID, 20000-300)
 	})
 
 	t.Run("RecordBuy with funding account", func(t *testing.T) {
@@ -281,4 +386,33 @@ func TestCreateTransferChecksBalanceOnLockedRow(t *testing.T) {
 	testutil.AssertNoError(t, err)
 	e.wantBalance(card.ID, 5000)
 	e.wantBalance(to.ID, 5000)
+}
+
+// DeleteSettlement must re-read the settlement after taking the locks: a delete
+// that committed between its first read and the lock would otherwise be reversed
+// a second time (double refund of the balance).
+func TestDeleteSettlementRereadsUnderLock(t *testing.T) {
+	e := newRecEnv(t)
+	x := e.split(6000, "Alex", "Sam")
+	_, s := e.mustSettle(x.Receivables[0].ID, 2000)
+	e.wantBalance(e.cash.ID, recCashStart-6000+2000)
+
+	// Another request deletes the settlement after our first read, before our lock.
+	restore := beforeFirstLock(t, e.db, func(exec func(string, ...any) error) {
+		_ = exec("UPDATE receivable_settlements SET deleted_at = ? WHERE id = ?", time.Now(), s.ID)
+	})
+	_, err := e.delSettlement(s.ID)
+	restore()
+
+	assertAppCode(t, err, "SETTLEMENT_NOT_FOUND", http.StatusNotFound)
+	// The operation aborted, so nothing it did (or that the simulated concurrent
+	// delete did inside its transaction) persists: the balance moved zero times.
+	e.wantBalance(e.cash.ID, recCashStart-6000+2000)
+	var reimb models.Transaction
+	testutil.AssertNoError(t, e.db.First(&reimb, "id = ?", s.TransactionID).Error)
+	var rec models.Receivable
+	testutil.AssertNoError(t, e.db.First(&rec, "id = ?", s.ReceivableID).Error)
+	if rec.PaidAmount != 2000 {
+		t.Errorf("paid_amount = %d, want 2000 (no second reversal)", rec.PaidAmount)
+	}
 }

@@ -1,8 +1,10 @@
 package services
 
 import (
+	"errors"
 	"math"
 	"net/http"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -10,65 +12,155 @@ import (
 	"kuberan/internal/models"
 	"kuberan/internal/pagination"
 	"kuberan/internal/testutil"
+
+	"gorm.io/gorm"
 )
 
+// sqlStatementFor returns the whitespace-normalized, comment-free statement of
+// the migration that creates/alters the given table.
+func sqlStatementFor(t *testing.T, sql, table string) string {
+	t.Helper()
+	var noComments []string
+	for _, line := range strings.Split(sql, "\n") {
+		if i := strings.Index(line, "--"); i >= 0 {
+			line = line[:i]
+		}
+		noComments = append(noComments, line)
+	}
+	for _, stmt := range strings.Split(strings.Join(noComments, "\n"), ";") {
+		norm := strings.Join(strings.Fields(stmt), " ")
+		if strings.HasPrefix(norm, "CREATE TABLE IF NOT EXISTS "+table+" ") ||
+			strings.HasPrefix(norm, "ALTER TABLE "+table+" ADD CONSTRAINT") {
+			return norm
+		}
+	}
+	t.Fatalf("migration 000030 has no CREATE/ALTER statement for table %s", table)
+	return ""
+}
+
 // The SQLite test schema comes from AutoMigrate, so the SQL CHECKs of migration
-// 000030 only exist there because the models carry `check:` tags. These tests
-// pin that mirror: a violation must fail in the test database too.
+// 000030 only exist there because the models carry `check:` tags. This test pins
+// the mirror three ways: (1) every CHECK exercised here is present in the
+// migration SQL, (2) a violation fails in the SQLite schema, and the error names
+// the specific constraint, and (3) each case runs in a rolled-back transaction so
+// cases cannot mask one another by sharing mutated state.
 func TestModelCheckConstraintsMirrorMigration(t *testing.T) {
+	migration, err := os.ReadFile("../../migrations/000030_create_shared_expenses.up.sql")
+	testutil.AssertNoError(t, err)
+
 	e := newRecEnv(t)
 	x := e.split(1000, "Alice")
 	rec := x.Receivables[0]
-	var settlementTxnID string
-	{
-		_, s := e.mustSettle(rec.ID, 100)
-		settlementTxnID = s.TransactionID
+	_, settlement := e.mustSettle(rec.ID, 100)
+
+	// Constraint names: an explicit CONSTRAINT name in the migration, otherwise
+	// PostgreSQL's automatic "<table>_<column>_check", which the model tags reuse.
+	// SQLite reports "CHECK constraint failed: <name>" for a named CHECK.
+	// Each case must violate exactly one CHECK, otherwise which one SQLite names is
+	// not deterministic.
+	tests := []struct {
+		name       string
+		table      string // migration table the CHECK lives in
+		inMigrate  string // CHECK clause that must appear in that table's migration statement
+		constraint string // name the SQLite violation must mention
+		run        func(tx *gorm.DB) error
+	}{
+		{"personal_amount above amount", "transactions",
+			"CONSTRAINT transactions_personal_amount_check CHECK (personal_amount IS NULL OR (personal_amount >= 0 AND personal_amount <= amount))",
+			"transactions_personal_amount_check", func(tx *gorm.DB) error {
+				return tx.Model(&models.Transaction{}).Where("id = ?", x.ID).UpdateColumn("personal_amount", 1001).Error
+			}},
+		{"negative personal_amount", "transactions",
+			"CONSTRAINT transactions_personal_amount_check CHECK (personal_amount IS NULL OR (personal_amount >= 0 AND personal_amount <= amount))",
+			"transactions_personal_amount_check", func(tx *gorm.DB) error {
+				return tx.Model(&models.Transaction{}).Where("id = ?", x.ID).UpdateColumn("personal_amount", -1).Error
+			}},
+		{"amount lowered below personal_amount", "transactions",
+			"CONSTRAINT transactions_personal_amount_check CHECK (personal_amount IS NULL OR (personal_amount >= 0 AND personal_amount <= amount))",
+			"transactions_personal_amount_check", func(tx *gorm.DB) error {
+				return tx.Model(&models.Transaction{}).Where("id = ?", x.ID).UpdateColumn("amount", 100).Error
+			}},
+		{"receivable amount zero", "receivables",
+			"amount BIGINT NOT NULL CHECK (amount > 0)",
+			"receivables_amount_check", func(tx *gorm.DB) error {
+				// Clear paid_amount first (valid on its own) so the sum check does not
+				// also fail: SQLite reports whichever violated CHECK it evaluates
+				// first, and GORM creates them in no fixed order.
+				if err := tx.Model(&models.Receivable{}).Where("id = ?", rec.ID).UpdateColumn("paid_amount", 0).Error; err != nil {
+					t.Fatalf("setup: %v", err)
+				}
+				return tx.Model(&models.Receivable{}).Where("id = ?", rec.ID).UpdateColumn("amount", 0).Error
+			}},
+		{"receivable negative paid_amount", "receivables",
+			"paid_amount BIGINT NOT NULL DEFAULT 0 CHECK (paid_amount >= 0)",
+			"receivables_paid_amount_check", func(tx *gorm.DB) error {
+				return tx.Model(&models.Receivable{}).Where("id = ?", rec.ID).UpdateColumn("paid_amount", -1).Error
+			}},
+		// The model folds the non-negative check and the sum check into the one
+		// receivables_settled_within_amount_check tag (GORM allows a single CHECK
+		// per field), so both violations report that name.
+		{"receivable negative written_off_amount", "receivables",
+			"written_off_amount BIGINT NOT NULL DEFAULT 0 CHECK (written_off_amount >= 0)",
+			"receivables_settled_within_amount_check", func(tx *gorm.DB) error {
+				return tx.Model(&models.Receivable{}).Where("id = ?", rec.ID).UpdateColumn("written_off_amount", -1).Error
+			}},
+		{"receivable paid plus written off above amount", "receivables",
+			"CONSTRAINT receivables_settled_within_amount_check CHECK (paid_amount + written_off_amount <= amount)",
+			"receivables_settled_within_amount_check", func(tx *gorm.DB) error {
+				return tx.Model(&models.Receivable{}).Where("id = ?", rec.ID).UpdateColumn("written_off_amount", rec.Amount).Error
+			}},
+		{"receivable unknown kind", "receivables",
+			"CHECK (kind IN ('split', 'on_behalf', 'claim', 'loan', 'deposit', 'refund'))",
+			"receivables_kind_check", func(tx *gorm.DB) error {
+				return tx.Model(&models.Receivable{}).Where("id = ?", rec.ID).UpdateColumn("kind", "gift").Error
+			}},
+		{"receivable unknown status", "receivables",
+			"CHECK (status IN ('pending', 'partially_paid', 'settled', 'written_off'))",
+			"receivables_status_check", func(tx *gorm.DB) error {
+				return tx.Model(&models.Receivable{}).Where("id = ?", rec.ID).UpdateColumn("status", "lost").Error
+			}},
+		{"settlement amount zero", "receivable_settlements",
+			"amount BIGINT NOT NULL CHECK (amount > 0)",
+			"receivable_settlements_amount_check", func(tx *gorm.DB) error {
+				return tx.Model(&models.ReceivableSettlement{}).Where("id = ?", settlement.ID).UpdateColumn("amount", 0).Error
+			}},
+		{"settlement negative written_off_amount", "receivable_settlements",
+			"written_off_amount BIGINT NOT NULL DEFAULT 0 CHECK (written_off_amount >= 0)",
+			"receivable_settlements_written_off_amount_check", func(tx *gorm.DB) error {
+				return tx.Model(&models.ReceivableSettlement{}).Where("id = ?", settlement.ID).UpdateColumn("written_off_amount", -5).Error
+			}},
 	}
 
-	tests := []struct {
-		name string
-		run  func() error
-	}{
-		{"personal_amount above amount", func() error {
-			return e.db.Model(&models.Transaction{}).Where("id = ?", x.ID).UpdateColumn("personal_amount", 1001).Error
-		}},
-		{"negative personal_amount", func() error {
-			return e.db.Model(&models.Transaction{}).Where("id = ?", x.ID).UpdateColumn("personal_amount", -1).Error
-		}},
-		{"amount lowered below personal_amount", func() error {
-			return e.db.Model(&models.Transaction{}).Where("id = ?", x.ID).UpdateColumn("amount", 100).Error
-		}},
-		{"receivable amount zero", func() error {
-			return e.db.Model(&models.Receivable{}).Where("id = ?", rec.ID).UpdateColumn("amount", 0).Error
-		}},
-		{"receivable negative paid_amount", func() error {
-			return e.db.Model(&models.Receivable{}).Where("id = ?", rec.ID).UpdateColumn("paid_amount", -1).Error
-		}},
-		{"receivable negative written_off_amount", func() error {
-			return e.db.Model(&models.Receivable{}).Where("id = ?", rec.ID).UpdateColumn("written_off_amount", -1).Error
-		}},
-		{"receivable paid plus written off above amount", func() error {
-			return e.db.Model(&models.Receivable{}).Where("id = ?", rec.ID).UpdateColumn("written_off_amount", rec.Amount).Error
-		}},
-		{"receivable unknown kind", func() error {
-			return e.db.Model(&models.Receivable{}).Where("id = ?", rec.ID).UpdateColumn("kind", "gift").Error
-		}},
-		{"receivable unknown status", func() error {
-			return e.db.Model(&models.Receivable{}).Where("id = ?", rec.ID).UpdateColumn("status", "lost").Error
-		}},
-		{"settlement amount zero", func() error {
-			return e.db.Model(&models.ReceivableSettlement{}).Where("transaction_id = ?", settlementTxnID).UpdateColumn("amount", 0).Error
-		}},
-		{"settlement negative written_off_amount", func() error {
-			return e.db.Model(&models.ReceivableSettlement{}).Where("transaction_id = ?", settlementTxnID).UpdateColumn("written_off_amount", -5).Error
-		}},
-	}
+	errRollback := errors.New("rollback")
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if err := tt.run(); err == nil {
-				t.Error("expected a CHECK constraint violation, got none")
+			if stmt := sqlStatementFor(t, string(migration), tt.table); !strings.Contains(stmt, tt.inMigrate) {
+				t.Errorf("migration 000030 no longer contains %q in its %s statement", tt.inMigrate, tt.table)
+			}
+
+			var runErr error
+			txErr := e.db.Transaction(func(tx *gorm.DB) error {
+				runErr = tt.run(tx)
+				return errRollback // always roll back so cases stay independent
+			})
+			if !errors.Is(txErr, errRollback) {
+				t.Fatalf("transaction error = %v, want the forced rollback", txErr)
+			}
+			if runErr == nil {
+				t.Fatalf("expected CHECK constraint %s to be violated, got no error", tt.constraint)
+			}
+			if want := "CHECK constraint failed: " + tt.constraint; !strings.Contains(runErr.Error(), want) {
+				t.Errorf("error = %q, want it to contain %q", runErr.Error(), want)
 			}
 		})
+	}
+
+	// Nothing leaked out of the rolled-back cases.
+	e.wantPersonal(x.ID, 500)
+	var gotRec models.Receivable
+	testutil.AssertNoError(t, e.db.First(&gotRec, "id = ?", rec.ID).Error)
+	if gotRec.Amount != 500 || gotRec.PaidAmount != 100 || gotRec.WrittenOffAmount != 0 || gotRec.Kind != models.ReceivableKindSplit {
+		t.Errorf("receivable leaked state: %+v", gotRec)
 	}
 }
 
