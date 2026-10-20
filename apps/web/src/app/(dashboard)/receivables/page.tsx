@@ -45,7 +45,6 @@ interface CounterpartyGroup {
   key: string;
   name: string;
   outstanding: number;
-  total: number;
   count: number;
   openCount: number;
   settledCount: number;
@@ -85,7 +84,6 @@ export default function ReceivablesPage() {
       key: c.counterparty_key,
       name: c.counterparty_name,
       outstanding: c.outstanding,
-      total: c.outstanding,
       count: c.open_count,
       openCount: c.open_count,
       settledCount: 0,
@@ -101,7 +99,6 @@ export default function ReceivablesPage() {
         key: r.counterparty_key,
         name: r.counterparty_name,
         outstanding: 0,
-        total: 0,
         count: 0,
         openCount: 0,
         settledCount: 0,
@@ -113,7 +110,6 @@ export default function ReceivablesPage() {
         g.name = r.counterparty_name;
       }
       g.outstanding += r.outstanding;
-      g.total += r.amount;
       g.count += 1;
       if (r.outstanding > 0) g.openCount += 1;
       else if (r.status === "written_off") g.writtenOffCount += 1;
@@ -301,7 +297,7 @@ export default function ReceivablesPage() {
                           g.outstanding === 0 && "text-muted-foreground"
                         )}
                       >
-                        {money(g.outstanding > 0 ? g.outstanding : g.total)}
+                        {g.outstanding > 0 ? money(g.outstanding) : "Nothing owed"}
                       </span>
                     </button>
                     <Button
