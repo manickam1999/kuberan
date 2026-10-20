@@ -9,6 +9,8 @@ Revision 3:
   account now, is expected back, and is not spending. It renames participant to **counterparty**,
   adds a receivable **`kind`**, makes a $0 personal share first-class, and brings **write-off** into
   v1.
+- Revision 4 records decisions: receivables are **excluded from net worth** (D4), and the race test
+  runs in a Postgres-only CI job.
 
 ## Context
 
@@ -39,7 +41,7 @@ flowchart LR
   R1 -->|settle $20| S1["Settlement → reimbursement txn\n+$20 to chosen account"]
   S1 --> R1s["Alex: settled"]
   EXP -. "$20 counts toward" .-> REP["Spending / budgets /\nmonthly summary / Sankey"]
-  R2 -. outstanding $20 .-> NW["Net worth: Receivables asset"]
+  ACC -. "-$60 now, +$20 on repayment" .-> NW["Net worth: cash only,\nreceivables excluded"]
 ```
 
 ## Findings that shape the design
@@ -59,8 +61,7 @@ flowchart LR
    - `web/.../accounts/[id]/page.tsx:68` has a `Record<TransactionType, …>` display map, plus
      `isNegative` logic.
    - The type-filter whitelists: `transaction_handler.go:304` and MCP `tools_transactions.go:118`.
-   - The MCP transaction output (`tools_transactions.go:160`) and net-worth history
-     (`tools_snapshots.go:70`).
+   - The MCP transaction output (`tools_transactions.go:160`).
    - The bot `/summary` "net" (`bot/handlers/summary.py:52`).
 
 3. **Balance updates are neither locked nor relative.** `UpdateAccountBalance`
@@ -93,8 +94,9 @@ flowchart LR
 8. **`CreateTransaction` has about 89 call sites** (including mocks). Its signature should not
    change.
 
-9. **Net worth is computed in two places that must agree**: the backend `computeSnapshot`
-   (`portfolio_snapshot_service.go:66`) and the frontend composition card and accounts page.
+9. **Net worth is computed from account balances** in two places: the backend `computeSnapshot`
+   (`portfolio_snapshot_service.go:66`) and the frontend composition card and accounts page. With
+   D4 (receivables excluded), neither needs to change.
 
 10. **Audit logging lives in handlers** (`h.auditService.Log(...)`).
 
@@ -108,7 +110,7 @@ flowchart LR
 | D2 | Counterparties | **No contacts entity.** A counterparty is anyone who owes the user: a friend, an employer, an insurer, a landlord or a merchant. Each receivable stores `counterparty_name` (as typed, trimmed) and `counterparty_key` (lowercased, trimmed, internal whitespace collapsed), **computed in Go**. Grouping, autocomplete and rename all work on `counterparty_key`. A bulk rename (user-scoped, one DB transaction) handles both typos and merging duplicates (rename onto an existing key). If richer contacts are ever needed, a table can be backfilled from the distinct keys. |
 | D2a | Kind | `receivables.kind` is one of `split`, `on_behalf`, `claim`, `loan`, `deposit` or `refund` (validated in Go). It is set per expense at creation, can be changed later, and is used for filtering and labels only. **No behaviour depends on it**, so the same code paths serve every kind. |
 | D3 | Repayment record | A settlement creates a `Transaction` of type **`reimbursement`** in the chosen account, linked via `receivable_settlements.transaction_id`. `reimbursement` is **not** in `validateTransactionType`. It can only be created by the settle service, and it can never be edited or deleted directly. |
-| D4 | Net worth | **Outstanding receivables count as an asset**, in a new snapshot column `receivables_balance`: `net = cash + investments + FD + receivables − debt`. Settling is net-worth-neutral. Snapshots taken before this feature have `receivables_balance = 0`, which is intended (there were no receivables then). |
+| D4 | Net worth (**decided 2026-10-20**) | **Outstanding receivables are excluded from net worth.** Money owed to the user is not counted until it is actually received, because people don't always pay back. Net worth drops by the **full** expense amount when it's paid, and each repayment credits it back as it arrives. `computeSnapshot` and the frontend net-worth totals are **unchanged**, because they already sum account balances, which reflect exactly this. No snapshot column is added. Outstanding amounts are shown separately on the "Owed to me" page as information, not as part of net worth. (It is excluded, not counted as a liability: subtracting it again as a liability would deduct the same money twice, since the account balance already reflects the full outflow.) Consequence: a repayment raises net worth without being income, and a write-off has no net-worth effect, because the money was already deducted. |
 | D5 | Split input and rounding | The request lists **counterparties only**. The user's share is always the remainder. Equal split: `share = floor(amount / (n_counterparties + 1))` per counterparty, and the user's share is `amount − Σ shares`, so leftover cents go to the user. Custom: each share must be `> 0`, and `Σ shares ≤ amount`. **A user share of 0 is a first-class case**: "full amount" mode with a single counterparty owing everything, used by `on_behalf`, `claim`, `loan`, `deposit` and `refund`. For these, `category_id` is optional. With an effective amount of 0, the expense contributes nothing to spending, and `GetTopExpenses` excludes rows whose effective amount is 0. |
 | D6 | The `personal_amount` invariant | `personal_amount = amount − Σ (receivables.amount − receivables.written_off_amount)`, over non-deleted receivables, or `NULL` when there are none. A write-off therefore moves money from "owed to me" into "my spending" without touching the receivable's original `amount`. It is **never accepted from the client**. Exactly one helper, `recomputePersonalAmount(tx, txnID)`, writes it, and it runs after every receivable mutation. Tests assert the invariant after every operation. |
 | D6a | Write-off (v1) | `POST /receivables/:id/write-off {amount?}` (default: the whole outstanding balance) adds to `written_off_amount`. It requires `paid_amount + written_off_amount ≤ amount`, takes the D10 locks, and runs `recomputePersonalAmount`. Settle also accepts `write_off_remainder: true`, so "deposit returned $850 of $1,000" is one action. A write-off is reversible (`DELETE /receivables/:id/write-off` resets it to 0). **Timing:** the written-off amount counts as spending **in the expense's original date** (it is part of that transaction's effective amount). That can change a closed month's budget; this is accepted and shown in the UI ("adds $150 to March spending"). The alternative, a dated write-off row, would require every aggregate to union a second table, so it is rejected for v1. |
@@ -156,8 +158,7 @@ CREATE TABLE receivable_settlements (
   amount BIGINT NOT NULL CHECK (amount > 0), date TIMESTAMPTZ NOT NULL,
   created_at, updated_at, deleted_at
 );
-
-ALTER TABLE portfolio_snapshots ADD COLUMN receivables_balance BIGINT NOT NULL DEFAULT 0;
+-- No portfolio_snapshots change: receivables are excluded from net worth (D4).
 ```
 
 The CHECKs are a Postgres-only backstop (Finding 7). The service layer enforces every rule above.
@@ -211,8 +212,9 @@ Every row carries `user_id`, and every query filters on it.
    `RECEIVABLE_HAS_PAYMENTS` (on removal in D7), `SETTLEMENT_EXCEEDS_OUTSTANDING`,
    `INVALID_SHARES`, `INVALID_SETTLEMENT_ACCOUNT`, `INVALID_RECEIVABLE_KIND`,
    `WRITE_OFF_EXCEEDS_OUTSTANDING`.
-5. **Snapshot**: `receivables_balance = SUM(r.amount − r.paid_amount − r.written_off_amount)`,
-   joining non-deleted receivables to non-deleted expenses.
+5. **Snapshot**: no change (D4). `TotalOutstanding` (`SUM(amount − paid_amount −
+   written_off_amount)`, joining non-deleted receivables to non-deleted expenses) feeds only the
+   "Owed to me" page.
 6. **Routes** (protected, audit-logged in the handler):
    ```
    POST   /api/v1/transactions/shared                 # {account_id, category_id?, amount, description, date, kind, mode: "equal"|"custom"|"full", counterparties: [{name, amount?}]}
@@ -263,15 +265,15 @@ Every row carries `user_id`, and every query filters on it.
 7. **New page `(dashboard)/receivables`, titled "Owed to me"** (sidebar and command palette): a
    grand-total stat card with per-kind totals, a per-counterparty list ("Alex owes $12.50 across 2
    items") expanding to per-item rows, status and kind filters, and a rename/merge action.
-8. **Net worth**: the composition card and accounts-page totals add a "Receivables" asset slice
-   from `/receivables/summary`.
+8. **Net worth**: no change (D4). Optionally, the dashboard can show an informational
+   "Owed to you: $X" line *beside* net worth (not included in it), linking to the page.
 
 ### PR 4: MCP and bot (read-only)
 
 - MCP: `list_receivables` and `get_receivables_summary` in `tools_receivables.go`. Add
   `reimbursement` to the filter whitelist (`tools_transactions.go:118`) and fix its error text.
-  Show `personal_amount` in the transaction output (`tools_transactions.go:160`), and show
-  receivables in `get_net_worth_history` (`tools_snapshots.go:70`).
+  Show `personal_amount` in the transaction output (`tools_transactions.go:160`).
+  `get_net_worth_history` is unchanged (D4).
 - Bot: a read-only `/owed` command with the per-counterparty summary. Relabel the `/summary` net as
   income minus spending (`summary.py:52`).
 
@@ -286,7 +288,6 @@ Every row carries `user_id`, and every query filters on it.
 - **Dated write-offs**, so forgiven spending lands in the write-off month rather than the expense's
   month (see D6a for why v1 doesn't do this).
 - "Settle all for a counterparty" (one reimbursement allocated oldest-first).
-- Receivables in the oracle snapshot chart.
 - Migrating existing balance writers to `ApplyBalanceDelta` and locking (Finding 3).
 
 ## Testing
@@ -303,7 +304,7 @@ constraints (Finding 7).
 - **Partial payments**: status transitions; overpaying is rejected.
 - **Full mode / $0 share** (`on_behalf`, `claim`, `loan`, `deposit`, `refund`): the account
   drops by the full amount, spending and budgets are unchanged, the expense is absent from top
-  expenses, there is no category, and net worth is unchanged (the cash moves into receivables).
+  expenses, there is no category, and net worth drops by the full amount until repaid (D4).
 - **Write-off (D6a)**: deposit $1,000, returned $850 with `write_off_remainder` → status
   `written_off`, $150 added to spending in the expense's month, receivables total 0, and the
   invariant holds. A write-off over the outstanding balance is rejected. Undoing restores the
@@ -316,25 +317,35 @@ constraints (Finding 7).
   and a `reimbursement` edited or deleted directly is rejected.
 - **Delete (D8)**: a cascade without settlements; a 409 with settlements; deleting a settlement
   reverses the balance and the status, with no double credit (a regression test for `reverseType`).
-- **Snapshot**: includes outstanding receivables, ignores soft-deleted ones, and settlement is
-  net-worth-neutral.
+- **Net worth (D4)**: a $60 split drops snapshot net worth by $60, and a $20 repayment raises it by
+  $20; outstanding receivables never appear in it, and a write-off doesn't change it.
+  `TotalOutstanding` ignores soft-deleted receivables and expenses.
 - **User isolation** across every endpoint, including rename.
 - **Atomicity**: a forced failure mid-settle leaves no partial rows and an unchanged balance.
-- **Concurrency**: SQLite can't exercise `FOR UPDATE`, so add one Postgres-tagged test
-  (`//go:build postgres`, run in CI against the compose database). It runs two concurrent settles
-  that together exceed the outstanding amount, and exactly one must succeed.
+- **Concurrency (decided 2026-10-20: a Postgres-only job)**: SQLite can't exercise `FOR UPDATE`,
+  so add one Postgres-tagged test (`//go:build postgres`). It runs two concurrent settles that
+  together exceed the outstanding amount, and exactly one must succeed. The repo has **no CI
+  today** (no `.github/workflows`), so PR 2 adds:
+  - a `make test-postgres` target that runs `go test -tags postgres ./...` against `DB_*` env vars
+    (locally, the compose Postgres);
+  - a minimal `.github/workflows/api-postgres.yml` with a `postgres:16-alpine` service that runs
+    the migrations and then `make test-postgres`.
 - **Handler tests**: validation and an audit `Log` call per action.
 - **Integration**: `tests/integration/shared_expense_flow_test.go` for the full lifecycle.
 - Run `./scripts/check-go.sh apps/api`, plus web lint and typecheck.
 
+## Decided
+
+- **Net worth (D4):** excluded until received (2026-10-20).
+- **Concurrency test:** a Postgres-only test job (2026-10-20).
+
 ## Open questions
 
-1. **Net worth (D4).** Count outstanding receivables as an asset (the proposal), or exclude them?
-2. **Concurrency test.** Is a Postgres-tagged test job in CI acceptable, or is service-level
-   locking without an automated race test enough for now?
-3. **Income sharing.** Should shared *income* (for example, collecting group money up front) be
-   supported? It is proposed as out of scope.
-4. **Write-off timing (D6a).** Is it acceptable for forgiven amounts to count as spending in the
-   expense's month rather than the write-off month?
-5. **Kinds.** Is the six-kind list (`split`, `on_behalf`, `claim`, `loan`, `deposit`, `refund`)
-   right? Since behaviour doesn't depend on kind, adding one later is cheap.
+1. **Shared income.** This plan only covers money *you* paid out and expect back. The reverse
+   case: you collect money from others first (for example, everyone sends you $20 for a group gift
+   before you buy it). Without support, those inflows would be recorded as income. Proposed: out of
+   scope for v1.
+2. **Write-off timing (D6a).** When you give up on getting money back, the forgiven amount counts
+   as your spending in the month of the *original expense*, not the month you gave up. Acceptable?
+3. **Kinds (D2a).** Is the list of labels (`split`, `on_behalf`, `claim`, `loan`, `deposit`,
+   `refund`) right?
