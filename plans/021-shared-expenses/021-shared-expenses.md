@@ -10,7 +10,7 @@ Revision 3:
   adds a receivable **`kind`**, makes a $0 personal share first-class, and brings **write-off** into
   v1.
 - Revision 4 records decisions: receivables are **excluded from net worth** (D4), and the race test
-  is a local-only Postgres test (no CI workflow). Shared income is out of scope, write-offs
+  is dropped (the locks stay). Shared income is out of scope, write-offs
   count in the expense's month, and the six kinds are confirmed.
 
 ## Context
@@ -117,7 +117,7 @@ flowchart LR
 | D6a | Write-off (v1) | `POST /receivables/:id/write-off {amount?}` (default: the whole outstanding balance) adds to `written_off_amount`. It requires `paid_amount + written_off_amount ≤ amount`, takes the D10 locks, and runs `recomputePersonalAmount`. Settle also accepts `write_off_remainder: true`, so "deposit returned $850 of $1,000" is one action. A write-off is reversible (`DELETE /receivables/:id/write-off` resets it to 0). **Timing:** the written-off amount counts as spending **in the expense's original date** (it is part of that transaction's effective amount). That can change a closed month's budget; this is accepted and shown in the UI ("adds $150 to March spending"). The alternative, a dated write-off row, would require every aggregate to union a second table, so it is rejected for v1. |
 | D7 | Editing | The edit payload carries `receivables: [{id?, name, amount}]` and is **diffed, not replaced**: an entry with `id` updates in place (requires `amount ≥ paid_amount + written_off_amount`; renaming and changing `kind` are allowed); an entry without `id` is inserted; an omitted existing receivable is deleted **only if `paid_amount = 0`**, otherwise it is a 409. Changing `amount` re-validates `Σ shares ≤ amount`, and if the payload omits `receivables`, existing shares are kept as they are (no silent re-split). Changing `account_id` on a shared expense is allowed (settlements credit their own accounts). A type change away from `expense` while receivables exist is a 400. |
 | D8 | Deleting | A shared expense with **no settlements**: soft-delete the expense and its receivables in one DB transaction. **With any settlement**: 409 `RECEIVABLE_HAS_SETTLEMENTS`; the user deletes settlements first. Deleting a settlement reverses its reimbursement and recomputes the receivable. |
-| D9 | Settlement target accounts | Allowed only into `cash`, `credit_card` or `debt` accounts, not `investment` or `fixed_deposit`. A credit-card or debt repayment *reduces* the balance owed. This requires fixing Finding 5 so that `debt` is inverted too: a small, separately tested fix that lands in PR 1. |
+| D9 | Settlement target accounts | Allowed only into `cash`, `credit_card` or `debt` accounts, not `investment` or `fixed_deposit`. A credit-card or debt repayment *reduces* the balance owed. This requires fixing Finding 5 so that `debt` is inverted too: a small, separately tested fix that lands in B1. |
 | D10 | Concurrency | Every mutating operation (settle, delete settlement, edit or delete a shared expense) runs in one DB transaction that (1) locks the **expense row**, then (2) its **receivables**, then (3) the **account(s)**, always in that order, using `clause.Locking{Strength: "UPDATE"}`. It (4) re-reads state after locking, and (5) changes balances with relative `gorm.Expr("balance ± ?")` updates. New code uses a new relative helper, `ApplyBalanceDelta(tx, accountID, type, amount)`. Migrating existing callers onto it is a recommended follow-up, not part of this feature. |
 | D11 | #23 interaction | `personal_amount` stays the single source of "my share". When #23 lands, its category splits divide **`personal_amount`** (not `amount`), and `totalsByCategory` reads split rows. Sharing decides *how much is mine*; splitting decides *which categories it goes to*. |
 | D12 | Rules engine | Rule amount conditions keep matching the **full** `amount` (what the bank charged), which is documented. `candidateTransactions` already limits rules to income and expense, so reimbursements are never auto-categorized; a test asserts this. |
@@ -165,9 +165,29 @@ CREATE TABLE receivable_settlements (
 The CHECKs are a Postgres-only backstop (Finding 7). The service layer enforces every rule above.
 Every row carries `user_id`, and every query filters on it.
 
-## Implementation, as PRs
+## Execution graph (phases)
 
-### PR 1: behaviour-neutral groundwork
+```mermaid
+flowchart LR
+  C[CONTRACT.md] --> B1[B1 backend groundwork]
+  C --> W1[W1 web foundation + receivables page]
+  C --> BOT[BOT /owed + summary label]
+  B1 --> B2[B2 receivables backend]
+  W1 --> W2[W2 transaction dialogs + lend money]
+  B2 --> MCP[MCP tools]
+  B2 --> R[Lead review + full checks]
+  W2 --> R
+  MCP --> R
+  BOT --> R
+```
+
+Wave 1 (parallel): B1, W1, BOT. Wave 2 (parallel): B2, W2. Wave 3: MCP. Every node is reviewed
+by the lead before its dependants start. The phase sections below were originally PRs 1–4; B1 is
+"PR 1", B2 is "PR 2", W1 and W2 are "PR 3", and MCP and BOT are "PR 4".
+
+## Implementation detail
+
+### B1: behaviour-neutral groundwork
 
 - An `effectiveAmountSQL = "COALESCE(personal_amount, amount)"` constant, used in all eight
   aggregates (Finding 1); `GetTopExpenses` orders by it and returns both values.
@@ -177,7 +197,7 @@ Every row carries `user_id`, and every query filters on it.
 - **Gate:** golden tests showing every report endpoint returns identical results before and after,
   with `personal_amount` NULL.
 
-### PR 2: shared-expense backend
+### B2: receivables backend
 
 1. **Models**: `TransactionTypeReimbursement`; `Receivable` and `ReceivableSettlement` in
    `models/receivable.go`; and `Transaction.Receivables`, preloaded on detail queries only (the
@@ -233,7 +253,7 @@ Every row carries `user_id`, and every query filters on it.
    `DELETE_SETTLEMENT`, `WRITE_OFF_RECEIVABLE`, `UNDO_WRITE_OFF`, `RENAME_COUNTERPARTY`. Add `reimbursement` to the **query-filter**
    whitelist (`transaction_handler.go:304`), not to the create validator. Regenerate Swagger.
 
-### PR 3: web
+### W1 / W2: web
 
 1. Types: `reimbursement` in the `TransactionType` union, `personal_amount`, `Receivable`,
    `ReceivableSettlement` and the summary DTOs. Add the `reimbursement` entry to the
@@ -269,7 +289,7 @@ Every row carries `user_id`, and every query filters on it.
 8. **Net worth**: no change (D4). Optionally, the dashboard can show an informational
    "Owed to you: $X" line *beside* net worth (not included in it), linking to the page.
 
-### PR 4: MCP and bot (read-only)
+### MCP and BOT (read-only)
 
 - MCP: `list_receivables` and `get_receivables_summary` in `tools_receivables.go`. Add
   `reimbursement` to the filter whitelist (`tools_transactions.go:118`) and fix its error text.
@@ -323,14 +343,8 @@ constraints (Finding 7).
   `TotalOutstanding` ignores soft-deleted receivables and expenses.
 - **User isolation** across every endpoint, including rename.
 - **Atomicity**: a forced failure mid-settle leaves no partial rows and an unchanged balance.
-- **Concurrency (decided 2026-10-20: local only, no CI)**: SQLite can't exercise `FOR UPDATE`,
-  so add one Postgres-tagged test (`//go:build postgres`). It runs two concurrent settles that
-  together exceed the outstanding amount, and exactly one must succeed. **No GitHub Actions
-  workflow is added** (to avoid CI cost). PR 2 adds a `make test-postgres` target that runs
-  `go test -tags postgres ./...` against the `DB_*` env vars (the compose Postgres on
-  `localhost:5433`). It is run manually before merging PR 2 and any later change to the
-  settle or lock code. The build tag keeps it out of `go test ./...` and `check-go.sh`, so the
-  default checks stay SQLite-only.
+- **Concurrency**: the D10 locking is implemented, but **no automated race test** is written
+  (decided 2026-10-20). SQLite can't exercise `FOR UPDATE`, and the risk is low for a single user.
 - **Handler tests**: validation and an audit `Log` call per action.
 - **Integration**: `tests/integration/shared_expense_flow_test.go` for the full lifecycle.
 - Run `./scripts/check-go.sh apps/api`, plus web lint and typecheck.
@@ -338,8 +352,9 @@ constraints (Finding 7).
 ## Decided (2026-10-20)
 
 - **Net worth (D4):** outstanding receivables are excluded until received.
-- **Concurrency test:** a Postgres-tagged test run locally via `make test-postgres`. No GitHub
-  Actions workflow.
+- **Concurrency:** keep the D10 locks, and skip the race test.
+- **Delivery:** one branch, in phases (not separate PRs), implemented by subagents per the
+  execution graph below. The API contract is frozen in `CONTRACT.md`.
 - **Shared income** (collecting money from others before paying): out of scope for v1.
 - **Write-off timing (D6a):** forgiven amounts count as spending in the original expense's month.
 - **Kinds (D2a):** `split`, `on_behalf`, `claim`, `loan`, `deposit` and `refund`, as listed.
