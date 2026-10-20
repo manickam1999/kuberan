@@ -68,3 +68,24 @@ export function writeOffImpactText(
 export function isOpen(receivable: Receivable): boolean {
   return receivable.outstanding > 0;
 }
+
+/**
+ * Friendly copy for receivable-related API error codes, or null when the code
+ * is not one of them (callers fall back to their own message).
+ */
+export function receivableErrorMessage(code: string): string | null {
+  switch (code) {
+    case "RECEIVABLE_HAS_PAYMENTS":
+      return "Someone has already paid part of this. Undo their repayments from the Owed to me page before removing them.";
+    case "INVALID_SHARES":
+      return "The amounts owed back are not valid. Check the names, that nobody is listed twice, and that the total does not exceed the expense.";
+    case "RECEIVABLE_HAS_SETTLEMENTS":
+      return "This expense has repayments recorded. Undo them from the receivable's history on the Owed to me page first.";
+    case "TRANSACTION_NOT_EDITABLE":
+      return "This transaction can't be edited. Repayments are managed from the Owed to me page.";
+    case "INVALID_TYPE_CHANGE":
+      return "The type can't be changed while money is owed back on this expense.";
+    default:
+      return null;
+  }
+}

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { toast } from "sonner";
 import { ArrowDownRight, ArrowUpRight, Wand2 } from "lucide-react";
 import { ApiClientError } from "@/lib/api-client";
@@ -11,7 +12,11 @@ import { useAccounts } from "@/hooks/use-accounts";
 import {
   useUpdateTransaction,
   useDeleteTransaction,
+  useTransaction,
 } from "@/hooks/use-transactions";
+import { ReceivableList } from "@/components/receivables/receivable-list";
+import { ReceivablesEditor } from "@/components/receivables/receivables-editor";
+import { receivableErrorMessage } from "@/lib/receivable-format";
 import { useCategories } from "@/hooks/use-categories";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -50,11 +55,9 @@ import type { RuleConditionInput, UpdateTransactionRequest } from "@/types/api";
 
 function getErrorMessage(error: unknown): string {
   if (error instanceof ApiClientError) {
+    const friendly = receivableErrorMessage(error.code);
+    if (friendly) return friendly;
     switch (error.code) {
-      case "TRANSACTION_NOT_EDITABLE":
-        return "This transaction type cannot be edited";
-      case "INVALID_TYPE_CHANGE":
-        return "Cannot change to this transaction type";
       case "ACCOUNT_NOT_FOUND":
         return "Selected account not found";
       default:
@@ -107,6 +110,22 @@ export function EditTransactionDialog({
   const isDeleting = deleteTransaction.isPending;
   const isEditable =
     transaction?.type === "income" || transaction?.type === "expense";
+  const isReimbursement = transaction?.type === "reimbursement";
+
+  // The list row may be stale after receivables are edited or repaid; the
+  // detail query is invalidated by those mutations, so prefer it.
+  const { data: freshTransaction } = useTransaction(
+    open && transaction ? transaction.id : ""
+  );
+  const live =
+    freshTransaction && freshTransaction.id === transaction?.id
+      ? freshTransaction
+      : transaction;
+  const receivables = live?.receivables ?? [];
+  const isShared = transaction?.type === "expense" && receivables.length > 0;
+  const receivablesTotal = receivables.reduce((s, r) => s + r.amount, 0);
+  const sharedPersonal =
+    live?.personal_amount ?? (live ? live.amount - receivablesTotal : 0);
 
   // Sync form state when transaction changes
   useEffect(() => {
@@ -139,6 +158,16 @@ export function EditTransactionDialog({
     }
     if (amount <= 0) {
       setError("Amount must be greater than zero");
+      return;
+    }
+    if (isShared && type !== "expense") {
+      setError(receivableErrorMessage("INVALID_TYPE_CHANGE") ?? "");
+      return;
+    }
+    if (isShared && amount < receivablesTotal) {
+      setError(
+        `Amount can't be less than the ${formatCurrency(receivablesTotal)} others owe you. Edit the money owed back first.`
+      );
       return;
     }
 
@@ -199,12 +228,14 @@ export function EditTransactionDialog({
         setDeleteOpen(false);
         onOpenChange(false);
       },
-      onError: (err) =>
+      onError: (err) => {
+        setDeleteOpen(false);
         toast.error(
           err instanceof ApiClientError
-            ? err.message
+            ? (receivableErrorMessage(err.code) ?? err.message)
             : "Failed to delete transaction"
-        ),
+        );
+      },
     });
   }
 
@@ -214,10 +245,16 @@ export function EditTransactionDialog({
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>
-              {isEditable ? "Edit Transaction" : "Transaction Details"}
+              {isReimbursement
+                ? "Repayment"
+                : isEditable
+                  ? "Edit Transaction"
+                  : "Transaction Details"}
             </DialogTitle>
             <DialogDescription>
-              {isEditable
+              {isReimbursement
+                ? "A repayment received against money owed to you."
+                : isEditable
                 ? "Update transaction details."
                 : "Transfer and investment transactions cannot be edited. Delete and recreate if needed."}
             </DialogDescription>
@@ -230,7 +267,12 @@ export function EditTransactionDialog({
           )}
 
           {isEditable ? (
-            <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+            <>
+            <form
+              id="edit-tx-form"
+              onSubmit={handleSubmit}
+              className="flex flex-col gap-4"
+            >
               {/* Type segmented control */}
               <div className="grid grid-cols-2 gap-1 rounded-xl bg-muted p-1">
                 {[
@@ -254,7 +296,12 @@ export function EditTransactionDialog({
                       key={opt.value}
                       type="button"
                       onClick={() => handleTypeChange(opt.value)}
-                      disabled={isSaving}
+                      disabled={isSaving || (isShared && opt.value !== "expense")}
+                      title={
+                        isShared && opt.value !== "expense"
+                          ? "Remove the money owed back to change the type"
+                          : undefined
+                      }
                       className={cn(
                         "flex items-center justify-center gap-1.5 rounded-lg px-2 py-2 text-sm font-medium transition-all disabled:opacity-50",
                         active
@@ -369,22 +416,104 @@ export function EditTransactionDialog({
 
               {/* Receipts */}
               {transaction && <ExistingAttachments txId={transaction.id} />}
+            </form>
 
-              <DialogFooter className="mt-1 flex-row justify-between gap-2">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  className="text-muted-foreground hover:text-destructive"
-                  onClick={() => setDeleteOpen(true)}
-                  disabled={isSaving || isDeleting}
-                >
-                  Delete
-                </Button>
-                <Button type="submit" disabled={isSaving || isDeleting}>
-                  {isSaving ? "Saving…" : "Save changes"}
+            {/* Money owed back (expenses only). Lives outside the form so
+                Enter in its inputs never submits the main form. */}
+            {transaction?.type === "expense" && live && (
+              <section
+                aria-label="Money owed back"
+                className="flex flex-col gap-3"
+              >
+                {isShared && (
+                  <>
+                    <div className="flex items-center justify-between gap-2 rounded-md bg-muted/50 px-3 py-2 text-sm">
+                      <span className="text-muted-foreground">Shared expense</span>
+                      <span className="money font-medium">
+                        Your share {formatCurrency(sharedPersonal)} of{" "}
+                        {formatCurrency(live.amount)}
+                      </span>
+                    </div>
+                    <ReceivableList
+                      receivables={receivables}
+                      expense={{
+                        id: live.id,
+                        description: live.description,
+                        date: live.date,
+                        amount: live.amount,
+                        personal_amount: live.personal_amount,
+                        account_id: live.account_id,
+                        category_id: live.category_id ?? null,
+                      }}
+                    />
+                  </>
+                )}
+                <ReceivablesEditor
+                  key={receivables
+                    .map(
+                      (r) =>
+                        `${r.id}:${r.counterparty_name}:${r.amount}:${r.kind}:${r.paid_amount}:${r.written_off_amount}`
+                    )
+                    .join("|")}
+                  transaction={live}
+                />
+              </section>
+            )}
+
+            <DialogFooter className="mt-1 flex-row justify-between gap-2">
+              <Button
+                type="button"
+                variant="ghost"
+                className="text-muted-foreground hover:text-destructive"
+                onClick={() => setDeleteOpen(true)}
+                disabled={isSaving || isDeleting}
+              >
+                Delete
+              </Button>
+              <Button
+                type="submit"
+                form="edit-tx-form"
+                disabled={isSaving || isDeleting}
+              >
+                {isSaving ? "Saving…" : "Save changes"}
+              </Button>
+            </DialogFooter>
+            </>
+          ) : isReimbursement && transaction ? (
+            /* Reimbursements are read-only: undo them from the receivable */
+            <div className="flex flex-col gap-3">
+              <p className="rounded-md bg-muted/50 p-3 text-sm text-muted-foreground">
+                This is a repayment. To change or remove it, undo it from the
+                receivable&apos;s history on the Owed to me page.
+              </p>
+              <div className="flex items-center justify-between">
+                <Label>Amount</Label>
+                <span className="money text-sm font-medium">
+                  {formatCurrency(transaction.amount, transaction.account?.currency)}
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <Label>Received into</Label>
+                <span className="text-sm">{transaction.account?.name ?? "—"}</span>
+              </div>
+              <div className="flex items-center justify-between gap-4">
+                <Label>Description</Label>
+                <span className="text-right text-sm">
+                  {transaction.description || "—"}
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <Label>Date</Label>
+                <span className="text-sm">{formatDate(transaction.date)}</span>
+              </div>
+              <DialogFooter>
+                <Button asChild>
+                  <Link href="/receivables" onClick={() => onOpenChange(false)}>
+                    Go to Owed to me
+                  </Link>
                 </Button>
               </DialogFooter>
-            </form>
+            </div>
           ) : (
             /* Read-only view for transfer/investment */
             <div className="flex flex-col gap-3">
@@ -457,6 +586,8 @@ export function EditTransactionDialog({
             <AlertDialogDescription>
               Are you sure you want to delete this transaction? This will reverse
               its balance impact on the account.
+              {isShared &&
+                " The money owed back on this expense will be removed too."}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

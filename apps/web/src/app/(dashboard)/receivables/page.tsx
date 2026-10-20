@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { ChevronDown, ChevronRight, HandCoins, Pencil } from "lucide-react";
+import { ChevronDown, ChevronRight, HandCoins, Handshake, Pencil } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { useReceivables, useReceivablesSummary } from "@/hooks/use-receivables";
 import { formatCurrency } from "@/lib/format";
@@ -21,6 +21,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { StatCard } from "@/components/ui/stat-card";
 import { ReceivableList } from "@/components/receivables/receivable-list";
+import { LendMoneyDialog } from "@/components/receivables/lend-money-dialog";
 import { RenameCounterpartyDialog } from "@/components/receivables/rename-counterparty-dialog";
 import type { ReceivableCounterpartySummary, ReceivableFilters } from "@/types/api";
 import type { ReceivableKind } from "@/types/models";
@@ -43,6 +44,7 @@ export default function ReceivablesPage() {
   const [status, setStatus] = useState<StatusFilter>("open");
   const [kind, setKind] = useState<ReceivableKind | "all">("all");
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
+  const [lendOpen, setLendOpen] = useState(false);
   const [renaming, setRenaming] = useState<{ key: string; name: string } | null>(
     null
   );
@@ -97,12 +99,18 @@ export default function ReceivablesPage() {
 
   return (
     <div className="space-y-5">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Owed to me</h1>
-        <p className="text-sm text-muted-foreground">
-          Money others owe you. Shown for information only and not counted in
-          your net worth until it is repaid.
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">Owed to me</h1>
+          <p className="text-sm text-muted-foreground">
+            Money others owe you. Shown for information only and not counted in
+            your net worth until it is repaid.
+          </p>
+        </div>
+        <Button size="sm" onClick={() => setLendOpen(true)}>
+          <Handshake className="size-4" />
+          Lend money
+        </Button>
       </div>
 
       {summaryLoading ? (
@@ -251,6 +259,7 @@ export default function ReceivablesPage() {
         </Card>
       )}
 
+      <LendMoneyDialog open={lendOpen} onOpenChange={setLendOpen} />
       <RenameCounterpartyDialog
         counterparty={renaming}
         open={renaming !== null}

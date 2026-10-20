@@ -20,6 +20,10 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { CreateTransactionDialog } from "@/components/transactions/create-transaction-dialog";
+import {
+  SharedKindBadge,
+  YourShareText,
+} from "@/components/receivables/shared-expense-indicators";
 import { EditTransactionDialog } from "@/components/transactions/edit-transaction-dialog";
 import type { Transaction, TransactionType } from "@/types/models";
 import type { UserTransactionFilters } from "@/types/api";
@@ -60,6 +64,7 @@ function TransactionRow({
               <span className="sr-only">Has receipts</span>
             </>
           )}
+          <SharedKindBadge transaction={transaction} />
           <span className="truncate">{accountName}</span>
           {transaction.category && (
             <>
@@ -77,9 +82,12 @@ function TransactionRow({
           )}
         </div>
       </div>
-      <span className={`money shrink-0 text-sm font-semibold ${v.text}`}>
-        {v.sign}
-        {formatCurrency(transaction.amount)}
+      <span className="shrink-0 text-right">
+        <span className={`money block text-sm font-semibold ${v.text}`}>
+          {v.sign}
+          {formatCurrency(transaction.amount)}
+        </span>
+        <YourShareText transaction={transaction} />
       </span>
     </button>
   );
