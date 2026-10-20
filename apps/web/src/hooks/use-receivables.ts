@@ -4,9 +4,8 @@ import {
   useQueryClient,
   type QueryClient,
 } from "@tanstack/react-query";
-import { toast } from "sonner";
-import { apiClient, ApiClientError } from "@/lib/api-client";
-import type { Receivable, Transaction } from "@/types/models";
+import { apiClient } from "@/lib/api-client";
+import type { Receivable } from "@/types/models";
 import type {
   CounterpartiesResponse,
   CreateSharedExpenseRequest,
@@ -38,11 +37,6 @@ export const receivableKeys = {
     [...receivableKeys.all, "counterparties", q] as const,
 };
 
-function errorMessage(error: unknown): string {
-  if (error instanceof ApiClientError) return error.message;
-  return "An unexpected error occurred";
-}
-
 /**
  * Receivable mutations change balances, spending (personal_amount) and budget
  * progress, so refresh everything derived from them. Transaction keys cover the
@@ -65,6 +59,35 @@ export function useReceivables(filters?: ReceivableFilters, enabled = true) {
       apiClient.get<PageResponse<Receivable>>("/api/v1/receivables", {
         ...filters,
       }),
+    enabled,
+  });
+}
+
+const ALL_PAGE_SIZE = 100;
+
+/**
+ * Every receivable matching the filters, fetched page by page, so grouping and
+ * totals computed from it are complete. Ignores any `page` / `page_size` in
+ * `filters`.
+ */
+export function useAllReceivables(filters?: ReceivableFilters, enabled = true) {
+  return useQuery({
+    queryKey: [...receivableKeys.lists(), "all", filters] as const,
+    queryFn: async () => {
+      const all: Receivable[] = [];
+      let page = 1;
+      let totalPages = 1;
+      do {
+        const res = await apiClient.get<PageResponse<Receivable>>(
+          "/api/v1/receivables",
+          { ...filters, page, page_size: ALL_PAGE_SIZE }
+        );
+        all.push(...res.data);
+        totalPages = res.total_pages;
+        page += 1;
+      } while (page <= totalPages);
+      return all;
+    },
     enabled,
   });
 }
@@ -108,7 +131,12 @@ export function useCounterparties(q: string, enabled = true) {
   });
 }
 
-/** POST /transactions/shared. Toast is left to the caller (dialogs show their own copy). */
+/*
+ * Toast convention: NO receivable mutation hook toasts. Callers own success and
+ * error copy (use `receivableApiErrorMessage` from lib/receivable-format).
+ */
+
+/** POST /transactions/shared. */
 export function useCreateSharedExpense() {
   const queryClient = useQueryClient();
   return useMutation({
@@ -132,7 +160,7 @@ export function useUpdateReceivables(transactionId: string) {
         `/api/v1/transactions/${transactionId}/receivables`,
         data
       );
-      return res.transaction as Transaction;
+      return res.transaction;
     },
     onSuccess: () => invalidateReceivableDependents(queryClient),
   });
@@ -151,11 +179,7 @@ export function useSettleReceivable() {
         body
       );
     },
-    onSuccess: () => {
-      invalidateReceivableDependents(queryClient);
-      toast.success("Repayment recorded");
-    },
-    onError: (err) => toast.error(errorMessage(err)),
+    onSuccess: () => invalidateReceivableDependents(queryClient),
   });
 }
 
@@ -169,11 +193,7 @@ export function useDeleteSettlement() {
       );
       return res.receivable;
     },
-    onSuccess: () => {
-      invalidateReceivableDependents(queryClient);
-      toast.success("Repayment undone");
-    },
-    onError: (err) => toast.error(errorMessage(err)),
+    onSuccess: () => invalidateReceivableDependents(queryClient),
   });
 }
 
@@ -191,11 +211,7 @@ export function useWriteOff() {
       );
       return res.receivable;
     },
-    onSuccess: () => {
-      invalidateReceivableDependents(queryClient);
-      toast.success("Written off");
-    },
-    onError: (err) => toast.error(errorMessage(err)),
+    onSuccess: () => invalidateReceivableDependents(queryClient),
   });
 }
 
@@ -209,11 +225,7 @@ export function useUndoWriteOff() {
       );
       return res.receivable;
     },
-    onSuccess: () => {
-      invalidateReceivableDependents(queryClient);
-      toast.success("Write-off undone");
-    },
-    onError: (err) => toast.error(errorMessage(err)),
+    onSuccess: () => invalidateReceivableDependents(queryClient),
   });
 }
 
@@ -227,15 +239,11 @@ export function useRenameCounterparty() {
         data
       );
     },
-    onSuccess: (res) => {
+    onSuccess: () => {
       // Receivables are embedded in transaction lists, so refresh those too.
       queryClient.invalidateQueries({ queryKey: receivableKeys.all });
       queryClient.invalidateQueries({ queryKey: transactionKeys.all });
-      toast.success(
-        `Updated ${res.updated} item${res.updated === 1 ? "" : "s"}`
-      );
     },
-    onError: (err) => toast.error(errorMessage(err)),
   });
 }
 

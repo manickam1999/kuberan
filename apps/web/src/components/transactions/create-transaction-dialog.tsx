@@ -12,9 +12,10 @@ import {
   MoneyOwedBackSection,
   initialOwedBackState,
   owedShareMode,
+  visibleOwedRows,
   type OwedBackState,
 } from "@/components/receivables/money-owed-back-section";
-import { OWED_MODES, buildSharedCounterparties } from "@/lib/shared-expense";
+import { buildSharedCounterparties } from "@/lib/shared-expense";
 import {
   useCreateTransaction,
   useCreateTransfer,
@@ -44,6 +45,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { toRFC3339 } from "@/lib/format";
+import { receivableErrorMessage } from "@/lib/receivable-format";
 import type { TransactionType } from "@/types/models";
 
 type DialogType = TransactionType | "transfer";
@@ -79,9 +81,8 @@ function getErrorMessage(error: unknown): string {
     if (error.code === "SAME_ACCOUNT") {
       return "Cannot transfer to the same account";
     }
-    if (error.code === "INVALID_SHARES") {
-      return "The amounts owed back don't add up. Check the names and amounts.";
-    }
+    const friendly = receivableErrorMessage(error.code);
+    if (friendly) return friendly;
     if (error.code === "INSUFFICIENT_BALANCE") {
       return "Insufficient balance for this transfer";
     }
@@ -244,13 +245,12 @@ export function CreateTransactionDialog({
           const built = buildSharedCounterparties({
             amount,
             mode: shareMode,
-            rows: owed.rows,
+            rows: visibleOwedRows(owed),
           });
           if (!built.ok) {
             setError(built.error);
             return;
           }
-          const modeInfo = OWED_MODES.find((m) => m.value === owed.mode);
           created = await createShared.mutateAsync({
             account_id: accountId,
             category_id:
@@ -258,7 +258,7 @@ export function CreateTransactionDialog({
             amount,
             description: description.trim() || undefined,
             date: date ? toRFC3339(date) : undefined,
-            kind: modeInfo?.kind ?? "split",
+            kind: owed.mode,
             mode: shareMode,
             counterparties: built.counterparties,
           });

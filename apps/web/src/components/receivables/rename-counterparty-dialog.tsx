@@ -1,6 +1,8 @@
 "use client";
 
 import { useState } from "react";
+import { toast } from "sonner";
+import { receivableApiErrorMessage } from "@/lib/receivable-format";
 import { useRenameCounterparty } from "@/hooks/use-receivables";
 import { Button } from "@/components/ui/button";
 import {
@@ -53,6 +55,7 @@ function RenameForm({
   onDone: () => void;
 }) {
   const [name, setName] = useState(counterparty.name);
+  const [error, setError] = useState("");
   const rename = useRenameCounterparty();
 
   const normalized = name.split(/\s+/).filter(Boolean).join(" ");
@@ -62,9 +65,18 @@ function RenameForm({
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!valid || unchanged) return;
+    setError("");
     rename.mutate(
       { from_key: counterparty.key, to_name: normalized },
-      { onSuccess: onDone }
+      {
+        onSuccess: (res) => {
+          toast.success(
+            `Updated ${res.updated} item${res.updated === 1 ? "" : "s"}`
+          );
+          onDone();
+        },
+        onError: (err) => setError(receivableApiErrorMessage(err)),
+      }
     );
   }
 
@@ -87,6 +99,11 @@ function RenameForm({
           disabled={rename.isPending}
         />
       </div>
+      {error && (
+        <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
+          {error}
+        </div>
+      )}
       <DialogFooter>
         <Button
           type="button"

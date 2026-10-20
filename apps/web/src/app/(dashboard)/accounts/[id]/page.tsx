@@ -133,7 +133,7 @@ function TransactionsTableRow({
 
   return (
     <TableRow className={onClick ? "cursor-pointer" : ""} onClick={onClick}>
-      <TableCell className="text-muted-foreground">
+      <TableCell className="whitespace-nowrap text-muted-foreground">
         {formatDate(transaction.date)}
       </TableCell>
       <TableCell>
@@ -190,7 +190,7 @@ function TransactionListItem({
             {transaction.description || config.label}
           </p>
           <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-            <span>{formatDate(transaction.date)}</span>
+            <span className="whitespace-nowrap">{formatDate(transaction.date)}</span>
             <SharedKindBadge transaction={transaction} />
             {transaction.category && (
               <>

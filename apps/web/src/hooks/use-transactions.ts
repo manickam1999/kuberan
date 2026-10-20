@@ -20,6 +20,7 @@ import type {
 } from "@/types/api";
 import { accountKeys } from "./use-accounts";
 import { budgetKeys } from "./use-budgets";
+import { receivableKeys } from "./use-receivables";
 
 export const transactionKeys = {
   all: ["transactions"] as const,
@@ -148,6 +149,8 @@ export function useUpdateTransaction(id: string) {
       queryClient.invalidateQueries({ queryKey: transactionKeys.all });
       queryClient.invalidateQueries({ queryKey: accountKeys.all });
       queryClient.invalidateQueries({ queryKey: budgetKeys.allProgress() });
+      // personal_amount / embedded receivables may have changed.
+      queryClient.invalidateQueries({ queryKey: receivableKeys.all });
     },
   });
 }
@@ -162,6 +165,8 @@ export function useDeleteTransaction() {
       queryClient.invalidateQueries({ queryKey: transactionKeys.all });
       queryClient.invalidateQueries({ queryKey: accountKeys.all });
       queryClient.invalidateQueries({ queryKey: budgetKeys.allProgress() });
+      // Deleting a shared expense cascades to its receivables.
+      queryClient.invalidateQueries({ queryKey: receivableKeys.all });
     },
   });
 }

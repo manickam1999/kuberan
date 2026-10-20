@@ -16,12 +16,16 @@ export function SharedKindBadge({ transaction }: { transaction: Transaction }) {
   return (
     <ReceivableKindBadge
       kind={kind}
-      className="h-4 shrink-0 px-1.5 text-[10px] font-medium"
+      className="shrink-0"
     />
   );
 }
 
-/** Muted "Your share RM20" line shown under the amount of a shared expense. */
+/**
+ * Muted share line under the amount of a shared expense: "Your share MYR 20",
+ * shortened to "Share MYR 20" on phones (the full label stays in the
+ * accessibility tree), or "All owed back" when nothing is the user's own.
+ */
 export function YourShareText({
   transaction,
   className,
@@ -36,8 +40,22 @@ export function YourShareText({
   );
   const share = transaction.personal_amount ?? transaction.amount - receivablesTotal;
   return (
-    <span className={className ?? "block text-[11px] text-muted-foreground"}>
-      Your share {formatCurrency(share)}
+    <span
+      className={
+        className ?? "block whitespace-nowrap text-[11px] text-muted-foreground"
+      }
+    >
+      {share === 0 ? (
+        "All owed back"
+      ) : (
+        <>
+          <span aria-hidden="true" className="sm:hidden">
+            Share
+          </span>
+          <span className="sr-only sm:not-sr-only">Your share</span>{" "}
+          {formatCurrency(share)}
+        </>
+      )}
     </span>
   );
 }

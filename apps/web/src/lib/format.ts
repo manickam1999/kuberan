@@ -114,6 +114,18 @@ export function toLocalDateString(date: Date = new Date()): string {
 }
 
 /**
+ * "March 2026" for an ISO date, without timezone-induced day shifts.
+ * @param iso - A YYYY-MM-DD or RFC 3339 date string
+ */
+export function formatMonthYear(iso: string): string {
+  const [year, month] = iso.split("T")[0].split("-").map(Number);
+  return new Date(year, month - 1, 1).toLocaleDateString("en-US", {
+    month: "long",
+    year: "numeric",
+  });
+}
+
+/**
  * Convert a date-only string (YYYY-MM-DD) to RFC 3339 format (YYYY-MM-DDT00:00:00Z).
  * If the string already contains "T" (i.e., is already RFC 3339), it is returned as-is.
  * @param dateStr - A date string in YYYY-MM-DD or RFC 3339 format

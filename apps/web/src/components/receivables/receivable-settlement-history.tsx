@@ -2,9 +2,11 @@
 
 import { useState } from "react";
 import { Undo2 } from "lucide-react";
+import { toast } from "sonner";
 import { useAccounts } from "@/hooks/use-accounts";
 import { useDeleteSettlement, useReceivable } from "@/hooks/use-receivables";
 import { formatCurrency, formatDate } from "@/lib/format";
+import { receivableApiErrorMessage } from "@/lib/receivable-format";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -35,6 +37,15 @@ export function ReceivableSettlementHistory({
 
   const accountName = new Map((accountData?.data ?? []).map((a) => [a.id, a.name]));
 
+  async function undo(settlement: ReceivableSettlement) {
+    try {
+      await deleteSettlement.mutateAsync(settlement.id);
+      toast.success("Repayment undone");
+    } catch (err) {
+      toast.error(receivableApiErrorMessage(err));
+    }
+  }
+
   if (isLoading) return <Skeleton className="h-10 w-full" />;
   const settlements = receivable?.settlements ?? [];
   if (settlements.length === 0) {
@@ -50,11 +61,14 @@ export function ReceivableSettlementHistory({
               <div className="money font-medium">{formatCurrency(s.amount)}</div>
               <div className="truncate text-xs text-muted-foreground">
                 {formatDate(s.date)} · {accountName.get(s.account_id) ?? "Account"}
+                {s.written_off_amount > 0 &&
+                  ` · wrote off ${formatCurrency(s.written_off_amount)}`}
               </div>
             </div>
             <Button
               variant="ghost"
               size="sm"
+              className="h-10 sm:h-9"
               onClick={() => setPending(s)}
               disabled={deleteSettlement.isPending}
             >
@@ -78,13 +92,15 @@ export function ReceivableSettlementHistory({
               {pending ? formatCurrency(pending.amount) : ""} will be removed from
               the account it was credited to, and the amount becomes outstanding
               again.
+              {pending && pending.written_off_amount > 0 &&
+                ` The ${formatCurrency(pending.written_off_amount)} written off with this repayment is also reversed, so it becomes outstanding too.`}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
               onClick={() => {
-                if (pending) deleteSettlement.mutate(pending.id);
+                if (pending) void undo(pending);
                 setPending(null);
               }}
             >

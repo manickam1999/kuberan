@@ -1,22 +1,24 @@
 "use client";
 
-import { ChevronDown, ChevronRight, Plus, X } from "lucide-react";
-import { cn } from "@/lib/utils";
-import { formatCurrency } from "@/lib/format";
+import { ChevronDown, ChevronRight } from "lucide-react";
 import {
-  MAX_COUNTERPARTIES,
   OWED_MODES,
   computeYourShare,
-  counterpartyKey,
+  equalShareAmount,
   nextRowKey,
   resolveShareMode,
   type OwedMode,
 } from "@/lib/shared-expense";
-import { Button } from "@/components/ui/button";
-import { CurrencyInput } from "@/components/ui/currency-input";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
-import { CounterpartyInput } from "./counterparty-input";
+import { ChoiceChips } from "./choice-chips";
+import { CounterpartyRows, YourShare } from "./counterparty-rows";
 import type { ShareMode } from "@/types/models";
+
+const SPLIT_METHODS = [
+  { value: "equal", label: "Equal" },
+  { value: "custom", label: "Custom" },
+] as const;
 
 export interface OwedRow {
   key: string;
@@ -53,14 +55,19 @@ export function owedShareMode(state: OwedBackState): ShareMode {
   return resolveShareMode(state.mode, state.splitMode, state.partialClaim);
 }
 
-/** Rows after a mode change: full-style modes keep exactly one row. */
-function normalizeRows(next: OwedBackState): OwedBackState {
-  const shareMode = owedShareMode(next);
-  const isFull = shareMode === "full";
-  const single = next.mode === "claim" && next.partialClaim;
-  let rows = next.rows.length > 0 ? next.rows : [newOwedRow()];
-  if (isFull || single) rows = rows.slice(0, 1);
-  return { ...next, rows };
+/** True when only one person can be listed (full-style modes). */
+function isSingleRow(state: OwedBackState): boolean {
+  return owedShareMode(state) === "full" || (state.mode === "claim" && state.partialClaim);
+}
+
+/**
+ * Rows that count for the current selection. Extra rows are kept in state when
+ * the user switches to a one-person mode and only hidden, so switching back
+ * restores them. Always use this (not `state.rows`) for totals and submission.
+ */
+export function visibleOwedRows(state: OwedBackState): OwedRow[] {
+  const rows = state.rows.length > 0 ? state.rows : [newOwedRow()];
+  return isSingleRow(state) ? rows.slice(0, 1) : rows;
 }
 
 interface MoneyOwedBackSectionProps {
@@ -83,15 +90,16 @@ export function MoneyOwedBackSection({
 }: MoneyOwedBackSectionProps) {
   const shareMode = owedShareMode(state);
   const modeInfo = OWED_MODES.find((m) => m.value === state.mode) ?? OWED_MODES[0];
-  const singleRow = shareMode === "full" || (state.mode === "claim" && state.partialClaim);
+  const singleRow = isSingleRow(state);
+  const rows = visibleOwedRows(state);
   const yourShare = computeYourShare(
     amount,
     shareMode,
-    state.rows.map((r) => r.amount)
+    rows.map((r) => r.amount)
   );
 
   function update(patch: Partial<OwedBackState>) {
-    onChange(normalizeRows({ ...state, ...patch }));
+    onChange({ ...state, ...patch });
   }
 
   function updateRow(key: string, patch: Partial<OwedRow>) {
@@ -124,163 +132,66 @@ export function MoneyOwedBackSection({
 
       {state.enabled && (
         <div id="owed-back-panel" className="flex flex-col gap-3 border-t px-3 py-3">
-          <div
-            role="radiogroup"
-            aria-label="Type of money owed back"
-            className="flex flex-wrap gap-1.5"
-          >
-            {OWED_MODES.map((m) => {
-              const active = state.mode === m.value;
-              return (
-                <button
-                  key={m.value}
-                  type="button"
-                  role="radio"
-                  aria-checked={active}
-                  disabled={disabled}
-                  onClick={() => update({ mode: m.value })}
-                  className={cn(
-                    "rounded-full border px-3 py-1 text-xs font-medium transition-colors disabled:opacity-50",
-                    active
-                      ? "border-primary bg-primary/10 text-foreground"
-                      : "text-muted-foreground hover:text-foreground"
-                  )}
-                >
-                  {m.label}
-                </button>
-              );
-            })}
-          </div>
+          <ChoiceChips
+            label="Type of money owed back"
+            value={state.mode}
+            onValueChange={(mode) => update({ mode })}
+            options={OWED_MODES}
+            disabled={disabled}
+          />
           <p className="text-xs text-muted-foreground">{modeInfo.hint}</p>
 
           {state.mode === "split" && (
-            <div
-              role="radiogroup"
-              aria-label="Split method"
-              className="grid grid-cols-2 gap-1 rounded-lg bg-muted p-1"
-            >
-              {(["equal", "custom"] as const).map((sm) => (
-                <button
-                  key={sm}
-                  type="button"
-                  role="radio"
-                  aria-checked={state.splitMode === sm}
-                  disabled={disabled}
-                  onClick={() => update({ splitMode: sm })}
-                  className={cn(
-                    "rounded-md px-2 py-1.5 text-sm font-medium transition-all disabled:opacity-50",
-                    state.splitMode === sm
-                      ? "bg-background shadow-sm"
-                      : "text-muted-foreground hover:text-foreground"
-                  )}
-                >
-                  {sm === "equal" ? "Equal" : "Custom"}
-                </button>
-              ))}
-            </div>
+            <ChoiceChips
+              label="Split method"
+              variant="segmented"
+              value={state.splitMode}
+              onValueChange={(splitMode) => update({ splitMode })}
+              options={SPLIT_METHODS}
+              disabled={disabled}
+            />
           )}
 
           {state.mode === "claim" && (
-            <label className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                className="size-4 accent-primary"
+            <div className="flex items-center gap-2 text-sm">
+              <Checkbox
+                id="owed-partial-claim"
                 checked={state.partialClaim}
                 disabled={disabled}
-                onChange={(e) => update({ partialClaim: e.target.checked })}
+                onCheckedChange={(v) => update({ partialClaim: v === true })}
               />
-              Partially covered
-            </label>
+              <Label htmlFor="owed-partial-claim" className="font-normal">
+                Partially covered
+              </Label>
+            </div>
           )}
 
-          <div className="flex flex-col gap-2">
-            {state.rows.map((row, i) => {
-              const others = state.rows
-                .filter((r) => r.key !== row.key)
-                .map((r) => counterpartyKey(r.name));
-              const nameId = `owed-name-${i}`;
-              const amountId = `owed-amount-${i}`;
-              const label = singleRow
-                ? modeInfo.counterpartyLabel
-                : `${modeInfo.counterpartyLabel} ${i + 1}`;
-              return (
-                <div key={row.key} className="flex items-start gap-2">
-                  <div className="flex min-w-0 flex-1 flex-col gap-1">
-                    <Label htmlFor={nameId} className="text-xs text-muted-foreground">
-                      {label}
-                    </Label>
-                    <CounterpartyInput
-                      id={nameId}
-                      value={row.name}
-                      onChange={(name) => updateRow(row.key, { name })}
-                      disabled={disabled}
-                      excludeKeys={others}
-                    />
-                  </div>
-                  {shareMode === "custom" && (
-                    <div className="flex w-32 shrink-0 flex-col gap-1">
-                      <Label htmlFor={amountId} className="text-xs text-muted-foreground">
-                        {`Amount owed${singleRow ? "" : ` ${i + 1}`}`}
-                      </Label>
-                      <CurrencyInput
-                        id={amountId}
-                        value={row.amount}
-                        onChange={(amt) => updateRow(row.key, { amount: amt })}
-                        disabled={disabled}
-                        placeholder="0.00"
-                      />
-                    </div>
-                  )}
-                  {!singleRow && state.rows.length > 1 && (
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      className="mt-5 shrink-0"
-                      aria-label={`Remove ${row.name.trim() || `${modeInfo.counterpartyLabel.toLowerCase()} ${i + 1}`}`}
-                      disabled={disabled}
-                      onClick={() =>
-                        onChange({
-                          ...state,
-                          rows: state.rows.filter((r) => r.key !== row.key),
-                        })
-                      }
-                    >
-                      <X className="size-4" />
-                    </Button>
-                  )}
-                </div>
-              );
-            })}
-            {!singleRow && state.rows.length < MAX_COUNTERPARTIES && (
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="self-start"
-                disabled={disabled}
-                onClick={() =>
-                  onChange({ ...state, rows: [...state.rows, newOwedRow()] })
-                }
-              >
-                <Plus className="size-4" />
-                Add person
-              </Button>
-            )}
-          </div>
+          <CounterpartyRows
+            rows={rows}
+            idPrefix="owed"
+            noun={modeInfo.counterpartyLabel}
+            numbered={!singleRow}
+            showAmounts={shareMode === "custom"}
+            equalShare={
+              shareMode === "equal" ? equalShareAmount(amount, rows.length) : undefined
+            }
+            disabled={disabled}
+            onNameChange={(key, name) => updateRow(key, { name })}
+            onAmountChange={(key, amt) => updateRow(key, { amount: amt })}
+            onRemove={
+              !singleRow && rows.length > 1
+                ? (key) =>
+                    onChange({ ...state, rows: state.rows.filter((r) => r.key !== key) })
+                : undefined
+            }
+            onAdd={
+              singleRow
+                ? undefined
+                : () => onChange({ ...state, rows: [...rows, newOwedRow()] })
+            }
+          />
 
-          <div
-            className="flex items-center justify-between rounded-md bg-muted/50 px-3 py-2 text-sm"
-            data-testid="your-share"
-          >
-            <span className="text-muted-foreground">Your share</span>
-            <output
-              aria-label="Your share"
-              className={cn("money font-semibold", yourShare < 0 && "text-destructive")}
-            >
-              {formatCurrency(yourShare)}
-            </output>
-          </div>
+          <YourShare cents={yourShare} />
           {yourShare === 0 && (
             <p className="-mt-1 text-xs text-muted-foreground">
               Nothing counts as your spending, so a category is optional.

@@ -1,10 +1,23 @@
+import {
+  Banknote,
+  ClipboardList,
+  PiggyBank,
+  RotateCcw,
+  Split,
+  Users,
+  type LucideIcon,
+} from "lucide-react";
+import { ApiClientError } from "@/lib/api-client";
 import type {
   AccountType,
   Receivable,
   ReceivableKind,
   ReceivableStatus,
 } from "@/types/models";
-import { formatCurrency } from "@/lib/format";
+import { formatCurrency, formatMonthYear } from "@/lib/format";
+
+// Re-exported so existing imports keep working; the helper lives in lib/format.
+export { formatMonthYear };
 
 /** Display labels for receivable kinds. */
 export const RECEIVABLE_KIND_LABELS: Record<ReceivableKind, string> = {
@@ -14,6 +27,16 @@ export const RECEIVABLE_KIND_LABELS: Record<ReceivableKind, string> = {
   loan: "Loan",
   deposit: "Deposit",
   refund: "Refund",
+};
+
+/** Distinct icon per receivable kind (summary cards). */
+export const RECEIVABLE_KIND_ICONS: Record<ReceivableKind, LucideIcon> = {
+  split: Split,
+  on_behalf: Users,
+  claim: ClipboardList,
+  loan: Banknote,
+  deposit: PiggyBank,
+  refund: RotateCcw,
 };
 
 export const RECEIVABLE_KINDS = Object.keys(
@@ -29,7 +52,7 @@ export const RECEIVABLE_STATUS_LABELS: Record<ReceivableStatus, string> = {
 };
 
 /** Account types a repayment may be credited to (D9). */
-export const SETTLEMENT_ACCOUNT_TYPES: readonly AccountType[] = [
+const SETTLEMENT_ACCOUNT_TYPES: readonly AccountType[] = [
   "cash",
   "credit_card",
   "debt",
@@ -37,15 +60,6 @@ export const SETTLEMENT_ACCOUNT_TYPES: readonly AccountType[] = [
 
 export function isSettlementAccountType(type: AccountType): boolean {
   return SETTLEMENT_ACCOUNT_TYPES.includes(type);
-}
-
-/** "March 2026" for an ISO date, without timezone-induced day shifts. */
-export function formatMonthYear(iso: string): string {
-  const [year, month] = iso.split("T")[0].split("-").map(Number);
-  return new Date(year, month - 1, 1).toLocaleDateString("en-US", {
-    month: "long",
-    year: "numeric",
-  });
 }
 
 /**
@@ -85,7 +99,32 @@ export function receivableErrorMessage(code: string): string | null {
       return "This transaction can't be edited. Repayments are managed from the Owed to me page.";
     case "INVALID_TYPE_CHANGE":
       return "The type can't be changed while money is owed back on this expense.";
+    case "SETTLEMENT_EXCEEDS_OUTSTANDING":
+      return "That repayment is more than what is still owed. Enter an amount up to the outstanding balance.";
+    case "WRITE_OFF_EXCEEDS_OUTSTANDING":
+      return "You can't write off more than what is still owed.";
+    case "INVALID_SETTLEMENT_ACCOUNT":
+      return "Repayments can only be received into a cash, credit card or debt account.";
+    case "RECEIVABLE_NOT_FOUND":
+      return "This item no longer exists. It may have been removed; refresh and try again.";
+    case "SETTLEMENT_NOT_FOUND":
+      return "This repayment no longer exists. It may already have been undone.";
+    case "INVALID_RECEIVABLE_KIND":
+      return "That kind of receivable is not supported.";
+    case "INVALID_INPUT":
+      return "That input isn't valid. Names can't contain control characters, and an undo needs something to undo.";
     default:
       return null;
   }
+}
+
+/**
+ * Single place to turn any thrown value into user-facing text: friendly copy
+ * for known receivable codes, else the server message, else a generic line.
+ */
+export function receivableApiErrorMessage(error: unknown): string {
+  if (error instanceof ApiClientError) {
+    return receivableErrorMessage(error.code) ?? error.message;
+  }
+  return "Something went wrong";
 }

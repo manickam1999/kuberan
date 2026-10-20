@@ -1,15 +1,17 @@
 "use client";
 
 import { useState } from "react";
-import { ApiClientError } from "@/lib/api-client";
+import { toast } from "sonner";
 import { useAccounts } from "@/hooks/use-accounts";
 import { useSettleReceivable } from "@/hooks/use-receivables";
-import { formatCurrency, toRFC3339 } from "@/lib/format";
+import { formatCurrency, toLocalDateString, toRFC3339 } from "@/lib/format";
 import {
   isSettlementAccountType,
+  receivableApiErrorMessage,
   writeOffImpactText,
 } from "@/lib/receivable-format";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { CurrencyInput } from "@/components/ui/currency-input";
 import {
   Dialog,
@@ -49,7 +51,14 @@ export function SettleReceivableDialog({
 }: SettleReceivableDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent
+        className="sm:max-w-md"
+        onOpenAutoFocus={(e) => {
+          // Land on Amount (the usual edit), not the account select.
+          e.preventDefault();
+          document.getElementById("settle-amount")?.focus();
+        }}
+      >
         {/* Inner form mounts only while open, so state resets on each open. */}
         <SettleForm receivable={receivable} onDone={() => onOpenChange(false)} />
       </DialogContent>
@@ -66,7 +75,7 @@ function SettleForm({
 }) {
   const [accountId, setAccountId] = useState("");
   const [amount, setAmount] = useState(receivable.outstanding);
-  const [date, setDate] = useState("");
+  const [date, setDate] = useState(toLocalDateString());
   const [writeOffRest, setWriteOffRest] = useState(false);
   const [error, setError] = useState("");
 
@@ -107,13 +116,11 @@ function SettleForm({
         write_off_remainder: writeOffRest && remainder > 0 ? true : undefined,
       },
       {
-        onSuccess: onDone,
-        onError: (err) => {
-          // The hook already toasts; keep the message inline too.
-          setError(
-            err instanceof ApiClientError ? err.message : "Something went wrong"
-          );
+        onSuccess: () => {
+          toast.success("Repayment recorded");
+          onDone();
         },
+        onError: (err) => setError(receivableApiErrorMessage(err)),
       }
     );
   }
@@ -163,7 +170,7 @@ function SettleForm({
           />
         </div>
         <div className="flex flex-col gap-1.5">
-          <Label htmlFor="settle-date">Date (optional)</Label>
+          <Label htmlFor="settle-date">Date</Label>
           <Input
             id="settle-date"
             type="date"
@@ -176,16 +183,17 @@ function SettleForm({
 
       {amountValid && remainder > 0 && (
         <div className="space-y-1">
-          <label className="flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              className="size-4 accent-primary"
+          <div className="flex items-center gap-2">
+            <Checkbox
+              id="settle-write-off-rest"
               checked={writeOffRest}
-              onChange={(e) => setWriteOffRest(e.target.checked)}
+              onCheckedChange={(v) => setWriteOffRest(v === true)}
               disabled={settle.isPending}
             />
-            Write off the rest ({formatCurrency(remainder)})
-          </label>
+            <Label htmlFor="settle-write-off-rest" className="font-normal">
+              Write off the rest ({formatCurrency(remainder)})
+            </Label>
+          </div>
           {impact && (
             <p className="pl-6 text-xs text-muted-foreground">{impact}</p>
           )}

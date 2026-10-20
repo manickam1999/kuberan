@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
 import { toast } from "sonner";
 import { ArrowDownRight, ArrowUpRight, Wand2 } from "lucide-react";
 import { ApiClientError } from "@/lib/api-client";
@@ -14,6 +13,8 @@ import {
   useDeleteTransaction,
   useTransaction,
 } from "@/hooks/use-transactions";
+import { ReimbursementView } from "@/components/transactions/reimbursement-view";
+import { toReceivableExpense } from "@/lib/shared-expense";
 import { ReceivableList } from "@/components/receivables/receivable-list";
 import { ReceivablesEditor } from "@/components/receivables/receivables-editor";
 import { receivableErrorMessage } from "@/lib/receivable-format";
@@ -66,6 +67,9 @@ function getErrorMessage(error: unknown): string {
   }
   return "An unexpected error occurred";
 }
+
+const TYPE_CHANGE_BLOCKED =
+  "The type can't be changed while money is owed back on this expense.";
 
 interface EditTransactionDialogProps {
   open: boolean;
@@ -129,25 +133,40 @@ export function EditTransactionDialog({
     accounts.find((a) => a.id === transaction?.account_id)?.name ||
     "Unknown account";
   const receivables = live?.receivables ?? [];
-  const isShared = transaction?.type === "expense" && receivables.length > 0;
+  const isShared = live?.type === "expense" && receivables.length > 0;
+  // Remount the editor when the saved receivables change.
+  const editorKey = receivables.map((r) => `${r.id}@${r.updated_at}`).join("|");
   const receivablesTotal = receivables.reduce((s, r) => s + r.amount, 0);
   const sharedPersonal =
     live?.personal_amount ?? (live ? live.amount - receivablesTotal : 0);
 
-  // Sync form state when transaction changes
+  // Sync form state from the live record (the refreshed detail once loaded,
+  // the list row until then). Only re-sync when the record actually changed,
+  // so a background refetch never wipes what the user is typing.
+  const syncSignature = live
+    ? [
+        live.id,
+        live.updated_at,
+        live.type,
+        live.account_id,
+        live.amount,
+        live.category_id ?? "",
+        live.description ?? "",
+        live.date ?? "",
+      ].join("|")
+    : "";
   useEffect(() => {
-    if (transaction) {
-      setType(transaction.type);
-      setAccountId(transaction.account_id);
-      setAmount(transaction.amount);
-      setCategoryId(
-        transaction.category_id ?? "none"
-      );
-      setDescription(transaction.description ?? "");
-      setDate(transaction.date ? transaction.date.split("T")[0] : "");
+    if (live) {
+      setType(live.type);
+      setAccountId(live.account_id);
+      setAmount(live.amount);
+      setCategoryId(live.category_id ?? "none");
+      setDescription(live.description ?? "");
+      setDate(live.date ? live.date.split("T")[0] : "");
       setError("");
     }
-  }, [transaction]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- syncSignature captures every field read from `live`
+  }, [syncSignature]);
 
   function handleTypeChange(newType: TransactionType) {
     setType(newType);
@@ -156,7 +175,7 @@ export function EditTransactionDialog({
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!transaction) return;
+    if (!live) return;
     setError("");
 
     if (!accountId) {
@@ -168,7 +187,7 @@ export function EditTransactionDialog({
       return;
     }
     if (isShared && type !== "expense") {
-      setError(receivableErrorMessage("INVALID_TYPE_CHANGE") ?? "");
+      setError(TYPE_CHANGE_BLOCKED);
       return;
     }
     if (isShared && amount < receivablesTotal) {
@@ -181,22 +200,22 @@ export function EditTransactionDialog({
     // Build payload with only changed fields
     const payload: UpdateTransactionRequest = {};
 
-    if (accountId !== transaction.account_id)
+    if (accountId !== live.account_id)
       payload.account_id = accountId;
-    if (type !== transaction.type) payload.type = type;
-    if (amount !== transaction.amount) payload.amount = amount;
+    if (type !== live.type) payload.type = type;
+    if (amount !== live.amount) payload.amount = amount;
 
     // Category: compare new value with original
     const newCatId =
       categoryId && categoryId !== "none" ? categoryId : null;
-    const origCatId = transaction.category_id ?? null;
+    const origCatId = live.category_id ?? null;
     if (newCatId !== origCatId) payload.category_id = newCatId;
 
     const trimmedDesc = description.trim();
-    if (trimmedDesc !== (transaction.description ?? ""))
+    if (trimmedDesc !== (live.description ?? ""))
       payload.description = trimmedDesc;
 
-    const origDate = transaction.date ? transaction.date.split("T")[0] : "";
+    const origDate = live.date ? live.date.split("T")[0] : "";
     if (date !== origDate) payload.date = date ? toRFC3339(date) : undefined;
 
     if (Object.keys(payload).length === 0) {
@@ -427,15 +446,17 @@ export function EditTransactionDialog({
 
             {/* Money owed back (expenses only). Lives outside the form so
                 Enter in its inputs never submits the main form. */}
-            {transaction?.type === "expense" && live && (
+            {live?.type === "expense" && (
               <section
                 aria-label="Money owed back"
                 className="flex flex-col gap-3"
               >
                 {isShared && (
                   <>
-                    <div className="flex items-center justify-between gap-2 rounded-md bg-muted/50 px-3 py-2 text-sm">
-                      <span className="text-muted-foreground">Shared expense</span>
+                    <div className="flex flex-col gap-0.5 rounded-md bg-muted/50 px-3 py-2 text-sm sm:flex-row sm:items-center sm:justify-between sm:gap-2">
+                      <span className="whitespace-nowrap text-muted-foreground">
+                        Shared expense
+                      </span>
                       <span className="money font-medium">
                         Your share {formatCurrency(sharedPersonal)} of{" "}
                         {formatCurrency(live.amount)}
@@ -443,25 +464,13 @@ export function EditTransactionDialog({
                     </div>
                     <ReceivableList
                       receivables={receivables}
-                      expense={{
-                        id: live.id,
-                        description: live.description,
-                        date: live.date,
-                        amount: live.amount,
-                        personal_amount: live.personal_amount,
-                        account_id: live.account_id,
-                        category_id: live.category_id ?? null,
-                      }}
+                      expense={toReceivableExpense(live)}
+                      showExpense={false}
                     />
                   </>
                 )}
                 <ReceivablesEditor
-                  key={receivables
-                    .map(
-                      (r) =>
-                        `${r.id}:${r.counterparty_name}:${r.amount}:${r.kind}:${r.paid_amount}:${r.written_off_amount}`
-                    )
-                    .join("|")}
+                  key={editorKey}
                   transaction={live}
                 />
               </section>
@@ -487,44 +496,15 @@ export function EditTransactionDialog({
             </DialogFooter>
             </>
           ) : isReimbursement && transaction ? (
-            /* Reimbursements are read-only: undo them from the receivable */
-            <div className="flex flex-col gap-3">
-              <p className="rounded-md bg-muted/50 p-3 text-sm text-muted-foreground">
-                This is a repayment. To change or remove it, undo it from the
-                receivable&apos;s history on the Owed to me page.
-              </p>
-              <div className="flex items-center justify-between">
-                <Label>Amount</Label>
-                <span className="money text-sm font-medium">
-                  {formatCurrency(
-                    transaction.amount,
-                    transaction.account?.currency ||
-                      accounts.find((a) => a.id === transaction.account_id)?.currency
-                  )}
-                </span>
-              </div>
-              <div className="flex items-center justify-between">
-                <Label>Received into</Label>
-                <span className="text-sm">{accountName}</span>
-              </div>
-              <div className="flex items-center justify-between gap-4">
-                <Label>Description</Label>
-                <span className="text-right text-sm">
-                  {transaction.description || "—"}
-                </span>
-              </div>
-              <div className="flex items-center justify-between">
-                <Label>Date</Label>
-                <span className="text-sm">{formatDate(transaction.date)}</span>
-              </div>
-              <DialogFooter>
-                <Button asChild>
-                  <Link href="/receivables" onClick={() => onOpenChange(false)}>
-                    Go to Owed to me
-                  </Link>
-                </Button>
-              </DialogFooter>
-            </div>
+            <ReimbursementView
+              transaction={transaction}
+              accountName={accountName}
+              currency={
+                transaction.account?.currency ||
+                accounts.find((a) => a.id === transaction.account_id)?.currency
+              }
+              onNavigate={() => onOpenChange(false)}
+            />
           ) : (
             /* Read-only view for transfer/investment */
             <div className="flex flex-col gap-3">

@@ -2,11 +2,13 @@
 
 import { useState } from "react";
 import { toast } from "sonner";
-import { ApiClientError } from "@/lib/api-client";
 import { useAccounts } from "@/hooks/use-accounts";
 import { useCreateSharedExpense } from "@/hooks/use-receivables";
-import { formatCurrency, toRFC3339 } from "@/lib/format";
-import { isSettlementAccountType } from "@/lib/receivable-format";
+import { formatCurrency, toLocalDateString, toRFC3339 } from "@/lib/format";
+import {
+  isSettlementAccountType,
+  receivableApiErrorMessage,
+} from "@/lib/receivable-format";
 import {
   buildSharedCounterparties,
   normalizeCounterpartyName,
@@ -31,10 +33,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { CounterpartyInput } from "./counterparty-input";
-
-function todayISO(): string {
-  return new Date().toISOString().split("T")[0];
-}
 
 export interface LendMoneyDialogProps {
   open: boolean;
@@ -75,7 +73,7 @@ function LendForm({
   const [accountId, setAccountId] = useState("");
   const [name, setName] = useState("");
   const [amount, setAmount] = useState(0);
-  const [date, setDate] = useState(todayISO());
+  const [date, setDate] = useState(toLocalDateString());
   const [note, setNote] = useState("");
   const [error, setError] = useState("");
 
@@ -86,8 +84,12 @@ function LendForm({
   const accounts = (accountData?.data ?? [])
     .filter((a) => a.is_active && isSettlementAccountType(a.type))
     .sort((a, b) => a.name.localeCompare(b.name));
+  // Prefer the requested account, then a cash account, then anything allowed.
   const defaultId =
-    accounts.find((a) => a.id === defaultAccountId)?.id ?? accounts[0]?.id ?? "";
+    accounts.find((a) => a.id === defaultAccountId)?.id ??
+    accounts.find((a) => a.type === "cash")?.id ??
+    accounts[0]?.id ??
+    "";
   const effectiveAccountId = accountId || defaultId;
 
   const cleanName = normalizeCounterpartyName(name);
@@ -127,14 +129,7 @@ function LendForm({
           toast.success(`Lent ${formatCurrency(amount)} to ${cleanName}`);
           onDone();
         },
-        onError: (err) =>
-          setError(
-            err instanceof ApiClientError
-              ? err.code === "INVALID_SHARES"
-                ? "Check the name and amount"
-                : err.message
-              : "Something went wrong"
-          ),
+        onError: (err) => setError(receivableApiErrorMessage(err)),
       }
     );
   }

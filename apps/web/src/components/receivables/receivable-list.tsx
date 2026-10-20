@@ -2,9 +2,20 @@
 
 import { useState } from "react";
 import { ChevronDown, ChevronRight, HandCoins, Undo2, Eraser } from "lucide-react";
+import { toast } from "sonner";
 import { useUndoWriteOff } from "@/hooks/use-receivables";
 import { formatCurrency } from "@/lib/format";
-import { isOpen } from "@/lib/receivable-format";
+import { isOpen, receivableApiErrorMessage } from "@/lib/receivable-format";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { ReceivableKindBadge } from "./receivable-kind-badge";
 import { ReceivableSettlementHistory } from "./receivable-settlement-history";
@@ -21,6 +32,10 @@ export interface ReceivableListProps {
    * and show the write-off month impact.
    */
   expense?: ReceivableExpense;
+  /** Show each row's counterparty name. Pass false under a person group. Default true. */
+  showCounterparty?: boolean;
+  /** Show the expense description on each row. Pass false inside an expense. Default true. */
+  showExpense?: boolean;
 }
 
 /**
@@ -28,49 +43,75 @@ export interface ReceivableListProps {
  * status, with Record repayment / Write off / Undo write-off actions and an
  * expandable repayment history.
  */
-export function ReceivableList({ receivables, expense }: ReceivableListProps) {
+export function ReceivableList({
+  receivables,
+  expense,
+  showCounterparty = true,
+  showExpense = true,
+}: ReceivableListProps) {
   return (
     <div className="divide-y divide-border/50">
       {receivables.map((r) => (
         <ReceivableRow
           key={r.id}
           receivable={expense && !r.transaction ? { ...r, transaction: expense } : r}
+          showCounterparty={showCounterparty}
+          showExpense={showExpense}
         />
       ))}
     </div>
   );
 }
 
-function ReceivableRow({ receivable }: { receivable: Receivable }) {
+function ReceivableRow({
+  receivable,
+  showCounterparty,
+  showExpense,
+}: {
+  receivable: Receivable;
+  showCounterparty: boolean;
+  showExpense: boolean;
+}) {
   const [settleOpen, setSettleOpen] = useState(false);
   const [writeOffOpen, setWriteOffOpen] = useState(false);
+  const [undoOpen, setUndoOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const undoWriteOff = useUndoWriteOff();
 
   const open = isOpen(receivable);
   const hasPayments = receivable.paid_amount > 0;
+  const description = showExpense ? receivable.transaction?.description : undefined;
+
+  async function undo() {
+    try {
+      await undoWriteOff.mutateAsync(receivable.id);
+      toast.success("Write-off undone");
+    } catch (err) {
+      toast.error(receivableApiErrorMessage(err));
+    }
+  }
 
   return (
     <div className="py-3">
-      <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-2">
-        <div className="min-w-0">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="truncate text-sm font-medium">
-              {receivable.counterparty_name}
-            </span>
+            {showCounterparty && (
+              <span className="truncate text-sm font-medium">
+                {receivable.counterparty_name}
+              </span>
+            )}
             <ReceivableKindBadge kind={receivable.kind} />
             <ReceivableStatusBadge status={receivable.status} />
           </div>
-          <div className="mt-0.5 text-xs text-muted-foreground">
-            {receivable.transaction?.description
-              ? `${receivable.transaction.description} · `
-              : ""}
+          <div className="mt-0.5 break-words text-xs text-muted-foreground">
+            {description ? `${description} · ` : ""}
             Paid {formatCurrency(receivable.paid_amount)}
             {receivable.written_off_amount > 0 &&
               ` · Written off ${formatCurrency(receivable.written_off_amount)}`}
           </div>
         </div>
-        <div className="text-right">
+        <div className="shrink-0 text-right">
           <div className="money text-sm font-semibold">
             {formatCurrency(receivable.outstanding)}
           </div>
@@ -83,11 +124,21 @@ function ReceivableRow({ receivable }: { receivable: Receivable }) {
       <div className="mt-2 flex flex-wrap items-center gap-1.5">
         {open && (
           <>
-            <Button size="sm" variant="outline" onClick={() => setSettleOpen(true)}>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-10 sm:h-9"
+              onClick={() => setSettleOpen(true)}
+            >
               <HandCoins className="size-4" />
               Record repayment
             </Button>
-            <Button size="sm" variant="ghost" onClick={() => setWriteOffOpen(true)}>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-10 sm:h-9"
+              onClick={() => setWriteOffOpen(true)}
+            >
               <Eraser className="size-4" />
               Write off
             </Button>
@@ -97,8 +148,9 @@ function ReceivableRow({ receivable }: { receivable: Receivable }) {
           <Button
             size="sm"
             variant="ghost"
+            className="h-10 sm:h-9"
             disabled={undoWriteOff.isPending}
-            onClick={() => undoWriteOff.mutate(receivable.id)}
+            onClick={() => setUndoOpen(true)}
           >
             <Undo2 className="size-4" />
             Undo write-off
@@ -108,6 +160,7 @@ function ReceivableRow({ receivable }: { receivable: Receivable }) {
           <Button
             size="sm"
             variant="ghost"
+            className="h-10 sm:h-9"
             onClick={() => setHistoryOpen((v) => !v)}
             aria-expanded={historyOpen}
           >
@@ -141,6 +194,25 @@ function ReceivableRow({ receivable }: { receivable: Receivable }) {
           />
         </>
       )}
+
+      <AlertDialog open={undoOpen} onOpenChange={setUndoOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Undo this write-off?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {formatCurrency(receivable.written_off_amount)} will be owed to you
+              again by {receivable.counterparty_name}, and it will no longer count
+              as your own spending.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={() => void undo()}>
+              Undo write-off
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

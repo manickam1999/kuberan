@@ -1,10 +1,13 @@
 "use client";
 
 import { useState } from "react";
-import { ApiClientError } from "@/lib/api-client";
+import { toast } from "sonner";
 import { useWriteOff } from "@/hooks/use-receivables";
 import { formatCurrency } from "@/lib/format";
-import { writeOffImpactText } from "@/lib/receivable-format";
+import {
+  receivableApiErrorMessage,
+  writeOffImpactText,
+} from "@/lib/receivable-format";
 import { Button } from "@/components/ui/button";
 import { CurrencyInput } from "@/components/ui/currency-input";
 import {
@@ -77,11 +80,11 @@ function WriteOffForm({
         amount: amount === receivable.outstanding ? undefined : amount,
       },
       {
-        onSuccess: onDone,
-        onError: (err) =>
-          setError(
-            err instanceof ApiClientError ? err.message : "Something went wrong"
-          ),
+        onSuccess: () => {
+          toast.success("Written off");
+          onDone();
+        },
+        onError: (err) => setError(receivableApiErrorMessage(err)),
       }
     );
   }

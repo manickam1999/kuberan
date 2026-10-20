@@ -3,12 +3,14 @@
 import { useState } from "react";
 import { ChevronDown, ChevronRight, HandCoins, Handshake, Pencil } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
-import { useReceivables, useReceivablesSummary } from "@/hooks/use-receivables";
+import { useAllReceivables, useReceivablesSummary } from "@/hooks/use-receivables";
 import { formatCurrency } from "@/lib/format";
 import {
+  RECEIVABLE_KIND_ICONS,
   RECEIVABLE_KIND_LABELS,
   RECEIVABLE_KINDS,
 } from "@/lib/receivable-format";
+import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -23,7 +25,7 @@ import { StatCard } from "@/components/ui/stat-card";
 import { ReceivableList } from "@/components/receivables/receivable-list";
 import { LendMoneyDialog } from "@/components/receivables/lend-money-dialog";
 import { RenameCounterpartyDialog } from "@/components/receivables/rename-counterparty-dialog";
-import type { ReceivableCounterpartySummary, ReceivableFilters } from "@/types/api";
+import type { ReceivableFilters } from "@/types/api";
 import type { ReceivableKind } from "@/types/models";
 
 type StatusFilter = "open" | "all" | "settled" | "written_off";
@@ -39,6 +41,17 @@ function plural(n: number, word: string): string {
   return `${n} ${word}${n === 1 ? "" : "s"}`;
 }
 
+interface CounterpartyGroup {
+  key: string;
+  name: string;
+  outstanding: number;
+  total: number;
+  count: number;
+  openCount: number;
+  settledCount: number;
+  writtenOffCount: number;
+}
+
 export default function ReceivablesPage() {
   const { hideBalances } = useAuth();
   const [status, setStatus] = useState<StatusFilter>("open");
@@ -49,59 +62,72 @@ export default function ReceivablesPage() {
     null
   );
 
-  const { data: summary, isLoading: summaryLoading } = useReceivablesSummary();
   const filters: ReceivableFilters = {
     status: status === "all" ? undefined : status,
     kind: kind === "all" ? undefined : kind,
-    page_size: 100,
   };
-  const { data: listData, isLoading: listLoading } = useReceivables(filters);
+  const defaultView = status === "open" && kind === "all";
+
+  const { data: summary, isLoading: summaryLoading } = useReceivablesSummary();
+  // Other views are built from the complete (all pages) filtered list.
+  const { data: allItems, isLoading: listLoading } = useAllReceivables(
+    filters,
+    !defaultView
+  );
 
   const money = (cents: number) => formatCurrency(cents, undefined, hideBalances);
 
-  // Group the (filtered) list by counterparty. The summary only covers open
-  // items, so non-open views are built from the list endpoint itself.
-  const groups = new Map<
-    string,
-    {
-      key: string;
-      name: string;
-      outstanding: number;
-      total: number;
-      count: number;
-      openCount: number;
-      settledCount: number;
-      writtenOffCount: number;
-    }
-  >();
-  for (const r of listData?.data ?? []) {
-    const g = groups.get(r.counterparty_key) ?? {
-      key: r.counterparty_key,
-      name: r.counterparty_name,
-      outstanding: 0,
-      total: 0,
-      count: 0,
-      openCount: 0,
+  // Default view (Open + All kinds): the summary is complete and authoritative.
+  // Otherwise group the full filtered list, so counts and amounts agree.
+  let counterpartyRows: CounterpartyGroup[];
+  if (defaultView) {
+    counterpartyRows = (summary?.by_counterparty ?? []).map((c) => ({
+      key: c.counterparty_key,
+      name: c.counterparty_name,
+      outstanding: c.outstanding,
+      total: c.outstanding,
+      count: c.open_count,
+      openCount: c.open_count,
       settledCount: 0,
       writtenOffCount: 0,
-    };
-    g.outstanding += r.outstanding;
-    g.total += r.amount;
-    g.count += 1;
-    if (r.outstanding > 0) g.openCount += 1;
-    else if (r.status === "written_off") g.writtenOffCount += 1;
-    else g.settledCount += 1;
-    groups.set(r.counterparty_key, g);
+    }));
+  } else {
+    const groups = new Map<string, CounterpartyGroup>();
+    // The list is ordered newest expense first, so the first name seen per key
+    // is the one to show unless a later (older) item was created more recently.
+    const latestCreated = new Map<string, string>();
+    for (const r of allItems ?? []) {
+      const g = groups.get(r.counterparty_key) ?? {
+        key: r.counterparty_key,
+        name: r.counterparty_name,
+        outstanding: 0,
+        total: 0,
+        count: 0,
+        openCount: 0,
+        settledCount: 0,
+        writtenOffCount: 0,
+      };
+      const seen = latestCreated.get(r.counterparty_key);
+      if (!seen || r.created_at > seen) {
+        latestCreated.set(r.counterparty_key, r.created_at);
+        g.name = r.counterparty_name;
+      }
+      g.outstanding += r.outstanding;
+      g.total += r.amount;
+      g.count += 1;
+      if (r.outstanding > 0) g.openCount += 1;
+      else if (r.status === "written_off") g.writtenOffCount += 1;
+      else g.settledCount += 1;
+      groups.set(r.counterparty_key, g);
+    }
+    counterpartyRows = Array.from(groups.values()).sort(
+      (a, b) => b.outstanding - a.outstanding || a.name.localeCompare(b.name)
+    );
   }
-  const counterpartyRows = Array.from(groups.values()).sort(
-    (a, b) => b.outstanding - a.outstanding || a.name.localeCompare(b.name)
-  );
+  const rowsLoading = defaultView ? summaryLoading : listLoading;
 
   const totalOutstanding = summary?.total_outstanding ?? 0;
   const byKind = (summary?.by_kind ?? []).filter((k) => k.outstanding > 0);
-  const summaryByKey = new Map<string, ReceivableCounterpartySummary>(
-    (summary?.by_counterparty ?? []).map((c) => [c.counterparty_key, c])
-  );
 
   return (
     <div className="space-y-5">
@@ -113,20 +139,21 @@ export default function ReceivablesPage() {
             your net worth until it is repaid.
           </p>
         </div>
-        <Button size="sm" onClick={() => setLendOpen(true)}>
+        <Button className="h-10 sm:h-9" size="sm" onClick={() => setLendOpen(true)}>
           <Handshake className="size-4" />
           Lend money
         </Button>
       </div>
 
       {summaryLoading ? (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          {Array.from({ length: 3 }).map((_, i) => (
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4 lg:gap-4">
+          <Skeleton className="col-span-2 h-28 w-full rounded-xl lg:col-span-1" />
+          {Array.from({ length: 2 }).map((_, i) => (
             <Skeleton key={i} className="h-28 w-full rounded-xl" />
           ))}
         </div>
       ) : (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4 lg:gap-4">
           <StatCard
             label="Total outstanding"
             value={money(totalOutstanding)}
@@ -140,15 +167,23 @@ export default function ReceivablesPage() {
                   )
                 : undefined
             }
-            className="sm:col-span-2 lg:col-span-1"
+            className="col-span-2 lg:col-span-1"
           />
-          {byKind.map((k) => (
+          {byKind.map((k, i) => (
             <StatCard
               key={k.kind}
               label={RECEIVABLE_KIND_LABELS[k.kind]}
               value={money(k.outstanding)}
-              icon={HandCoins}
+              icon={RECEIVABLE_KIND_ICONS[k.kind]}
               sub={plural(k.open_count, "open item")}
+              // An odd last card spans the row so no card is orphaned below lg.
+              className={cn(
+                // Smaller figure on mobile so 5-digit amounts fit half-width cards.
+                "[&_.money]:text-lg sm:[&_.money]:text-[1.65rem]",
+                i === byKind.length - 1 &&
+                  byKind.length % 2 === 1 &&
+                  "col-span-2 lg:col-span-1"
+              )}
             />
           ))}
         </div>
@@ -159,7 +194,7 @@ export default function ReceivablesPage() {
           value={status}
           onValueChange={(v) => setStatus(v as StatusFilter)}
         >
-          <SelectTrigger className="h-9 w-auto min-w-[8rem]" aria-label="Status">
+          <SelectTrigger className="min-w-[8rem]" aria-label="Status">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -174,7 +209,7 @@ export default function ReceivablesPage() {
           value={kind}
           onValueChange={(v) => setKind(v as ReceivableKind | "all")}
         >
-          <SelectTrigger className="h-9 w-auto min-w-[8rem]" aria-label="Kind">
+          <SelectTrigger className="min-w-[8rem]" aria-label="Kind">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -188,7 +223,7 @@ export default function ReceivablesPage() {
         </Select>
       </div>
 
-      {listLoading ? (
+      {rowsLoading ? (
         <Card>
           <CardContent className="space-y-3 py-4">
             {Array.from({ length: 4 }).map((_, i) => (
@@ -198,27 +233,44 @@ export default function ReceivablesPage() {
         </Card>
       ) : counterpartyRows.length === 0 ? (
         <div className="flex flex-col items-center justify-center rounded-xl border border-dashed p-12 text-center">
-          <h3 className="text-lg font-semibold">
-            {status === "open" && kind === "all"
-              ? "Nobody owes you anything"
-              : "Nothing matches these filters"}
-          </h3>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Split an expense or lend money and it will show up here.
-          </p>
+          {defaultView ? (
+            <>
+              <h3 className="text-lg font-semibold">Nobody owes you anything</h3>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Split an expense or lend money and it will show up here.
+              </p>
+            </>
+          ) : (
+            <>
+              <h3 className="text-lg font-semibold">Nothing matches these filters</h3>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Try a different status or kind.
+              </p>
+              <Button
+                variant="outline"
+                className="mt-4 h-10 sm:h-9"
+                onClick={() => {
+                  setStatus("open");
+                  setKind("all");
+                  setExpandedKey(null);
+                }}
+              >
+                Clear filters
+              </Button>
+            </>
+          )}
         </div>
       ) : (
         <Card className="overflow-hidden py-0">
           <div className="divide-y divide-border/50">
             {counterpartyRows.map((g) => {
               const expanded = expandedKey === g.key;
-              const openCount = summaryByKey.get(g.key)?.open_count ?? g.openCount;
               return (
                 <div key={g.key}>
-                  <div className="flex items-center gap-1 pr-2">
+                  <div className="flex items-center hover:bg-accent/40">
                     <button
                       type="button"
-                      className="flex min-w-0 flex-1 items-center gap-3 px-4 py-3 text-left hover:bg-accent/40"
+                      className="flex min-w-0 flex-1 items-center gap-3 px-4 py-3 text-left outline-none focus-visible:bg-accent/40"
                       onClick={() => setExpandedKey(expanded ? null : g.key)}
                       aria-expanded={expanded}
                     >
@@ -228,14 +280,12 @@ export default function ReceivablesPage() {
                         <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
                       )}
                       <div className="min-w-0 flex-1">
-                        <div className="truncate text-sm font-medium">
-                          {g.outstanding > 0
-                            ? `${g.name} owes ${money(g.outstanding)}`
-                            : `${g.name} · nothing owed`}
-                        </div>
+                        <span className="block truncate text-sm font-medium">
+                          {g.name}
+                        </span>
                         <div className="text-xs text-muted-foreground">
                           {g.outstanding > 0
-                            ? `across ${plural(openCount, "item")}`
+                            ? plural(g.openCount, "open item")
                             : `${plural(g.count, "item")} · ${
                                 g.writtenOffCount === 0
                                   ? "settled"
@@ -245,10 +295,19 @@ export default function ReceivablesPage() {
                               }`}
                         </div>
                       </div>
+                      <span
+                        className={cn(
+                          "money shrink-0 text-right text-sm font-semibold",
+                          g.outstanding === 0 && "text-muted-foreground"
+                        )}
+                      >
+                        {money(g.outstanding > 0 ? g.outstanding : g.total)}
+                      </span>
                     </button>
                     <Button
                       variant="ghost"
                       size="icon"
+                      className="size-11 shrink-0 rounded-none"
                       aria-label={`Rename ${g.name}`}
                       onClick={() => setRenaming({ key: g.key, name: g.name })}
                     >
@@ -292,12 +351,11 @@ function CounterpartyReceivables({
   status: ReceivableFilters["status"];
   kind: ReceivableFilters["kind"];
 }) {
-  const { data, isLoading } = useReceivables({
+  const { data, isLoading } = useAllReceivables({
     counterparty: counterpartyKey,
     status,
     kind,
-    page_size: 100,
   });
   if (isLoading) return <Skeleton className="my-3 h-14 w-full" />;
-  return <ReceivableList receivables={data?.data ?? []} />;
+  return <ReceivableList receivables={data ?? []} showCounterparty={false} />;
 }

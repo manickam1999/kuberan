@@ -130,6 +130,7 @@ export interface ReceivableSettlement {
   transaction_id: string; // UUIDv7, the reimbursement transaction
   account_id: string; // UUIDv7, account credited
   amount: number; // cents
+  written_off_amount: number; // cents written off by the same settle call (reversed when undone)
   date: string; // ISO 8601
   created_at: string; // ISO 8601
 }
