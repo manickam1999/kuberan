@@ -10,7 +10,8 @@ Revision 3:
   adds a receivable **`kind`**, makes a $0 personal share first-class, and brings **write-off** into
   v1.
 - Revision 4 records decisions: receivables are **excluded from net worth** (D4), and the race test
-  runs in a Postgres-only CI job.
+  is a local-only Postgres test (no CI workflow). Shared income is out of scope, write-offs
+  count in the expense's month, and the six kinds are confirmed.
 
 ## Context
 
@@ -322,30 +323,25 @@ constraints (Finding 7).
   `TotalOutstanding` ignores soft-deleted receivables and expenses.
 - **User isolation** across every endpoint, including rename.
 - **Atomicity**: a forced failure mid-settle leaves no partial rows and an unchanged balance.
-- **Concurrency (decided 2026-10-20: a Postgres-only job)**: SQLite can't exercise `FOR UPDATE`,
+- **Concurrency (decided 2026-10-20: local only, no CI)**: SQLite can't exercise `FOR UPDATE`,
   so add one Postgres-tagged test (`//go:build postgres`). It runs two concurrent settles that
-  together exceed the outstanding amount, and exactly one must succeed. The repo has **no CI
-  today** (no `.github/workflows`), so PR 2 adds:
-  - a `make test-postgres` target that runs `go test -tags postgres ./...` against `DB_*` env vars
-    (locally, the compose Postgres);
-  - a minimal `.github/workflows/api-postgres.yml` with a `postgres:16-alpine` service that runs
-    the migrations and then `make test-postgres`.
+  together exceed the outstanding amount, and exactly one must succeed. **No GitHub Actions
+  workflow is added** (to avoid CI cost). PR 2 adds a `make test-postgres` target that runs
+  `go test -tags postgres ./...` against the `DB_*` env vars (the compose Postgres on
+  `localhost:5433`). It is run manually before merging PR 2 and any later change to the
+  settle or lock code. The build tag keeps it out of `go test ./...` and `check-go.sh`, so the
+  default checks stay SQLite-only.
 - **Handler tests**: validation and an audit `Log` call per action.
 - **Integration**: `tests/integration/shared_expense_flow_test.go` for the full lifecycle.
 - Run `./scripts/check-go.sh apps/api`, plus web lint and typecheck.
 
-## Decided
+## Decided (2026-10-20)
 
-- **Net worth (D4):** excluded until received (2026-10-20).
-- **Concurrency test:** a Postgres-only test job (2026-10-20).
+- **Net worth (D4):** outstanding receivables are excluded until received.
+- **Concurrency test:** a Postgres-tagged test run locally via `make test-postgres`. No GitHub
+  Actions workflow.
+- **Shared income** (collecting money from others before paying): out of scope for v1.
+- **Write-off timing (D6a):** forgiven amounts count as spending in the original expense's month.
+- **Kinds (D2a):** `split`, `on_behalf`, `claim`, `loan`, `deposit` and `refund`, as listed.
 
-## Open questions
-
-1. **Shared income.** This plan only covers money *you* paid out and expect back. The reverse
-   case: you collect money from others first (for example, everyone sends you $20 for a group gift
-   before you buy it). Without support, those inflows would be recorded as income. Proposed: out of
-   scope for v1.
-2. **Write-off timing (D6a).** When you give up on getting money back, the forgiven amount counts
-   as your spending in the month of the *original expense*, not the month you gave up. Acceptable?
-3. **Kinds (D2a).** Is the list of labels (`split`, `on_behalf`, `claim`, `loan`, `deposit`,
-   `refund`) right?
+No open questions remain.
