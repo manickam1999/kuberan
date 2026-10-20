@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import { calendarMonthRange } from "@/lib/format";
 import { useMonthlySummary } from "./use-transactions";
 
 export interface ActiveMonth {
@@ -14,19 +15,6 @@ export interface ActiveMonth {
   isLoading: boolean;
 }
 
-function monthRange(year: number, monthIndex: number) {
-  const from = new Date(year, monthIndex, 1);
-  const to = new Date(year, monthIndex + 1, 0, 23, 59, 59);
-  return {
-    fromDate: from.toISOString(),
-    toDate: to.toISOString(),
-    label: from.toLocaleDateString("en-US", {
-      month: "long",
-      year: "numeric",
-    }),
-  };
-}
-
 /**
  * Resolves the month that dashboard "this month" widgets should display.
  *
@@ -40,7 +28,25 @@ export function useActiveMonth(): ActiveMonth {
 
   return useMemo(() => {
     const now = new Date();
-    const current = monthRange(now.getFullYear(), now.getMonth());
+    const currentRange = calendarMonthRange(now.getFullYear(), now.getMonth());
+    // Convert local YYYY-MM-DD dates to ISO instants to preserve the existing
+    // public contract (ActiveMonth.fromDate / toDate are ISO 8601 strings).
+    const current = {
+      fromDate: new Date(
+        now.getFullYear(),
+        now.getMonth(),
+        1
+      ).toISOString(),
+      toDate: new Date(
+        now.getFullYear(),
+        now.getMonth() + 1,
+        0,
+        23,
+        59,
+        59
+      ).toISOString(),
+      label: currentRange.label,
+    };
 
     // Latest month (data is ascending by month) with any expense activity.
     const withSpending = (data ?? []).filter((m) => m.expenses > 0);
@@ -55,7 +61,9 @@ export function useActiveMonth(): ActiveMonth {
       year === now.getFullYear() && month - 1 === now.getMonth();
 
     return {
-      ...monthRange(year, month - 1),
+      fromDate: new Date(year, month - 1, 1).toISOString(),
+      toDate: new Date(year, month, 0, 23, 59, 59).toISOString(),
+      label: calendarMonthRange(year, month - 1).label,
       isCurrentMonth,
       isLoading,
     };
