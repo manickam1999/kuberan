@@ -7,6 +7,7 @@ import (
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	apperrors "kuberan/internal/errors"
 	"kuberan/internal/models"
@@ -345,74 +346,91 @@ func reverseType(t models.TransactionType) (models.TransactionType, error) {
 }
 
 // UpdateTransaction updates an existing income/expense transaction.
-// Transfer and investment transactions cannot be edited.
+// Transfer, investment and reimbursement transactions cannot be edited.
+//
+// It runs in one DB transaction under the D10 lock order (the transaction row,
+// its receivables, then the affected accounts) and moves balances with relative
+// updates. On a shared expense it also rejects a type change away from expense
+// (INVALID_TYPE_CHANGE) and an amount below the sum of its receivables
+// (INVALID_SHARES), and recomputes personal_amount.
 func (s *transactionService) UpdateTransaction(userID, transactionID string, updates TransactionUpdateFields) (*models.Transaction, error) {
-	transaction, err := s.GetTransactionByID(userID, transactionID)
-	if err != nil {
-		return nil, err
-	}
-
-	// Reject transfers, investment transactions and reimbursements (the latter are
-	// managed through their receivable settlement)
-	if transaction.Type == models.TransactionTypeTransfer ||
-		transaction.Type == models.TransactionTypeInvestment ||
-		transaction.Type == models.TransactionTypeReimbursement {
-		return nil, apperrors.ErrTransactionNotEditable
-	}
-
-	// If type change requested, reject changes to/from transfer, investment or reimbursement
-	if updates.Type != nil {
-		newType := *updates.Type
-		if newType == models.TransactionTypeTransfer || newType == models.TransactionTypeInvestment ||
-			newType == models.TransactionTypeReimbursement {
-			return nil, apperrors.ErrInvalidTypeChange
-		}
-	}
-
-	// Capture old values
-	oldAccountID := transaction.AccountID
-	oldType := transaction.Type
-	oldAmount := transaction.Amount
-
-	// Determine new values
-	newAccountID := oldAccountID
-	if updates.AccountID != nil {
-		newAccountID = *updates.AccountID
-	}
-	newType := oldType
-	if updates.Type != nil {
-		newType = *updates.Type
-	}
-	newAmount := oldAmount
-	if updates.Amount != nil {
-		newAmount = *updates.Amount
-	}
-
-	reversal, err := reverseType(oldType)
-	if err != nil {
-		return nil, err
-	}
-
-	// Fetch old account
-	oldAccount, err := s.accountService.GetAccountByID(userID, oldAccountID)
-	if err != nil {
-		return nil, err
-	}
-
-	// If account is changing, fetch the new account
-	var targetAccount *models.Account
-	if newAccountID != oldAccountID {
-		targetAccount, err = s.accountService.GetAccountByID(userID, newAccountID)
+	var result *models.Transaction
+	err := s.db.Transaction(func(tx *gorm.DB) error {
+		transaction, err := lockTransaction(tx, userID, transactionID)
 		if err != nil {
-			return nil, err
+			return err
 		}
-	} else {
-		targetAccount = oldAccount
-	}
 
-	err = s.db.Transaction(func(tx *gorm.DB) error {
+		// Reject transfers, investment transactions and reimbursements (the latter are
+		// managed through their receivable settlement)
+		if transaction.Type == models.TransactionTypeTransfer ||
+			transaction.Type == models.TransactionTypeInvestment ||
+			transaction.Type == models.TransactionTypeReimbursement {
+			return apperrors.ErrTransactionNotEditable
+		}
+
+		// If type change requested, reject changes to/from transfer, investment or reimbursement
+		if updates.Type != nil {
+			newType := *updates.Type
+			if newType == models.TransactionTypeTransfer || newType == models.TransactionTypeInvestment ||
+				newType == models.TransactionTypeReimbursement {
+				return apperrors.ErrInvalidTypeChange
+			}
+		}
+
+		// Capture old values
+		oldAccountID := transaction.AccountID
+		oldType := transaction.Type
+		oldAmount := transaction.Amount
+
+		// Determine new values
+		newAccountID := oldAccountID
+		if updates.AccountID != nil {
+			newAccountID = *updates.AccountID
+		}
+		newType := oldType
+		if updates.Type != nil {
+			newType = *updates.Type
+		}
+		newAmount := oldAmount
+		if updates.Amount != nil {
+			newAmount = *updates.Amount
+		}
+
+		reversal, err := reverseType(oldType)
+		if err != nil {
+			return err
+		}
+
+		// Shared-expense rules (plan 021, D7): lock the receivables, then validate.
+		var receivables []models.Receivable
+		if oldType == models.TransactionTypeExpense {
+			receivables, err = lockReceivablesForTransaction(tx, userID, transaction.ID)
+			if err != nil {
+				return err
+			}
+		}
+		if len(receivables) > 0 {
+			if newType != models.TransactionTypeExpense {
+				return apperrors.WithMessage(apperrors.ErrInvalidTypeChange, "Cannot change the type of an expense that has receivables")
+			}
+			var owed int64
+			for i := range receivables {
+				owed += receivables[i].Amount
+			}
+			if newAmount < owed {
+				return apperrors.WithMessage(apperrors.ErrInvalidShares, "amount cannot be less than the total owed by counterparties")
+			}
+		}
+
+		accounts, err := lockAccounts(tx, userID, []string{oldAccountID, newAccountID}, true)
+		if err != nil {
+			return err
+		}
+		oldAccount, targetAccount := accounts[oldAccountID], accounts[newAccountID]
+
 		// Reverse old impact on old account
-		if txErr := s.accountService.UpdateAccountBalance(tx, oldAccount, reversal, oldAmount); txErr != nil {
+		if txErr := s.accountService.ApplyBalanceDelta(tx, oldAccount.ID, oldAccount.Type, reversal, oldAmount); txErr != nil {
 			return txErr
 		}
 
@@ -436,22 +454,45 @@ func (s *transactionService) UpdateTransaction(userID, transactionID string, upd
 			transaction.CategoryID = *updates.CategoryID
 		}
 
-		if txErr := tx.Save(transaction).Error; txErr != nil {
+		if txErr := tx.Omit(clause.Associations).Save(transaction).Error; txErr != nil {
 			return apperrors.Wrap(apperrors.ErrInternalServer, txErr)
 		}
 
 		// Apply new impact on target account
-		if txErr := s.accountService.UpdateAccountBalance(tx, targetAccount, newType, newAmount); txErr != nil {
+		if txErr := s.accountService.ApplyBalanceDelta(tx, targetAccount.ID, targetAccount.Type, newType, newAmount); txErr != nil {
 			return txErr
 		}
 
+		if len(receivables) > 0 {
+			if txErr := recomputePersonalAmount(tx, userID, transaction.ID); txErr != nil {
+				return txErr
+			}
+			if txErr := tx.Where("id = ? AND user_id = ?", transaction.ID, userID).First(transaction).Error; txErr != nil {
+				return apperrors.Wrap(apperrors.ErrInternalServer, txErr)
+			}
+		}
+
+		result = transaction
 		return nil
 	})
 	if err != nil {
 		return nil, err
 	}
 
-	return transaction, nil
+	if err := s.attachOne(userID, result); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+// attachOne loads the receivables (without settlements) of a single expense.
+func (s *transactionService) attachOne(userID string, txn *models.Transaction) error {
+	one := []models.Transaction{*txn}
+	if err := attachReceivables(s.db, userID, one); err != nil {
+		return err
+	}
+	txn.Receivables = one[0].Receivables
+	return nil
 }
 
 // GetAccountTransactions retrieves a paginated, filtered list of transactions for a specific account.
@@ -480,6 +521,9 @@ func (s *transactionService) GetAccountTransactions(userID, accountID string, pa
 	}
 
 	if err := s.populateAttachmentCounts(transactions); err != nil {
+		return nil, err
+	}
+	if err := attachReceivables(s.db, userID, transactions); err != nil {
 		return nil, err
 	}
 
@@ -535,6 +579,9 @@ func (s *transactionService) GetUserTransactions(userID string, page pagination.
 	if err := s.populateAttachmentCounts(transactions); err != nil {
 		return nil, err
 	}
+	if err := attachReceivables(s.db, userID, transactions); err != nil {
+		return nil, err
+	}
 
 	result := pagination.NewPageResponse(transactions, page.Page, page.PageSize, totalItems)
 	return &result, nil
@@ -577,7 +624,8 @@ func (s *transactionService) populateAttachmentCounts(transactions []models.Tran
 	return nil
 }
 
-// GetTransactionByID retrieves a transaction by ID for a specific user
+// GetTransactionByID retrieves a transaction by ID for a specific user. For an
+// expense with receivables they are included (without settlements).
 func (s *transactionService) GetTransactionByID(userID, transactionID string) (*models.Transaction, error) {
 	var transaction models.Transaction
 	if err := s.db.Where("id = ? AND user_id = ?", transactionID, userID).First(&transaction).Error; err != nil {
@@ -586,53 +634,103 @@ func (s *transactionService) GetTransactionByID(userID, transactionID string) (*
 		}
 		return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)
 	}
+	if err := s.attachOne(userID, &transaction); err != nil {
+		return nil, err
+	}
 	return &transaction, nil
 }
 
-// DeleteTransaction deletes a transaction and updates the account balance
+// DeleteTransaction deletes a transaction and reverses its effect on the account
+// balance(s) with relative updates, under the D10 lock order. Reimbursements
+// cannot be deleted directly. A shared expense with any repayment is refused
+// (RECEIVABLE_HAS_SETTLEMENTS); otherwise its receivables are soft-deleted in
+// the same DB transaction.
 func (s *transactionService) DeleteTransaction(userID, transactionID string) error {
-	transaction, err := s.GetTransactionByID(userID, transactionID)
-	if err != nil {
-		return err
-	}
-
-	// Reimbursements are removed by deleting their receivable settlement.
-	if transaction.Type == models.TransactionTypeReimbursement {
-		return apperrors.ErrTransactionNotEditable
-	}
-
-	account, err := s.accountService.GetAccountByID(userID, transaction.AccountID)
-	if err != nil {
-		return err
-	}
-
 	return s.db.Transaction(func(tx *gorm.DB) error {
+		transaction, err := lockTransaction(tx, userID, transactionID)
+		if err != nil {
+			return err
+		}
+
+		// Reimbursements are removed by deleting their receivable settlement.
+		if transaction.Type == models.TransactionTypeReimbursement {
+			return apperrors.ErrTransactionNotEditable
+		}
+
+		accountIDs := []string{transaction.AccountID}
+		switch transaction.Type {
+		case models.TransactionTypeIncome, models.TransactionTypeExpense:
+		case models.TransactionTypeTransfer:
+			if transaction.ToAccountID == nil {
+				return apperrors.ErrInvalidTransactionType
+			}
+			accountIDs = append(accountIDs, *transaction.ToAccountID)
+		default:
+			return apperrors.ErrInvalidTransactionType
+		}
+
+		if transaction.Type == models.TransactionTypeExpense {
+			if txErr := deleteReceivablesOfExpense(tx, userID, transaction.ID); txErr != nil {
+				return txErr
+			}
+		}
+
+		accounts, err := lockAccounts(tx, userID, accountIDs, true)
+		if err != nil {
+			return err
+		}
+		account := accounts[transaction.AccountID]
+
 		if txErr := tx.Delete(transaction).Error; txErr != nil {
 			return apperrors.Wrap(apperrors.ErrInternalServer, txErr)
 		}
 
 		switch transaction.Type {
 		case models.TransactionTypeIncome:
-			return s.accountService.UpdateAccountBalance(tx, account, models.TransactionTypeExpense, transaction.Amount)
+			return s.accountService.ApplyBalanceDelta(tx, account.ID, account.Type, models.TransactionTypeExpense, transaction.Amount)
 		case models.TransactionTypeExpense:
-			return s.accountService.UpdateAccountBalance(tx, account, models.TransactionTypeIncome, transaction.Amount)
-		case models.TransactionTypeTransfer:
-			if transaction.ToAccountID == nil {
-				return apperrors.ErrInvalidTransactionType
-			}
-			toAccount, toErr := s.accountService.GetAccountByID(userID, *transaction.ToAccountID)
-			if toErr != nil {
-				return toErr
-			}
-			// Reverse: add back to from-account, subtract from to-account
-			if txErr := s.accountService.UpdateAccountBalance(tx, account, models.TransactionTypeIncome, transaction.Amount); txErr != nil {
+			return s.accountService.ApplyBalanceDelta(tx, account.ID, account.Type, models.TransactionTypeIncome, transaction.Amount)
+		default: // transfer: add back to the from-account, subtract from the to-account
+			toAccount := accounts[*transaction.ToAccountID]
+			if txErr := s.accountService.ApplyBalanceDelta(tx, account.ID, account.Type, models.TransactionTypeIncome, transaction.Amount); txErr != nil {
 				return txErr
 			}
-			return s.accountService.UpdateAccountBalance(tx, toAccount, models.TransactionTypeExpense, transaction.Amount)
-		default:
-			return apperrors.ErrInvalidTransactionType
+			return s.accountService.ApplyBalanceDelta(tx, toAccount.ID, toAccount.Type, models.TransactionTypeExpense, transaction.Amount)
 		}
 	})
+}
+
+// deleteReceivablesOfExpense implements D8 inside an open DB transaction whose
+// expense row is already locked: it locks the expense's receivables, refuses
+// when any non-deleted settlement exists, and otherwise soft-deletes them.
+func deleteReceivablesOfExpense(tx *gorm.DB, userID, transactionID string) error {
+	receivables, err := lockReceivablesForTransaction(tx, userID, transactionID)
+	if err != nil {
+		return err
+	}
+	if len(receivables) == 0 {
+		return nil
+	}
+
+	ids := make([]string, len(receivables))
+	for i := range receivables {
+		ids[i] = receivables[i].ID
+	}
+	var settlements int64
+	if err := tx.Model(&models.ReceivableSettlement{}).
+		Where("user_id = ? AND receivable_id IN ?", userID, ids).
+		Count(&settlements).Error; err != nil {
+		return apperrors.Wrap(apperrors.ErrInternalServer, err)
+	}
+	if settlements > 0 {
+		return apperrors.ErrReceivableHasSettlements
+	}
+
+	if err := tx.Where("transaction_id = ? AND user_id = ?", transactionID, userID).
+		Delete(&models.Receivable{}).Error; err != nil {
+		return apperrors.Wrap(apperrors.ErrInternalServer, err)
+	}
+	return nil
 }
 
 // GetMonthlySummary returns monthly income and expense totals for the last N months.

@@ -88,6 +88,7 @@ func run() error {
 	accountService := services.NewAccountService(db, categoryService)
 	ruleService := services.NewRuleService(db, categoryService)
 	transactionService := services.NewTransactionService(db, accountService, ruleService)
+	receivableService := services.NewReceivableService(db, accountService, ruleService)
 	budgetService := services.NewBudgetService(db)
 	investmentService := services.NewInvestmentService(db, accountService)
 	securityService := services.NewSecurityService(db)
@@ -128,6 +129,7 @@ func run() error {
 	accountHandler := handlers.NewAccountHandler(accountService, auditService)
 	categoryHandler := handlers.NewCategoryHandler(categoryService, auditService)
 	transactionHandler := handlers.NewTransactionHandler(transactionService, auditService)
+	receivableHandler := handlers.NewReceivableHandler(receivableService, auditService)
 	attachmentHandler := handlers.NewAttachmentHandler(attachmentService, auditService, appConfig.MaxUploadBytes)
 	budgetHandler := handlers.NewBudgetHandler(budgetService, auditService)
 	ruleHandler := handlers.NewRuleHandler(ruleService, transactionService, auditService)
@@ -234,6 +236,7 @@ func run() error {
 	transactions.GET("", transactionHandler.GetUserTransactions)
 	transactions.POST("", transactionHandler.CreateTransaction)
 	transactions.POST("/transfer", transactionHandler.CreateTransfer)
+	transactions.POST("/shared", receivableHandler.CreateSharedExpense)
 	transactions.GET("/spending-by-category", transactionHandler.GetSpendingByCategory)
 	transactions.GET("/cashflow", transactionHandler.GetCashflow)
 	transactions.GET("/monthly-summary", transactionHandler.GetMonthlySummary)
@@ -242,11 +245,26 @@ func run() error {
 	transactions.GET("/top-expenses", transactionHandler.GetTopExpenses)
 	transactions.GET("/:id", transactionHandler.GetTransactionByID)
 	transactions.PUT("/:id", transactionHandler.UpdateTransaction)
+	transactions.PUT("/:id/receivables", receivableHandler.UpdateReceivables)
 	transactions.DELETE("/:id", transactionHandler.DeleteTransaction)
 	transactions.POST("/:id/attachments", attachmentHandler.Upload)
 	transactions.GET("/:id/attachments", attachmentHandler.List)
 	transactions.GET("/:id/attachments/:aid", attachmentHandler.Download)
 	transactions.DELETE("/:id/attachments/:aid", attachmentHandler.Delete)
+
+	// Receivable routes (plan 021). Static segments (/summary, /counterparties,
+	// /settlements/:id) are registered alongside the param routes; Gin resolves
+	// static siblings before /:id.
+	receivables := protected.Group("/receivables")
+	receivables.GET("", receivableHandler.ListReceivables)
+	receivables.GET("/summary", receivableHandler.GetReceivablesSummary)
+	receivables.GET("/counterparties", receivableHandler.ListCounterparties)
+	receivables.POST("/counterparties/rename", receivableHandler.RenameCounterparty)
+	receivables.DELETE("/settlements/:id", receivableHandler.DeleteSettlement)
+	receivables.GET("/:id", receivableHandler.GetReceivable)
+	receivables.POST("/:id/settle", receivableHandler.SettleReceivable)
+	receivables.POST("/:id/write-off", receivableHandler.WriteOffReceivable)
+	receivables.DELETE("/:id/write-off", receivableHandler.UndoWriteOff)
 
 	// Budget routes
 	budgets := protected.Group("/budgets")

@@ -108,6 +108,16 @@ definitions:
       user_id:
         type: integer
     type: object
+  internal_handlers.CloseFixedDepositRequest:
+    properties:
+      destination_account_id:
+        type: string
+      interest_override:
+        type: integer
+      penalty:
+        minimum: 0
+        type: integer
+    type: object
   internal_handlers.CompleteLinkRequest:
     properties:
       default_currency:
@@ -130,6 +140,13 @@ definitions:
         type: string
     required:
     - recorded_at
+    type: object
+  internal_handlers.CounterpartiesResponse:
+    properties:
+      counterparties:
+        items:
+          $ref: '#/definitions/kuberan_internal_services.CounterpartySuggestion'
+        type: array
     type: object
   internal_handlers.CreateBudgetRequest:
     properties:
@@ -211,6 +228,59 @@ definitions:
     required:
     - name
     type: object
+  internal_handlers.CreateFixedDepositAccountRequest:
+    properties:
+      compounding:
+        enum:
+        - monthly
+        - quarterly
+        - semiannual
+        - annual
+        type: string
+      currency:
+        type: string
+      description:
+        maxLength: 500
+        type: string
+      interest_rate:
+        maximum: 100
+        minimum: 0
+        type: number
+      linked_account_id:
+        type: string
+      maturity_date:
+        type: string
+      name:
+        maxLength: 100
+        minLength: 1
+        type: string
+      payout_frequency:
+        enum:
+        - monthly
+        - quarterly
+        - semiannual
+        - annual
+        type: string
+      payout_type:
+        enum:
+        - cumulative
+        - periodic
+        type: string
+      principal:
+        type: integer
+      source_account_id:
+        type: string
+      start_date:
+        type: string
+    required:
+    - compounding
+    - maturity_date
+    - name
+    - payout_type
+    - principal
+    - source_account_id
+    - start_date
+    type: object
   internal_handlers.CreateInvestmentAccountRequest:
     properties:
       account_number:
@@ -289,6 +359,38 @@ definitions:
     - name
     - symbol
     type: object
+  internal_handlers.CreateSharedExpenseRequest:
+    properties:
+      account_id:
+        type: string
+      amount:
+        type: integer
+      category_id:
+        type: string
+      counterparties:
+        items:
+          $ref: '#/definitions/internal_handlers.SharedCounterpartyRequest'
+        type: array
+      date:
+        type: string
+      description:
+        maxLength: 500
+        type: string
+      kind:
+        $ref: '#/definitions/kuberan_internal_models.ReceivableKind'
+      mode:
+        allOf:
+        - $ref: '#/definitions/kuberan_internal_services.ShareMode'
+        enum:
+        - equal
+        - custom
+        - full
+    required:
+    - account_id
+    - amount
+    - kind
+    - mode
+    type: object
   internal_handlers.CreateTransactionRequest:
     properties:
       account_id:
@@ -363,6 +465,25 @@ definitions:
         type: array
     required:
     - conditions
+    type: object
+  internal_handlers.ProcessFixedDepositsRequest:
+    properties:
+      as_of:
+        type: string
+    type: object
+  internal_handlers.ReceivableEnvelope:
+    properties:
+      receivable:
+        $ref: '#/definitions/kuberan_internal_models.Receivable'
+    type: object
+  internal_handlers.ReceivableShareRequest:
+    properties:
+      amount:
+        type: integer
+      id:
+        type: string
+      name:
+        type: string
     type: object
   internal_handlers.RecordBuyRequest:
     properties:
@@ -484,6 +605,21 @@ definitions:
     - email
     - password
     type: object
+  internal_handlers.RenameCounterpartyRequest:
+    properties:
+      from_key:
+        type: string
+      to_name:
+        type: string
+    required:
+    - from_key
+    - to_name
+    type: object
+  internal_handlers.RenameCounterpartyResponse:
+    properties:
+      updated:
+        type: integer
+    type: object
   internal_handlers.ReorderRulesRequest:
     properties:
       rule_ids:
@@ -520,6 +656,42 @@ definitions:
     - field
     - operator
     type: object
+  internal_handlers.SettleReceivableRequest:
+    properties:
+      account_id:
+        type: string
+      amount:
+        type: integer
+      date:
+        type: string
+      description:
+        maxLength: 500
+        type: string
+      write_off_remainder:
+        type: boolean
+    required:
+    - account_id
+    - amount
+    type: object
+  internal_handlers.SettleResponse:
+    properties:
+      receivable:
+        $ref: '#/definitions/kuberan_internal_models.Receivable'
+      settlement:
+        $ref: '#/definitions/kuberan_internal_models.ReceivableSettlement'
+    type: object
+  internal_handlers.SharedCounterpartyRequest:
+    properties:
+      amount:
+        type: integer
+      name:
+        type: string
+    type: object
+  internal_handlers.TransactionEnvelope:
+    properties:
+      transaction:
+        $ref: '#/definitions/kuberan_internal_models.Transaction'
+    type: object
   internal_handlers.TransactionResponse:
     properties:
       account_id:
@@ -547,6 +719,13 @@ definitions:
       broker:
         maxLength: 100
         type: string
+      compounding:
+        enum:
+        - monthly
+        - quarterly
+        - semiannual
+        - annual
+        type: string
       credit_limit:
         minimum: 0
         type: integer
@@ -563,9 +742,28 @@ definitions:
         type: boolean
       is_pinned:
         type: boolean
+      linked_account_id:
+        type: string
+      maturity_date:
+        description: |-
+          Fixed deposit mutable fields (plan 020). Principal and start_date are
+          immutable after creation and are intentionally absent here.
+        type: string
       name:
         maxLength: 100
         minLength: 1
+        type: string
+      payout_frequency:
+        enum:
+        - monthly
+        - quarterly
+        - semiannual
+        - annual
+        type: string
+      payout_type:
+        enum:
+        - cumulative
+        - periodic
         type: string
     type: object
   internal_handlers.UpdateBudgetRequest:
@@ -602,6 +800,17 @@ definitions:
     properties:
       hide_balances:
         type: boolean
+    type: object
+  internal_handlers.UpdateReceivablesRequest:
+    properties:
+      kind:
+        $ref: '#/definitions/kuberan_internal_models.ReceivableKind'
+      receivables:
+        items:
+          $ref: '#/definitions/internal_handlers.ReceivableShareRequest'
+        type: array
+    required:
+    - receivables
     type: object
   internal_handlers.UpdateRuleRequest:
     properties:
@@ -650,6 +859,11 @@ definitions:
         type: integer
       last_name:
         type: string
+    type: object
+  internal_handlers.WriteOffRequest:
+    properties:
+      amount:
+        type: integer
     type: object
   internal_handlers.dcrRequest:
     properties:
@@ -750,6 +964,11 @@ definitions:
         type: string
       due_date:
         type: string
+      fixed_deposit:
+        allOf:
+        - $ref: '#/definitions/kuberan_internal_models.FixedDepositDetails'
+        description: For fixed deposit accounts (also reuses InterestRate for the
+          annual rate)
       id:
         type: string
       interest_rate:
@@ -783,12 +1002,14 @@ definitions:
     - investment
     - debt
     - credit_card
+    - fixed_deposit
     type: string
     x-enum-varnames:
     - AccountTypeCash
     - AccountTypeInvestment
     - AccountTypeDebt
     - AccountTypeCreditCard
+    - AccountTypeFixedDeposit
   kuberan_internal_models.AssetType:
     enum:
     - stock
@@ -889,6 +1110,86 @@ definitions:
     x-enum-varnames:
     - CategoryTypeIncome
     - CategoryTypeExpense
+  kuberan_internal_models.Compounding:
+    enum:
+    - monthly
+    - quarterly
+    - semiannual
+    - annual
+    type: string
+    x-enum-varnames:
+    - CompoundingMonthly
+    - CompoundingQuarterly
+    - CompoundingSemiannual
+    - CompoundingAnnual
+  kuberan_internal_models.FixedDepositDetails:
+    properties:
+      account_id:
+        description: AccountID is the FK to the parent fixed_deposit account (unique
+          1:1).
+        type: string
+      compounding:
+        allOf:
+        - $ref: '#/definitions/kuberan_internal_models.Compounding'
+        description: Compounding is the compounding frequency used for the projected
+          maturity value calculation.
+      created_at:
+        type: string
+      deleted_at:
+        $ref: '#/definitions/gorm.DeletedAt'
+      id:
+        type: string
+      linked_account_id:
+        description: |-
+          LinkedAccountID is the cash account that receives periodic interest payouts
+          and is the default realization destination at close. Null for cumulative-only FDs.
+        type: string
+      maturity_date:
+        description: MaturityDate is the date the deposit matures (must be after StartDate).
+        type: string
+      maturity_value:
+        description: |-
+          MaturityValue is the projected value at maturity in cents, computed and stored at create
+          (and recomputed on any edit to rate/maturity/compounding). Treated as a projection;
+          the realized amount at close is authoritative.
+        type: integer
+      next_payout_date:
+        description: |-
+          NextPayoutDate is the next date on which a periodic payout should be posted.
+          The scheduled job advances this atomically after each posting (idempotency gate).
+        type: string
+      payout_frequency:
+        allOf:
+        - $ref: '#/definitions/kuberan_internal_models.PayoutFrequency'
+        description: PayoutFrequency is required when PayoutType == PayoutTypePeriodic.
+      payout_type:
+        allOf:
+        - $ref: '#/definitions/kuberan_internal_models.PayoutType'
+        description: PayoutType determines whether interest is paid periodically or
+          in a lump sum at maturity.
+      principal:
+        description: Principal is the amount locked in at opening, in cents.
+        type: integer
+      start_date:
+        description: StartDate is the date the deposit was opened.
+        type: string
+      status:
+        allOf:
+        - $ref: '#/definitions/kuberan_internal_models.FixedDepositStatus'
+        description: Status is the lifecycle state of the deposit.
+      updated_at:
+        type: string
+    type: object
+  kuberan_internal_models.FixedDepositStatus:
+    enum:
+    - active
+    - matured
+    - closed
+    type: string
+    x-enum-varnames:
+    - FixedDepositStatusActive
+    - FixedDepositStatusMatured
+    - FixedDepositStatusClosed
   kuberan_internal_models.Investment:
     properties:
       account:
@@ -981,11 +1282,33 @@ definitions:
     - InvestmentTransactionDividend
     - InvestmentTransactionSplit
     - InvestmentTransactionTransfer
+  kuberan_internal_models.PayoutFrequency:
+    enum:
+    - monthly
+    - quarterly
+    - semiannual
+    - annual
+    type: string
+    x-enum-varnames:
+    - PayoutFrequencyMonthly
+    - PayoutFrequencyQuarterly
+    - PayoutFrequencySemiannual
+    - PayoutFrequencyAnnual
+  kuberan_internal_models.PayoutType:
+    enum:
+    - cumulative
+    - periodic
+    type: string
+    x-enum-varnames:
+    - PayoutTypeCumulative
+    - PayoutTypePeriodic
   kuberan_internal_models.PortfolioSnapshot:
     properties:
       cash_balance:
         type: integer
       debt_balance:
+        type: integer
+      fixed_deposit_balance:
         type: integer
       id:
         type: string
@@ -998,6 +1321,117 @@ definitions:
       user_id:
         type: string
     type: object
+  kuberan_internal_models.Receivable:
+    properties:
+      amount:
+        type: integer
+      counterparty_key:
+        type: string
+      counterparty_name:
+        type: string
+      created_at:
+        type: string
+      deleted_at:
+        $ref: '#/definitions/gorm.DeletedAt'
+      id:
+        type: string
+      kind:
+        $ref: '#/definitions/kuberan_internal_models.ReceivableKind'
+      outstanding:
+        description: |-
+          Outstanding is derived (amount - paid - written off) and never stored.
+          Call ComputeOutstanding to populate it before serializing.
+        type: integer
+      paid_amount:
+        type: integer
+      settlements:
+        description: Settlements are loaded on the detail endpoint only.
+        items:
+          $ref: '#/definitions/kuberan_internal_models.ReceivableSettlement'
+        type: array
+      status:
+        $ref: '#/definitions/kuberan_internal_models.ReceivableStatus'
+      transaction:
+        allOf:
+        - $ref: '#/definitions/kuberan_internal_models.ReceivableExpense'
+        description: |-
+          Transaction is the trimmed expense view attached by the service on the
+          receivables list and detail endpoints. It is not a GORM association.
+      transaction_id:
+        type: string
+      updated_at:
+        type: string
+      user_id:
+        type: string
+      written_off_amount:
+        type: integer
+    type: object
+  kuberan_internal_models.ReceivableExpense:
+    properties:
+      account_id:
+        type: string
+      amount:
+        type: integer
+      category_id:
+        type: string
+      date:
+        type: string
+      description:
+        type: string
+      id:
+        type: string
+      personal_amount:
+        type: integer
+    type: object
+  kuberan_internal_models.ReceivableKind:
+    enum:
+    - split
+    - on_behalf
+    - claim
+    - loan
+    - deposit
+    - refund
+    type: string
+    x-enum-varnames:
+    - ReceivableKindSplit
+    - ReceivableKindOnBehalf
+    - ReceivableKindClaim
+    - ReceivableKindLoan
+    - ReceivableKindDeposit
+    - ReceivableKindRefund
+  kuberan_internal_models.ReceivableSettlement:
+    properties:
+      account_id:
+        type: string
+      amount:
+        type: integer
+      created_at:
+        type: string
+      date:
+        type: string
+      deleted_at:
+        $ref: '#/definitions/gorm.DeletedAt'
+      id:
+        type: string
+      receivable_id:
+        type: string
+      transaction_id:
+        type: string
+      updated_at:
+        type: string
+    type: object
+  kuberan_internal_models.ReceivableStatus:
+    enum:
+    - pending
+    - partially_paid
+    - settled
+    - written_off
+    type: string
+    x-enum-varnames:
+    - ReceivableStatusPending
+    - ReceivableStatusPartiallyPaid
+    - ReceivableStatusSettled
+    - ReceivableStatusWrittenOff
   kuberan_internal_models.RuleActionType:
     enum:
     - set_category
@@ -1119,6 +1553,20 @@ definitions:
         type: string
       id:
         type: string
+      personal_amount:
+        description: |-
+          PersonalAmount is the user's own share of an expense, in cents. NULL means
+          the whole Amount is theirs. It is server-maintained (plan 021, D6) and is
+          always serialized (null when unset). Reports aggregate
+          COALESCE(personal_amount, amount).
+        type: integer
+      receivables:
+        description: |-
+          Receivables are the amounts owed back to the user for a shared expense.
+          Preloaded on list and detail queries for expenses (plan 021).
+        items:
+          $ref: '#/definitions/kuberan_internal_models.Receivable'
+        type: array
       to_account:
         $ref: '#/definitions/kuberan_internal_models.Account'
       to_account_id:
@@ -1240,12 +1688,14 @@ definitions:
     - expense
     - transfer
     - investment
+    - reimbursement
     type: string
     x-enum-varnames:
     - TransactionTypeIncome
     - TransactionTypeExpense
     - TransactionTypeTransfer
     - TransactionTypeInvestment
+    - TransactionTypeReimbursement
   kuberan_internal_pagination.PageResponse-kuberan_internal_models_Account:
     properties:
       data:
@@ -1326,6 +1776,21 @@ definitions:
       data:
         items:
           $ref: '#/definitions/kuberan_internal_models.PortfolioSnapshot'
+        type: array
+      page:
+        type: integer
+      page_size:
+        type: integer
+      total_items:
+        type: integer
+      total_pages:
+        type: integer
+    type: object
+  kuberan_internal_pagination.PageResponse-kuberan_internal_models_Receivable:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/kuberan_internal_models.Receivable'
         type: array
       page:
         type: integer
@@ -1429,6 +1894,13 @@ definitions:
         description: cents
         type: integer
     type: object
+  kuberan_internal_services.CounterpartySuggestion:
+    properties:
+      key:
+        type: string
+      name:
+        type: string
+    type: object
   kuberan_internal_services.PortfolioSummary:
     properties:
       gain_loss_pct:
@@ -1446,6 +1918,45 @@ definitions:
       total_value:
         type: integer
     type: object
+  kuberan_internal_services.ReceivableCounterpartyTotal:
+    properties:
+      counterparty_key:
+        type: string
+      counterparty_name:
+        type: string
+      oldest_date:
+        description: date of the oldest open expense
+        type: string
+      open_count:
+        type: integer
+      outstanding:
+        description: cents
+        type: integer
+    type: object
+  kuberan_internal_services.ReceivableKindTotal:
+    properties:
+      kind:
+        $ref: '#/definitions/kuberan_internal_models.ReceivableKind'
+      open_count:
+        type: integer
+      outstanding:
+        description: cents
+        type: integer
+    type: object
+  kuberan_internal_services.ReceivableSummary:
+    properties:
+      by_counterparty:
+        items:
+          $ref: '#/definitions/kuberan_internal_services.ReceivableCounterpartyTotal'
+        type: array
+      by_kind:
+        items:
+          $ref: '#/definitions/kuberan_internal_services.ReceivableKindTotal'
+        type: array
+      total_outstanding:
+        description: cents
+        type: integer
+    type: object
   kuberan_internal_services.RuleMatchPreview:
     properties:
       count:
@@ -1455,6 +1966,16 @@ definitions:
           $ref: '#/definitions/kuberan_internal_models.Transaction'
         type: array
     type: object
+  kuberan_internal_services.ShareMode:
+    enum:
+    - equal
+    - custom
+    - full
+    type: string
+    x-enum-varnames:
+    - ShareModeEqual
+    - ShareModeCustom
+    - ShareModeFull
   kuberan_internal_services.SpendingByCategory:
     properties:
       from_date:
@@ -1488,7 +2009,7 @@ definitions:
       account_name:
         type: string
       amount:
-        description: cents
+        description: cents, the full amount that left the account
         type: integer
       category_color:
         type: string
@@ -1504,6 +2025,9 @@ definitions:
         type: string
       id:
         type: string
+      personal_amount:
+        description: cents, the user's own share; nil when not shared
+        type: integer
     type: object
   kuberan_internal_services.TopExpenses:
     properties:
@@ -1648,6 +2172,57 @@ paths:
       security:
       - BearerAuth: []
       summary: Update account
+      tags:
+      - accounts
+  /accounts/{id}/fixed-deposit/close:
+    post:
+      consumes:
+      - application/json
+      description: 'Realize a fixed deposit: return principal to the destination account
+        and post interest income. Handles both maturity realization and premature
+        withdrawal.'
+      parameters:
+      - description: Fixed deposit account ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Close parameters
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_handlers.CloseFixedDepositRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Closed account
+          schema:
+            $ref: '#/definitions/internal_handlers.AccountResponse'
+        "400":
+          description: Invalid input or deposit state
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "404":
+          description: Account not found
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "409":
+          description: Deposit already closed
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "500":
+          description: Server error
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Close a fixed deposit
       tags:
       - accounts
   /accounts/{id}/investments:
@@ -1839,6 +2414,43 @@ paths:
       security:
       - BearerAuth: []
       summary: Create a credit card account
+      tags:
+      - accounts
+  /accounts/fixed-deposit:
+    post:
+      consumes:
+      - application/json
+      description: Open a new fixed deposit account. Principal is transferred from
+        the specified source cash account atomically.
+      parameters:
+      - description: Fixed deposit account details
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_handlers.CreateFixedDepositAccountRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Account created
+          schema:
+            $ref: '#/definitions/internal_handlers.AccountResponse'
+        "400":
+          description: Invalid input
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "500":
+          description: Server error
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Create a fixed deposit account
       tags:
       - accounts
   /accounts/investment:
@@ -3155,6 +3767,40 @@ paths:
       summary: Dynamically register an OAuth client (DCR proxy)
       tags:
       - oauth
+  /pipeline/fixed-deposits/process:
+    post:
+      consumes:
+      - application/json
+      description: 'Run scheduled fixed-deposit processing: post periodic interest
+        payouts and flip matured FDs (pipeline endpoint)'
+      parameters:
+      - description: Processing parameters (as_of defaults to now)
+        in: body
+        name: request
+        schema:
+          $ref: '#/definitions/internal_handlers.ProcessFixedDepositsRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: payouts_posted and fds_matured counts
+          schema:
+            additionalProperties:
+              type: integer
+            type: object
+        "400":
+          description: Invalid input
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "401":
+          description: Invalid API key
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Process fixed deposits
+      tags:
+      - pipeline
   /pipeline/securities:
     get:
       description: Get all active securities without pagination (pipeline endpoint)
@@ -3363,6 +4009,360 @@ paths:
       summary: Update profile settings
       tags:
       - user
+  /receivables:
+    get:
+      consumes:
+      - application/json
+      description: Get a paginated list of receivables ordered by expense date (newest
+        first), each with its expense
+      parameters:
+      - description: pending, partially_paid, settled, written_off, or open (pending
+          + partially_paid)
+        in: query
+        name: status
+        type: string
+      - description: split, on_behalf, claim, loan, deposit or refund
+        in: query
+        name: kind
+        type: string
+      - description: Counterparty key
+        in: query
+        name: counterparty
+        type: string
+      - description: Page number (default 1)
+        in: query
+        name: page
+        type: integer
+      - description: Items per page (default 20, max 100)
+        in: query
+        name: page_size
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Paginated receivables
+          schema:
+            $ref: '#/definitions/kuberan_internal_pagination.PageResponse-kuberan_internal_models_Receivable'
+        "400":
+          description: Invalid input
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "500":
+          description: Server error
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List receivables
+      tags:
+      - receivables
+  /receivables/{id}:
+    get:
+      consumes:
+      - application/json
+      description: Get a receivable with its settlements and expense
+      parameters:
+      - description: Receivable ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Receivable details
+          schema:
+            $ref: '#/definitions/internal_handlers.ReceivableEnvelope'
+        "400":
+          description: Invalid receivable ID
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "404":
+          description: Receivable not found
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "500":
+          description: Server error
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get a receivable
+      tags:
+      - receivables
+  /receivables/{id}/settle:
+    post:
+      consumes:
+      - application/json
+      description: Credit an account with a repayment (a reimbursement, not income)
+        and reduce the receivable's outstanding balance
+      parameters:
+      - description: Receivable ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Repayment details
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_handlers.SettleReceivableRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Repayment recorded
+          schema:
+            $ref: '#/definitions/internal_handlers.SettleResponse'
+        "400":
+          description: Invalid input, amount over outstanding or invalid account type
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "404":
+          description: Receivable or account not found
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "500":
+          description: Server error
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Record a repayment
+      tags:
+      - receivables
+  /receivables/{id}/write-off:
+    delete:
+      consumes:
+      - application/json
+      description: Reset the receivable's written-off amount to zero
+      parameters:
+      - description: Receivable ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Updated receivable
+          schema:
+            $ref: '#/definitions/internal_handlers.ReceivableEnvelope'
+        "400":
+          description: Nothing to undo
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "404":
+          description: Receivable not found
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "500":
+          description: Server error
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Undo a write-off
+      tags:
+      - receivables
+    post:
+      consumes:
+      - application/json
+      description: 'Forgive an amount (default: the whole outstanding balance). The
+        forgiven amount becomes the user''s spending on the original expense.'
+      parameters:
+      - description: Receivable ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Write-off details
+        in: body
+        name: request
+        schema:
+          $ref: '#/definitions/internal_handlers.WriteOffRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Updated receivable
+          schema:
+            $ref: '#/definitions/internal_handlers.ReceivableEnvelope'
+        "400":
+          description: Invalid input or amount over outstanding
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "404":
+          description: Receivable not found
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "500":
+          description: Server error
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Write off a receivable
+      tags:
+      - receivables
+  /receivables/counterparties:
+    get:
+      consumes:
+      - application/json
+      description: Distinct counterparties whose key contains q, most recently used
+        first (max 20)
+      parameters:
+      - description: Search text
+        in: query
+        name: q
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Counterparty suggestions
+          schema:
+            $ref: '#/definitions/internal_handlers.CounterpartiesResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "500":
+          description: Server error
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Counterparty autocomplete
+      tags:
+      - receivables
+  /receivables/counterparties/rename:
+    post:
+      consumes:
+      - application/json
+      description: Rename every receivable of a counterparty key. Renaming onto an
+        existing key merges them.
+      parameters:
+      - description: Rename details
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_handlers.RenameCounterpartyRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Number of receivables updated
+          schema:
+            $ref: '#/definitions/internal_handlers.RenameCounterpartyResponse'
+        "400":
+          description: Invalid input
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "500":
+          description: Server error
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Rename a counterparty
+      tags:
+      - receivables
+  /receivables/settlements/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: 'Reverse a repayment: the reimbursement is removed, the account
+        is debited and the receivable''s outstanding balance is restored'
+      parameters:
+      - description: Settlement ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Updated receivable
+          schema:
+            $ref: '#/definitions/internal_handlers.ReceivableEnvelope'
+        "400":
+          description: Invalid settlement ID
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "404":
+          description: Settlement not found
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "500":
+          description: Server error
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Delete a repayment
+      tags:
+      - receivables
+  /receivables/summary:
+    get:
+      consumes:
+      - application/json
+      description: Totals of open receivables per kind and per counterparty, plus
+        a grand total
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Receivables summary
+          schema:
+            $ref: '#/definitions/kuberan_internal_services.ReceivableSummary'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "500":
+          description: Server error
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Receivables summary
+      tags:
+      - receivables
   /rules:
     get:
       description: List all rules for the authenticated user in evaluation order
@@ -4232,6 +5232,57 @@ paths:
       tags:
       - transactions
       - attachments
+  /transactions/{id}/receivables:
+    put:
+      consumes:
+      - application/json
+      description: 'Diff the receivables of an expense: entries with an id are updated,
+        entries without are inserted, omitted unpaid receivables are removed (a paid
+        one returns 409).'
+      parameters:
+      - description: Transaction ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Receivables diff
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_handlers.UpdateReceivablesRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Updated expense
+          schema:
+            $ref: '#/definitions/internal_handlers.TransactionEnvelope'
+        "400":
+          description: Invalid input, kind or shares
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "404":
+          description: Transaction or receivable not found
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "409":
+          description: Receivable has payments
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "500":
+          description: Server error
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Update an expense's receivables
+      tags:
+      - receivables
   /transactions/cashflow:
     get:
       consumes:
@@ -4386,6 +5437,47 @@ paths:
       summary: Get monthly income and expense summary
       tags:
       - transactions
+  /transactions/shared:
+    post:
+      consumes:
+      - application/json
+      description: Create an expense whose full amount leaves the account, with receivables
+        for each counterparty. Only the user's own share counts as spending.
+      parameters:
+      - description: Shared expense details
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_handlers.CreateSharedExpenseRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Expense created with receivables
+          schema:
+            $ref: '#/definitions/internal_handlers.TransactionEnvelope'
+        "400":
+          description: Invalid input, kind or shares
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "404":
+          description: Account or category not found
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "500":
+          description: Server error
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Create a shared expense
+      tags:
+      - receivables
   /transactions/spending-by-category:
     get:
       consumes:

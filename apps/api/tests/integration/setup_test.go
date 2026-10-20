@@ -73,6 +73,8 @@ func setupIsolatedDB(t *testing.T) *gorm.DB {
 		&models.TransactionRuleCondition{},
 		&models.TransactionRuleAction{},
 		&models.FixedDepositDetails{},
+		&models.Receivable{},
+		&models.ReceivableSettlement{},
 	}
 	if err := db.AutoMigrate(allModels...); err != nil {
 		t.Fatalf("failed to migrate test database: %v", err)
@@ -93,6 +95,7 @@ func setupApp(t *testing.T) *testApp {
 	accountService := services.NewAccountService(db, categoryService)
 	ruleService := services.NewRuleService(db, categoryService)
 	transactionService := services.NewTransactionService(db, accountService, ruleService)
+	receivableService := services.NewReceivableService(db, accountService, ruleService)
 	budgetService := services.NewBudgetService(db)
 	investmentService := services.NewInvestmentService(db, accountService)
 	securityService := services.NewSecurityService(db)
@@ -108,6 +111,7 @@ func setupApp(t *testing.T) *testApp {
 	accountHandler := handlers.NewAccountHandler(accountService, auditService)
 	categoryHandler := handlers.NewCategoryHandler(categoryService, auditService)
 	transactionHandler := handlers.NewTransactionHandler(transactionService, auditService)
+	receivableHandler := handlers.NewReceivableHandler(receivableService, auditService)
 	budgetHandler := handlers.NewBudgetHandler(budgetService, auditService)
 	ruleHandler := handlers.NewRuleHandler(ruleService, transactionService, auditService)
 	investmentHandler := handlers.NewInvestmentHandler(investmentService, auditService)
@@ -149,12 +153,33 @@ func setupApp(t *testing.T) *testApp {
 	transactions := protected.Group("/transactions")
 	transactions.POST("", transactionHandler.CreateTransaction)
 	transactions.POST("/transfer", transactionHandler.CreateTransfer)
+	transactions.POST("/shared", receivableHandler.CreateSharedExpense)
+	transactions.GET("", transactionHandler.GetUserTransactions)
+	transactions.GET("/spending-by-category", transactionHandler.GetSpendingByCategory)
+	transactions.GET("/cashflow", transactionHandler.GetCashflow)
+	transactions.GET("/monthly-summary", transactionHandler.GetMonthlySummary)
+	transactions.GET("/daily-spending", transactionHandler.GetDailySpending)
+	transactions.GET("/daily-summary", transactionHandler.GetDailySummary)
+	transactions.GET("/top-expenses", transactionHandler.GetTopExpenses)
 	transactions.GET("/:id", transactionHandler.GetTransactionByID)
+	transactions.PUT("/:id", transactionHandler.UpdateTransaction)
+	transactions.PUT("/:id/receivables", receivableHandler.UpdateReceivables)
 	transactions.DELETE("/:id", transactionHandler.DeleteTransaction)
 	transactions.POST("/:id/attachments", attachmentHandler.Upload)
 	transactions.GET("/:id/attachments", attachmentHandler.List)
 	transactions.GET("/:id/attachments/:aid", attachmentHandler.Download)
 	transactions.DELETE("/:id/attachments/:aid", attachmentHandler.Delete)
+
+	receivables := protected.Group("/receivables")
+	receivables.GET("", receivableHandler.ListReceivables)
+	receivables.GET("/summary", receivableHandler.GetReceivablesSummary)
+	receivables.GET("/counterparties", receivableHandler.ListCounterparties)
+	receivables.POST("/counterparties/rename", receivableHandler.RenameCounterparty)
+	receivables.DELETE("/settlements/:id", receivableHandler.DeleteSettlement)
+	receivables.GET("/:id", receivableHandler.GetReceivable)
+	receivables.POST("/:id/settle", receivableHandler.SettleReceivable)
+	receivables.POST("/:id/write-off", receivableHandler.WriteOffReceivable)
+	receivables.DELETE("/:id/write-off", receivableHandler.UndoWriteOff)
 
 	categories := protected.Group("/categories")
 	categories.POST("", categoryHandler.CreateCategory)

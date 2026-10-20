@@ -449,3 +449,135 @@ type AttachmentServicer interface {
 	// belong to both the user and the given transaction.
 	Delete(userID, txID, attachmentID string) error
 }
+
+// ShareMode selects how a shared expense is divided among counterparties
+// (plan 021, D5).
+type ShareMode string
+
+// Share modes accepted by CreateSharedExpense.
+const (
+	// ShareModeEqual splits the amount equally between the user and each counterparty.
+	ShareModeEqual ShareMode = "equal"
+	// ShareModeCustom takes an explicit amount for every counterparty.
+	ShareModeCustom ShareMode = "custom"
+	// ShareModeFull makes a single counterparty owe the entire amount (personal share 0).
+	ShareModeFull ShareMode = "full"
+)
+
+// SharedCounterpartyInput is one counterparty of a new shared expense. Amount
+// must be nil for the equal and full modes and set for the custom mode.
+type SharedCounterpartyInput struct {
+	Name   string
+	Amount *int64
+}
+
+// CreateSharedExpenseInput holds the fields for creating an expense together
+// with its receivables.
+type CreateSharedExpenseInput struct {
+	AccountID      string
+	CategoryID     *string
+	Amount         int64
+	Description    string
+	Date           time.Time // zero means now
+	Kind           models.ReceivableKind
+	Mode           ShareMode
+	Counterparties []SharedCounterpartyInput
+}
+
+// ReceivableShareInput is one entry of the D7 receivables diff. A non-nil ID
+// updates that receivable in place; a nil ID inserts a new one.
+type ReceivableShareInput struct {
+	ID     *string
+	Name   string
+	Amount int64
+}
+
+// UpdateReceivablesInput is the D7 edit payload. Receivables not listed (and
+// unpaid) are removed. Kind, when set, applies to all of the expense's receivables.
+type UpdateReceivablesInput struct {
+	Kind        *models.ReceivableKind
+	Receivables []ReceivableShareInput
+}
+
+// SettleInput holds the fields for recording a repayment against a receivable.
+type SettleInput struct {
+	AccountID         string
+	Amount            int64
+	Date              time.Time // zero means now
+	Description       string    // empty means the default "Repayment from {name}: {expense}"
+	WriteOffRemainder bool
+}
+
+// ReceivableFilter holds the optional filters for listing receivables. Status
+// is a receivable status or "open" (pending or partially paid); Kind is a
+// receivable kind; CounterpartyKey is a normalized counterparty key. Empty
+// strings mean "no filter".
+type ReceivableFilter struct {
+	Status          string
+	Kind            string
+	CounterpartyKey string
+}
+
+// ReceivableStatusOpen is the pseudo-status matching pending and partially paid receivables.
+const ReceivableStatusOpen = "open"
+
+// ReceivableKindTotal is the open outstanding total for one receivable kind.
+type ReceivableKindTotal struct {
+	Kind        models.ReceivableKind `json:"kind"`
+	Outstanding int64                 `json:"outstanding"` // cents
+	OpenCount   int                   `json:"open_count"`
+}
+
+// ReceivableCounterpartyTotal is the open outstanding total for one counterparty.
+type ReceivableCounterpartyTotal struct {
+	CounterpartyKey  string    `json:"counterparty_key"`
+	CounterpartyName string    `json:"counterparty_name"`
+	Outstanding      int64     `json:"outstanding"` // cents
+	OpenCount        int       `json:"open_count"`
+	OldestDate       time.Time `json:"oldest_date"` // date of the oldest open expense
+}
+
+// ReceivableSummary aggregates the user's open receivables.
+type ReceivableSummary struct {
+	TotalOutstanding int64                         `json:"total_outstanding"` // cents
+	ByKind           []ReceivableKindTotal         `json:"by_kind"`
+	ByCounterparty   []ReceivableCounterpartyTotal `json:"by_counterparty"`
+}
+
+// CounterpartySuggestion is an autocomplete entry: a normalized key and the
+// display name last used for it.
+type CounterpartySuggestion struct {
+	Key  string `json:"key"`
+	Name string `json:"name"`
+}
+
+// ReceivableServicer defines the contract for receivables (plan 021): money
+// that left an account, is expected back and is not spending. All operations
+// are user-scoped. Mutations run in one DB transaction under the D10 lock order
+// (expense, receivables by id, accounts by id).
+type ReceivableServicer interface {
+	// CreateSharedExpense creates an expense and its receivables atomically and
+	// sets the expense's personal_amount.
+	CreateSharedExpense(userID string, in CreateSharedExpenseInput) (*models.Transaction, error)
+	// UpdateReceivables applies the D7 diff to an expense's receivables.
+	UpdateReceivables(userID, transactionID string, in UpdateReceivablesInput) (*models.Transaction, error)
+	// Settle records a repayment: it creates a reimbursement transaction in the
+	// chosen account and raises the receivable's paid_amount.
+	Settle(userID, receivableID string, in SettleInput) (*models.Receivable, *models.ReceivableSettlement, error)
+	// DeleteSettlement reverses a repayment exactly once.
+	DeleteSettlement(userID, settlementID string) (*models.Receivable, error)
+	// WriteOff forgives amount (nil means the whole outstanding balance).
+	WriteOff(userID, receivableID string, amount *int64) (*models.Receivable, error)
+	// UndoWriteOff resets the receivable's written-off amount to zero.
+	UndoWriteOff(userID, receivableID string) (*models.Receivable, error)
+	// ListReceivables returns a page of receivables, newest expense first, each with its expense attached.
+	ListReceivables(userID string, page pagination.PageRequest, filter ReceivableFilter) (*pagination.PageResponse[models.Receivable], error)
+	// GetReceivable returns one receivable with its settlements and expense.
+	GetReceivable(userID, receivableID string) (*models.Receivable, error)
+	// Summary aggregates open receivables per kind and per counterparty.
+	Summary(userID string) (*ReceivableSummary, error)
+	// ListCounterparties returns up to 20 counterparty suggestions matching q, most recently used first.
+	ListCounterparties(userID, q string) ([]CounterpartySuggestion, error)
+	// RenameCounterparty renames (or merges) every receivable with fromKey and returns the number updated.
+	RenameCounterparty(userID, fromKey, toName string) (int64, error)
+}
