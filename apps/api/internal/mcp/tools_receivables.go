@@ -9,7 +9,6 @@ import (
 
 	"kuberan/internal/logger"
 	"kuberan/internal/models"
-	"kuberan/internal/pagination"
 	"kuberan/internal/services"
 )
 
@@ -64,35 +63,26 @@ func (s *Server) handleListReceivables(ctx context.Context, req mcp.CallToolRequ
 
 	args := req.GetArguments()
 
-	pageNum := 1
-	if v, ok := args["page"].(float64); ok && v > 0 {
-		pageNum = int(v)
-	}
-	pageSize := 20
-	if v, ok := args["page_size"].(float64); ok && v > 0 {
-		pageSize = int(v)
-		if pageSize > 100 {
-			pageSize = 100
-		}
-	}
-	page := pagination.PageRequest{Page: pageNum, PageSize: pageSize}
+	page := parsePage(args)
 
 	filter := services.ReceivableFilter{}
 	if v, ok := args["status"].(string); ok && v != "" {
-		if v != services.ReceivableStatusOpen && !models.IsValidReceivableStatus(models.ReceivableStatus(v)) {
+		status := models.ReceivableStatus(v)
+		if status != services.ReceivableStatusOpen && !models.IsValidReceivableStatus(status) {
 			return mcp.NewToolResultError("invalid status, expected one of: pending, partially_paid, settled, written_off, open"), nil
 		}
-		filter.Status = v
+		filter.Status = status
 	}
 	if v, ok := args["kind"].(string); ok && v != "" {
-		if !models.IsValidReceivableKind(models.ReceivableKind(v)) {
+		kind := models.ReceivableKind(v)
+		if !models.IsValidReceivableKind(kind) {
 			return mcp.NewToolResultError("invalid kind, expected one of: split, on_behalf, claim, loan, deposit, refund"), nil
 		}
-		filter.Kind = v
+		filter.Kind = kind
 	}
 	if v, ok := args["counterparty"].(string); ok {
-		// Same normalization as stored counterparty keys.
-		filter.CounterpartyKey = strings.ToLower(strings.Join(strings.Fields(v), " "))
+		// The service normalizes the key the same way stored keys are derived.
+		filter.CounterpartyKey = v
 	}
 
 	result, err := s.services.Receivables.ListReceivables(userID, page, filter)

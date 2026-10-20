@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"net/http"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -262,7 +263,7 @@ func TestReceivableHandler_CreateSharedExpense(t *testing.T) {
 		"missing mode":         `{"account_id":"` + rcvAcct + `","amount":100,"kind":"loan","counterparties":[{"name":"A"}]}`,
 		"unknown mode":         `{"account_id":"` + rcvAcct + `","amount":100,"kind":"loan","mode":"half","counterparties":[{"name":"A"}]}`,
 		"bad date":             `{"account_id":"` + rcvAcct + `","amount":100,"date":"yesterday","kind":"loan","mode":"full","counterparties":[{"name":"A"}]}`,
-		"description too long": `{"account_id":"` + rcvAcct + `","amount":100,"description":"` + longString(501) + `","kind":"loan","mode":"full","counterparties":[{"name":"A"}]}`,
+		"description too long": `{"account_id":"` + rcvAcct + `","amount":100,"description":"` + strings.Repeat("x", 501) + `","kind":"loan","mode":"full","counterparties":[{"name":"A"}]}`,
 	}
 	for name, body := range invalid {
 		t.Run("returns 400 on "+name, func(t *testing.T) {
@@ -316,14 +317,6 @@ func TestReceivableHandler_CreateSharedExpense(t *testing.T) {
 			t.Fatalf("expected 401, got %d", rec.Code)
 		}
 	})
-}
-
-func longString(n int) string {
-	b := make([]byte, n)
-	for i := range b {
-		b[i] = 'x'
-	}
-	return string(b)
 }
 
 func TestReceivableHandler_UpdateReceivables(t *testing.T) {
@@ -620,7 +613,7 @@ func TestReceivableHandler_Settle(t *testing.T) {
 		"non-uuid account": {path, `{"account_id":"abc","amount":100}`},
 		"missing amount":   {path, `{"account_id":"` + rcvAcct + `"}`},
 		"bad date":         {path, `{"account_id":"` + rcvAcct + `","amount":100,"date":"soon"}`},
-		"long description": {path, `{"account_id":"` + rcvAcct + `","amount":100,"description":"` + longString(501) + `"}`},
+		"long description": {path, `{"account_id":"` + rcvAcct + `","amount":100,"description":"` + strings.Repeat("x", 501) + `"}`},
 		"malformed":        {path, `{`},
 		"non-uuid id":      {"/receivables/abc/settle", `{"account_id":"` + rcvAcct + `","amount":100}`},
 	}

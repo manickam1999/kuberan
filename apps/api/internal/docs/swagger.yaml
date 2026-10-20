@@ -1419,6 +1419,8 @@ definitions:
         type: string
       updated_at:
         type: string
+      written_off_amount:
+        type: integer
     type: object
   kuberan_internal_models.ReceivableStatus:
     enum:

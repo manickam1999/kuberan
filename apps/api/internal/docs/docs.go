@@ -7556,6 +7556,9 @@ const docTemplate = `{
                 },
                 "updated_at": {
                     "type": "string"
+                },
+                "written_off_amount": {
+                    "type": "integer"
                 }
             }
         },

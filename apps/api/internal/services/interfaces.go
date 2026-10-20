@@ -129,7 +129,6 @@ type AccountServicer interface {
 	GetUserAccounts(userID string, page pagination.PageRequest) (*pagination.PageResponse[models.Account], error)
 	GetAccountByID(userID, accountID string) (*models.Account, error)
 	UpdateAccount(userID, accountID string, updates AccountUpdateFields) (*models.Account, error)
-	UpdateAccountBalance(tx *gorm.DB, account *models.Account, transactionType models.TransactionType, amount int64) error
 	// ApplyBalanceDelta applies a transaction's balance effect with a relative
 	// update (balance = balance + delta) on accountID, whose type the caller
 	// supplies. Income and reimbursement credit, expense debits; credit_card and
@@ -516,13 +515,14 @@ type SettleInput struct {
 // receivable kind; CounterpartyKey is a normalized counterparty key. Empty
 // strings mean "no filter".
 type ReceivableFilter struct {
-	Status          string
-	Kind            string
+	Status          models.ReceivableStatus
+	Kind            models.ReceivableKind
 	CounterpartyKey string
 }
 
-// ReceivableStatusOpen is the pseudo-status matching pending and partially paid receivables.
-const ReceivableStatusOpen = "open"
+// ReceivableStatusOpen is the pseudo-status matching pending and partially paid
+// receivables. It is only meaningful in ReceivableFilter.Status; it is never stored.
+const ReceivableStatusOpen models.ReceivableStatus = "open"
 
 // ReceivableKindTotal is the open outstanding total for one receivable kind.
 type ReceivableKindTotal struct {

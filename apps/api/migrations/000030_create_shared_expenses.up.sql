@@ -52,6 +52,9 @@ CREATE TABLE IF NOT EXISTS receivable_settlements (
     transaction_id  UUID NOT NULL REFERENCES transactions(id),
     account_id      UUID NOT NULL REFERENCES accounts(id),
     amount          BIGINT NOT NULL CHECK (amount > 0),
+    -- Amount written off by the same settle call (write_off_remainder); deleting
+    -- the settlement reverses it together with the payment.
+    written_off_amount BIGINT NOT NULL DEFAULT 0 CHECK (written_off_amount >= 0),
     date            TIMESTAMPTZ NOT NULL
 );
 

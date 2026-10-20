@@ -32,7 +32,7 @@ type Transaction struct {
 	// the whole Amount is theirs. It is server-maintained (plan 021, D6) and is
 	// always serialized (null when unset). Reports aggregate
 	// COALESCE(personal_amount, amount).
-	PersonalAmount *int64 `gorm:"type:bigint" json:"personal_amount"`
+	PersonalAmount *int64 `gorm:"type:bigint;check:transactions_personal_amount_check,personal_amount IS NULL OR (personal_amount >= 0 AND personal_amount <= amount)" json:"personal_amount"`
 
 	// For transfers
 	ToAccountID *string `gorm:"type:uuid" json:"to_account_id,omitempty"`

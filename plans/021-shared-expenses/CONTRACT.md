@@ -36,10 +36,18 @@ Status derivation, recomputed on every change:
 - `settled`: outstanding = 0, written_off = 0.
 - `written_off`: outstanding = 0, written_off > 0.
 
-Counterparty name normalization (in Go, used everywhere):
-- `name = strings.Join(strings.Fields(raw), " ")`, which must be 1..100 runes after normalization,
-  else `INVALID_SHARES`;
-- `key = strings.ToLower(name)`.
+Counterparty name normalization (in Go, `models.NormalizeCounterpartyName` / `models.NormalizeCounterpartyKey`,
+used everywhere; the web mirrors it):
+- `name = strings.Join(strings.Fields(raw), " ")`. `strings.Fields` splits on `unicode.IsSpace`, so runs of
+  spaces, tabs, newlines and other Unicode spaces (e.g. U+00A0, U+0085) collapse to one ASCII space and the
+  ends are trimmed. The name must be 1..100 runes after normalization and must not contain control
+  characters (`unicode.IsControl`, e.g. NUL) or invalid UTF-8, else `INVALID_SHARES`;
+- `key = strings.ToLower(name)`. `NormalizeCounterpartyKey(raw)` is the same computation without
+  validation (used for the `counterparty` / `q` / `from_key` inputs; it never fails, "" stays "").
+- The `counterparty` and `q` query parameters and `from_key` are normalized this way and then rejected with
+  400 `INVALID_INPUT` if a control character or invalid UTF-8 remains.
+- Transaction and settlement `description` values containing control characters other than `\n` and `\t`
+  (or invalid UTF-8) are rejected with 400 `INVALID_INPUT` (PostgreSQL cannot store NUL).
 
 ## Models (JSON)
 
@@ -73,11 +81,13 @@ ReceivableSettlement
   transaction_id    string             // the reimbursement transaction
   account_id        string             // account credited (stored, denormalized)
   amount            number
+  written_off_amount number            // amount written off by the same settle call (write_off_remainder); 0 otherwise
   date              string
   created_at        string
 ```
 
-Schema note: `receivable_settlements` also has `account_id UUID NOT NULL`.
+Schema note: `receivable_settlements` also has `account_id UUID NOT NULL` and
+`written_off_amount BIGINT NOT NULL DEFAULT 0`.
 
 ## Endpoints (all protected; responses wrap as shown)
 
@@ -167,12 +177,21 @@ recent use.
   characters.
 - The reimbursement transaction has a NULL category.
 - `write_off_remainder` writes off whatever is still outstanding after this payment, in the same DB
-  transaction.
+  transaction. The amount written off is recorded on the settlement row (`written_off_amount`) so that
+  deleting the settlement can reverse it.
 
 ### DELETE /api/v1/receivables/settlements/:id → 200 `{ "receivable": Receivable }`
 
 Reverses the reimbursement (soft-deletes that transaction and debits the account by relative
-update) and recomputes the receivable.
+update), then recomputes the receivable:
+- `paid_amount` is reduced by the settlement's `amount`;
+- **the write-off made by that same settle call is reversed too**: `written_off_amount` is reduced by the
+  settlement's `written_off_amount` (never below 0), then the status and the expense's `personal_amount`
+  are recomputed. Example: a 100000 deposit with 85000 returned and the rest written off; deleting that
+  settlement gives status `pending`, outstanding 100000, written_off 0 and personal 0.
+- A write-off made separately (`POST /receivables/:id/write-off`) is not touched. `DELETE
+  /receivables/:id/write-off` clears the write-off recorded on the receivable's settlements as well, so a
+  later settlement deletion never subtracts it a second time.
 
 ### POST /api/v1/receivables/:id/write-off → 200 `{ "receivable": Receivable }`
 
@@ -224,6 +243,17 @@ Every mutating receivable operation runs in one DB transaction:
 2. re-read state after locking;
 3. change balances only via the relative `ApplyBalanceDelta`
    (`gorm.Expr("balance + ?", delta)`).
+
+This applies to **every** balance writer, not only receivable operations: create / update / delete
+transaction, transfers, investment buy / sell with a funding or deposit account, and fixed-deposit open /
+close all lock the account row(s) inside their DB transaction (in id order), validate against the locked
+row (e.g. the insufficient-balance check) and use `ApplyBalanceDelta`. `AccountServicer.UpdateAccountBalance`
+(an absolute write) no longer exists.
+
+`PUT /transactions/:id` on a shared expense computes the new `personal_amount` first and writes it in the
+same UPDATE as the new `amount`, because the `transactions_personal_amount_check` CHECK is evaluated per
+statement. `UpdateTransaction` (like `DeleteTransaction` and `CreateTransaction`) still requires the
+involved accounts to be active, as before this feature.
 
 ## Audit actions (logged in handlers)
 

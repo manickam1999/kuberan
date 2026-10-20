@@ -17,6 +17,10 @@ func TestNormalizeCounterpartyName(t *testing.T) {
 		{"trims_and_collapses_whitespace", "  Alex \t  Smith\n", "Alex Smith", "alex smith", false},
 		{"keeps_display_case_lowers_key", "ACME Corp", "ACME Corp", "acme corp", false},
 		{"unicode_runes", "Zoë Ünal", "Zoë Ünal", "zoë ünal", false},
+		{"nbsp_and_nel_are_whitespace", "Alex\u00a0\u0085Smith", "Alex Smith", "alex smith", false},
+		{"nul_rejected", "Al\x00ex", "", "", true},
+		{"bell_rejected", "Alex\a", "", "", true},
+		{"invalid_utf8_rejected", "Al\xffex", "", "", true},
 		{"empty", "", "", "", true},
 		{"whitespace_only", " \t\n ", "", "", true},
 		{"exactly_100_runes", strings.Repeat("é", 100), strings.Repeat("é", 100), strings.Repeat("é", 100), false},
@@ -33,6 +37,29 @@ func TestNormalizeCounterpartyName(t *testing.T) {
 				t.Errorf("got (%q, %q), want (%q, %q)", name, key, tt.wantName, tt.wantKey)
 			}
 		})
+	}
+}
+
+func TestNormalizeCounterpartyKey(t *testing.T) {
+	tests := []struct{ raw, want string }{
+		{"Alex", "alex"},
+		{"  ALEX \t  Smith\n", "alex smith"},
+		{"A\u00a0B\u2003C", "a b c"}, // other Unicode spaces collapse like ASCII ones
+		{"", ""},
+		{" \t\n ", ""},
+		{"Zoë  Ünal", "zoë ünal"},
+	}
+	for _, tt := range tests {
+		if got := NormalizeCounterpartyKey(tt.raw); got != tt.want {
+			t.Errorf("NormalizeCounterpartyKey(%q) = %q, want %q", tt.raw, got, tt.want)
+		}
+	}
+	// A name's key is always NormalizeCounterpartyKey of the name.
+	for _, raw := range []string{"  Mixed   CASE ", "ACME\tCorp"} {
+		_, key, err := NormalizeCounterpartyName(raw)
+		if err != nil || key != NormalizeCounterpartyKey(raw) {
+			t.Errorf("key(%q) = %q, %v; want %q", raw, key, err, NormalizeCounterpartyKey(raw))
+		}
 	}
 }
 

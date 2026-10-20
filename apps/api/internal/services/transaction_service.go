@@ -1,7 +1,6 @@
 package services
 
 import (
-	"errors"
 	"sort"
 	"time"
 
@@ -38,7 +37,9 @@ func NewTransactionService(db *gorm.DB, accountService AccountServicer, ruleServ
 // aggregate over expenses must sum this instead of the raw amount (plan 021, D1).
 const effectiveAmountSQL = "COALESCE(personal_amount, amount)"
 
-// CreateTransaction creates a new transaction for a user's account
+// CreateTransaction creates a new transaction for a user's account. The account
+// is row-locked inside the DB transaction and its balance moves by a relative
+// update, so concurrent writers never overwrite each other (plan 021, D10).
 func (s *transactionService) CreateTransaction(
 	userID string,
 	accountID string,
@@ -48,45 +49,30 @@ func (s *transactionService) CreateTransaction(
 	description string,
 	date time.Time,
 ) (*models.Transaction, error) {
-	// Validate input
-	if amount <= 0 {
-		return nil, apperrors.WithMessage(apperrors.ErrInvalidInput, "amount must be greater than zero")
+	if err := validateTransactionInput(accountID, amount, description); err != nil {
+		return nil, err
 	}
-
-	if accountID == "" {
-		return nil, apperrors.WithMessage(apperrors.ErrInvalidInput, "account ID is required")
-	}
-
-	// Default date to now if not provided
 	if date.IsZero() {
 		date = time.Now()
 	}
 
-	// Get the account to ensure it exists and belongs to the user
-	account, err := s.accountService.GetAccountByID(userID, accountID)
-	if err != nil {
-		return nil, err
-	}
-
 	// Auto-categorize via rules when the caller didn't specify a category and the
-	// transaction is a categorizable income/expense (plan 018). Resolved outside
-	// the write transaction so rule reads don't extend the account-row lock. A
-	// rule-resolution error never blocks transaction creation.
-	if categoryID == nil && isCategorizableType(transactionType) && s.ruleService != nil {
-		if res, rerr := s.ruleService.ResolveForUser(userID, RuleInput{
-			Description: description,
-			Amount:      amount,
-			AccountID:   accountID,
-			Type:        transactionType,
-		}); rerr == nil {
-			categoryID = res.CategoryID
-		}
-	}
+	// transaction is a categorizable income/expense (plan 018).
+	categoryID = resolveRuleCategory(s.ruleService, userID, categoryID, RuleInput{
+		Description: description,
+		Amount:      amount,
+		AccountID:   accountID,
+		Type:        transactionType,
+	})
 
 	var result *models.Transaction
-	err = s.db.Transaction(func(tx *gorm.DB) error {
-		var txErr error
-		result, txErr = s.createTransactionWithDB(tx, userID, account, categoryID, transactionType, amount, description, date)
+	err := s.db.Transaction(func(tx *gorm.DB) error {
+		accounts, txErr := lockAccounts(tx, userID, []string{accountID}, true)
+		if txErr != nil {
+			return txErr
+		}
+		result, txErr = insertTransaction(tx, s.accountService, userID, accounts[accountID],
+			categoryID, transactionType, amount, description, date)
 		return txErr
 	})
 	if err != nil {
@@ -95,40 +81,9 @@ func (s *transactionService) CreateTransaction(
 	return result, nil
 }
 
-// createTransactionWithDB creates a transaction with a given database connection (useful for transactions)
-func (s *transactionService) createTransactionWithDB(
-	tx *gorm.DB,
-	userID string,
-	account *models.Account,
-	categoryID *string,
-	transactionType models.TransactionType,
-	amount int64,
-	description string,
-	date time.Time,
-) (*models.Transaction, error) {
-	// Create transaction record
-	transaction := &models.Transaction{
-		UserID:      userID,
-		AccountID:   account.ID,
-		CategoryID:  categoryID,
-		Type:        transactionType,
-		Amount:      amount,
-		Description: description,
-		Date:        date,
-	}
-
-	if err := tx.Create(transaction).Error; err != nil {
-		return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)
-	}
-
-	if err := s.accountService.UpdateAccountBalance(tx, account, transactionType, amount); err != nil {
-		return nil, err
-	}
-
-	return transaction, nil
-}
-
-// CreateTransfer creates an account-to-account transfer within a single DB transaction.
+// CreateTransfer creates an account-to-account transfer within a single DB
+// transaction. Both accounts are row-locked (in id order) and the balances move
+// by relative updates; the insufficient-balance check runs on the locked row.
 func (s *transactionService) CreateTransfer(
 	userID, fromAccountID, toAccountID string,
 	amount int64,
@@ -142,27 +97,26 @@ func (s *transactionService) CreateTransfer(
 	if amount <= 0 {
 		return nil, apperrors.WithMessage(apperrors.ErrInvalidInput, "amount must be greater than zero")
 	}
+	if err := validateDescription(description); err != nil {
+		return nil, err
+	}
 
 	if date.IsZero() {
 		date = time.Now()
 	}
 
-	fromAccount, err := s.accountService.GetAccountByID(userID, fromAccountID)
-	if err != nil {
-		return nil, err
-	}
-
-	toAccount, err := s.accountService.GetAccountByID(userID, toAccountID)
-	if err != nil {
-		return nil, err
-	}
-
-	if !isLiabilityAccount(fromAccount.Type) && fromAccount.Balance < amount {
-		return nil, apperrors.ErrInsufficientBalance
-	}
-
 	var result *models.Transaction
-	err = s.db.Transaction(func(tx *gorm.DB) error {
+	err := s.db.Transaction(func(tx *gorm.DB) error {
+		accounts, txErr := lockAccounts(tx, userID, []string{fromAccountID, toAccountID}, true)
+		if txErr != nil {
+			return txErr
+		}
+		fromAccount, toAccount := accounts[fromAccountID], accounts[toAccountID]
+
+		if !isLiabilityAccount(fromAccount.Type) && fromAccount.Balance < amount {
+			return apperrors.ErrInsufficientBalance
+		}
+
 		transaction := &models.Transaction{
 			UserID:      userID,
 			AccountID:   fromAccountID,
@@ -176,10 +130,10 @@ func (s *transactionService) CreateTransfer(
 			return apperrors.Wrap(apperrors.ErrInternalServer, txErr)
 		}
 
-		if txErr := s.accountService.UpdateAccountBalance(tx, fromAccount, models.TransactionTypeExpense, amount); txErr != nil {
+		if txErr := s.accountService.ApplyBalanceDelta(tx, fromAccount.ID, fromAccount.Type, models.TransactionTypeExpense, amount); txErr != nil {
 			return txErr
 		}
-		if txErr := s.accountService.UpdateAccountBalance(tx, toAccount, models.TransactionTypeIncome, amount); txErr != nil {
+		if txErr := s.accountService.ApplyBalanceDelta(tx, toAccount.ID, toAccount.Type, models.TransactionTypeIncome, amount); txErr != nil {
 			return txErr
 		}
 
@@ -354,7 +308,12 @@ func reverseType(t models.TransactionType) (models.TransactionType, error) {
 // (INVALID_TYPE_CHANGE) and an amount below the sum of its receivables
 // (INVALID_SHARES), and recomputes personal_amount.
 func (s *transactionService) UpdateTransaction(userID, transactionID string, updates TransactionUpdateFields) (*models.Transaction, error) {
-	var result *models.Transaction
+	if updates.Description != nil {
+		if err := validateDescription(*updates.Description); err != nil {
+			return nil, err
+		}
+	}
+
 	err := s.db.Transaction(func(tx *gorm.DB) error {
 		transaction, err := lockTransaction(tx, userID, transactionID)
 		if err != nil {
@@ -454,6 +413,18 @@ func (s *transactionService) UpdateTransaction(userID, transactionID string, upd
 			transaction.CategoryID = *updates.CategoryID
 		}
 
+		// personal_amount must change in the same UPDATE as amount: the
+		// transactions_personal_amount_check CHECK is evaluated per statement, so
+		// writing the new amount next to the old personal_amount can violate it.
+		// (A shared expense is always an expense, so this runs only for those.)
+		if len(receivables) > 0 {
+			personal, txErr := personalAmountFor(tx, userID, transaction.ID, transaction.Amount)
+			if txErr != nil {
+				return txErr
+			}
+			transaction.PersonalAmount = personal
+		}
+
 		if txErr := tx.Omit(clause.Associations).Save(transaction).Error; txErr != nil {
 			return apperrors.Wrap(apperrors.ErrInternalServer, txErr)
 		}
@@ -463,36 +434,13 @@ func (s *transactionService) UpdateTransaction(userID, transactionID string, upd
 			return txErr
 		}
 
-		if len(receivables) > 0 {
-			if txErr := recomputePersonalAmount(tx, userID, transaction.ID); txErr != nil {
-				return txErr
-			}
-			if txErr := tx.Where("id = ? AND user_id = ?", transaction.ID, userID).First(transaction).Error; txErr != nil {
-				return apperrors.Wrap(apperrors.ErrInternalServer, txErr)
-			}
-		}
-
-		result = transaction
 		return nil
 	})
 	if err != nil {
 		return nil, err
 	}
 
-	if err := s.attachOne(userID, result); err != nil {
-		return nil, err
-	}
-	return result, nil
-}
-
-// attachOne loads the receivables (without settlements) of a single expense.
-func (s *transactionService) attachOne(userID string, txn *models.Transaction) error {
-	one := []models.Transaction{*txn}
-	if err := attachReceivables(s.db, userID, one); err != nil {
-		return err
-	}
-	txn.Receivables = one[0].Receivables
-	return nil
+	return loadExpenseWithReceivables(s.db, userID, transactionID)
 }
 
 // GetAccountTransactions retrieves a paginated, filtered list of transactions for a specific account.
@@ -627,17 +575,7 @@ func (s *transactionService) populateAttachmentCounts(transactions []models.Tran
 // GetTransactionByID retrieves a transaction by ID for a specific user. For an
 // expense with receivables they are included (without settlements).
 func (s *transactionService) GetTransactionByID(userID, transactionID string) (*models.Transaction, error) {
-	var transaction models.Transaction
-	if err := s.db.Where("id = ? AND user_id = ?", transactionID, userID).First(&transaction).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, apperrors.ErrTransactionNotFound
-		}
-		return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)
-	}
-	if err := s.attachOne(userID, &transaction); err != nil {
-		return nil, err
-	}
-	return &transaction, nil
+	return loadExpenseWithReceivables(s.db, userID, transactionID)
 }
 
 // DeleteTransaction deletes a transaction and reverses its effect on the account
@@ -685,18 +623,19 @@ func (s *transactionService) DeleteTransaction(userID, transactionID string) err
 			return apperrors.Wrap(apperrors.ErrInternalServer, txErr)
 		}
 
-		switch transaction.Type {
-		case models.TransactionTypeIncome:
-			return s.accountService.ApplyBalanceDelta(tx, account.ID, account.Type, models.TransactionTypeExpense, transaction.Amount)
-		case models.TransactionTypeExpense:
-			return s.accountService.ApplyBalanceDelta(tx, account.ID, account.Type, models.TransactionTypeIncome, transaction.Amount)
-		default: // transfer: add back to the from-account, subtract from the to-account
+		if transaction.Type == models.TransactionTypeTransfer {
+			// Add back to the from-account, subtract from the to-account.
 			toAccount := accounts[*transaction.ToAccountID]
 			if txErr := s.accountService.ApplyBalanceDelta(tx, account.ID, account.Type, models.TransactionTypeIncome, transaction.Amount); txErr != nil {
 				return txErr
 			}
 			return s.accountService.ApplyBalanceDelta(tx, toAccount.ID, toAccount.Type, models.TransactionTypeExpense, transaction.Amount)
 		}
+		reversal, err := reverseType(transaction.Type)
+		if err != nil {
+			return err
+		}
+		return s.accountService.ApplyBalanceDelta(tx, account.ID, account.Type, reversal, transaction.Amount)
 	})
 }
 

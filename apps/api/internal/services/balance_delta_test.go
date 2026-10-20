@@ -107,7 +107,7 @@ func TestApplyBalanceDelta(t *testing.T) {
 	})
 }
 
-func TestUpdateAccountBalance_DebtAndReimbursement(t *testing.T) {
+func TestApplyBalanceDelta_DebtAndReimbursement(t *testing.T) {
 	tests := []struct {
 		name     string
 		acctType models.AccountType
@@ -139,7 +139,7 @@ func TestUpdateAccountBalance_DebtAndReimbursement(t *testing.T) {
 				account = testutil.CreateTestCashAccountWithBalance(t, db, user.ID, 10000)
 			}
 
-			testutil.AssertNoError(t, svc.UpdateAccountBalance(db, account, tt.txnType, 500))
+			testutil.AssertNoError(t, svc.ApplyBalanceDelta(db, account.ID, account.Type, tt.txnType, 500))
 
 			got, err := svc.GetAccountByID(user.ID, account.ID)
 			testutil.AssertNoError(t, err)

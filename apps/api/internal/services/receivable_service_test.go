@@ -654,16 +654,66 @@ func TestWriteOff(t *testing.T) {
 		assertAppCode(t, e.deleteTxn(y.ID), "RECEIVABLE_HAS_SETTLEMENTS", http.StatusConflict)
 	})
 
-	t.Run("deleting a settlement after a write-off keeps the write-off", func(t *testing.T) {
+	t.Run("deleting a settlement also reverses the write-off made by that settle", func(t *testing.T) {
 		e := newRecEnv(t)
 		x := e.mustCreate(e.in(10000, ShareModeFull, models.ReceivableKindDeposit, rcpEqual("Landlord")...))
 		_, s, err := e.settle(x.Receivables[0].ID, e.cash.ID, 8000, true)
 		testutil.AssertNoError(t, err)
 		r, err := e.delSettlement(s.ID)
 		testutil.AssertNoError(t, err)
-		e.wantRec(r, models.ReceivableStatusPartiallyPaid, 0, 2000, 8000)
-		e.wantPersonal(x.ID, 2000)
+		e.wantRec(r, models.ReceivableStatusPending, 0, 0, 10000)
+		e.wantPersonal(x.ID, 0)
 		e.wantBalance(e.cash.ID, recCashStart-10000)
+	})
+
+	t.Run("deposit: 85000 returned and the rest written off, then the settlement is deleted", func(t *testing.T) {
+		e := newRecEnv(t)
+		x := e.mustCreate(e.in(100000, ShareModeFull, models.ReceivableKindDeposit, rcpEqual("Landlord")...))
+		rec, s, err := e.settle(x.Receivables[0].ID, e.cash.ID, 85000, true)
+		testutil.AssertNoError(t, err)
+		if s.WrittenOffAmount != 15000 {
+			t.Errorf("settlement.written_off_amount = %d, want 15000", s.WrittenOffAmount)
+		}
+		e.wantRec(rec, models.ReceivableStatusWrittenOff, 85000, 15000, 0)
+		e.wantPersonal(x.ID, 15000)
+		e.wantBalance(e.cash.ID, recCashStart-100000+85000)
+
+		rec, err = e.delSettlement(s.ID)
+		testutil.AssertNoError(t, err)
+		e.wantRec(rec, models.ReceivableStatusPending, 0, 0, 100000)
+		e.wantPersonal(x.ID, 0)
+		e.wantBalance(e.cash.ID, recCashStart-100000)
+	})
+
+	t.Run("deleting a plain settlement keeps a separate manual write-off", func(t *testing.T) {
+		e := newRecEnv(t)
+		x := e.mustCreate(e.in(10000, ShareModeFull, models.ReceivableKindLoan, rcpEqual("Alex")...))
+		id := x.Receivables[0].ID
+		_, s, err := e.settle(id, e.cash.ID, 6000, false)
+		testutil.AssertNoError(t, err)
+		_, err = e.writeOff(id, nil) // writes off the remaining 4000
+		testutil.AssertNoError(t, err)
+		r, err := e.delSettlement(s.ID)
+		testutil.AssertNoError(t, err)
+		e.wantRec(r, models.ReceivableStatusPartiallyPaid, 0, 4000, 6000)
+		e.wantPersonal(x.ID, 4000)
+	})
+
+	t.Run("undoing the write-off forgets it on the settlement too", func(t *testing.T) {
+		e := newRecEnv(t)
+		x := e.mustCreate(e.in(10000, ShareModeFull, models.ReceivableKindLoan, rcpEqual("Alex")...))
+		id := x.Receivables[0].ID
+		_, s, err := e.settle(id, e.cash.ID, 6000, true)
+		testutil.AssertNoError(t, err)
+		_, err = e.undoWriteOff(id)
+		testutil.AssertNoError(t, err)
+		// A new manual write-off, then deleting the settlement: only the payment is reversed.
+		_, err = e.writeOff(id, i64(1000))
+		testutil.AssertNoError(t, err)
+		r, err := e.delSettlement(s.ID)
+		testutil.AssertNoError(t, err)
+		e.wantRec(r, models.ReceivableStatusPartiallyPaid, 0, 1000, 9000)
+		e.wantPersonal(x.ID, 1000)
 	})
 }
 

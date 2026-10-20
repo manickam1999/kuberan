@@ -34,6 +34,11 @@ func (m mockReceivables) Summary(u string) (*services.ReceivableSummary, error) 
 type mockTransactions struct {
 	services.TransactionServicer
 	listFn func(userID string, page pagination.PageRequest, f services.TransactionFilter) (*pagination.PageResponse[models.Transaction], error)
+	topFn  func(userID string, from, to time.Time, limit int, categoryID *string) (*services.TopExpenses, error)
+}
+
+func (m mockTransactions) GetTopExpenses(u string, from, to time.Time, limit int, c *string) (*services.TopExpenses, error) {
+	return m.topFn(u, from, to, limit, c)
 }
 
 func (m mockTransactions) GetUserTransactions(u string, p pagination.PageRequest, f services.TransactionFilter) (*pagination.PageResponse[models.Transaction], error) {
@@ -107,7 +112,7 @@ func TestListReceivables(t *testing.T) {
 	if err != nil || res.IsError {
 		t.Fatalf("unexpected failure: %v %v", err, res)
 	}
-	if gotFilter.Status != "open" || gotFilter.Kind != "split" || gotFilter.CounterpartyKey != "alice smith" {
+	if gotFilter.Status != "open" || gotFilter.Kind != "split" || gotFilter.CounterpartyKey != "  ALICE   smith " /* normalized by the service */ {
 		t.Errorf("filter = %+v", gotFilter)
 	}
 	if gotPage.PageSize != 100 || gotPage.Page != 1 {
@@ -257,5 +262,40 @@ func TestListTransactionsSharedAndReimbursementOutput(t *testing.T) {
 	}
 	if strings.Count(out, "Shared expense:") != 1 {
 		t.Errorf("unshared expense must not get a note:\n%s", out)
+	}
+}
+
+func TestGetTopExpensesShowsEffectiveAmount(t *testing.T) {
+	personal := int64(2000)
+	svc := mockTransactions{topFn: func(string, time.Time, time.Time, int, *string) (*services.TopExpenses, error) {
+		return &services.TopExpenses{Items: []services.TopExpenseItem{
+			{Description: "Group dinner", Amount: 9000, PersonalAmount: &personal, CategoryName: "Food", AccountName: "Cash", Date: time.Date(2026, 10, 5, 0, 0, 0, 0, time.UTC)},
+			{Description: "Shoes", Amount: 1500, CategoryName: "Shopping", AccountName: "Cash", Date: time.Date(2026, 10, 6, 0, 0, 0, 0, time.UTC)},
+		}}, nil
+	}}
+	s := &Server{services: Services{Transactions: svc}}
+
+	res, err := s.handleGetTopExpenses(authCtx("read:transactions"), callReq(map[string]any{
+		"from_date": "2026-10-01", "to_date": "2026-10-31",
+	}))
+	if err != nil || res.IsError {
+		t.Fatalf("unexpected failure: %v %v", err, res)
+	}
+	text := resultText(t, res)
+
+	var dinnerLine string
+	for _, line := range strings.Split(text, "\n") {
+		if strings.Contains(line, "Group dinner") {
+			dinnerLine = line
+		}
+	}
+	if !strings.Contains(dinnerLine, formatCents(2000)) || strings.Contains(dinnerLine, formatCents(9000)) {
+		t.Errorf("shared row must show the effective amount, got line %q", dinnerLine)
+	}
+	if !strings.Contains(text, "your share "+formatCents(2000)+" of "+formatCents(9000)) {
+		t.Errorf("missing share note in:\n%s", text)
+	}
+	if !strings.Contains(text, formatCents(1500)) {
+		t.Errorf("unshared row must show its full amount in:\n%s", text)
 	}
 }

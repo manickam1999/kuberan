@@ -51,12 +51,6 @@ func invalidShares(msg string) error {
 	return apperrors.WithMessage(apperrors.ErrInvalidShares, msg)
 }
 
-// normalizeKey normalizes a user-supplied counterparty key the same way keys are
-// derived from names (collapse whitespace, lowercase). The empty string stays empty.
-func normalizeKey(raw string) string {
-	return strings.ToLower(strings.Join(strings.Fields(raw), " "))
-}
-
 // buildCreateShares validates a shared-expense request and returns the
 // counterparty shares in request order. The user's own share is always the remainder.
 func buildCreateShares(in CreateSharedExpenseInput) ([]share, error) {
@@ -99,14 +93,13 @@ func buildCreateShares(in CreateSharedExpenseInput) ([]share, error) {
 			if cp.Amount == nil || *cp.Amount <= 0 {
 				return nil, invalidShares("every counterparty needs an amount greater than zero")
 			}
-			if *cp.Amount > in.Amount {
+			// total <= in.Amount always holds here, so the subtraction cannot
+			// overflow and the comparison rejects the entry before total wraps.
+			if *cp.Amount > in.Amount-total {
 				return nil, invalidShares("shares must not exceed the expense amount")
 			}
 			shares[i].amount = *cp.Amount
 			total += *cp.Amount
-			if total > in.Amount {
-				return nil, invalidShares("shares must not exceed the expense amount")
-			}
 		}
 	case ShareModeFull:
 		if n != 1 {
@@ -127,11 +120,8 @@ func buildCreateShares(in CreateSharedExpenseInput) ([]share, error) {
 // full amount, the receivables inserted with their derived status, and
 // personal_amount recomputed.
 func (s *receivableService) CreateSharedExpense(userID string, in CreateSharedExpenseInput) (*models.Transaction, error) {
-	if in.Amount <= 0 {
-		return nil, apperrors.WithMessage(apperrors.ErrInvalidInput, "amount must be greater than zero")
-	}
-	if in.AccountID == "" {
-		return nil, apperrors.WithMessage(apperrors.ErrInvalidInput, "account ID is required")
+	if err := validateTransactionInput(in.AccountID, in.Amount, in.Description); err != nil {
+		return nil, err
 	}
 	if !models.IsValidReceivableKind(in.Kind) {
 		return nil, apperrors.ErrInvalidReceivableKind
@@ -160,87 +150,43 @@ func (s *receivableService) CreateSharedExpense(userID string, in CreateSharedEx
 
 	// Auto-categorize via rules exactly like CreateTransaction, except in full
 	// mode (a loan/claim/deposit is not spending, so no category is guessed).
-	// Resolved outside the write transaction; a rule error never blocks creation.
-	if categoryID == nil && in.Mode != ShareModeFull && s.ruleService != nil {
-		if res, rerr := s.ruleService.ResolveForUser(userID, RuleInput{
+	if in.Mode != ShareModeFull {
+		categoryID = resolveRuleCategory(s.ruleService, userID, categoryID, RuleInput{
 			Description: in.Description,
 			Amount:      in.Amount,
 			AccountID:   in.AccountID,
 			Type:        models.TransactionTypeExpense,
-		}); rerr == nil {
-			categoryID = res.CategoryID
-		}
+		})
 	}
 
-	var result *models.Transaction
+	var expenseID string
 	err = s.db.Transaction(func(tx *gorm.DB) error {
 		accounts, txErr := lockAccounts(tx, userID, []string{in.AccountID}, true)
 		if txErr != nil {
 			return txErr
 		}
-		account := accounts[in.AccountID]
-
-		expense := &models.Transaction{
-			UserID:      userID,
-			AccountID:   account.ID,
-			CategoryID:  categoryID,
-			Type:        models.TransactionTypeExpense,
-			Amount:      in.Amount,
-			Description: in.Description,
-			Date:        date,
-		}
-		if txErr := tx.Create(expense).Error; txErr != nil {
-			return apperrors.Wrap(apperrors.ErrInternalServer, txErr)
-		}
-		if txErr := s.accountService.ApplyBalanceDelta(tx, account.ID, account.Type, models.TransactionTypeExpense, in.Amount); txErr != nil {
+		expense, txErr := insertTransaction(tx, s.accountService, userID, accounts[in.AccountID],
+			categoryID, models.TransactionTypeExpense, in.Amount, in.Description, date)
+		if txErr != nil {
 			return txErr
 		}
 
 		// Explicit, strictly increasing created_at keeps the request order stable.
 		base := time.Now()
 		for i, sh := range shares {
-			rec := &models.Receivable{
-				UserID:           userID,
-				TransactionID:    expense.ID,
-				CounterpartyName: sh.name,
-				CounterpartyKey:  sh.key,
-				Kind:             in.Kind,
-				Amount:           sh.amount,
-			}
-			rec.CreatedAt = base.Add(time.Duration(i) * time.Microsecond)
-			rec.Status = rec.DeriveStatus()
-			if txErr := tx.Create(rec).Error; txErr != nil {
-				return apperrors.Wrap(apperrors.ErrInternalServer, txErr)
+			if txErr := insertReceivable(tx, userID, expense.ID, sh.name, sh.key, in.Kind, sh.amount,
+				base.Add(time.Duration(i)*time.Microsecond)); txErr != nil {
+				return txErr
 			}
 		}
 
-		if txErr := recomputePersonalAmount(tx, userID, expense.ID); txErr != nil {
-			return txErr
-		}
-		result = expense
-		return nil
+		expenseID = expense.ID
+		return recomputePersonalAmount(tx, userID, expense.ID)
 	})
 	if err != nil {
 		return nil, err
 	}
-	return s.reloadExpense(userID, result.ID)
-}
-
-// reloadExpense reads an expense back with its receivables attached.
-func (s *receivableService) reloadExpense(userID, transactionID string) (*models.Transaction, error) {
-	var txn models.Transaction
-	if err := s.db.Where("id = ? AND user_id = ?", transactionID, userID).First(&txn).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, apperrors.ErrTransactionNotFound
-		}
-		return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)
-	}
-	one := []models.Transaction{txn}
-	if err := attachReceivables(s.db, userID, one); err != nil {
-		return nil, err
-	}
-	txn.Receivables = one[0].Receivables
-	return &txn, nil
+	return loadExpenseWithReceivables(s.db, userID, expenseID)
 }
 
 // saveReceivable derives the status and persists the mutable columns of a receivable.
@@ -341,23 +287,15 @@ func (s *receivableService) UpdateReceivables(userID, transactionID string, in U
 		kept := make(map[string]bool, len(entries))
 		now := time.Now()
 		for i, e := range entries {
-			total += e.amount
-			if total > expense.Amount {
+			// total <= expense.Amount always holds here, so this cannot overflow.
+			if e.amount > expense.Amount-total {
 				return invalidShares("shares must not exceed the expense amount")
 			}
+			total += e.amount
 			if !e.hasID {
-				rec := &models.Receivable{
-					UserID:           userID,
-					TransactionID:    expense.ID,
-					CounterpartyName: e.name,
-					CounterpartyKey:  e.key,
-					Kind:             insertKind,
-					Amount:           e.amount,
-				}
-				rec.CreatedAt = now.Add(time.Duration(i) * time.Microsecond)
-				rec.Status = rec.DeriveStatus()
-				if txErr := tx.Create(rec).Error; txErr != nil {
-					return apperrors.Wrap(apperrors.ErrInternalServer, txErr)
+				if txErr := insertReceivable(tx, userID, expense.ID, e.name, e.key, insertKind, e.amount,
+					now.Add(time.Duration(i)*time.Microsecond)); txErr != nil {
+					return txErr
 				}
 				continue
 			}
@@ -394,7 +332,7 @@ func (s *receivableService) UpdateReceivables(userID, transactionID string, in U
 	if err != nil {
 		return nil, err
 	}
-	return s.reloadExpense(userID, transactionID)
+	return loadExpenseWithReceivables(s.db, userID, transactionID)
 }
 
 // findReceivable reads a user's non-deleted receivable without locking (used to
@@ -436,14 +374,17 @@ func lockReceivable(tx *gorm.DB, userID, transactionID, receivableID string) (*m
 // Settle records a repayment against a receivable under the D10 locks (expense,
 // receivable, account). It creates the reimbursement transaction, credits the
 // account with a relative update, inserts the settlement, updates paid_amount
-// and status (optionally writing off the remainder) and recomputes
-// personal_amount, all in one DB transaction.
+// and status (optionally writing off the remainder, which is recorded on the
+// settlement) and recomputes personal_amount, all in one DB transaction.
 func (s *receivableService) Settle(userID, receivableID string, in SettleInput) (*models.Receivable, *models.ReceivableSettlement, error) {
 	if in.AccountID == "" {
 		return nil, nil, apperrors.WithMessage(apperrors.ErrInvalidInput, "account ID is required")
 	}
 	if in.Amount <= 0 {
 		return nil, nil, apperrors.ErrSettlementExceedsOutstanding
+	}
+	if err := validateDescription(in.Description); err != nil {
+		return nil, nil, err
 	}
 	first, err := s.findReceivable(userID, receivableID)
 	if err != nil {
@@ -504,21 +445,26 @@ func (s *receivableService) Settle(userID, receivableID string, in SettleInput) 
 			return txErr
 		}
 
+		// The write-off is recorded on the settlement so that deleting the
+		// settlement can reverse it together with the payment.
+		cur.PaidAmount += in.Amount
+		var writtenOff int64
+		if in.WriteOffRemainder {
+			writtenOff = cur.OutstandingAmount()
+			cur.WrittenOffAmount += writtenOff
+		}
+
 		settlement = &models.ReceivableSettlement{
-			UserID:        userID,
-			ReceivableID:  cur.ID,
-			TransactionID: reimbursement.ID,
-			AccountID:     account.ID,
-			Amount:        in.Amount,
-			Date:          date,
+			UserID:           userID,
+			ReceivableID:     cur.ID,
+			TransactionID:    reimbursement.ID,
+			AccountID:        account.ID,
+			Amount:           in.Amount,
+			WrittenOffAmount: writtenOff,
+			Date:             date,
 		}
 		if txErr := tx.Create(settlement).Error; txErr != nil {
 			return apperrors.Wrap(apperrors.ErrInternalServer, txErr)
-		}
-
-		cur.PaidAmount += in.Amount
-		if in.WriteOffRemainder {
-			cur.WrittenOffAmount += cur.OutstandingAmount()
 		}
 		if txErr := saveReceivable(tx, userID, cur); txErr != nil {
 			return txErr
@@ -540,8 +486,9 @@ func (s *receivableService) Settle(userID, receivableID string, in SettleInput) 
 
 // DeleteSettlement reverses a repayment under the D10 locks: it soft-deletes the
 // reimbursement transaction and the settlement, debits the credited account by
-// the reverse type with a relative update (exactly once), reduces paid_amount
-// and recomputes the status and personal_amount.
+// the reverse type with a relative update (exactly once), reduces paid_amount,
+// reverses the write-off made by the same settle call (if any) and recomputes
+// the status and personal_amount.
 func (s *receivableService) DeleteSettlement(userID, settlementID string) (*models.Receivable, error) {
 	var first models.ReceivableSettlement
 	if err := s.db.Where("id = ? AND user_id = ?", settlementID, userID).First(&first).Error; err != nil {
@@ -600,6 +547,12 @@ func (s *receivableService) DeleteSettlement(userID, settlementID string) (*mode
 		if cur.PaidAmount < 0 {
 			return apperrors.Wrap(apperrors.ErrInternalServer, fmt.Errorf("receivable %s paid_amount would become negative", cur.ID))
 		}
+		// Reverse the write-off made by this settlement. It cannot exceed the
+		// current write-off (UndoWriteOff zeroes both), but clamp defensively.
+		cur.WrittenOffAmount -= settlement.WrittenOffAmount
+		if cur.WrittenOffAmount < 0 {
+			cur.WrittenOffAmount = 0
+		}
 		if txErr := saveReceivable(tx, userID, cur); txErr != nil {
 			return txErr
 		}
@@ -622,7 +575,7 @@ func (s *receivableService) DeleteSettlement(userID, settlementID string) (*mode
 // balance) under the D10 locks and recomputes status and personal_amount. The
 // forgiven money becomes the user's spending on the original expense (D6a).
 func (s *receivableService) WriteOff(userID, receivableID string, amount *int64) (*models.Receivable, error) {
-	return s.mutateWriteOff(userID, receivableID, func(rec *models.Receivable) error {
+	return s.mutateWriteOff(userID, receivableID, func(_ *gorm.DB, rec *models.Receivable) error {
 		out := rec.OutstandingAmount()
 		amt := out
 		if amount != nil {
@@ -639,17 +592,24 @@ func (s *receivableService) WriteOff(userID, receivableID string, amount *int64)
 // UndoWriteOff resets the receivable's written-off amount to zero. It fails
 // with INVALID_INPUT when there is nothing to undo.
 func (s *receivableService) UndoWriteOff(userID, receivableID string) (*models.Receivable, error) {
-	return s.mutateWriteOff(userID, receivableID, func(rec *models.Receivable) error {
+	return s.mutateWriteOff(userID, receivableID, func(tx *gorm.DB, rec *models.Receivable) error {
 		if rec.WrittenOffAmount == 0 {
 			return apperrors.WithMessage(apperrors.ErrInvalidInput, "nothing to undo: this receivable has no write-off")
 		}
 		rec.WrittenOffAmount = 0
+		// The write-offs recorded on settlements are gone too; deleting one of
+		// them later must not subtract them again.
+		if err := tx.Model(&models.ReceivableSettlement{}).
+			Where("receivable_id = ? AND user_id = ?", rec.ID, rec.UserID).
+			UpdateColumn("written_off_amount", 0).Error; err != nil {
+			return apperrors.Wrap(apperrors.ErrInternalServer, err)
+		}
 		return nil
 	})
 }
 
 // mutateWriteOff is the shared D10 sequence for WriteOff and UndoWriteOff.
-func (s *receivableService) mutateWriteOff(userID, receivableID string, mutate func(rec *models.Receivable) error) (*models.Receivable, error) {
+func (s *receivableService) mutateWriteOff(userID, receivableID string, mutate func(tx *gorm.DB, rec *models.Receivable) error) (*models.Receivable, error) {
 	first, err := s.findReceivable(userID, receivableID)
 	if err != nil {
 		return nil, err
@@ -660,7 +620,7 @@ func (s *receivableService) mutateWriteOff(userID, receivableID string, mutate f
 		if txErr != nil {
 			return txErr
 		}
-		if txErr := mutate(cur); txErr != nil {
+		if txErr := mutate(tx, cur); txErr != nil {
 			return txErr
 		}
 		if txErr := saveReceivable(tx, userID, cur); txErr != nil {
@@ -728,19 +688,23 @@ func (s *receivableService) ListReceivables(userID string, page pagination.PageR
 	case st == "":
 	case st == ReceivableStatusOpen:
 		q = q.Where("receivables.status IN ?", []models.ReceivableStatus{models.ReceivableStatusPending, models.ReceivableStatusPartiallyPaid})
-	case models.IsValidReceivableStatus(models.ReceivableStatus(st)):
+	case models.IsValidReceivableStatus(st):
 		q = q.Where("receivables.status = ?", st)
 	default:
 		return nil, apperrors.WithMessage(apperrors.ErrInvalidInput, "invalid status")
 	}
 	if filter.Kind != "" {
-		if !models.IsValidReceivableKind(models.ReceivableKind(filter.Kind)) {
+		if !models.IsValidReceivableKind(filter.Kind) {
 			return nil, apperrors.ErrInvalidReceivableKind
 		}
 		q = q.Where("receivables.kind = ?", filter.Kind)
 	}
 	if filter.CounterpartyKey != "" {
-		q = q.Where("receivables.counterparty_key = ?", normalizeKey(filter.CounterpartyKey))
+		key, err := normalizeSearchKey(filter.CounterpartyKey)
+		if err != nil {
+			return nil, err
+		}
+		q = q.Where("receivables.counterparty_key = ?", key)
 	}
 
 	var total int64
@@ -878,8 +842,12 @@ var likeEscaper = strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
 // lowercased q (all when q is empty), most recently used first, each with the
 // display name of its newest receivable.
 func (s *receivableService) ListCounterparties(userID, q string) ([]CounterpartySuggestion, error) {
+	needle, err := normalizeSearchKey(q)
+	if err != nil {
+		return nil, err
+	}
 	query := s.db.Model(&models.Receivable{}).Where("user_id = ?", userID)
-	if needle := normalizeKey(q); needle != "" {
+	if needle != "" {
 		query = query.Where(`counterparty_key LIKE ? ESCAPE '\'`, "%"+likeEscaper.Replace(needle)+"%")
 	}
 
@@ -916,10 +884,14 @@ func (s *receivableService) ListCounterparties(userID, q string) ([]Counterparty
 }
 
 // RenameCounterparty sets the name (and derived key) of every one of the user's
-// receivables whose key is fromKey, in one DB transaction, and returns how many
-// were updated. Renaming onto an existing key merges the two counterparties.
+// receivables whose key is fromKey with a single UPDATE (atomic by itself) and
+// returns how many were updated. Renaming onto an existing key merges the two
+// counterparties.
 func (s *receivableService) RenameCounterparty(userID, fromKey, toName string) (int64, error) {
-	from := normalizeKey(fromKey)
+	from, err := normalizeSearchKey(fromKey)
+	if err != nil {
+		return 0, err
+	}
 	if from == "" {
 		return 0, apperrors.WithMessage(apperrors.ErrInvalidInput, "from_key is required")
 	}
@@ -928,19 +900,11 @@ func (s *receivableService) RenameCounterparty(userID, fromKey, toName string) (
 		return 0, invalidShares(err.Error())
 	}
 
-	var updated int64
-	err = s.db.Transaction(func(tx *gorm.DB) error {
-		res := tx.Model(&models.Receivable{}).
-			Where("user_id = ? AND counterparty_key = ?", userID, from).
-			Updates(map[string]interface{}{"counterparty_name": name, "counterparty_key": key})
-		if res.Error != nil {
-			return apperrors.Wrap(apperrors.ErrInternalServer, res.Error)
-		}
-		updated = res.RowsAffected
-		return nil
-	})
-	if err != nil {
-		return 0, err
+	res := s.db.Model(&models.Receivable{}).
+		Where("user_id = ? AND counterparty_key = ?", userID, from).
+		Updates(map[string]interface{}{"counterparty_name": name, "counterparty_key": key})
+	if res.Error != nil {
+		return 0, apperrors.Wrap(apperrors.ErrInternalServer, res.Error)
 	}
-	return updated, nil
+	return res.RowsAffected, nil
 }

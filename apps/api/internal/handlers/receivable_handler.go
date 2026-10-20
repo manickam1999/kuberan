@@ -4,7 +4,6 @@ import (
 	"errors"
 	"io"
 	"net/http"
-	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -68,29 +67,6 @@ type CounterpartiesResponse struct {
 // RenameCounterpartyResponse reports how many receivables were renamed.
 type RenameCounterpartyResponse struct {
 	Updated int64 `json:"updated"`
-}
-
-// optionalUUID validates an optional UUID body field, treating nil and "" as absent.
-func optionalUUID(value *string, field string) (*string, error) {
-	if value == nil || *value == "" {
-		return nil, nil
-	}
-	if !uuid.IsValid(*value) {
-		return nil, apperrors.WithMessage(apperrors.ErrInvalidInput, "Invalid "+field+" format")
-	}
-	return value, nil
-}
-
-// parseOptionalDate parses an optional flexible date string; the zero time means "not provided".
-func parseOptionalDate(value *string) (time.Time, error) {
-	if value == nil || *value == "" {
-		return time.Time{}, nil
-	}
-	parsed, err := parseFlexibleTime(*value)
-	if err != nil {
-		return time.Time{}, apperrors.WithMessage(apperrors.ErrInvalidInput, err.Error())
-	}
-	return parsed, nil
 }
 
 // CreateSharedExpense creates an expense together with the amounts owed back by counterparties.
@@ -269,8 +245,8 @@ func (h *ReceivableHandler) ListReceivables(c *gin.Context) {
 	}
 
 	result, err := h.receivableService.ListReceivables(userID, page, services.ReceivableFilter{
-		Status:          c.Query("status"),
-		Kind:            c.Query("kind"),
+		Status:          models.ReceivableStatus(c.Query("status")),
+		Kind:            models.ReceivableKind(c.Query("kind")),
 		CounterpartyKey: c.Query("counterparty"),
 	})
 	if err != nil {

@@ -25,7 +25,6 @@ type mockAccountService struct {
 	getUserAccountsFn           func(userID string, page pagination.PageRequest) (*pagination.PageResponse[models.Account], error)
 	getAccountByIDFn            func(userID, accountID string) (*models.Account, error)
 	updateAccountFn             func(userID, accountID string, updates services.AccountUpdateFields) (*models.Account, error)
-	updateAccountBalanceFn      func(tx *gorm.DB, account *models.Account, transactionType models.TransactionType, amount int64) error
 }
 
 func (m *mockAccountService) CreateCashAccount(userID, name, description, currency string, initialBalance int64) (*models.Account, error) {
@@ -69,13 +68,6 @@ func (m *mockAccountService) UpdateAccount(userID, accountID string, updates ser
 		return m.updateAccountFn(userID, accountID, updates)
 	}
 	return &models.Account{}, nil
-}
-
-func (m *mockAccountService) UpdateAccountBalance(tx *gorm.DB, account *models.Account, transactionType models.TransactionType, amount int64) error {
-	if m.updateAccountBalanceFn != nil {
-		return m.updateAccountBalanceFn(tx, account, transactionType, amount)
-	}
-	return nil
 }
 
 func (m *mockAccountService) ApplyBalanceDelta(_ *gorm.DB, _ string, _ models.AccountType, _ models.TransactionType, _ int64) error {

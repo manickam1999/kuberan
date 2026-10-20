@@ -88,18 +88,7 @@ func (s *Server) handleListTransactions(ctx context.Context, req mcp.CallToolReq
 
 	args := req.GetArguments()
 
-	pageNum := 1
-	if v, ok := args["page"].(float64); ok && v > 0 {
-		pageNum = int(v)
-	}
-	pageSize := 20
-	if v, ok := args["page_size"].(float64); ok && v > 0 {
-		pageSize = int(v)
-		if pageSize > 100 {
-			pageSize = 100
-		}
-	}
-	page := pagination.PageRequest{Page: pageNum, PageSize: pageSize}
+	page := parsePage(args)
 
 	filter := services.TransactionFilter{}
 
@@ -171,6 +160,22 @@ func (s *Server) handleListTransactions(ctx context.Context, req mcp.CallToolReq
 	return mcp.NewToolResultText(sb.String()), nil
 }
 
+// parsePage reads the optional page (default 1) and page_size (default 20,
+// capped at 100) tool arguments.
+func parsePage(args map[string]interface{}) pagination.PageRequest {
+	page := pagination.PageRequest{Page: 1, PageSize: 20}
+	if v, ok := args["page"].(float64); ok && v > 0 {
+		page.Page = int(v)
+	}
+	if v, ok := args["page_size"].(float64); ok && v > 0 {
+		page.PageSize = int(v)
+		if page.PageSize > 100 {
+			page.PageSize = 100
+		}
+	}
+	return page
+}
+
 // transactionNote returns an extra line describing shared-expense semantics
 // for a transaction, or "" when there is nothing to add. A set personal_amount
 // means only that share counts as the user's spending; reimbursements are
@@ -180,9 +185,14 @@ func transactionNote(t models.Transaction) string {
 	case t.Type == models.TransactionTypeReimbursement:
 		return "Repayment received for a shared expense (not income)"
 	case t.PersonalAmount != nil:
-		return fmt.Sprintf("Shared expense: your share %s of %s", formatCents(*t.PersonalAmount), formatCents(t.Amount))
+		return sharedExpenseNote(*t.PersonalAmount, t.Amount)
 	}
 	return ""
+}
+
+// sharedExpenseNote describes the user's share of a shared expense.
+func sharedExpenseNote(personal, amount int64) string {
+	return fmt.Sprintf("Shared expense: your share %s of %s", formatCents(personal), formatCents(amount))
 }
 
 func (s *Server) handleGetSpendingByCategory(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -389,8 +399,16 @@ func (s *Server) handleGetTopExpenses(ctx context.Context, req mcp.CallToolReque
 	var sb strings.Builder
 	sb.WriteString(fmt.Sprintf("Top Expenses (%s to %s):\n\n", fromStr, toStr))
 	for i, item := range result.Items {
+		// Items are ranked by the effective amount (the user's own share), so show that.
+		effective := item.Amount
+		if item.PersonalAmount != nil {
+			effective = *item.PersonalAmount
+		}
 		sb.WriteString(fmt.Sprintf("  %2d. %-30s %12s  [%s / %s]  %s\n",
-			i+1, item.Description, formatCents(item.Amount), item.CategoryName, item.AccountName, item.Date.Format("2006-01-02")))
+			i+1, item.Description, formatCents(effective), item.CategoryName, item.AccountName, item.Date.Format("2006-01-02")))
+		if item.PersonalAmount != nil {
+			sb.WriteString("      " + sharedExpenseNote(*item.PersonalAmount, item.Amount) + "\n")
+		}
 	}
 
 	return mcp.NewToolResultText(sb.String()), nil
