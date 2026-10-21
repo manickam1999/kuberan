@@ -2982,7 +2982,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Update the authenticated user's profile settings (e.g. dashboard balance visibility)",
+                "description": "Update the authenticated user's profile settings (dashboard balance visibility, default transaction account)",
                 "consumes": [
                     "application/json"
                 ],
@@ -6658,6 +6658,10 @@ const docTemplate = `{
         "internal_handlers.UpdateProfileSettingsRequest": {
             "type": "object",
             "properties": {
+                "default_account_id": {
+                    "description": "DefaultAccountID sets the account preselected for new transactions;\nnull or \"\" clears it. Must be a UUID otherwise.",
+                    "type": "string"
+                },
                 "hide_balances": {
                     "type": "boolean"
                 }
@@ -7558,6 +7562,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "written_off_amount": {
+                    "description": "WrittenOffAmount is the amount written off by the same settle call\n(write_off_remainder). Deleting the settlement reverses it together with\nthe payment. Zero for a plain settlement.",
                     "type": "integer"
                 }
             }
@@ -8457,6 +8462,10 @@ const docTemplate = `{
                 },
                 "to_date": {
                     "type": "string"
+                },
+                "total_count": {
+                    "description": "TotalCount is the number of expenses with a non-zero effective amount in\nthe range (ignoring the limit), for count and average statistics.",
+                    "type": "integer"
                 }
             }
         },

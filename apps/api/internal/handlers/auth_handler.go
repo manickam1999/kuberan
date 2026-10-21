@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"encoding/json"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -91,13 +92,7 @@ func (h *AuthHandler) Register(c *gin.Context) {
 	c.JSON(http.StatusCreated, gin.H{
 		"access_token":  accessToken,
 		"refresh_token": refreshToken,
-		"user": gin.H{
-			"id":            user.ID,
-			"email":         user.Email,
-			"first_name":    user.FirstName,
-			"last_name":     user.LastName,
-			"hide_balances": user.HideBalances,
-		},
+		"user":          userPayload(user),
 	})
 }
 
@@ -140,13 +135,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"access_token":  accessToken,
 		"refresh_token": refreshToken,
-		"user": gin.H{
-			"id":            user.ID,
-			"email":         user.Email,
-			"first_name":    user.FirstName,
-			"last_name":     user.LastName,
-			"hide_balances": user.HideBalances,
-		},
+		"user":          userPayload(user),
 	})
 }
 
@@ -206,13 +195,7 @@ func (h *AuthHandler) RefreshToken(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"access_token":  accessToken,
 		"refresh_token": refreshToken,
-		"user": gin.H{
-			"id":            user.ID,
-			"email":         user.Email,
-			"first_name":    user.FirstName,
-			"last_name":     user.LastName,
-			"hide_balances": user.HideBalances,
-		},
+		"user":          userPayload(user),
 	})
 }
 
@@ -241,24 +224,47 @@ func (h *AuthHandler) GetProfile(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"user": gin.H{
-			"id":            user.ID,
-			"email":         user.Email,
-			"first_name":    user.FirstName,
-			"last_name":     user.LastName,
-			"hide_balances": user.HideBalances,
-		},
+		"user": userPayload(user),
 	})
 }
 
+// userPayload is the user object embedded in auth and profile responses.
+func userPayload(user *models.User) gin.H {
+	return gin.H{
+		"id":                 user.ID,
+		"email":              user.Email,
+		"first_name":         user.FirstName,
+		"last_name":          user.LastName,
+		"hide_balances":      user.HideBalances,
+		"default_account_id": user.DefaultAccountID,
+	}
+}
+
 // UpdateProfileSettingsRequest represents the payload for updating profile settings.
+// Every field is optional, but at least one must be present.
 type UpdateProfileSettingsRequest struct {
 	HideBalances *bool `json:"hide_balances"`
+	// DefaultAccountID sets the account preselected for new transactions;
+	// null or "" clears it. Must be a UUID otherwise.
+	DefaultAccountID optionalString `json:"default_account_id" swaggertype:"string"`
+}
+
+// optionalString distinguishes an absent JSON field (Set=false) from an
+// explicit null (Set=true, Value=nil).
+type optionalString struct {
+	Set   bool
+	Value *string
+}
+
+// UnmarshalJSON records that the field was present and decodes its value.
+func (o *optionalString) UnmarshalJSON(data []byte) error {
+	o.Set = true
+	return json.Unmarshal(data, &o.Value)
 }
 
 // UpdateProfileSettings updates the authenticated user's profile settings.
 // @Summary     Update profile settings
-// @Description Update the authenticated user's profile settings (e.g. dashboard balance visibility)
+// @Description Update the authenticated user's profile settings (dashboard balance visibility, default transaction account)
 // @Tags        user
 // @Accept      json
 // @Produce     json
@@ -282,12 +288,25 @@ func (h *AuthHandler) UpdateProfileSettings(c *gin.Context) {
 		return
 	}
 
-	if req.HideBalances == nil {
-		respondWithError(c, apperrors.WithMessage(apperrors.ErrInvalidInput, "hide_balances is required"))
+	if req.HideBalances == nil && !req.DefaultAccountID.Set {
+		respondWithError(c, apperrors.WithMessage(apperrors.ErrInvalidInput,
+			"at least one of hide_balances or default_account_id is required"))
 		return
 	}
 
-	if err := h.userService.UpdateHideBalances(userID, *req.HideBalances); err != nil {
+	update := services.ProfileSettingsUpdate{
+		HideBalances:      req.HideBalances,
+		SetDefaultAccount: req.DefaultAccountID.Set,
+	}
+	if req.DefaultAccountID.Set {
+		update.DefaultAccountID, err = optionalUUID(req.DefaultAccountID.Value, "default_account_id")
+		if err != nil {
+			respondWithError(c, err)
+			return
+		}
+	}
+
+	if err := h.userService.UpdateProfileSettings(userID, update); err != nil {
 		respondWithError(c, err)
 		return
 	}
@@ -299,13 +318,7 @@ func (h *AuthHandler) UpdateProfileSettings(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"user": gin.H{
-			"id":            user.ID,
-			"email":         user.Email,
-			"first_name":    user.FirstName,
-			"last_name":     user.LastName,
-			"hide_balances": user.HideBalances,
-		},
+		"user": userPayload(user),
 	})
 }
 

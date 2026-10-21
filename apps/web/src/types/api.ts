@@ -80,7 +80,8 @@ export interface ProfileResponse {
 
 // Request to update profile settings (PATCH /profile)
 export interface UpdateProfileSettingsRequest {
-  hide_balances: boolean;
+  hide_balances?: boolean;
+  default_account_id?: string | null; // null clears the default
 }
 
 // Single-item response wrappers (backend wraps single items in a key)

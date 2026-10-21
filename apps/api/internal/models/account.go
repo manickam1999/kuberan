@@ -17,6 +17,17 @@ const (
 	AccountTypeFixedDeposit AccountType = "fixed_deposit"
 )
 
+// IsSpending reports whether day-to-day income and expenses are recorded
+// against accounts of this type (cash, credit card and debt).
+func (t AccountType) IsSpending() bool {
+	switch t {
+	case AccountTypeCash, AccountTypeCreditCard, AccountTypeDebt:
+		return true
+	default:
+		return false
+	}
+}
+
 // Account represents a financial account in the system
 type Account struct {
 	Base

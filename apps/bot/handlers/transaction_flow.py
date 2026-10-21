@@ -1,5 +1,6 @@
 import re
 import logging
+from typing import Optional
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     ContextTypes, ConversationHandler, CommandHandler,
@@ -14,6 +15,10 @@ AMOUNT, CATEGORY, CONFIRM, ACCOUNT, NEW_CATEGORY, NEW_ACCOUNT, \
     NEW_CAT_PARENT, NEW_CAT_ICON, CURRENCY, NEW_CURRENCY = range(10)
 
 TXN_KEY = 'txn'
+
+# Account types income and expenses are recorded against (mirrors the API's
+# AccountType.IsSpending).
+SPENDING_ACCOUNT_TYPES = ('cash', 'credit_card', 'debt')
 
 
 def _parse_amount_description(text: str):
@@ -59,12 +64,19 @@ def _extract_account_and_category(text: str, accounts: list, categories: list):
     return ' '.join(words), matched_account, matched_category
 
 
-def _get_default_account(accounts: list):
-    """Get the first active non-investment account."""
-    eligible = [a for a in accounts if a.get('type') in ('cash', 'credit_card', 'debt')]
-    for acc in eligible:
-        if acc.get('is_active', True):
-            return acc
+def _get_default_account(accounts: list, preferred_id: Optional[str] = None):
+    """Pick the account a new transaction starts on.
+
+    Uses the user's saved default while it is still an active spending account,
+    otherwise the first active spending account.
+    """
+    eligible = [a for a in accounts if a.get('type') in SPENDING_ACCOUNT_TYPES]
+    active = [a for a in eligible if a.get('is_active', True)]
+    preferred = next((a for a in active if preferred_id and a.get('id') == preferred_id), None)
+    if preferred:
+        return preferred
+    if active:
+        return active[0]
     return eligible[0] if eligible else None
 
 
@@ -139,7 +151,7 @@ def _build_category_keyboard(categories: list, page: int = 0):
 
 def _build_account_keyboard(accounts: list):
     """Build inline keyboard for account selection."""
-    eligible = [a for a in accounts if a.get('type') in ('cash', 'credit_card', 'debt')]
+    eligible = [a for a in accounts if a.get('type') in SPENDING_ACCOUNT_TYPES]
     buttons = []
     for i in range(0, len(eligible), 2):
         row = [
@@ -230,7 +242,14 @@ def _resolve_user_and_setup(api_client: KuberanAPIClient, telegram_user_id: int,
     user_client = UserAPIClient(api_client.base_url, user_data['auth_token'])
     accounts = user_client.get_accounts()
 
-    default_account = _get_default_account(accounts)
+    try:
+        preferred_id = user_client.get_profile().get('default_account_id')
+    except Exception:
+        # The default is a convenience; never block recording a transaction on it.
+        logger.warning("Failed to fetch profile for default account", exc_info=True)
+        preferred_id = None
+
+    default_account = _get_default_account(accounts, preferred_id)
     if not default_account:
         return None, "No active accounts found. Please create an account in the web app first."
 

@@ -35,6 +35,14 @@ export interface AuthContextValue {
   register: (data: RegisterRequest) => Promise<void>;
   logout: () => void;
   toggleHideBalances: () => Promise<void>;
+  /** Account preselected for new transactions, or null when none is set. */
+  defaultAccountId: string | null;
+  /**
+   * Merges server-confirmed profile fields into the session user. Only the
+   * given fields change, so an in-flight optimistic update to another field
+   * is not overwritten.
+   */
+  patchUser: (fields: Partial<User>) => void;
 }
 
 export const AuthContext = createContext<AuthContextValue | null>(null);
@@ -45,6 +53,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const isAuthenticated = user !== null;
   const hideBalances = user?.hide_balances ?? false;
+  const defaultAccountId = user?.default_account_id ?? null;
 
   // Fetch user profile using stored tokens
   const fetchProfile = useCallback(async (): Promise<User | null> => {
@@ -124,6 +133,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
+  const patchUser = useCallback((fields: Partial<User>) => {
+    setUser((prev) => (prev ? { ...prev, ...fields } : prev));
+  }, []);
+
   const logout = useCallback(() => {
     clearTokens();
     clearAuthCookie();
@@ -143,6 +156,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       register,
       logout,
       toggleHideBalances,
+      defaultAccountId,
+      patchUser,
     }),
     [
       user,
@@ -153,6 +168,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       register,
       logout,
       toggleHideBalances,
+      defaultAccountId,
+      patchUser,
     ]
   );
 

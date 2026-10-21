@@ -8,6 +8,7 @@ import (
 	"kuberan/internal/testutil"
 
 	"golang.org/x/crypto/bcrypt"
+	"gorm.io/gorm"
 )
 
 func TestCreateUser(t *testing.T) {
@@ -317,5 +318,174 @@ func TestCreateUser_password_is_hashed(t *testing.T) {
 	}
 	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte("mypassword")); err != nil {
 		t.Error("password hash should be valid bcrypt")
+	}
+}
+
+func TestUpdateProfileSettings(t *testing.T) {
+	boolPtr := func(b bool) *bool { return &b }
+	strPtr := func(s string) *string { return &s }
+	getUser := func(t *testing.T, svc UserServicer, userID string) *models.User {
+		t.Helper()
+		u, err := svc.GetUserByID(userID)
+		testutil.AssertNoError(t, err)
+		return u
+	}
+	setDefault := func(id *string) ProfileSettingsUpdate {
+		return ProfileSettingsUpdate{SetDefaultAccount: true, DefaultAccountID: id}
+	}
+
+	t.Run("sets_and_clears_default_account", func(t *testing.T) {
+		db := testutil.SetupTestDB(t)
+		defer testutil.TeardownTestDB(t, db)
+		svc := NewUserService(db)
+		user := testutil.CreateTestUser(t, db)
+		account := testutil.CreateTestCreditCardAccount(t, db, user.ID, 0)
+
+		testutil.AssertNoError(t, svc.UpdateProfileSettings(user.ID, setDefault(&account.ID)))
+		if got := getUser(t, svc, user.ID).DefaultAccountID; got == nil || *got != account.ID {
+			t.Fatalf("expected default account %s, got %v", account.ID, got)
+		}
+
+		testutil.AssertNoError(t, svc.UpdateProfileSettings(user.ID, setDefault(nil)))
+		if got := getUser(t, svc, user.ID).DefaultAccountID; got != nil {
+			t.Fatalf("expected default account cleared, got %v", *got)
+		}
+	})
+
+	t.Run("hide_balances_only_keeps_default_account", func(t *testing.T) {
+		db := testutil.SetupTestDB(t)
+		defer testutil.TeardownTestDB(t, db)
+		svc := NewUserService(db)
+		user := testutil.CreateTestUser(t, db)
+		account := testutil.CreateTestCashAccount(t, db, user.ID)
+		testutil.AssertNoError(t, svc.UpdateProfileSettings(user.ID, setDefault(&account.ID)))
+
+		testutil.AssertNoError(t, svc.UpdateProfileSettings(user.ID, ProfileSettingsUpdate{HideBalances: boolPtr(true)}))
+
+		got := getUser(t, svc, user.ID)
+		if !got.HideBalances {
+			t.Error("expected hide_balances true")
+		}
+		if got.DefaultAccountID == nil || *got.DefaultAccountID != account.ID {
+			t.Errorf("expected default account %s kept, got %v", account.ID, got.DefaultAccountID)
+		}
+	})
+
+	t.Run("updates_both_settings_together", func(t *testing.T) {
+		db := testutil.SetupTestDB(t)
+		defer testutil.TeardownTestDB(t, db)
+		svc := NewUserService(db)
+		user := testutil.CreateTestUser(t, db)
+		account := testutil.CreateTestCashAccount(t, db, user.ID)
+
+		testutil.AssertNoError(t, svc.UpdateProfileSettings(user.ID, ProfileSettingsUpdate{
+			HideBalances: boolPtr(true), SetDefaultAccount: true, DefaultAccountID: &account.ID,
+		}))
+
+		got := getUser(t, svc, user.ID)
+		if !got.HideBalances || got.DefaultAccountID == nil || *got.DefaultAccountID != account.ID {
+			t.Errorf("expected both settings applied, got hide=%v default=%v", got.HideBalances, got.DefaultAccountID)
+		}
+	})
+
+	t.Run("rejected_default_account_applies_nothing", func(t *testing.T) {
+		db := testutil.SetupTestDB(t)
+		defer testutil.TeardownTestDB(t, db)
+		svc := NewUserService(db)
+		user := testutil.CreateTestUser(t, db)
+		account := testutil.CreateTestInvestmentAccount(t, db, user.ID)
+
+		err := svc.UpdateProfileSettings(user.ID, ProfileSettingsUpdate{
+			HideBalances: boolPtr(true), SetDefaultAccount: true, DefaultAccountID: &account.ID,
+		})
+		testutil.AssertAppError(t, err, "INVALID_INPUT")
+
+		got := getUser(t, svc, user.ID)
+		if got.HideBalances || got.DefaultAccountID != nil {
+			t.Errorf("expected no change, got hide=%v default=%v", got.HideBalances, got.DefaultAccountID)
+		}
+	})
+
+	t.Run("requires_a_setting", func(t *testing.T) {
+		db := testutil.SetupTestDB(t)
+		defer testutil.TeardownTestDB(t, db)
+		svc := NewUserService(db)
+		user := testutil.CreateTestUser(t, db)
+
+		err := svc.UpdateProfileSettings(user.ID, ProfileSettingsUpdate{})
+		testutil.AssertAppError(t, err, "INVALID_INPUT")
+	})
+
+	rejections := []struct {
+		name    string
+		account func(t *testing.T, db *gorm.DB, userID string) string
+		code    string
+	}{
+		{"rejects_unknown_account", func(_ *testing.T, _ *gorm.DB, _ string) string {
+			return "01a15c66-0000-7000-8000-000000000000"
+		}, "ACCOUNT_NOT_FOUND"},
+		{"rejects_another_users_account", func(t *testing.T, db *gorm.DB, _ string) string {
+			other := testutil.CreateTestUser(t, db)
+			return testutil.CreateTestCashAccount(t, db, other.ID).ID
+		}, "ACCOUNT_NOT_FOUND"},
+		{"rejects_investment_account", func(t *testing.T, db *gorm.DB, userID string) string {
+			return testutil.CreateTestInvestmentAccount(t, db, userID).ID
+		}, "INVALID_INPUT"},
+		{"rejects_inactive_account", func(t *testing.T, db *gorm.DB, userID string) string {
+			account := testutil.CreateTestCashAccount(t, db, userID)
+			if err := db.Model(account).Update("is_active", false).Error; err != nil {
+				t.Fatalf("deactivate account: %v", err)
+			}
+			return account.ID
+		}, "INVALID_INPUT"},
+	}
+	for _, tc := range rejections {
+		t.Run(tc.name, func(t *testing.T) {
+			db := testutil.SetupTestDB(t)
+			defer testutil.TeardownTestDB(t, db)
+			svc := NewUserService(db)
+			user := testutil.CreateTestUser(t, db)
+
+			err := svc.UpdateProfileSettings(user.ID, setDefault(strPtr(tc.account(t, db, user.ID))))
+			testutil.AssertAppError(t, err, tc.code)
+			if got := getUser(t, svc, user.ID).DefaultAccountID; got != nil {
+				t.Fatalf("expected no default account, got %v", *got)
+			}
+		})
+	}
+}
+
+func TestAttemptLogin_keeps_concurrent_profile_changes(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	defer testutil.TeardownTestDB(t, db)
+	svc := NewUserService(db)
+	user, err := svc.CreateUser("race@example.com", "password123", "Race", "User")
+	testutil.AssertNoError(t, err)
+
+	// Simulate a PATCH /profile landing after AttemptLogin has read the user
+	// but before it writes the login state back.
+	changed := false
+	err = db.Callback().Query().After("gorm:query").Register("test:concurrent_profile_change", func(tx *gorm.DB) {
+		if changed || tx.Statement.Table != "users" {
+			return
+		}
+		changed = true
+		tx.Session(&gorm.Session{NewDB: true}).Exec("UPDATE users SET hide_balances = ? WHERE id = ?", true, user.ID)
+	})
+	testutil.AssertNoError(t, err)
+
+	for _, password := range []string{"wrongpassword", "password123"} {
+		changed = false
+		testutil.AssertNoError(t, db.Model(&models.User{}).Where("id = ?", user.ID).Update("hide_balances", false).Error)
+		_, _ = svc.AttemptLogin("race@example.com", password)
+
+		var got models.User
+		testutil.AssertNoError(t, db.First(&got, "id = ?", user.ID).Error)
+		if !changed {
+			t.Fatalf("password %q: concurrent change was never injected", password)
+		}
+		if !got.HideBalances {
+			t.Errorf("password %q: login overwrote a concurrent hide_balances change", password)
+		}
 	}
 }

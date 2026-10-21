@@ -84,12 +84,23 @@ class UserAPIClient:
         """Get user accounts"""
         response = requests.get(
             f"{self.base_url}/api/v1/accounts",
+            params={"page_size": 100},
             headers=self.headers,
             timeout=10
         )
         response.raise_for_status()
         result = response.json()
         return result.get('data', [])
+
+    def get_profile(self) -> Dict[str, Any]:
+        """Get the user's profile (includes default_account_id)"""
+        response = requests.get(
+            f"{self.base_url}/api/v1/profile",
+            headers=self.headers,
+            timeout=10
+        )
+        response.raise_for_status()
+        return response.json().get('user', {})
 
     def create_transaction(self, data: Dict[str, Any]):
         """Create a transaction"""
