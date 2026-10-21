@@ -1,6 +1,5 @@
 "use client";
 
-import { useState } from "react";
 import { toast } from "sonner";
 import {
   Card,
@@ -18,6 +17,8 @@ import {
 } from "@/components/ui/select";
 import { useAccounts } from "@/hooks/use-accounts";
 import { useAuth } from "@/hooks/use-auth";
+import { useSetDefaultAccount } from "@/hooks/use-profile";
+import { ApiClientError } from "@/lib/api-client";
 import {
   canBeDefaultAccount,
   resolveDefaultAccountId,
@@ -26,9 +27,9 @@ import {
 const NONE = "none";
 
 export function DefaultAccountSettings() {
-  const { defaultAccountId, setDefaultAccount } = useAuth();
+  const { defaultAccountId } = useAuth();
   const { data: accountsData, isLoading } = useAccounts({ page_size: 100 });
-  const [saving, setSaving] = useState(false);
+  const setDefaultAccount = useSetDefaultAccount();
 
   const accounts = accountsData?.data ?? [];
   const eligible = accounts
@@ -36,18 +37,20 @@ export function DefaultAccountSettings() {
     .sort((a, b) => a.name.localeCompare(b.name));
   const current = resolveDefaultAccountId(defaultAccountId, accounts) || NONE;
 
-  async function handleChange(value: string) {
-    setSaving(true);
-    try {
-      await setDefaultAccount(value === NONE ? null : value);
-      toast.success(
-        value === NONE ? "Default account cleared" : "Default account updated"
-      );
-    } catch {
-      // setDefaultAccount already surfaced the error
-    } finally {
-      setSaving(false);
-    }
+  function handleChange(value: string) {
+    const clearing = value === NONE;
+    setDefaultAccount.mutate(clearing ? null : value, {
+      onSuccess: () =>
+        toast.success(
+          clearing ? "Default account cleared" : "Default account updated"
+        ),
+      onError: (err) =>
+        toast.error(
+          err instanceof ApiClientError
+            ? err.message
+            : "Failed to update default account"
+        ),
+    });
   }
 
   return (
@@ -63,7 +66,7 @@ export function DefaultAccountSettings() {
         <Select
           value={current}
           onValueChange={handleChange}
-          disabled={isLoading || saving}
+          disabled={isLoading || setDefaultAccount.isPending}
         >
           <SelectTrigger className="w-full sm:w-72" aria-label="Default account">
             <SelectValue placeholder="No default" />

@@ -403,9 +403,7 @@ func (s *receivableService) Settle(userID, receivableID string, in SettleInput) 
 			return txErr
 		}
 		account := accounts[in.AccountID]
-		switch account.Type {
-		case models.AccountTypeCash, models.AccountTypeCreditCard, models.AccountTypeDebt:
-		default:
+		if !account.Type.IsSpending() {
 			return apperrors.ErrInvalidSettlementAccount
 		}
 		if in.Amount > cur.OutstandingAmount() {

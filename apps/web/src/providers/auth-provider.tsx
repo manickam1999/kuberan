@@ -9,17 +9,14 @@ import {
 } from "react";
 import type { ReactNode } from "react";
 import { toast } from "sonner";
-import { useQueryClient } from "@tanstack/react-query";
 import type { User } from "@/types/models";
 import type {
   AuthResponse,
   LoginRequest,
   RegisterRequest,
   ProfileResponse,
-  UpdateProfileSettingsRequest,
 } from "@/types/api";
-import { apiClient, ApiClientError } from "@/lib/api-client";
-import { profileKeys } from "@/hooks/use-profile";
+import { apiClient } from "@/lib/api-client";
 import {
   clearTokens,
   setAccessToken,
@@ -40,8 +37,12 @@ export interface AuthContextValue {
   toggleHideBalances: () => Promise<void>;
   /** Account preselected for new transactions, or null when none is set. */
   defaultAccountId: string | null;
-  /** Saves (or, with null, clears) the default transaction account. */
-  setDefaultAccount: (accountId: string | null) => Promise<void>;
+  /**
+   * Merges server-confirmed profile fields into the session user. Only the
+   * given fields change, so an in-flight optimistic update to another field
+   * is not overwritten.
+   */
+  patchUser: (fields: Partial<User>) => void;
 }
 
 export const AuthContext = createContext<AuthContextValue | null>(null);
@@ -49,7 +50,6 @@ export const AuthContext = createContext<AuthContextValue | null>(null);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const queryClient = useQueryClient();
 
   const isAuthenticated = user !== null;
   const hideBalances = user?.hide_balances ?? false;
@@ -133,29 +133,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
-  const setDefaultAccount = useCallback(
-    async (accountId: string | null) => {
-      const body: UpdateProfileSettingsRequest = {
-        default_account_id: accountId,
-      };
-      try {
-        const res = await apiClient.patch<ProfileResponse>(
-          "/api/v1/profile",
-          body
-        );
-        setUser(res.user);
-        queryClient.setQueryData(profileKeys.all, res.user);
-      } catch (err) {
-        toast.error(
-          err instanceof ApiClientError
-            ? err.message
-            : "Failed to update default account"
-        );
-        throw err;
-      }
-    },
-    [queryClient]
-  );
+  const patchUser = useCallback((fields: Partial<User>) => {
+    setUser((prev) => (prev ? { ...prev, ...fields } : prev));
+  }, []);
 
   const logout = useCallback(() => {
     clearTokens();
@@ -177,7 +157,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       logout,
       toggleHideBalances,
       defaultAccountId,
-      setDefaultAccount,
+      patchUser,
     }),
     [
       user,
@@ -189,7 +169,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       logout,
       toggleHideBalances,
       defaultAccountId,
-      setDefaultAccount,
+      patchUser,
     ]
   );
 

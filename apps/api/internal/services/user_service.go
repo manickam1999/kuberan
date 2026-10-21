@@ -113,7 +113,7 @@ func (s *userService) AttemptLogin(email, password string) (*models.User, error)
 			lockUntil := time.Now().Add(lockoutDuration)
 			user.LockedUntil = &lockUntil
 		}
-		s.db.Save(user)
+		s.saveLoginState(user)
 		return nil, apperrors.ErrInvalidCredentials
 	}
 
@@ -122,9 +122,20 @@ func (s *userService) AttemptLogin(email, password string) (*models.User, error)
 	user.FailedLoginAttempts = 0
 	user.LockedUntil = nil
 	user.LastLoginAt = &now
-	s.db.Save(user)
+	s.saveLoginState(user)
 
 	return user, nil
+}
+
+// saveLoginState writes only the login-tracking columns. Saving the whole row
+// would write back the copy read before the (slow) bcrypt check and undo any
+// profile change made in the meantime.
+func (s *userService) saveLoginState(user *models.User) {
+	s.db.Model(&models.User{}).Where("id = ?", user.ID).Updates(map[string]interface{}{
+		"failed_login_attempts": user.FailedLoginAttempts,
+		"locked_until":          user.LockedUntil,
+		"last_login_at":         user.LastLoginAt,
+	})
 }
 
 // StoreRefreshTokenHash stores the hash of a refresh token for the given user.
@@ -144,41 +155,60 @@ func (s *userService) GetRefreshTokenHash(userID string) (string, error) {
 	return user.RefreshTokenHash, nil
 }
 
-// UpdateHideBalances sets the user's dashboard balance-visibility preference.
-func (s *userService) UpdateHideBalances(userID string, hide bool) error {
-	if err := s.db.Model(&models.User{}).Where("id = ?", userID).Update("hide_balances", hide).Error; err != nil {
+// ProfileSettingsUpdate lists the profile settings to change. A nil
+// HideBalances leaves it as is; DefaultAccountID is only applied when
+// SetDefaultAccount is true, and a nil DefaultAccountID then clears it.
+type ProfileSettingsUpdate struct {
+	HideBalances      *bool
+	SetDefaultAccount bool
+	DefaultAccountID  *string
+}
+
+// UpdateProfileSettings applies the given settings in a single update, so a
+// request changing several of them succeeds or fails as a whole.
+//
+// A default account is the one preselected when the user records a new
+// transaction. It must belong to the user, be active, and be a spending
+// account (cash, credit card or debt).
+func (s *userService) UpdateProfileSettings(userID string, update ProfileSettingsUpdate) error {
+	changes := map[string]interface{}{}
+	if update.HideBalances != nil {
+		changes["hide_balances"] = *update.HideBalances
+	}
+	if update.SetDefaultAccount {
+		if update.DefaultAccountID != nil {
+			if err := s.validateDefaultAccount(userID, *update.DefaultAccountID); err != nil {
+				return err
+			}
+		}
+		changes["default_account_id"] = update.DefaultAccountID
+	}
+	if len(changes) == 0 {
+		return apperrors.WithMessage(apperrors.ErrInvalidInput, "no profile settings to update")
+	}
+
+	if err := s.db.Model(&models.User{}).Where("id = ?", userID).Updates(changes).Error; err != nil {
 		return apperrors.Wrap(apperrors.ErrInternalServer, err)
 	}
 	return nil
 }
 
-// UpdateDefaultAccount sets (or, with a nil accountID, clears) the account
-// preselected when the user records a new transaction. The account must belong
-// to the user, be active, and be one that day-to-day spending is recorded
-// against (cash, credit card or debt).
-func (s *userService) UpdateDefaultAccount(userID string, accountID *string) error {
-	if accountID != nil {
-		var account models.Account
-		err := s.db.Where("id = ? AND user_id = ?", *accountID, userID).First(&account).Error
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return apperrors.ErrAccountNotFound
-		}
-		if err != nil {
-			return apperrors.Wrap(apperrors.ErrInternalServer, err)
-		}
-		if !account.IsActive {
-			return apperrors.WithMessage(apperrors.ErrInvalidInput, "default account must be active")
-		}
-		switch account.Type {
-		case models.AccountTypeCash, models.AccountTypeCreditCard, models.AccountTypeDebt:
-		default:
-			return apperrors.WithMessage(apperrors.ErrInvalidInput,
-				"default account must be a cash, credit card or debt account")
-		}
+// validateDefaultAccount checks that accountID may be the user's default account.
+func (s *userService) validateDefaultAccount(userID, accountID string) error {
+	var account models.Account
+	err := s.db.Where("id = ? AND user_id = ?", accountID, userID).First(&account).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return apperrors.ErrAccountNotFound
 	}
-
-	if err := s.db.Model(&models.User{}).Where("id = ?", userID).Update("default_account_id", accountID).Error; err != nil {
+	if err != nil {
 		return apperrors.Wrap(apperrors.ErrInternalServer, err)
+	}
+	if !account.IsActive {
+		return apperrors.WithMessage(apperrors.ErrInvalidInput, "default account must be active")
+	}
+	if !account.Type.IsSpending() {
+		return apperrors.WithMessage(apperrors.ErrInvalidInput,
+			"default account must be a cash, credit card or debt account")
 	}
 	return nil
 }

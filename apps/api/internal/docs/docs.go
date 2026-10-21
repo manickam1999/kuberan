@@ -6659,7 +6659,7 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "default_account_id": {
-                    "description": "DefaultAccountID sets the account preselected for new transactions;\nnull or \"\" clears it.",
+                    "description": "DefaultAccountID sets the account preselected for new transactions;\nnull or \"\" clears it. Must be a UUID otherwise.",
                     "type": "string"
                 },
                 "hide_balances": {

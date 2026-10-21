@@ -25,3 +25,8 @@ def test_ignores_unusable_preferred_account():
     assert _get_default_account(ACCOUNTS, "old")["id"] == "cash"
     assert _get_default_account(ACCOUNTS, "inv")["id"] == "cash"
     assert _get_default_account(ACCOUNTS, "deleted")["id"] == "cash"
+
+
+def test_no_spending_account():
+    assert _get_default_account([]) is None
+    assert _get_default_account([{"id": "inv", "type": "investment"}], "inv") is None

@@ -1,7 +1,7 @@
 import type { Account, AccountType } from "@/types/models";
 
 // Account types day-to-day spending is recorded against. Mirrors the backend
-// check in UserService.UpdateDefaultAccount.
+// AccountType.IsSpending.
 const DEFAULT_ACCOUNT_TYPES: readonly AccountType[] = [
   "cash",
   "credit_card",

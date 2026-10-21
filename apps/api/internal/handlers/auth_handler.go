@@ -245,7 +245,7 @@ func userPayload(user *models.User) gin.H {
 type UpdateProfileSettingsRequest struct {
 	HideBalances *bool `json:"hide_balances"`
 	// DefaultAccountID sets the account preselected for new transactions;
-	// null or "" clears it.
+	// null or "" clears it. Must be a UUID otherwise.
 	DefaultAccountID optionalString `json:"default_account_id" swaggertype:"string"`
 }
 
@@ -294,22 +294,21 @@ func (h *AuthHandler) UpdateProfileSettings(c *gin.Context) {
 		return
 	}
 
+	update := services.ProfileSettingsUpdate{
+		HideBalances:      req.HideBalances,
+		SetDefaultAccount: req.DefaultAccountID.Set,
+	}
 	if req.DefaultAccountID.Set {
-		accountID := req.DefaultAccountID.Value
-		if accountID != nil && *accountID == "" {
-			accountID = nil
-		}
-		if err := h.userService.UpdateDefaultAccount(userID, accountID); err != nil {
+		update.DefaultAccountID, err = optionalUUID(req.DefaultAccountID.Value, "default_account_id")
+		if err != nil {
 			respondWithError(c, err)
 			return
 		}
 	}
 
-	if req.HideBalances != nil {
-		if err := h.userService.UpdateHideBalances(userID, *req.HideBalances); err != nil {
-			respondWithError(c, err)
-			return
-		}
+	if err := h.userService.UpdateProfileSettings(userID, update); err != nil {
+		respondWithError(c, err)
+		return
 	}
 
 	user, err := h.userService.GetUserByID(userID)

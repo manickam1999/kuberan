@@ -13,6 +13,7 @@ import { ApiClientError, apiClient } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
 import { useAccounts } from "@/hooks/use-accounts";
 import { useAuth } from "@/hooks/use-auth";
+import { useSetDefaultAccount } from "@/hooks/use-profile";
 import { useCreateSharedExpense } from "@/hooks/use-receivables";
 import {
   MoneyOwedBackSection,
@@ -140,9 +141,8 @@ export function CreateTransactionDialog({
   const createTransaction = useCreateTransaction();
   const createTransfer = useCreateTransfer();
   const createShared = useCreateSharedExpense();
-  const { defaultAccountId: savedDefaultAccountId, setDefaultAccount } =
-    useAuth();
-  const [savingDefault, setSavingDefault] = useState(false);
+  const { defaultAccountId: savedDefaultAccountId } = useAuth();
+  const setDefaultAccount = useSetDefaultAccount();
   const { data: accountsData } = useAccounts({ page_size: 100 });
   const { data: categoriesData } = useCategories({
     page_size: 100,
@@ -156,7 +156,7 @@ export function CreateTransactionDialog({
     a.name.localeCompare(b.name)
   );
   // The account detail page pins its own account; everywhere else fall back to
-  // the user's saved default so the common case needs no dropdown at all.
+  // the user's saved default so the common case needs no account selection.
   const preselectedAccountId =
     defaultAccountId ?? resolveDefaultAccountId(savedDefaultAccountId, accounts);
   const selectedAccountId = accountId || preselectedAccountId;
@@ -213,17 +213,13 @@ export function CreateTransactionDialog({
     }
   }
 
-  async function handleMakeDefault() {
-    if (!selectedAccountId) return;
-    setSavingDefault(true);
-    try {
-      await setDefaultAccount(selectedAccountId);
-      toast.success(`${selectedAccount?.name ?? "Account"} is now your default`);
-    } catch {
-      // setDefaultAccount already surfaced the error
-    } finally {
-      setSavingDefault(false);
-    }
+  function handleMakeDefault() {
+    if (!selectedAccount) return;
+    const name = selectedAccount.name;
+    setDefaultAccount.mutate(selectedAccount.id, {
+      onSuccess: () => toast.success(`${name} is now your default`),
+      onError: (err) => toast.error(getErrorMessage(err)),
+    });
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -458,11 +454,11 @@ export function CreateTransactionDialog({
                     <button
                       type="button"
                       onClick={handleMakeDefault}
-                      disabled={isSubmitting || savingDefault}
+                      disabled={isSubmitting || setDefaultAccount.isPending}
                       className="inline-flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"
                     >
                       <Star className="size-3" />
-                      {savingDefault ? "Saving…" : "Make default"}
+                      {setDefaultAccount.isPending ? "Saving…" : "Make default"}
                     </button>
                   )}
                 </div>

@@ -84,6 +84,7 @@ class UserAPIClient:
         """Get user accounts"""
         response = requests.get(
             f"{self.base_url}/api/v1/accounts",
+            params={"page_size": 100},
             headers=self.headers,
             timeout=10
         )

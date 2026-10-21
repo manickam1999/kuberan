@@ -801,7 +801,7 @@ definitions:
       default_account_id:
         description: |-
           DefaultAccountID sets the account preselected for new transactions;
-          null or "" clears it.
+          null or "" clears it. Must be a UUID otherwise.
         type: string
       hide_balances:
         type: boolean
