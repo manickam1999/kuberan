@@ -22,6 +22,11 @@ mkdir -p backups
 
 echo "==> Building images..."
 $COMPOSE build
+# The oracle sits behind a profile and is only ever started by the host cron
+# job (`compose run`), so the plain build above skips it. Build it explicitly
+# so cron picks up the new image; passing --profile here instead of above
+# avoids overriding the COMPOSE_PROFILES set in .env.prod.
+$COMPOSE --profile oracle build oracle
 
 echo "==> Running database migrations..."
 # Migrations use advisory locks which require a direct connection,
