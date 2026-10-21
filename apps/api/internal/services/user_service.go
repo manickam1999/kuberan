@@ -151,3 +151,34 @@ func (s *userService) UpdateHideBalances(userID string, hide bool) error {
 	}
 	return nil
 }
+
+// UpdateDefaultAccount sets (or, with a nil accountID, clears) the account
+// preselected when the user records a new transaction. The account must belong
+// to the user, be active, and be one that day-to-day spending is recorded
+// against (cash, credit card or debt).
+func (s *userService) UpdateDefaultAccount(userID string, accountID *string) error {
+	if accountID != nil {
+		var account models.Account
+		err := s.db.Where("id = ? AND user_id = ?", *accountID, userID).First(&account).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return apperrors.ErrAccountNotFound
+		}
+		if err != nil {
+			return apperrors.Wrap(apperrors.ErrInternalServer, err)
+		}
+		if !account.IsActive {
+			return apperrors.WithMessage(apperrors.ErrInvalidInput, "default account must be active")
+		}
+		switch account.Type {
+		case models.AccountTypeCash, models.AccountTypeCreditCard, models.AccountTypeDebt:
+		default:
+			return apperrors.WithMessage(apperrors.ErrInvalidInput,
+				"default account must be a cash, credit card or debt account")
+		}
+	}
+
+	if err := s.db.Model(&models.User{}).Where("id = ?", userID).Update("default_account_id", accountID).Error; err != nil {
+		return apperrors.Wrap(apperrors.ErrInternalServer, err)
+	}
+	return nil
+}

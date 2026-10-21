@@ -798,6 +798,11 @@ definitions:
     type: object
   internal_handlers.UpdateProfileSettingsRequest:
     properties:
+      default_account_id:
+        description: |-
+          DefaultAccountID sets the account preselected for new transactions;
+          null or "" clears it.
+        type: string
       hide_balances:
         type: boolean
     type: object
@@ -1420,6 +1425,10 @@ definitions:
       updated_at:
         type: string
       written_off_amount:
+        description: |-
+          WrittenOffAmount is the amount written off by the same settle call
+          (write_off_remainder). Deleting the settlement reverses it together with
+          the payment. Zero for a plain settlement.
         type: integer
     type: object
   kuberan_internal_models.ReceivableStatus:
@@ -2041,6 +2050,11 @@ definitions:
         type: array
       to_date:
         type: string
+      total_count:
+        description: |-
+          TotalCount is the number of expenses with a non-zero effective amount in
+          the range (ignoring the limit), for count and average statistics.
+        type: integer
     type: object
   kuberan_internal_services.TypeSummary:
     properties:
@@ -3978,8 +3992,8 @@ paths:
     patch:
       consumes:
       - application/json
-      description: Update the authenticated user's profile settings (e.g. dashboard
-        balance visibility)
+      description: Update the authenticated user's profile settings (dashboard balance
+        visibility, default transaction account)
       parameters:
       - description: Profile settings to update
         in: body

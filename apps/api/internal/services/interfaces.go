@@ -20,6 +20,7 @@ type UserServicer interface {
 	StoreRefreshTokenHash(userID, tokenHash string) error
 	GetRefreshTokenHash(userID string) (string, error)
 	UpdateHideBalances(userID string, hide bool) error
+	UpdateDefaultAccount(userID string, accountID *string) error
 }
 
 // TelegramUserAuth holds the resolved user info and auth token for bot service communication.

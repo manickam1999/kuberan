@@ -27,6 +27,7 @@ type mockUserService struct {
 	storeRefreshTokenHashFn func(userID string, tokenHash string) error
 	getRefreshTokenHashFn   func(userID string) (string, error)
 	updateHideBalancesFn    func(userID string, hide bool) error
+	updateDefaultAccountFn  func(userID string, accountID *string) error
 }
 
 func (m *mockUserService) CreateUser(email, password, firstName, lastName string) (*models.User, error) {
@@ -85,6 +86,13 @@ func (m *mockUserService) UpdateHideBalances(userID string, hide bool) error {
 	return nil
 }
 
+func (m *mockUserService) UpdateDefaultAccount(userID string, accountID *string) error {
+	if m.updateDefaultAccountFn != nil {
+		return m.updateDefaultAccountFn(userID, accountID)
+	}
+	return nil
+}
+
 type mockAuditService struct{}
 
 func (m *mockAuditService) Log(_, _, _, _, _ string, _ map[string]interface{}) {}
@@ -101,6 +109,7 @@ func setupAuthRouter(handler *AuthHandler) *gin.Engine {
 	r.POST("/auth/register", handler.Register)
 	r.POST("/auth/login", handler.Login)
 	r.GET("/profile", injectUserID("test-user-1"), handler.GetProfile)
+	r.PATCH("/profile", injectUserID("test-user-1"), handler.UpdateProfileSettings)
 	return r
 }
 
@@ -397,6 +406,122 @@ func TestAuthHandler_GetProfile(t *testing.T) {
 		r := setupAuthRouter(handler)
 
 		rec := doRequest(r, "GET", "/profile", "")
+
+		if rec.Code != http.StatusNotFound {
+			t.Fatalf("expected 404, got %d", rec.Code)
+		}
+	})
+}
+
+func TestAuthHandler_UpdateProfileSettings(t *testing.T) {
+	strPtr := func(s string) *string { return &s }
+
+	t.Run("sets the default account and returns it", func(t *testing.T) {
+		var gotAccountID *string
+		hideCalled := false
+		userSvc := &mockUserService{
+			updateDefaultAccountFn: func(_ string, accountID *string) error {
+				gotAccountID = accountID
+				return nil
+			},
+			updateHideBalancesFn: func(_ string, _ bool) error {
+				hideCalled = true
+				return nil
+			},
+			getUserByIDFn: func(id string) (*models.User, error) {
+				return &models.User{Base: models.Base{ID: id}, DefaultAccountID: strPtr("acc-1")}, nil
+			},
+		}
+		r := setupAuthRouter(NewAuthHandler(userSvc, &mockAuditService{}))
+
+		rec := doRequest(r, "PATCH", "/profile", `{"default_account_id":"acc-1"}`)
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+		}
+		if gotAccountID == nil || *gotAccountID != "acc-1" {
+			t.Errorf("expected service called with acc-1, got %v", gotAccountID)
+		}
+		if hideCalled {
+			t.Error("hide_balances was absent and must not be updated")
+		}
+		user := parseJSON(t, rec)["user"].(map[string]interface{})
+		if user["default_account_id"] != "acc-1" {
+			t.Errorf("expected default_account_id acc-1, got %v", user["default_account_id"])
+		}
+	})
+
+	for _, body := range []string{`{"default_account_id":null}`, `{"default_account_id":""}`} {
+		t.Run("clears the default account with "+body, func(t *testing.T) {
+			called := false
+			var gotAccountID *string
+			userSvc := &mockUserService{
+				updateDefaultAccountFn: func(_ string, accountID *string) error {
+					called = true
+					gotAccountID = accountID
+					return nil
+				},
+			}
+			r := setupAuthRouter(NewAuthHandler(userSvc, &mockAuditService{}))
+
+			rec := doRequest(r, "PATCH", "/profile", body)
+
+			if rec.Code != http.StatusOK {
+				t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+			}
+			if !called || gotAccountID != nil {
+				t.Errorf("expected service called with nil, called=%v got=%v", called, gotAccountID)
+			}
+		})
+	}
+
+	t.Run("hide_balances alone leaves the default account untouched", func(t *testing.T) {
+		defaultCalled := false
+		var gotHide *bool
+		userSvc := &mockUserService{
+			updateDefaultAccountFn: func(_ string, _ *string) error {
+				defaultCalled = true
+				return nil
+			},
+			updateHideBalancesFn: func(_ string, hide bool) error {
+				gotHide = &hide
+				return nil
+			},
+		}
+		r := setupAuthRouter(NewAuthHandler(userSvc, &mockAuditService{}))
+
+		rec := doRequest(r, "PATCH", "/profile", `{"hide_balances":true}`)
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+		}
+		if defaultCalled {
+			t.Error("default_account_id was absent and must not be updated")
+		}
+		if gotHide == nil || !*gotHide {
+			t.Errorf("expected hide_balances=true, got %v", gotHide)
+		}
+	})
+
+	t.Run("returns 400 when no setting is provided", func(t *testing.T) {
+		r := setupAuthRouter(NewAuthHandler(&mockUserService{}, &mockAuditService{}))
+
+		rec := doRequest(r, "PATCH", "/profile", `{}`)
+
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("expected 400, got %d", rec.Code)
+		}
+	})
+
+	t.Run("propagates service errors", func(t *testing.T) {
+		userSvc := &mockUserService{
+			updateDefaultAccountFn: func(_ string, _ *string) error {
+				return apperrors.ErrAccountNotFound
+			},
+		}
+		r := setupAuthRouter(NewAuthHandler(userSvc, &mockAuditService{}))
+
+		rec := doRequest(r, "PATCH", "/profile", `{"default_account_id":"missing"}`)
 
 		if rec.Code != http.StatusNotFound {
 			t.Fatalf("expected 404, got %d", rec.Code)

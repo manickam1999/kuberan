@@ -59,9 +59,14 @@ def _extract_account_and_category(text: str, accounts: list, categories: list):
     return ' '.join(words), matched_account, matched_category
 
 
-def _get_default_account(accounts: list):
-    """Get the first active non-investment account."""
+def _get_default_account(accounts: list, preferred_id=None):
+    """Get the user's chosen default account if still usable, else the first
+    active non-investment account."""
     eligible = [a for a in accounts if a.get('type') in ('cash', 'credit_card', 'debt')]
+    if preferred_id:
+        for acc in eligible:
+            if acc.get('id') == preferred_id and acc.get('is_active', True):
+                return acc
     for acc in eligible:
         if acc.get('is_active', True):
             return acc
@@ -230,7 +235,14 @@ def _resolve_user_and_setup(api_client: KuberanAPIClient, telegram_user_id: int,
     user_client = UserAPIClient(api_client.base_url, user_data['auth_token'])
     accounts = user_client.get_accounts()
 
-    default_account = _get_default_account(accounts)
+    try:
+        preferred_id = user_client.get_profile().get('default_account_id')
+    except Exception:
+        # The default is a convenience; never block recording a transaction on it.
+        logger.warning("Failed to fetch profile for default account", exc_info=True)
+        preferred_id = None
+
+    default_account = _get_default_account(accounts, preferred_id)
     if not default_account:
         return None, "No active accounts found. Please create an account in the web app first."
 

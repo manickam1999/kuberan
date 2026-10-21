@@ -319,3 +319,70 @@ func TestCreateUser_password_is_hashed(t *testing.T) {
 		t.Error("password hash should be valid bcrypt")
 	}
 }
+
+func TestUpdateDefaultAccount(t *testing.T) {
+	defaultAccountOf := func(t *testing.T, svc UserServicer, userID string) *string {
+		t.Helper()
+		u, err := svc.GetUserByID(userID)
+		testutil.AssertNoError(t, err)
+		return u.DefaultAccountID
+	}
+
+	t.Run("sets_and_clears", func(t *testing.T) {
+		db := testutil.SetupTestDB(t)
+		defer testutil.TeardownTestDB(t, db)
+		svc := NewUserService(db)
+		user := testutil.CreateTestUser(t, db)
+		account := testutil.CreateTestCreditCardAccount(t, db, user.ID, 0)
+
+		testutil.AssertNoError(t, svc.UpdateDefaultAccount(user.ID, &account.ID))
+		if got := defaultAccountOf(t, svc, user.ID); got == nil || *got != account.ID {
+			t.Fatalf("expected default account %s, got %v", account.ID, got)
+		}
+
+		testutil.AssertNoError(t, svc.UpdateDefaultAccount(user.ID, nil))
+		if got := defaultAccountOf(t, svc, user.ID); got != nil {
+			t.Fatalf("expected default account cleared, got %v", *got)
+		}
+	})
+
+	t.Run("rejects_another_users_account", func(t *testing.T) {
+		db := testutil.SetupTestDB(t)
+		defer testutil.TeardownTestDB(t, db)
+		svc := NewUserService(db)
+		user := testutil.CreateTestUser(t, db)
+		other := testutil.CreateTestUser(t, db)
+		account := testutil.CreateTestCashAccount(t, db, other.ID)
+
+		err := svc.UpdateDefaultAccount(user.ID, &account.ID)
+		testutil.AssertAppError(t, err, "ACCOUNT_NOT_FOUND")
+		if got := defaultAccountOf(t, svc, user.ID); got != nil {
+			t.Fatalf("expected no default account, got %v", *got)
+		}
+	})
+
+	t.Run("rejects_investment_account", func(t *testing.T) {
+		db := testutil.SetupTestDB(t)
+		defer testutil.TeardownTestDB(t, db)
+		svc := NewUserService(db)
+		user := testutil.CreateTestUser(t, db)
+		account := testutil.CreateTestInvestmentAccount(t, db, user.ID)
+
+		err := svc.UpdateDefaultAccount(user.ID, &account.ID)
+		testutil.AssertAppError(t, err, "INVALID_INPUT")
+	})
+
+	t.Run("rejects_inactive_account", func(t *testing.T) {
+		db := testutil.SetupTestDB(t)
+		defer testutil.TeardownTestDB(t, db)
+		svc := NewUserService(db)
+		user := testutil.CreateTestUser(t, db)
+		account := testutil.CreateTestCashAccount(t, db, user.ID)
+		if err := db.Model(account).Update("is_active", false).Error; err != nil {
+			t.Fatalf("deactivate account: %v", err)
+		}
+
+		err := svc.UpdateDefaultAccount(user.ID, &account.ID)
+		testutil.AssertAppError(t, err, "INVALID_INPUT")
+	})
+}
