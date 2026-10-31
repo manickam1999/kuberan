@@ -8071,14 +8071,16 @@ const docTemplate = `{
                 "expense",
                 "transfer",
                 "investment",
-                "reimbursement"
+                "reimbursement",
+                "opening_balance"
             ],
             "x-enum-varnames": [
                 "TransactionTypeIncome",
                 "TransactionTypeExpense",
                 "TransactionTypeTransfer",
                 "TransactionTypeInvestment",
-                "TransactionTypeReimbursement"
+                "TransactionTypeReimbursement",
+                "TransactionTypeOpeningBalance"
             ]
         },
         "kuberan_internal_pagination.PageResponse-kuberan_internal_models_Account": {

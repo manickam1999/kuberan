@@ -61,8 +61,8 @@ func TestCreateCashAccount(t *testing.T) {
 
 		var tx models.Transaction
 		db.Where("account_id = ?", account.ID).First(&tx)
-		if tx.Type != models.TransactionTypeIncome {
-			t.Errorf("expected initial transaction type income, got %s", tx.Type)
+		if tx.Type != models.TransactionTypeOpeningBalance {
+			t.Errorf("expected initial transaction type opening_balance, got %s", tx.Type)
 		}
 		if tx.Amount != 5000 {
 			t.Errorf("expected initial transaction amount 5000, got %d", tx.Amount)

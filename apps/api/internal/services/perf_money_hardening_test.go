@@ -58,7 +58,7 @@ func TestDailySummary_GroupedBucketsAndInitialBalance(t *testing.T) {
 	day3 := time.Date(2026, 3, 3, 23, 30, 0, 0, time.UTC)
 	personal := int64(400)
 	rows := []models.Transaction{
-		{UserID: user.ID, AccountID: acct.ID, Type: models.TransactionTypeIncome, Amount: 5000, Description: "Initial balance", Date: day1},
+		{UserID: user.ID, AccountID: acct.ID, Type: models.TransactionTypeOpeningBalance, Amount: 5000, Description: "Initial balance", Date: day1},
 		{UserID: user.ID, AccountID: acct.ID, Type: models.TransactionTypeIncome, Amount: 1000, Description: "Salary", Date: day1},
 		{UserID: user.ID, AccountID: acct.ID, Type: models.TransactionTypeExpense, Amount: 300, Description: "Lunch", Date: day1},
 		{UserID: user.ID, AccountID: acct.ID, Type: models.TransactionTypeExpense, Amount: 1000, PersonalAmount: &personal, Description: "Shared dinner", Date: day3},

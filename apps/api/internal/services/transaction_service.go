@@ -54,6 +54,10 @@ func (s *transactionService) CreateTransaction(
 	if err := validateTransactionInput(accountID, amount, description); err != nil {
 		return nil, err
 	}
+	// Opening balances are written only by account creation.
+	if transactionType == models.TransactionTypeOpeningBalance {
+		return nil, apperrors.ErrInvalidTransactionType
+	}
 	if date.IsZero() {
 		date = time.Now()
 	}
@@ -364,10 +368,13 @@ func inputsToConditions(conditions []RuleConditionInput) []models.TransactionRul
 }
 
 // reverseType returns the transaction type that undoes the balance effect of t:
-// income→expense, expense→income and reimbursement→expense. Any other type has no
-// single-leg reversal and yields ErrInvalidTransactionType.
+// income→expense, expense→income, reimbursement→expense and opening balance→its
+// reversal. Any other type has no single-leg reversal and yields
+// ErrInvalidTransactionType.
 func reverseType(t models.TransactionType) (models.TransactionType, error) {
 	switch t {
+	case models.TransactionTypeOpeningBalance:
+		return openingBalanceReversal, nil
 	case models.TransactionTypeIncome, models.TransactionTypeReimbursement:
 		return models.TransactionTypeExpense, nil
 	case models.TransactionTypeExpense:
@@ -377,8 +384,9 @@ func reverseType(t models.TransactionType) (models.TransactionType, error) {
 	}
 }
 
-// UpdateTransaction updates an existing income/expense transaction.
-// Transfer, investment and reimbursement transactions cannot be edited.
+// UpdateTransaction updates an existing income/expense transaction, or the
+// amount, date and description of an opening balance. Transfer, investment and
+// reimbursement transactions cannot be edited.
 //
 // It runs in one DB transaction under the D10 lock order (the transaction row,
 // its receivables, then the affected accounts) and moves balances with relative
@@ -406,12 +414,27 @@ func (s *transactionService) UpdateTransaction(userID, transactionID string, upd
 			return apperrors.ErrTransactionNotEditable
 		}
 
-		// If type change requested, reject changes to/from transfer, investment or reimbursement
+		// If type change requested, reject changes to/from transfer, investment,
+		// reimbursement or opening balance
 		if updates.Type != nil {
 			newType := *updates.Type
 			if newType == models.TransactionTypeTransfer || newType == models.TransactionTypeInvestment ||
 				newType == models.TransactionTypeReimbursement {
 				return apperrors.ErrInvalidTypeChange
+			}
+			if (newType == models.TransactionTypeOpeningBalance) != (transaction.Type == models.TransactionTypeOpeningBalance) {
+				return apperrors.WithMessage(apperrors.ErrInvalidTypeChange, "Cannot change a transaction to or from an opening balance")
+			}
+		}
+
+		// An opening balance belongs to its account and is never categorised;
+		// only its amount, date and description can change.
+		if transaction.Type == models.TransactionTypeOpeningBalance {
+			if updates.AccountID != nil && *updates.AccountID != transaction.AccountID {
+				return apperrors.WithMessage(apperrors.ErrInvalidInput, "An opening balance cannot be moved to another account")
+			}
+			if updates.CategoryID != nil && *updates.CategoryID != nil {
+				return apperrors.WithMessage(apperrors.ErrInvalidInput, "An opening balance cannot have a category")
 			}
 		}
 
@@ -678,7 +701,7 @@ func (s *transactionService) DeleteTransaction(userID, transactionID string) err
 
 		accountIDs := []string{transaction.AccountID}
 		switch transaction.Type {
-		case models.TransactionTypeIncome, models.TransactionTypeExpense:
+		case models.TransactionTypeIncome, models.TransactionTypeExpense, models.TransactionTypeOpeningBalance:
 		case models.TransactionTypeTransfer:
 			if transaction.ToAccountID == nil {
 				return apperrors.ErrInvalidTransactionType

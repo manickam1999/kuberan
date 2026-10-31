@@ -17,7 +17,7 @@ func (s *Server) registerTransactionTools() {
 			mcp.WithDescription("Search and list transactions with filters. Returns date, description, amount, category, and account."),
 			mcp.WithString("account_id", mcp.Description("Filter to a specific account ID")),
 			mcp.WithString("category_id", mcp.Description("Filter to a specific category ID")),
-			mcp.WithString("type", mcp.Description("Filter by type: 'income', 'expense', 'transfer', 'investment', or 'reimbursement' (a repayment received for a shared expense)")),
+			mcp.WithString("type", mcp.Description("Filter by type: 'income', 'expense', 'transfer', 'investment', 'reimbursement' (a repayment received for a shared expense), or 'opening_balance' (an account's starting balance, not income)")),
 			mcp.WithString("from_date", mcp.Description("Start date (YYYY-MM-DD)")),
 			mcp.WithString("to_date", mcp.Description("End date (YYYY-MM-DD)")),
 			mcp.WithNumber("min_amount", mcp.Description("Minimum amount in dollars")),
@@ -99,11 +99,11 @@ func (s *Server) handleListTransactions(ctx context.Context, req mcp.CallToolReq
 	if v, ok := args["type"].(string); ok && v != "" {
 		switch models.TransactionType(v) {
 		case models.TransactionTypeIncome, models.TransactionTypeExpense, models.TransactionTypeTransfer,
-			models.TransactionTypeInvestment, models.TransactionTypeReimbursement:
+			models.TransactionTypeInvestment, models.TransactionTypeReimbursement, models.TransactionTypeOpeningBalance:
 			t := models.TransactionType(v)
 			filter.Type = &t
 		default:
-			return mcp.NewToolResultError("invalid type, expected one of: income, expense, transfer, investment, reimbursement"), nil
+			return mcp.NewToolResultError("invalid type, expected one of: income, expense, transfer, investment, reimbursement, opening_balance"), nil
 		}
 	}
 	var res *mcp.CallToolResult
@@ -166,6 +166,8 @@ func transactionNote(t models.Transaction) string {
 	switch {
 	case t.Type == models.TransactionTypeReimbursement:
 		return "Repayment received for a shared expense (not income)"
+	case t.Type == models.TransactionTypeOpeningBalance:
+		return "Opening balance of the account (not income)"
 	case t.PersonalAmount != nil:
 		return sharedExpenseNote(*t.PersonalAmount, t.Amount)
 	}
