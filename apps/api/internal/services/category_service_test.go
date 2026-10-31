@@ -15,7 +15,7 @@ func TestCreateCategory(t *testing.T) {
 		svc := NewCategoryService(db)
 		user := testutil.CreateTestUser(t, db)
 
-		cat, err := svc.CreateCategory(user.ID, "Groceries", models.CategoryTypeExpense, "Food shopping", "cart", "#FF0000", nil)
+		cat, err := svc.CreateCategory(user.ID, "Groceries", models.CategoryTypeExpense, "Food shopping", "shopping-cart", "#FF0000", nil)
 		testutil.AssertNoError(t, err)
 
 		if cat.ID == "" {
@@ -225,7 +225,7 @@ func TestUpdateCategory(t *testing.T) {
 		user := testutil.CreateTestUser(t, db)
 		cat := testutil.CreateTestCategory(t, db, user.ID, models.CategoryTypeExpense)
 
-		updated, err := svc.UpdateCategory(user.ID, cat.ID, "New Name", "New Desc", "star", "#00FF00", nil)
+		updated, err := svc.UpdateCategory(user.ID, cat.ID, "New Name", "New Desc", "gift", "#00FF00", nil)
 		testutil.AssertNoError(t, err)
 
 		if updated.Name != "New Name" {
@@ -234,8 +234,8 @@ func TestUpdateCategory(t *testing.T) {
 		if updated.Description != "New Desc" {
 			t.Errorf("expected description 'New Desc', got %s", updated.Description)
 		}
-		if updated.Icon != "star" {
-			t.Errorf("expected icon 'star', got %s", updated.Icon)
+		if updated.Icon != "gift" {
+			t.Errorf("expected icon 'gift', got %s", updated.Icon)
 		}
 		if updated.Color != "#00FF00" {
 			t.Errorf("expected color '#00FF00', got %s", updated.Color)

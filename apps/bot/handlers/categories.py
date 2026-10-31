@@ -4,7 +4,7 @@ from telegram.constants import ParseMode
 from telegram.ext import ContextTypes
 from api_client import KuberanAPIClient
 from handlers.common import describe_error, resolve_linked_user
-from utils.formatting import esc
+from utils.formatting import display_icon, esc
 
 logger = logging.getLogger(__name__)
 
@@ -20,13 +20,13 @@ def _format_category_tree(categories: list) -> str:
 
     lines = []
     for p in parents:
-        icon = p.get('icon', '')
+        icon = display_icon(p.get('icon', ''))
         prefix = f"{esc(icon)} " if icon else ""
         desc = f" - <i>{esc(p['description'])}</i>" if p.get('description') else ""
         lines.append(f"{prefix}<b>{esc(p['name'])}</b>{desc}")
 
         for child in children_map.get(p['id'], []):
-            child_icon = child.get('icon', '')
+            child_icon = display_icon(child.get('icon', ''))
             child_prefix = f"  {esc(child_icon)} " if child_icon else "  "
             child_desc = f" - <i>{esc(child['description'])}</i>" if child.get('description') else ""
             lines.append(f"{child_prefix}{esc(child['name'])}{child_desc}")
