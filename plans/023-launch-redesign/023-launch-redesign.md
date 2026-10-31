@@ -1,6 +1,32 @@
 # Plan 023 — Launch Redesign
 
-**Status: proposed.** Nothing here is implemented yet.
+**Status: Phase 0 implemented.** Later phases are proposed. Where Phase 0's code differs from the plan below:
+
+- **0.3 steps down, not up.** A new account's few days of snapshots look the same at 6M and 1M (both grouped
+  by day), so a longer range never helps. The chart defaults to 6M and, until the user picks a range, falls back
+  to 1W (hourly), then 1D, while it has fewer than 8 points.
+- **0.5 wasn't a bug.** The empty investment and net-worth charts in the review came from full-page Playwright
+  screenshots, which resize the viewport and restart Recharts' entry animation. The live DOM has the full path at
+  2, 5 and 9 seconds. Nothing was changed, and bug 6 in the Context section is withdrawn.
+- **0.2 includes the picker.** The API now rejects free-text icons, so the category dialogs got a curated icon
+  grid plus a one-emoji field now instead of in Phase 4. Icons are validated on create, and on update only when
+  they change, so categories with legacy free-text icons can still be edited. The bot shows only emoji icons and
+  asks again when a new category's icon isn't a single emoji; it used to cut any text to 2 characters.
+- **0.4 (opening balance)** shipped as migration `000035_add_opening_balance_type`, not `000036`.
+  - The down migration turns every `opening_balance` row back into `income`, which is exactly the old scheme, so
+    no marker column is needed.
+  - The monthly and daily summaries no longer filter on `description != 'Initial balance'`. That filter also hid
+    real income with that name.
+  - An opening balance moves the balance in the account's own sign convention (never inverted), so it is already
+    correct for the credit-card `current_balance` in Phase 1.2. That field itself is still to do.
+- **0.7 also covers** the account page's own type map, the cash-flow card's expense figures and bar, the sankey
+  "Out" total, top-expense amounts, calendar cells and negative day totals. Months and savings with a negative net
+  stay red.
+- **No frontend unit tests.** `apps/web` has no test runner. Adding one (Vitest is the natural fit) is a separate
+  decision. Phase 0 was checked with `tsc`, `next lint`, `next build` and Playwright against a seeded local stack.
+- **Known, unrelated:** `TestSharedExpenseFlow_FullModeLoanAndWriteOffOnSettle` fails on `main` as well. The
+  spending query ends at midnight today, so it misses a transaction created earlier today. The installed
+  golangci-lint 2.5.0 reports 66 issues on `main`; Phase 0 adds none (`--new-from-rev`).
 
 Design references:
 
@@ -49,8 +75,8 @@ The file and line references below were checked against `main` at `8213076`.
    `TransactionTypeIncome` with description `"Initial balance"` (`account_service.go:61-68`). It shows up in Recent
    activity, the sankey ("Uncategorized RM 32,920"), and income totals.
 5. **The net-worth chart defaults to 1W** (`net-worth-chart.tsx:137`). With weekly snapshots that draws one dot.
-6. **The investment value chart rendered no area** despite 26 snapshots (`investment-value-chart.tsx`). The root
-   cause hasn't been traced.
+6. ~~**The investment value chart rendered no area** despite 26 snapshots.~~ Withdrawn: a screenshot artifact
+   (see Status).
 7. **Unformatted numbers.** The calendar shows `-157.7`, and budgets show `386.09%`.
 
 ## Goal
