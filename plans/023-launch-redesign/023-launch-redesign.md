@@ -12,7 +12,8 @@
   grid plus a one-emoji field now instead of in Phase 4. Icons are validated on create, and on update only when
   they change, so categories with legacy free-text icons can still be edited. The bot shows only emoji icons and
   asks again when a new category's icon isn't a single emoji; it used to cut any text to 2 characters.
-- **0.4 (opening balance)** shipped as migration `000035_add_opening_balance_type`, not `000036`.
+- **0.4 (opening balance)** shipped as migration `000037_add_opening_balance_type`: PR #38 (security and
+  performance hardening) took `000035` and `000036`, and this branch is stacked on it.
   - The down migration turns every `opening_balance` row back into `income`, which is exactly the old scheme, so
     no marker column is needed.
   - The monthly and daily summaries no longer filter on `description != 'Initial balance'`. That filter also hid
@@ -24,9 +25,10 @@
   stay red.
 - **No frontend unit tests.** `apps/web` has no test runner. Adding one (Vitest is the natural fit) is a separate
   decision. Phase 0 was checked with `tsc`, `next lint`, `next build` and Playwright against a seeded local stack.
-- **Known, unrelated:** `TestSharedExpenseFlow_FullModeLoanAndWriteOffOnSettle` fails on `main` as well. The
-  spending query ends at midnight today, so it misses a transaction created earlier today. The installed
-  golangci-lint 2.5.0 reports 66 issues on `main`; Phase 0 adds none (`--new-from-rev`).
+- **Stacked on PR #38.** #38 moved the daily and monthly summaries into one grouped query
+  (`services/period_totals.go`), carrying the `description != 'Initial balance'` filter with it; Phase 0 replaces
+  that filter with a type check there, and turns #38's "Initial balance" income fixture into a real opening
+  balance. On top of #38, `./scripts/check-go.sh apps/api` passes in full with CI's golangci-lint v2.15.0.
 
 Design references:
 
@@ -136,12 +138,12 @@ backend tests.
 
 ## Phase 1: Launch-critical backend
 
-Migrations continue from `000034`. Every item updates Swagger, the TypeScript types (`types/models.ts`,
+Migrations continue from `000037` (PR #38 added `000035`–`000036`; Phase 0 added `000037`). Every item updates Swagger, the TypeScript types (`types/models.ts`,
 `types/api.ts`) and the hooks.
 
 ### 1.1 Base currency
 
-- **Migration `000035_add_base_currency_to_users`:** `users.base_currency VARCHAR(3) NOT NULL DEFAULT 'USD'`.
+- **Migration `000038_add_base_currency_to_users`:** `users.base_currency VARCHAR(3) NOT NULL DEFAULT 'USD'`.
   Backfill each user's most common account currency, falling back to `telegram_links.default_currency`, then `USD`.
 - **Register:** `RegisterRequest.base_currency` (`omitempty,iso4217`). The server default comes from the new env
   var `DEFAULT_CURRENCY` (default `USD`).
@@ -184,7 +186,7 @@ Migrations continue from `000034`. Every item updates Swagger, the TypeScript ty
   - rule matching;
   - MCP summaries.
 - **Still included in** account balance and snapshots.
-- **Migration `000036_backfill_opening_balance`:** set `type='opening_balance'` where `type='income'` and
+- **Done in Phase 0 as `000037_add_opening_balance_type`** (see Status). Originally planned as `000036_backfill_opening_balance`: set `type='opening_balance'` where `type='income'` and
   `description='Initial balance'` and `category_id IS NULL`, the transaction was created within 5 seconds of its
   account, and it's the earliest transaction on that account. The down migration reverses exactly those rows
   (tracked through a temporary marker column dropped at the end of the up migration, or recorded in a side table;
@@ -195,7 +197,7 @@ Migrations continue from `000034`. Every item updates Swagger, the TypeScript ty
 
 ### 1.3 Transaction search, notes and source
 
-- **Migration `000037_add_notes_source_to_transactions`:**
+- **Migration `000039_add_notes_source_to_transactions`:**
   - `notes TEXT NOT NULL DEFAULT ''`;
   - `source VARCHAR(20) NOT NULL DEFAULT 'web'`, one of `web | telegram | mcp | rule | import | system`;
   - Postgres only: `CREATE EXTENSION IF NOT EXISTS pg_trgm` and a GIN trigram index on `description`.
@@ -252,7 +254,7 @@ Migrations continue from `000034`. Every item updates Swagger, the TypeScript ty
 
 ### 1.6 MCP change log
 
-- **Migration `000038_add_source_to_audit_logs`:**
+- **Migration `000040_add_source_to_audit_logs`:**
   - `source VARCHAR(20) NOT NULL DEFAULT 'web'` and `client_id VARCHAR(255) NOT NULL DEFAULT ''`;
   - an index on `(user_id, source, created_at DESC)`;
   - backfill: `source='mcp'`, with `client_id` taken from the JSON, where `changes::jsonb->>'via' = 'mcp'`
@@ -526,7 +528,7 @@ These items aren't needed to launch. Each one unhides a piece of UI that was bui
 
 | Area | Files |
 |---|---|
-| Migrations | `000035_add_base_currency_to_users`, `000036_backfill_opening_balance`, `000037_add_notes_source_to_transactions`, `000038_add_source_to_audit_logs`; Phase 5 adds rule stats, `reminders`, `demo_rows`, `securities.region` |
+| Migrations | `000037_add_opening_balance_type` (done), `000038_add_base_currency_to_users`, `000039_add_notes_source_to_transactions`, `000040_add_source_to_audit_logs`; Phase 5 adds rule stats, `reminders`, `demo_rows`, `securities.region` |
 | API models | `user.go`, `transaction.go`, `audit_log.go`, `refresh_session.go` (read only), `transaction_rule.go` |
 | API services | `account_service.go`, `transaction_service.go` (filter, bulk, opening-balance exclusions), analytics and budget services, `audit_service.go`, auth/user service (password, sessions), new `export_service.go` and `status_service.go` |
 | API handlers | `auth_handler.go` (profile, password, sessions), `transaction_handler.go` (search, bulk), `oauth_clients_handler.go` (activity, limits), new `export_handler.go` and `status_handler.go`, `routes.go` |
