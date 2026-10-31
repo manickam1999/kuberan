@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { CategoryIcon } from "@/components/categories/category-icon";
 import { toast } from "sonner";
 import { ApiClientError } from "@/lib/api-client";
 import { useCreateBudget } from "@/hooks/use-budgets";
@@ -166,7 +167,7 @@ export function CreateBudgetDialog({
                   categoryOptions.map((c) => (
                     <SelectItem key={c.id} value={c.id}>
                       <span className="flex items-center gap-2">
-                        {c.icon && <span>{c.icon}</span>}
+                        {c.icon && <CategoryIcon icon={c.icon} name={c.name} />}
                         {c.name}
                       </span>
                     </SelectItem>

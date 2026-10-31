@@ -5,6 +5,7 @@ import Link from "next/link";
 import { ArrowRight, Plus } from "lucide-react";
 import {
   Card,
+  CardAction,
   CardContent,
   CardHeader,
   CardTitle,
@@ -87,18 +88,20 @@ export function BudgetsCard() {
 
   return (
     <Card>
-      <CardHeader className="flex-row items-center justify-between space-y-0">
+      <CardHeader className="items-center">
         <CardTitle className="text-base">Budgets</CardTitle>
-        <Button
-          asChild
-          variant="link"
-          size="sm"
-          className="h-auto p-0 text-muted-foreground"
-        >
-          <Link href="/budgets">
-            View all <ArrowRight className="ml-1 size-3.5" />
-          </Link>
-        </Button>
+        <CardAction className="self-center">
+          <Button
+            asChild
+            variant="link"
+            size="sm"
+            className="h-auto p-0 text-muted-foreground"
+          >
+            <Link href="/budgets">
+              View all <ArrowRight className="ml-1 size-3.5" />
+            </Link>
+          </Button>
+        </CardAction>
       </CardHeader>
       <CardContent className="space-y-4">
         {rows.map(({ budget, progress }) => {
@@ -121,7 +124,7 @@ export function BudgetsCard() {
                 <BudgetProgressBar percentage={percentage} size="sm" />
               </div>
               <span className="w-12 shrink-0 text-right text-xs text-muted-foreground">
-                {formatPercentage(percentage)}
+                {formatPercentage(percentage, 0)}
               </span>
             </div>
           );

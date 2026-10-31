@@ -1,6 +1,7 @@
 "use client";
 
 import { cn } from "@/lib/utils";
+import { CategoryIcon } from "@/components/categories/category-icon";
 import type { Budget, BudgetProgress } from "@/types/models";
 import { DitherFill } from "@/components/charts/dither-fill";
 import type { DitherColor } from "@/components/dither-kit/palette";
@@ -87,7 +88,6 @@ interface CategoryChipProps {
  */
 export function BudgetCategoryChip({ category, className }: CategoryChipProps) {
   const color = category?.color;
-  const label = category?.icon || category?.name?.charAt(0).toUpperCase() || "?";
   return (
     <span
       className={cn(
@@ -99,7 +99,7 @@ export function BudgetCategoryChip({ category, className }: CategoryChipProps) {
         color: color || "var(--muted-foreground)",
       }}
     >
-      {label}
+      <CategoryIcon icon={category?.icon} name={category?.name} />
     </span>
   );
 }

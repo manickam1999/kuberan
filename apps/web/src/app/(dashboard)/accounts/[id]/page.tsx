@@ -18,6 +18,7 @@ import {
   Vault,
   HandCoins,
   Handshake,
+  Flag,
 } from "lucide-react";
 import { useAccount, useUpdateAccount } from "@/hooks/use-accounts";
 import { useAuth } from "@/hooks/use-auth";
@@ -82,7 +83,7 @@ const TRANSACTION_TYPE_CONFIG: Record<
   { label: string; color: string; icon: typeof ArrowUpRight }
 > = {
   income: { label: "Income", color: "text-green-600", icon: ArrowUpRight },
-  expense: { label: "Expense", color: "text-red-600", icon: ArrowDownRight },
+  expense: { label: "Expense", color: "text-foreground", icon: ArrowDownRight },
   transfer: {
     label: "Transfer",
     color: "text-blue-600",
@@ -98,6 +99,12 @@ const TRANSACTION_TYPE_CONFIG: Record<
     label: "Repayment",
     color: "text-emerald-600",
     icon: HandCoins,
+  },
+  // The account's starting balance: not income.
+  opening_balance: {
+    label: "Opening balance",
+    color: "text-muted-foreground",
+    icon: Flag,
   },
 };
 
@@ -519,6 +526,7 @@ export default function AccountDetailPage() {
                     <SelectItem value="expense">Expense</SelectItem>
                     <SelectItem value="transfer">Transfer</SelectItem>
                     <SelectItem value="reimbursement">Repayment</SelectItem>
+                    <SelectItem value="opening_balance">Opening balance</SelectItem>
                     <SelectItem value="investment">Investment</SelectItem>
                   </SelectContent>
                 </Select>

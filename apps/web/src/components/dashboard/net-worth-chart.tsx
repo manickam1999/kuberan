@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ArrowUpRight, ArrowDownRight } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { LazyThemedAreaChart as ThemedAreaChart } from "@/components/charts/lazy";
@@ -132,13 +132,24 @@ function toChartData(
   }));
 }
 
+/**
+ * Periods tried, in order, until the user picks one. 6M is the default; a new
+ * account has only a few days of snapshots, which 6M (grouped by day) shows as
+ * a handful of points, so step down to finer grouping until the line has shape.
+ */
+const AUTO_PERIODS = ["6M", "1W", "1D"] as const;
+const MIN_AUTO_POINTS = 8;
+
 export function NetWorthChart() {
   const { hideBalances } = useAuth();
-  const [period, setPeriod] = useState("1W");
+  // null until the user picks a period; until then AUTO_PERIODS decides.
+  const [chosenPeriod, setChosenPeriod] = useState<string | null>(null);
+  const [autoStep, setAutoStep] = useState(0);
+  const period = chosenPeriod ?? AUTO_PERIODS[autoStep];
 
   const selectedOpt = useMemo(
     () =>
-      PERIOD_OPTIONS.find((p) => p.value === period) ?? PERIOD_OPTIONS[1], // default 1W
+      PERIOD_OPTIONS.find((p) => p.value === period) ?? PERIOD_OPTIONS[4], // default 6M
     [period]
   );
 
@@ -183,6 +194,13 @@ export function NetWorthChart() {
     rawQuery.data,
     selectedOpt.formatLabel,
   ]);
+
+  useEffect(() => {
+    if (chosenPeriod !== null || isLoading || error) return;
+    if (chartData.length < MIN_AUTO_POINTS && autoStep < AUTO_PERIODS.length - 1) {
+      setAutoStep((s) => s + 1);
+    }
+  }, [chosenPeriod, isLoading, error, chartData.length, autoStep]);
 
   const latestNetWorth = useMemo(() => {
     if (isGrouped) {
@@ -260,7 +278,7 @@ export function NetWorthChart() {
                 : `Past ${selectedOpt.label}`}
             </p>
           </div>
-          <Tabs value={period} onValueChange={setPeriod}>
+          <Tabs value={period} onValueChange={setChosenPeriod}>
             <TabsList className="h-8">
               {PERIOD_OPTIONS.map((opt) => (
                 <TabsTrigger key={opt.value} value={opt.value} className="px-2 text-xs">

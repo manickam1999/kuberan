@@ -225,6 +225,7 @@ export default function TransactionsPage() {
             <SelectItem value="expense">Expense</SelectItem>
             <SelectItem value="transfer">Transfer</SelectItem>
             <SelectItem value="reimbursement">Repayment</SelectItem>
+            <SelectItem value="opening_balance">Opening balance</SelectItem>
             <SelectItem value="investment">Investment</SelectItem>
           </SelectContent>
         </Select>
@@ -323,7 +324,7 @@ export default function TransactionsPage() {
                   <span
                     title="Net cash flow for the day (includes repayments)"
                     className={`money text-xs font-medium ${
-                      group.net > 0 ? "text-positive" : "text-negative"
+                      group.net > 0 ? "text-positive" : "text-muted-foreground"
                     }`}
                   >
                     {group.net > 0 ? "+" : "−"}

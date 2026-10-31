@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { CategoryIcon } from "@/components/categories/category-icon";
 import { Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { ApiClientError } from "@/lib/api-client";
@@ -368,7 +369,9 @@ export function RuleDialog({
               <SelectContent>
                 {categories.map((cat) => (
                   <SelectItem key={cat.id} value={cat.id}>
-                    {cat.icon ? `${cat.icon} ` : ""}
+                    {cat.icon && (
+                      <CategoryIcon icon={cat.icon} name={cat.name} className="mr-1" />
+                    )}
                     {cat.name}
                     <span className="ml-1 text-xs text-muted-foreground">
                       {cat.type === "income" ? "Income" : "Expense"}

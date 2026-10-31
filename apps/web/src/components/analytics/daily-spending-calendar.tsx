@@ -10,7 +10,7 @@ import {
 } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useDailySummary } from "@/hooks/use-transactions";
-import { formatCompact } from "@/lib/format";
+import { formatCompactAmount } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 const WEEKDAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -74,7 +74,7 @@ function spanningMonths(
 }
 
 function signedCompact(cents: number, sign: "+" | "-"): string {
-  return `${sign}${formatCompact(cents / 100)}`;
+  return `${sign === "-" ? "\u2212" : "+"}${formatCompactAmount(cents)}`;
 }
 
 /**
@@ -240,7 +240,7 @@ export function DailySpendingCalendar({
                               <span className="size-1.5 rounded-full bg-positive" />
                             )}
                             {expenses > 0 && (
-                              <span className="size-1.5 rounded-full bg-negative" />
+                              <span className="size-1.5 rounded-full bg-muted-foreground" />
                             )}
                           </div>
                         ) : (
@@ -251,7 +251,7 @@ export function DailySpendingCalendar({
                               </span>
                             )}
                             {expenses > 0 && (
-                              <span className="money text-[10px] font-medium text-negative">
+                              <span className="money text-[10px] font-medium text-foreground">
                                 {signedCompact(expenses, "-")}
                               </span>
                             )}

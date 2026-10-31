@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { CategoryIcon } from "@/components/categories/category-icon";
 import { useTopExpenses, useTransaction } from "@/hooks/use-transactions";
 import { useCategories } from "@/hooks/use-categories";
 import { EditTransactionDialog } from "@/components/transactions/edit-transaction-dialog";
@@ -92,7 +93,7 @@ export function TopExpensesList({
 
   return (
     <Card>
-      <CardHeader className="flex-row items-center justify-between gap-3 space-y-0">
+      <CardHeader className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <CardTitle className="text-base">Top expenses</CardTitle>
           <CardDescription>
@@ -164,7 +165,7 @@ export function TopExpensesList({
                       {item.account_name}
                     </span>
                   </span>
-                  <span className="money shrink-0 text-right text-sm font-semibold text-negative">
+                  <span className="money shrink-0 text-right text-sm font-semibold">
                     <ExpenseAmount
                       amount={item.amount}
                       personalAmount={item.personal_amount}
@@ -209,8 +210,10 @@ export function TopExpensesList({
                           color: item.category_color,
                         }}
                       >
-                        {item.category_icon ||
-                          item.category_name.charAt(0).toUpperCase()}
+                        <CategoryIcon
+                          icon={item.category_icon}
+                          name={item.category_name}
+                        />
                       </span>
                       <span className="truncate text-sm">
                         {item.category_name}
@@ -223,7 +226,7 @@ export function TopExpensesList({
                   <TableCell className="text-muted-foreground">
                     {formatDate(item.date)}
                   </TableCell>
-                  <TableCell className="money text-right font-semibold text-negative">
+                  <TableCell className="money text-right font-semibold">
                     <ExpenseAmount
                       amount={item.amount}
                       personalAmount={item.personal_amount}

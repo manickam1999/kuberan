@@ -92,11 +92,25 @@ export function formatCompact(value: number): string {
 }
 
 /**
+ * Format an amount for tight spaces such as calendar cells, without a
+ * currency symbol: one decimal under 10 ("6.5"), whole units under 1,000
+ * ("158"), compact above ("3.2K").
+ * @param cents - Amount in cents; the sign is ignored
+ */
+export function formatCompactAmount(cents: number): string {
+  const units = Math.abs(cents) / 100;
+  if (units < 10) return String(Math.round(units * 10) / 10);
+  if (units < 1000) return Math.round(units).toLocaleString("en-US");
+  return formatCompact(units);
+}
+
+/**
  * Format a numeric percentage value.
  * @param value - Percentage value (e.g., 65.5 = "65.50%")
+ * @param fractionDigits - Decimal places (default 2; budgets use 0)
  */
-export function formatPercentage(value: number): string {
-  return `${value.toFixed(2)}%`;
+export function formatPercentage(value: number, fractionDigits = 2): string {
+  return `${value.toFixed(fractionDigits)}%`;
 }
 
 /**

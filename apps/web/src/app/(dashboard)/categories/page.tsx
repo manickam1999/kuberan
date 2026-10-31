@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { CategoryIcon } from "@/components/categories/category-icon";
 import { Pencil, Plus, Trash2, CornerDownRight } from "lucide-react";
 import { useCategories } from "@/hooks/use-categories";
 import { Button } from "@/components/ui/button";
@@ -64,7 +65,7 @@ function CategoryRow({
             color: category.color || "var(--muted-foreground)",
           }}
         >
-          {category.icon || category.name.charAt(0).toUpperCase()}
+          <CategoryIcon icon={category.icon} name={category.name} />
         </span>
         <div className="min-w-0">
           <p className="truncate text-sm font-medium">{category.name}</p>

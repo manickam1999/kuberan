@@ -113,8 +113,13 @@ export function EditTransactionDialog({
   const isSaving = updateTransaction.isPending;
   const isDeleting = deleteTransaction.isPending;
   const isEditable =
-    transaction?.type === "income" || transaction?.type === "expense";
+    transaction?.type === "income" ||
+    transaction?.type === "expense" ||
+    transaction?.type === "opening_balance";
   const isReimbursement = transaction?.type === "reimbursement";
+  // Opening balances keep their account and are never categorised; only the
+  // amount, date and note can change.
+  const isOpeningBalance = transaction?.type === "opening_balance";
 
   // The list row may be stale after receivables are edited or repaid; the
   // detail query is invalidated by those mutations, so prefer it.
@@ -273,13 +278,17 @@ export function EditTransactionDialog({
             <DialogTitle>
               {isReimbursement
                 ? "Repayment"
-                : isEditable
-                  ? "Edit Transaction"
-                  : "Transaction Details"}
+                : isOpeningBalance
+                  ? "Opening balance"
+                  : isEditable
+                    ? "Edit Transaction"
+                    : "Transaction Details"}
             </DialogTitle>
             <DialogDescription>
               {isReimbursement
                 ? "A repayment received against money owed to you."
+                : isOpeningBalance
+                ? "What the account held when you added it. It sets the starting balance and isn't counted as income."
                 : isEditable
                 ? "Update transaction details."
                 : "Transfer and investment transactions cannot be edited. Delete and recreate if needed."}
@@ -299,48 +308,52 @@ export function EditTransactionDialog({
               onSubmit={handleSubmit}
               className="flex flex-col gap-4"
             >
-              {/* Type segmented control */}
-              <div className="grid grid-cols-2 gap-1 rounded-xl bg-muted p-1">
-                {[
-                  {
-                    value: "expense" as const,
-                    label: "Expense",
-                    icon: ArrowDownRight,
-                    activeText: "text-negative",
-                  },
-                  {
-                    value: "income" as const,
-                    label: "Income",
-                    icon: ArrowUpRight,
-                    activeText: "text-positive",
-                  },
-                ].map((opt) => {
-                  const active = type === opt.value;
-                  const Icon = opt.icon;
-                  return (
-                    <button
-                      key={opt.value}
-                      type="button"
-                      onClick={() => handleTypeChange(opt.value)}
-                      disabled={isSaving || (isShared && opt.value !== "expense")}
-                      title={
-                        isShared && opt.value !== "expense"
-                          ? "Remove the money owed back to change the type"
-                          : undefined
-                      }
-                      className={cn(
-                        "flex items-center justify-center gap-1.5 rounded-lg px-2 py-2 text-sm font-medium transition-all disabled:opacity-50",
-                        active
-                          ? cn("bg-background shadow-sm", opt.activeText)
-                          : "text-muted-foreground hover:text-foreground"
-                      )}
-                    >
-                      <Icon className="size-4" />
-                      {opt.label}
-                    </button>
-                  );
-                })}
-              </div>
+              {!isOpeningBalance && (
+                <>
+                  {/* Type segmented control */}
+                  <div className="grid grid-cols-2 gap-1 rounded-xl bg-muted p-1">
+                    {[
+                      {
+                        value: "expense" as const,
+                        label: "Expense",
+                        icon: ArrowDownRight,
+                        activeText: "text-negative",
+                      },
+                      {
+                        value: "income" as const,
+                        label: "Income",
+                        icon: ArrowUpRight,
+                        activeText: "text-positive",
+                      },
+                    ].map((opt) => {
+                      const active = type === opt.value;
+                      const Icon = opt.icon;
+                      return (
+                        <button
+                          key={opt.value}
+                          type="button"
+                          onClick={() => handleTypeChange(opt.value)}
+                          disabled={isSaving || (isShared && opt.value !== "expense")}
+                          title={
+                            isShared && opt.value !== "expense"
+                              ? "Remove the money owed back to change the type"
+                              : undefined
+                          }
+                          className={cn(
+                            "flex items-center justify-center gap-1.5 rounded-lg px-2 py-2 text-sm font-medium transition-all disabled:opacity-50",
+                            active
+                              ? cn("bg-background shadow-sm", opt.activeText)
+                              : "text-muted-foreground hover:text-foreground"
+                          )}
+                        >
+                          <Icon className="size-4" />
+                          {opt.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </>
+              )}
 
               {/* Amount */}
               <div className="flex flex-col gap-1.5">
@@ -361,59 +374,67 @@ export function EditTransactionDialog({
                 />
               </div>
 
-              {/* Account */}
-              <div className="flex flex-col gap-1.5">
-                <Label htmlFor="edit-tx-account">Account</Label>
-                <Select
-                  value={accountId}
-                  onValueChange={setAccountId}
-                  disabled={isSaving}
-                >
-                  <SelectTrigger id="edit-tx-account" className="w-full">
-                    <SelectValue placeholder="Select account" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {accounts.map((a) => (
-                      <SelectItem key={a.id} value={a.id}>
-                        {a.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+              {!isOpeningBalance && (
+                <>
+                  {/* Account */}
+                  <div className="flex flex-col gap-1.5">
+                    <Label htmlFor="edit-tx-account">Account</Label>
+                    <Select
+                      value={accountId}
+                      onValueChange={setAccountId}
+                      disabled={isSaving}
+                    >
+                      <SelectTrigger id="edit-tx-account" className="w-full">
+                        <SelectValue placeholder="Select account" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {accounts.map((a) => (
+                          <SelectItem key={a.id} value={a.id}>
+                            {a.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </>
+              )}
 
-              {/* Category */}
-              <div className="flex flex-col gap-1.5">
-                <Label htmlFor="edit-tx-category">Category</Label>
-                <Select
-                  value={categoryId}
-                  onValueChange={setCategoryId}
-                  disabled={isSaving}
-                >
-                  <SelectTrigger id="edit-tx-category" className="w-full">
-                    <SelectValue placeholder="Select category (optional)" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">No category</SelectItem>
-                    {categories.map((cat) => (
-                      <SelectItem key={cat.id} value={cat.id}>
-                        {cat.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="h-auto self-start px-0 text-xs text-muted-foreground hover:bg-transparent hover:text-foreground"
-                  onClick={handleCreateRule}
-                  disabled={isSaving}
-                >
-                  <Wand2 className="size-3.5" />
-                  Create a rule to auto-categorize similar
-                </Button>
-              </div>
+              {!isOpeningBalance && (
+                <>
+                  {/* Category */}
+                  <div className="flex flex-col gap-1.5">
+                    <Label htmlFor="edit-tx-category">Category</Label>
+                    <Select
+                      value={categoryId}
+                      onValueChange={setCategoryId}
+                      disabled={isSaving}
+                    >
+                      <SelectTrigger id="edit-tx-category" className="w-full">
+                        <SelectValue placeholder="Select category (optional)" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">No category</SelectItem>
+                        {categories.map((cat) => (
+                          <SelectItem key={cat.id} value={cat.id}>
+                            {cat.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-auto self-start px-0 text-xs text-muted-foreground hover:bg-transparent hover:text-foreground"
+                      onClick={handleCreateRule}
+                      disabled={isSaving}
+                    >
+                      <Wand2 className="size-3.5" />
+                      Create a rule to auto-categorize similar
+                    </Button>
+                  </div>
+                </>
+              )}
 
               {/* Date */}
               <div className="flex flex-col gap-1.5">

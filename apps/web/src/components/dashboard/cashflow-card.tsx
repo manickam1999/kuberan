@@ -110,7 +110,7 @@ export function CashflowCard({
           </div>
           <div className="flex items-baseline justify-between gap-2 @md:block">
             <p className="text-xs text-muted-foreground">Expenses</p>
-            <p className="money text-base font-semibold text-negative @md:mt-0.5 @md:text-lg">
+            <p className="money text-base font-semibold @md:mt-0.5 @md:text-lg">
               {formatCurrency(expenses, undefined, hideBalances)}
             </p>
           </div>
@@ -137,9 +137,9 @@ export function CashflowCard({
               {isDither && <DitherFill color="green" />}
             </div>
             <div
-              className={`relative h-full flex-1 overflow-hidden ${isDither ? "" : "bg-negative"}`}
+              className={`relative h-full flex-1 overflow-hidden ${isDither ? "" : "bg-muted-foreground/45"}`}
             >
-              {isDither && <DitherFill color="red" />}
+              {isDither && <DitherFill color="grey" />}
             </div>
           </div>
           {savingsRate !== null && (
@@ -194,7 +194,7 @@ export function CashflowCard({
                       </div>
                       <div className="flex items-center justify-between gap-4">
                         <span className="text-muted-foreground">Expenses</span>
-                        <span className="money text-negative">
+                        <span className="money">
                           {formatCurrency(m.expenses, undefined, hideBalances)}
                         </span>
                       </div>
