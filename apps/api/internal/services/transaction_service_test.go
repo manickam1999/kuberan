@@ -1622,7 +1622,7 @@ func TestGetMonthlySummary(t *testing.T) {
 		txSvc := NewTransactionService(db, acctSvc, nil)
 		user := testutil.CreateTestUser(t, db)
 
-		// CreateCashAccount with initial balance creates an income transaction with description "Initial balance"
+		// CreateCashAccount with an initial balance writes an opening_balance transaction
 		account, err := acctSvc.CreateCashAccount(user.ID, "Savings", "", "USD", 50000)
 		testutil.AssertNoError(t, err)
 
@@ -1857,7 +1857,7 @@ func TestGetDailySummary(t *testing.T) {
 		}
 	})
 
-	t.Run("excludes_initial_balance_from_income", func(t *testing.T) {
+	t.Run("excludes_opening_balance_from_income", func(t *testing.T) {
 		db := testutil.SetupTestDB(t)
 		defer testutil.TeardownTestDB(t, db)
 		acctSvc := NewAccountService(db)
@@ -1865,14 +1865,17 @@ func TestGetDailySummary(t *testing.T) {
 		user := testutil.CreateTestUser(t, db)
 		account := testutil.CreateTestCashAccountWithBalance(t, db, user.ID, 100000)
 
-		_, err := txSvc.CreateTransaction(user.ID, account.ID, nil, models.TransactionTypeIncome, 100000, "Initial balance", time.Date(2026, 2, 1, 9, 0, 0, 0, time.UTC))
-		testutil.AssertNoError(t, err)
+		opening := &models.Transaction{
+			UserID: user.ID, AccountID: account.ID, Type: models.TransactionTypeOpeningBalance,
+			Amount: 100000, Description: "Initial balance", Date: time.Date(2026, 2, 1, 9, 0, 0, 0, time.UTC),
+		}
+		testutil.AssertNoError(t, db.Create(opening).Error)
 
 		result, err := txSvc.GetDailySummary(user.ID, from, to)
 		testutil.AssertNoError(t, err)
 
 		if result[0].Income != 0 {
-			t.Errorf("expected initial balance excluded from income, got %d", result[0].Income)
+			t.Errorf("expected opening balance excluded from income, got %d", result[0].Income)
 		}
 	})
 

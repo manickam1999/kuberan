@@ -8,6 +8,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { isValidCategoryIcon } from "@/lib/category-icons";
+import { CategoryIconPicker } from "@/components/categories/category-icon-picker";
 import { ColorPalette } from "@/components/ui/color-palette";
 import {
   Dialog,
@@ -105,8 +107,8 @@ export function EditCategoryDialog({
       setError("Description must be 500 characters or less");
       return;
     }
-    if (icon.length > 50) {
-      setError("Icon must be 50 characters or less");
+    if (icon !== (category.icon ?? "") && !isValidCategoryIcon(icon)) {
+      setError("Icon must be a single emoji or one of the icons shown");
       return;
     }
 
@@ -188,13 +190,11 @@ export function EditCategoryDialog({
 
           <div className="flex flex-col gap-2">
             <Label htmlFor="edit-cat-icon">Icon</Label>
-            <Input
+            <CategoryIconPicker
               id="edit-cat-icon"
-              placeholder="e.g. 🛒 or food"
               value={icon}
-              onChange={(e) => setIcon(e.target.value)}
+              onChange={setIcon}
               disabled={isSubmitting}
-              maxLength={50}
             />
           </div>
 

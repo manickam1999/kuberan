@@ -32,10 +32,8 @@ func TestServicesEnforceTextLimits(t *testing.T) {
 			_, err := e.cat.CreateCategory(e.user.ID, long(n), models.CategoryTypeExpense, "", "", "", nil)
 			return err
 		}, MaxNameLen},
-		{"category icon", func(_ *testing.T, e textEnv, n int) error {
-			_, err := e.cat.CreateCategory(e.user.ID, "Food", models.CategoryTypeExpense, "", long(n), "", nil)
-			return err
-		}, MaxIconLen},
+		// Category icons have stricter content rules than this length limit
+		// (an emoji or a named icon); see category_icons_test.go.
 		{"category update description", func(t *testing.T, e textEnv, n int) error {
 			c := testutil.CreateTestCategory(t, e.db, e.user.ID, models.CategoryTypeExpense)
 			_, err := e.cat.UpdateCategory(e.user.ID, c.ID, "", long(n), "", "", nil)

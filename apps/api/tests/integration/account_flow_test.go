@@ -37,8 +37,8 @@ func TestAccountFlow_CreateWithInitialBalanceAndTransactions(t *testing.T) {
 	}
 	txData := txResult["data"].([]interface{})
 	initialTx := txData[0].(map[string]interface{})
-	if initialTx["type"] != string(models.TransactionTypeIncome) {
-		t.Errorf("expected initial tx type 'income', got %v", initialTx["type"])
+	if initialTx["type"] != string(models.TransactionTypeOpeningBalance) {
+		t.Errorf("expected initial tx type 'opening_balance', got %v", initialTx["type"])
 	}
 	if initialTx["amount"].(float64) != 10000 {
 		t.Errorf("expected initial tx amount 10000, got %v", initialTx["amount"])

@@ -12,6 +12,7 @@ import { formatCurrency, formatDate } from "@/lib/format";
 import { accountVisual, transactionVisual } from "@/lib/domain-visuals";
 import {
   Card,
+  CardAction,
   CardContent,
   CardHeader,
   CardTitle,
@@ -51,18 +52,20 @@ function SectionCardHeader({
   href: string;
 }) {
   return (
-    <CardHeader className="flex-row items-center justify-between space-y-0">
+    <CardHeader className="items-center">
       <CardTitle className="text-base">{title}</CardTitle>
-      <Button
-        asChild
-        variant="link"
-        size="sm"
-        className="h-auto p-0 text-muted-foreground"
-      >
-        <Link href={href}>
-          View all <ArrowRight className="ml-1 size-3.5" />
-        </Link>
-      </Button>
+      <CardAction className="self-center">
+        <Button
+          asChild
+          variant="link"
+          size="sm"
+          className="h-auto p-0 text-muted-foreground"
+        >
+          <Link href={href}>
+            View all <ArrowRight className="ml-1 size-3.5" />
+          </Link>
+        </Button>
+      </CardAction>
     </CardHeader>
   );
 }

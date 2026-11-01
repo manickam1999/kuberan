@@ -53,9 +53,9 @@ type periodTotal struct {
 
 // periodTotals sums a user's income and effective expenses between start and
 // end (inclusive) in one grouped query and returns them keyed by UTC bucket
-// (goLayout format). Semantics match the per-bucket queries it replaces:
-// income excludes "Initial balance" rows and sums the raw amount, expenses sum
-// effectiveAmountSQL. When includeIncome is false only expenses are read.
+// (goLayout format). Income sums the raw amount and expenses sum
+// effectiveAmountSQL; opening balances have their own type, so they are never
+// counted as income. When includeIncome is false only expenses are read.
 //
 // On Postgres the bucketing happens in SQL; on other dialects (SQLite in tests)
 // rows are grouped by their exact timestamp and bucketed in Go.
@@ -82,8 +82,8 @@ func periodTotals(db *gorm.DB, userID string, start, end time.Time, g periodGran
 			models.TransactionTypeExpense).
 		Where("user_id = ? AND deleted_at IS NULL AND date BETWEEN ? AND ?", userID, start, end)
 	if includeIncome {
-		q = q.Where("(type = ? OR (type = ? AND description != ?))",
-			models.TransactionTypeExpense, models.TransactionTypeIncome, "Initial balance")
+		q = q.Where("type IN ?",
+			[]models.TransactionType{models.TransactionTypeExpense, models.TransactionTypeIncome})
 	} else {
 		q = q.Where("type = ?", models.TransactionTypeExpense)
 	}

@@ -37,6 +37,9 @@ func (s *categoryService) CreateCategory(
 	if err := validateCategoryText(name, description, icon); err != nil {
 		return nil, err
 	}
+	if err := ValidateCategoryIcon(icon); err != nil {
+		return nil, err
+	}
 
 	// Check if a category with the same name already exists for this user
 	var count int64
@@ -147,6 +150,15 @@ func (s *categoryService) UpdateCategory(
 	category, err := s.GetCategoryByID(userID, categoryID)
 	if err != nil {
 		return nil, err
+	}
+
+	// Only a changed icon is validated: categories saved before icons were
+	// restricted may hold free text, and the edit form sends the stored value
+	// back unchanged when the user edits another field.
+	if icon != "" && icon != category.Icon {
+		if err := ValidateCategoryIcon(icon); err != nil {
+			return nil, err
+		}
 	}
 
 	// If parentID is provided, check that it exists, belongs to the user, and is not the category itself

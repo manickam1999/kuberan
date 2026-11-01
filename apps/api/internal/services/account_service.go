@@ -62,7 +62,7 @@ func (s *accountService) CreateCashAccount(userID, name, description, currency s
 			transaction := &models.Transaction{
 				UserID:      userID,
 				AccountID:   account.ID,
-				Type:        models.TransactionTypeIncome,
+				Type:        models.TransactionTypeOpeningBalance,
 				Amount:      initialBalance,
 				Description: "Initial balance",
 				Date:        time.Now(),
@@ -368,13 +368,25 @@ func isLiabilityAccount(t models.AccountType) bool {
 	return t == models.AccountTypeCreditCard || t == models.AccountTypeDebt
 }
 
+// openingBalanceReversal is a pseudo-type, never stored, that undoes an
+// opening balance. An opening balance has no income/expense counterpart whose
+// balance effect is its exact opposite on every account type, so it gets its
+// own reversal.
+const openingBalanceReversal models.TransactionType = "opening_balance_reversal"
+
 // balanceDelta returns the signed change to an account's balance for a
 // transaction of the given type. Income and reimbursement credit the account,
-// expense debits it; liability accounts (credit_card, debt) are inverted. The
-// bool is false for types that do not have a single-leg balance effect.
+// expense debits it; liability accounts (credit_card, debt) are inverted. An
+// opening balance is the account's starting balance in its own sign
+// convention, so it is never inverted. The bool is false for types that do not
+// have a single-leg balance effect.
 func balanceDelta(accountType models.AccountType, txnType models.TransactionType, amount int64) (int64, bool) {
 	var delta int64
 	switch txnType {
+	case models.TransactionTypeOpeningBalance:
+		return amount, true
+	case openingBalanceReversal:
+		return -amount, true
 	case models.TransactionTypeIncome, models.TransactionTypeReimbursement:
 		delta = amount
 	case models.TransactionTypeExpense:
@@ -392,7 +404,8 @@ func balanceDelta(accountType models.AccountType, txnType models.TransactionType
 // with a relative SQL update (balance = balance + delta) instead of writing an
 // absolute value, so it never overwrites a concurrent change. The caller passes
 // the account's type (it already holds the locked account row), which avoids a
-// re-read. Only income, expense and reimbursement are supported. This is the
+// re-read. Only income, expense, reimbursement and opening balance (plus its
+// reversal) are supported. This is the
 // only way account balances are changed after creation (plan 021, D10): callers
 // lock the account row inside their DB transaction first (lockAccounts).
 func (s *accountService) ApplyBalanceDelta(tx *gorm.DB, accountID string, accountType models.AccountType, txnType models.TransactionType, amount int64) error {

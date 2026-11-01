@@ -15,6 +15,12 @@ const (
 	// receivable. It is created only by the server (never accepted from clients),
 	// is not income, and cannot be edited or deleted directly (plan 021).
 	TransactionTypeReimbursement TransactionType = "reimbursement"
+
+	// TransactionTypeOpeningBalance is an account's starting balance, written
+	// when the account is created. It moves the balance but is not income or
+	// spending, so every income/expense figure excludes it. Clients can edit
+	// its amount, date and description, or delete it, but never create one.
+	TransactionTypeOpeningBalance TransactionType = "opening_balance"
 )
 
 // Transaction represents a financial transaction in the system

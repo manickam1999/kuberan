@@ -5,6 +5,7 @@ import {
   Banknote,
   HandCoins,
   CreditCard,
+  Flag,
   Landmark,
   TrendingUp,
   Vault,
@@ -89,11 +90,13 @@ export const TRANSACTION_VISUALS: Record<TransactionType, TransactionVisual> = {
     chip: "bg-positive-muted text-positive",
     sign: "+",
   },
+  // Spending is normal, so it reads in the body colour; red is kept for
+  // states that need attention (over budget, overdue, errors).
   expense: {
     label: "Expense",
     icon: ArrowDownRight,
-    text: "text-negative",
-    chip: "bg-negative-muted text-negative",
+    text: "text-foreground",
+    chip: "bg-muted text-muted-foreground",
     sign: "-",
   },
   transfer: {
@@ -117,6 +120,14 @@ export const TRANSACTION_VISUALS: Record<TransactionType, TransactionVisual> = {
     text: "text-positive",
     chip: "bg-positive-muted text-positive",
     sign: "+",
+  },
+  // An account's starting balance: moves the balance, but isn't income.
+  opening_balance: {
+    label: "Opening balance",
+    icon: Flag,
+    text: "text-muted-foreground",
+    chip: "bg-muted text-muted-foreground",
+    sign: "",
   },
 };
 

@@ -163,7 +163,7 @@ func TestSharedExpenseFlow_FullLifecycle(t *testing.T) {
 	}
 	f.wantBalance(acct, 96000)
 	monthly := f.call("GET", "/api/v1/transactions/monthly-summary?months=1", "", http.StatusOK)["data"].([]interface{})[0].(map[string]interface{})
-	// The $1000 "Initial balance" income is excluded by the report; the repayment must not appear.
+	// The $1000 opening balance is not income; the repayment must not appear either.
 	if num(monthly, "income") != 0 || num(monthly, "expenses") != 2000 {
 		t.Errorf("monthly = %v, want income 0 expenses 2000", monthly)
 	}

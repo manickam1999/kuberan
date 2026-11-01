@@ -200,7 +200,7 @@ export function CashflowSankeyCard(props: CashflowSankeyCardProps) {
               </div>
               <div>
                 <p className="text-xs text-muted-foreground">Out</p>
-                <p className="money text-sm font-semibold text-negative">
+                <p className="money text-sm font-semibold">
                   {money(data.total_expenses)}
                 </p>
               </div>

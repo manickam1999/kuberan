@@ -22,7 +22,7 @@ func (s *Server) registerCategoryWriteTools() {
 			mcp.WithString("type", mcp.Required(), mcp.Enum("income", "expense"), mcp.Description("'income' or 'expense'")),
 			mcp.WithString("description", mcp.Description("Description (max 500 characters)")),
 			mcp.WithString("parent_id", mcp.Description("Parent category ID, to create a subcategory")),
-			mcp.WithString("icon", mcp.Description("Icon name (max 50 characters)")),
+			mcp.WithString("icon", mcp.Description("A single emoji, or an icon name such as utensils, shopping-cart, car, house, zap, plane, gift or briefcase")),
 			mcp.WithString("color", mcp.Description("Color as #RGB or #RRGGBB")),
 		),
 		categoriesWriteScope, s.prepareCreateCategory,
@@ -36,7 +36,7 @@ func (s *Server) registerCategoryWriteTools() {
 			mcp.WithString("name", mcp.Description("New name (max 100 characters)")),
 			mcp.WithString("description", mcp.Description("New description (max 500 characters)")),
 			mcp.WithString("parent_id", mcp.Description("New parent category ID")),
-			mcp.WithString("icon", mcp.Description("New icon name (max 50 characters)")),
+			mcp.WithString("icon", mcp.Description("New icon: a single emoji, or an icon name such as utensils, shopping-cart, car, house, zap, plane, gift or briefcase")),
 			mcp.WithString("color", mcp.Description("New color as #RGB or #RRGGBB")),
 		),
 		categoriesWriteScope, s.prepareUpdateCategory,
@@ -71,6 +71,9 @@ func parseCategoryFields(args map[string]interface{}) (categoryFields, *mcp.Call
 	}
 	if res := checkLength("icon", f.Icon, services.MaxIconLen); res != nil {
 		return f, res
+	}
+	if err := services.ValidateCategoryIcon(f.Icon); err != nil {
+		return f, mcp.NewToolResultError(serviceErrorMessage(err))
 	}
 	if f.Color != "" && !validator.IsHexColor(f.Color) {
 		return f, mcp.NewToolResultError("color must be #RGB or #RRGGBB")

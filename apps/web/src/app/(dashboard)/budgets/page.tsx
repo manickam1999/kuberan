@@ -75,7 +75,7 @@ function BudgetCard({
             {formatCurrency(budget.amount)}
           </span>
           <span className="text-xs text-muted-foreground">
-            {formatPercentage(percentage)}
+            {formatPercentage(percentage, 0)}
           </span>
         </div>
         <BudgetProgressBar percentage={percentage} />

@@ -76,7 +76,8 @@ export type TransactionType =
   | "expense"
   | "transfer"
   | "investment"
-  | "reimbursement";
+  | "reimbursement"
+  | "opening_balance";
 
 export interface Transaction extends BaseModel {
   user_id: string; // UUIDv7
