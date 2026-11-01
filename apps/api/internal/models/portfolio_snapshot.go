@@ -12,8 +12,8 @@ import (
 // This is immutable time-series data — no Base embed, no soft deletes.
 type PortfolioSnapshot struct {
 	ID                  string    `gorm:"type:uuid;primaryKey" json:"id"`
-	UserID              string    `gorm:"type:uuid;not null" json:"user_id"`
-	RecordedAt          time.Time `gorm:"not null" json:"recorded_at"`
+	UserID              string    `gorm:"type:uuid;not null;uniqueIndex:uq_portfolio_snapshots_user_recorded,priority:1" json:"user_id"`
+	RecordedAt          time.Time `gorm:"not null;uniqueIndex:uq_portfolio_snapshots_user_recorded,priority:2" json:"recorded_at"`
 	TotalNetWorth       int64     `gorm:"type:bigint;not null" json:"total_net_worth"`
 	CashBalance         int64     `gorm:"type:bigint;not null" json:"cash_balance"`
 	InvestmentValue     int64     `gorm:"type:bigint;not null" json:"investment_value"`

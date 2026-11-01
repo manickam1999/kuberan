@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { headers } from "next/headers";
 import { Geist, Geist_Mono } from "next/font/google";
 import localFont from "next/font/local";
 import { ThemeProvider } from "@/providers/theme-provider";
@@ -30,6 +31,9 @@ const geistPixel = localFont({
   variable: "--font-geist-pixel-square",
   weight: "500",
   display: "swap",
+  // Only the opt-in dither chart theme uses it, so don't spend a preload on
+  // every page load.
+  preload: false,
   fallback: ["Geist Mono", "ui-monospace", "monospace"],
 });
 
@@ -38,21 +42,29 @@ export const metadata: Metadata = {
   description: "Personal finance tracker",
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  // Per-request CSP nonce set by the middleware. Reading headers() makes every
+  // page dynamic, which a nonce-based CSP requires anyway.
+  const nonce = (await headers()).get("x-nonce") ?? undefined;
+
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
         {/* Apply the persisted chart theme before paint to avoid a flash. */}
-        <script dangerouslySetInnerHTML={{ __html: CHART_THEME_INIT_SCRIPT }} />
+        <script
+          nonce={nonce}
+          suppressHydrationWarning
+          dangerouslySetInnerHTML={{ __html: CHART_THEME_INIT_SCRIPT }}
+        />
       </head>
       <body
         className={`${geistSans.variable} ${geistMono.variable} ${geistPixel.variable} antialiased`}
       >
-        <ThemeProvider>
+        <ThemeProvider nonce={nonce}>
           <ChartThemeProvider>
             <QueryProvider>
               <AuthProvider>

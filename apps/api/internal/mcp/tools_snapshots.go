@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/mark3labs/mcp-go/mcp"
 )
@@ -31,22 +30,21 @@ func (s *Server) handleGetNetWorthHistory(ctx context.Context, req mcp.CallToolR
 	}
 
 	args := req.GetArguments()
-	fromStr, _ := args["from_date"].(string)
-	toStr, _ := args["to_date"].(string)
-
-	from, err := time.Parse("2006-01-02", fromStr)
-	if err != nil {
-		return mcp.NewToolResultError("invalid from_date format, expected YYYY-MM-DD"), nil
-	}
-	to, err := time.Parse("2006-01-02", toStr)
-	if err != nil {
-		return mcp.NewToolResultError("invalid to_date format, expected YYYY-MM-DD"), nil
-	}
-
 	groupBy := "month"
 	if v, _ := args["group_by"].(string); v == "day" || v == "week" || v == "month" {
 		groupBy = v
 	}
+
+	// One row per group: daily grouping gets the per-day cap.
+	maxDays := maxAggregateRangeDays
+	if groupBy == "day" {
+		maxDays = maxDailyRangeDays
+	}
+	from, to, res := dateRangeArgs(args, maxDays)
+	if res != nil {
+		return res, nil
+	}
+	fromStr, toStr := from.Format("2006-01-02"), to.Format("2006-01-02")
 
 	snapshots, err := s.services.Snapshots.GetGroupedSnapshots(userID, from, to, groupBy)
 	if err != nil {
@@ -58,20 +56,19 @@ func (s *Server) handleGetNetWorthHistory(ctx context.Context, req mcp.CallToolR
 	}
 
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("Net Worth History (%s to %s, grouped by %s):\n\n", fromStr, toStr, groupBy))
-	sb.WriteString(fmt.Sprintf("  %-12s %14s %14s %14s %14s\n",
-		"Date", "Net Worth", "Cash", "Investments", "Debt"))
-	sb.WriteString(fmt.Sprintf("  %-12s %14s %14s %14s %14s\n",
-		"----", "---------", "----", "-----------", "----"))
+	fmt.Fprintf(&sb, "Net Worth History (%s to %s, grouped by %s):\n\n", fromStr, toStr, groupBy)
+	fmt.Fprintf(&sb, "  %-12s %14s %14s %14s %14s\n",
+		"Date", "Net Worth", "Cash", "Investments", "Debt")
+	fmt.Fprintf(&sb, "  %-12s %14s %14s %14s %14s\n",
+		"----", "---------", "----", "-----------", "----")
 
 	for _, snap := range snapshots {
-		sb.WriteString(fmt.Sprintf("  %-12s %14s %14s %14s %14s\n",
+		fmt.Fprintf(&sb, "  %-12s %14s %14s %14s %14s\n",
 			snap.RecordedAt.Format("2006-01-02"),
 			formatCents(snap.TotalNetWorth),
 			formatCents(snap.CashBalance),
 			formatCents(snap.InvestmentValue),
-			formatCents(snap.DebtBalance),
-		))
+			formatCents(snap.DebtBalance))
 	}
 
 	return mcp.NewToolResultText(sb.String()), nil

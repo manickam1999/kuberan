@@ -61,6 +61,8 @@ var (
 	ErrInvalidInput   = &AppError{Code: "INVALID_INPUT", Message: "Invalid input", StatusCode: http.StatusBadRequest}
 	ErrNotFound       = &AppError{Code: "NOT_FOUND", Message: "Resource not found", StatusCode: http.StatusNotFound}
 	ErrInternalServer = &AppError{Code: "INTERNAL_ERROR", Message: "An internal error occurred", StatusCode: http.StatusInternalServerError}
+	ErrRateLimited    = &AppError{Code: "RATE_LIMITED", Message: "Too many requests, please try again later", StatusCode: http.StatusTooManyRequests}
+	ErrBodyTooLarge   = &AppError{Code: "REQUEST_TOO_LARGE", Message: "Request body is too large", StatusCode: http.StatusRequestEntityTooLarge}
 )
 
 // User errors.
@@ -91,6 +93,10 @@ var (
 	ErrTransactionNotEditable = &AppError{Code: "TRANSACTION_NOT_EDITABLE", Message: "This transaction type cannot be edited", StatusCode: http.StatusBadRequest}
 	ErrInvalidTypeChange      = &AppError{Code: "INVALID_TYPE_CHANGE", Message: "Cannot change transaction type to or from transfer/investment", StatusCode: http.StatusBadRequest}
 )
+
+// ErrTransferCurrencyMismatch rejects a transfer between accounts whose
+// currencies differ (no FX conversion is performed).
+var ErrTransferCurrencyMismatch = &AppError{Code: "TRANSFER_CURRENCY_MISMATCH", Message: "Cannot transfer between accounts with different currencies", StatusCode: http.StatusBadRequest}
 
 // Budget errors.
 var (
@@ -124,6 +130,7 @@ var (
 	ErrInvalidLinkCode       = &AppError{Code: "INVALID_LINK_CODE", Message: "Invalid or expired link code", StatusCode: http.StatusBadRequest}
 	ErrLinkCodeExpired       = &AppError{Code: "LINK_CODE_EXPIRED", Message: "Link code has expired", StatusCode: http.StatusBadRequest}
 	ErrTelegramAlreadyLinked = &AppError{Code: "TELEGRAM_ALREADY_LINKED", Message: "This Telegram account is already linked to another user", StatusCode: http.StatusConflict}
+	ErrTooManyLinkAttempts   = &AppError{Code: "TOO_MANY_LINK_ATTEMPTS", Message: "Too many failed link attempts, please try again later", StatusCode: http.StatusTooManyRequests}
 )
 
 // Attachment errors (transaction receipts, plan 017).

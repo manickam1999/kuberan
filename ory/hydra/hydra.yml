@@ -36,6 +36,17 @@ ttl:
 oauth2:
   # Never leak internal error details to clients.
   expose_internal_errors: false
+  pkce:
+    # Hydra does NOT require PKCE by default, not even for public clients.
+    # Every DCR client is public (token_endpoint_auth_method=none, forced by
+    # the proxy), so require PKCE for all of them: without it a stolen
+    # authorization code could be redeemed by anyone. Only the S256 method is
+    # accepted (Hydra does not enable "plain").
+    enforced_for_public_clients: true
+    # Left off so a confidential client pinned via HYDRA_PINNED_CLIENT_ID (one
+    # that authenticates with a client secret) keeps working if it does not
+    # send PKCE. Turn on if no confidential client is ever registered.
+    enforced: false
   grant:
     refresh_token:
       # Keep a just-rotated refresh token usable briefly. Without this, a client

@@ -1,2 +1,4 @@
 # Run backup daily at 2:00 AM UTC
 0 2 * * * /backup.sh
+# Weekly restore drill, Sunday 03:30 UTC. No-op unless RESTORE_TEST_ENABLED=true.
+30 3 * * 0 /restore-test.sh

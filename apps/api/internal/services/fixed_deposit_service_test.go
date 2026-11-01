@@ -320,6 +320,49 @@ func TestProcessFixedDeposits_CumulativeFD_Untouched_By_Payouts(t *testing.T) {
 	}
 }
 
+// TestProcessFixedDeposits_ForeignLinkedAccount_Skipped ensures a payout is
+// never credited to an account the FD owner does not hold (legacy rows written
+// before linked accounts were validated on update).
+func TestProcessFixedDeposits_ForeignLinkedAccount_Skipped(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	defer testutil.TeardownTestDB(t, db)
+
+	fdSvc := services.NewFixedDepositService(db, services.NewCategoryService(db))
+	owner := testutil.CreateTestUser(t, db)
+	victim := testutil.CreateTestUser(t, db)
+	foreign := testutil.CreateTestCashAccountWithBalance(t, db, victim.ID, 0)
+
+	freq := models.PayoutFrequencyMonthly
+	testutil.CreateTestFixedDepositAccount(t, db, owner.ID, testutil.FixedDepositParams{
+		Principal:       120000,
+		InterestRate:    12.0,
+		StartDate:       date(2025, 1, 1),
+		MaturityDate:    date(2026, 6, 1),
+		PayoutType:      models.PayoutTypePeriodic,
+		PayoutFrequency: &freq,
+		LinkedAccountID: strPtr(foreign.ID),
+		NextPayoutDate:  timePtr(date(2025, 2, 1)),
+	})
+
+	result, err := fdSvc.ProcessFixedDeposits(date(2025, 2, 1))
+	if err != nil {
+		t.Fatalf("ProcessFixedDeposits: %v", err)
+	}
+	if result.PayoutsPosted != 0 {
+		t.Errorf("expected 0 payouts, got %d", result.PayoutsPosted)
+	}
+	var acct models.Account
+	db.First(&acct, "id = ?", foreign.ID)
+	if acct.Balance != 0 {
+		t.Errorf("foreign account must not be credited, balance = %d", acct.Balance)
+	}
+	var n int64
+	db.Model(&models.Transaction{}).Where("account_id = ?", foreign.ID).Count(&n)
+	if n != 0 {
+		t.Errorf("expected no transactions on foreign account, got %d", n)
+	}
+}
+
 // date is a helper to construct a UTC midnight time.Time for the given y/m/d.
 func date(y, m, d int) time.Time {
 	return time.Date(y, time.Month(m), d, 0, 0, 0, 0, time.UTC)

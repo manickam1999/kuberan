@@ -2,7 +2,6 @@ package database
 
 import (
 	"fmt"
-	"time"
 
 	"kuberan/internal/logger"
 
@@ -24,7 +23,12 @@ func NewManager(config *Config) (*Manager, error) {
 	db, err := gorm.Open(postgres.New(postgres.Config{
 		DSN:                  config.DSN(),
 		PreferSimpleProtocol: true, // Required for Supabase Supavisor; harmless for direct connections
-	}), &gorm.Config{})
+	}), &gorm.Config{
+		// Single statements are atomic on their own; multi-statement writes
+		// already use explicit db.Transaction blocks.
+		SkipDefaultTransaction: true,
+		Logger:                 newGormLogger(),
+	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to database: %w", err)
 	}
@@ -33,9 +37,10 @@ func NewManager(config *Config) (*Manager, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to get underlying DB: %w", err)
 	}
-	sqlDB.SetMaxIdleConns(10)
-	sqlDB.SetMaxOpenConns(100)
-	sqlDB.SetConnMaxLifetime(time.Hour)
+	sqlDB.SetMaxOpenConns(config.MaxOpenConns)
+	sqlDB.SetMaxIdleConns(min(config.MaxIdleConns, config.MaxOpenConns))
+	sqlDB.SetConnMaxIdleTime(config.ConnMaxIdleTime)
+	sqlDB.SetConnMaxLifetime(config.ConnMaxLifetime)
 
 	pgURL := fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=%s",
 		config.User, config.Password, config.Host, config.Port, config.DBName, config.SSLMode)

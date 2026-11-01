@@ -10,6 +10,10 @@ import (
 	"time"
 )
 
+// coinGeckoChunkSize caps the ids sent in one simple/price request (a
+// variable so tests can shrink it).
+var coinGeckoChunkSize = 250
+
 // CoinGeckoProvider fetches prices from CoinGecko for cryptocurrencies.
 type CoinGeckoProvider struct {
 	httpClient     *http.Client
@@ -67,35 +71,57 @@ func (p *CoinGeckoProvider) FetchPrices(ctx context.Context, securities []Securi
 		return nil, fetchErrors
 	}
 
+	// Query CoinGecko in chunks so the URL and per-request id count stay
+	// within the API's limits; a failed chunk only fails its own securities.
+	var prices []PriceResult
+	for start := 0; start < len(ids); start += coinGeckoChunkSize {
+		chunk := ids[start:min(start+coinGeckoChunkSize, len(ids))]
+		chunkPrices, chunkErrors := p.fetchChunk(ctx, chunk, idToSecs)
+		prices = append(prices, chunkPrices...)
+		fetchErrors = append(fetchErrors, chunkErrors...)
+	}
+
+	return prices, fetchErrors
+}
+
+// fetchChunk fetches one batch of CoinGecko ids via the simple price API.
+func (p *CoinGeckoProvider) fetchChunk(ctx context.Context, ids []string, idToSecs map[string][]Security) ([]PriceResult, []FetchError) {
+	chunkSecs := make(map[string][]Security, len(ids))
+	for _, id := range ids {
+		chunkSecs[id] = idToSecs[id]
+	}
+
 	// Use the configured target currency for all price requests.
 	currency := p.targetCurrency
 
 	// Call CoinGecko simple price API.
 	url := p.baseURL + "?ids=" + strings.Join(ids, ",") + "&vs_currencies=" + currency
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	resp, err := doWithRetry(ctx, p.httpClient, func() (*http.Request, error) {
+		req, reqErr := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+		if reqErr != nil {
+			return nil, fmt.Errorf("building request: %w", reqErr)
+		}
+		return req, nil
+	})
 	if err != nil {
-		return nil, appendAllErrors(fetchErrors, idToSecs, fmt.Errorf("building request: %w", err))
-	}
-
-	resp, err := p.httpClient.Do(req)
-	if err != nil {
-		return nil, appendAllErrors(fetchErrors, idToSecs, fmt.Errorf("http request: %w", err))
+		return nil, appendAllErrors(nil, chunkSecs, fmt.Errorf("http request: %w", err))
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, appendAllErrors(fetchErrors, idToSecs, fmt.Errorf("unexpected status %d", resp.StatusCode))
+		return nil, appendAllErrors(nil, chunkSecs, fmt.Errorf("unexpected status %d", resp.StatusCode))
 	}
 
 	// Response shape: {"bitcoin": {"usd": 67234.56}, "ethereum": {"usd": 3456.78}}
 	var result map[string]map[string]float64
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, appendAllErrors(fetchErrors, idToSecs, fmt.Errorf("decoding response: %w", err))
+		return nil, appendAllErrors(nil, chunkSecs, fmt.Errorf("decoding response: %w", err))
 	}
 
 	now := time.Now().UTC()
 	var prices []PriceResult
+	var fetchErrors []FetchError
 
 	for _, cgID := range ids {
 		secs := idToSecs[cgID]

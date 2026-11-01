@@ -23,14 +23,14 @@ def test_full_summary():
         "by_counterparty": [
             {"counterparty_key": "alice", "counterparty_name": "Alice",
              "outstanding": 12050, "open_count": 3, "oldest_date": "2026-09-01"},
-            {"counterparty_key": "bob_x", "counterparty_name": "Bob_X",
+            {"counterparty_key": "bob_x", "counterparty_name": "Bob_X <&>",
              "outstanding": 3000, "open_count": 1, "oldest_date": "2026-10-01"},
         ],
     }
     msg = format_owed_message(summary, "MYR")
-    assert "*Total:* RM150.50" in msg
+    assert "<b>Total:</b> RM150.50" in msg
     assert "• Alice: RM120.50 (3 open items)" in msg
-    assert "• Bob\\_X: RM30.00 (1 open item)" in msg
+    assert "• Bob_X &lt;&amp;&gt;: RM30.00 (1 open item)" in msg
     assert "Split: RM100.00" in msg
     assert "Paid for someone: RM50.50" in msg
     assert "Loan" not in msg

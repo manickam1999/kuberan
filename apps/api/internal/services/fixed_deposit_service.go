@@ -125,6 +125,23 @@ func (s *fixedDepositService) processPeriodicPayouts(acct *models.Account, asOfD
 		return 0, nil
 	}
 
+	// The payout destination must still be one of the FD owner's active cash
+	// accounts. Rows written before linked accounts were validated on update
+	// may point elsewhere; never credit an account the owner does not hold.
+	var linkedCount int64
+	if err := s.db.Model(&models.Account{}).
+		Where("id = ? AND user_id = ? AND type = ? AND is_active = ?",
+			*fd.LinkedAccountID, acct.UserID, models.AccountTypeCash, true).
+		Count(&linkedCount).Error; err != nil {
+		return 0, fmt.Errorf("checking linked account: %w", err)
+	}
+	if linkedCount == 0 {
+		log.Warnw("periodic FD linked account is not an active cash account of the owner, skipping",
+			zap.String("account_id", acct.ID),
+			zap.String("linked_account_id", *fd.LinkedAccountID))
+		return 0, nil
+	}
+
 	// Ensure the interest income category exists for this user.
 	category, err := s.categoryService.EnsureInterestIncomeCategory(acct.UserID)
 	if err != nil {
@@ -182,11 +199,16 @@ func (s *fixedDepositService) processPeriodicPayouts(acct *models.Account, asOfD
 				return fmt.Errorf("creating interest transaction: %w", err)
 			}
 
-			// Credit the linked account's balance.
-			if err := tx.Model(&models.Account{}).
-				Where("id = ?", *fd.LinkedAccountID).
-				UpdateColumn("balance", gorm.Expr("balance + ?", interestAmount)).Error; err != nil {
-				return fmt.Errorf("crediting linked account balance: %w", err)
+			// Credit the linked account's balance, scoped to the FD owner so a
+			// foreign account can never be credited.
+			credit := tx.Model(&models.Account{}).
+				Where("id = ? AND user_id = ?", *fd.LinkedAccountID, acct.UserID).
+				UpdateColumn("balance", gorm.Expr("balance + ?", interestAmount))
+			if credit.Error != nil {
+				return fmt.Errorf("crediting linked account balance: %w", credit.Error)
+			}
+			if credit.RowsAffected != 1 {
+				return fmt.Errorf("crediting linked account balance: account %s not owned by FD owner", *fd.LinkedAccountID)
 			}
 
 			return nil

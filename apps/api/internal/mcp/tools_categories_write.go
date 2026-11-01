@@ -104,7 +104,7 @@ func (s *Server) prepareCreateCategory(c caller, args map[string]interface{}) (*
 		if err != nil {
 			return "", nil, serviceError("create category", err)
 		}
-		return fmt.Sprintf("Created %s category %q\n  ID: %s\n", category.Type, category.Name, category.ID),
+		return fmt.Sprintf("Created %s category %s\n  ID: %s\n", category.Type, untrusted(category.Name), category.ID),
 			[]auditEntry{{
 				Action: "MCP_CREATE_CATEGORY", ResourceType: "category", ResourceID: category.ID,
 				Changes: map[string]interface{}{"name": category.Name, "type": category.Type},
@@ -150,7 +150,7 @@ func (s *Server) prepareUpdateCategory(c caller, args map[string]interface{}) (*
 		if f.ParentID != nil {
 			changes["parent_id"] = change(before.ParentID, *f.ParentID)
 		}
-		return fmt.Sprintf("Updated %s category %q\n  ID: %s\n", category.Type, category.Name, category.ID),
+		return fmt.Sprintf("Updated %s category %s\n  ID: %s\n", category.Type, untrusted(category.Name), category.ID),
 			[]auditEntry{{Action: "MCP_UPDATE_CATEGORY", ResourceType: "category", ResourceID: category.ID, Changes: changes}}, nil
 	}}, nil
 }

@@ -1,13 +1,17 @@
 import re
 import logging
-from typing import Optional
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
+from typing import Optional, Tuple
+import httpx
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.constants import ParseMode
 from telegram.ext import (
     ContextTypes, ConversationHandler, CommandHandler,
     MessageHandler, CallbackQueryHandler, filters
 )
 from api_client import KuberanAPIClient, UserAPIClient
-from utils.formatting import format_currency
+from handlers.common import NOT_LINKED_MESSAGE, SERVICE_UNAVAILABLE_MESSAGE, describe_error
+from utils.formatting import esc, format_currency
 
 logger = logging.getLogger(__name__)
 
@@ -16,19 +20,43 @@ AMOUNT, CATEGORY, CONFIRM, ACCOUNT, NEW_CATEGORY, NEW_ACCOUNT, \
 
 TXN_KEY = 'txn'
 
+# Free-text steps only ever run in private chats (the bot ignores groups).
+PRIVATE_TEXT = filters.ChatType.PRIVATE & filters.TEXT & ~filters.COMMAND
+
 # Account types income and expenses are recorded against (mirrors the API's
 # AccountType.IsSpending).
 SPENDING_ACCOUNT_TYPES = ('cash', 'credit_card', 'debt')
 
 
-def _parse_amount_description(text: str):
-    """Parse amount and optional description from text like '50 Coffee'."""
+def amount_to_cents(amount: str) -> Optional[int]:
+    """Convert a decimal amount string (at most 2 decimals) to int cents.
+
+    Uses Decimal, never float: float('19.99') * 100 is 1998.999..., which
+    int() truncates to 1998.
+    """
+    try:
+        value = Decimal(amount)
+    except InvalidOperation:
+        return None
+    if not value.is_finite() or value < 0:
+        return None
+    return int((value * 100).quantize(Decimal(1), rounding=ROUND_HALF_UP))
+
+
+def _parse_amount_description(text: str) -> Tuple[Optional[int], str]:
+    """Parse '50 Coffee' into (amount in cents, description).
+
+    Returns (None, "") when the text does not start with a valid amount.
+    A zero amount comes back as 0, which callers treat as invalid.
+    """
     if not text:
         return None, ""
-    match = re.match(r'(\d+(?:\.\d{1,2})?)\s*(.*)', text.strip())
+    # The lookahead rejects '19.999' and '1.2.3' instead of silently splitting
+    # them into an amount plus a numeric description.
+    match = re.match(r'(\d+(?:\.\d{1,2})?)(?![\d.])\s*(.*)', text.strip(), re.DOTALL)
     if not match:
         return None, ""
-    return float(match.group(1)), match.group(2).strip()
+    return amount_to_cents(match.group(1)), match.group(2).strip()
 
 
 def _extract_account_and_category(text: str, accounts: list, categories: list):
@@ -191,39 +219,40 @@ def _build_currency_keyboard():
 
 
 def _format_category_display(txn_data: dict) -> str:
-    """Format category name with icon if available."""
+    """Format category name with icon if available (HTML-escaped)."""
     cat = txn_data.get('category_name') or "None"
     icon = txn_data.get('category_icon', '')
-    return f"{icon} {cat}".strip() if icon else cat
+    text = f"{icon} {cat}".strip() if icon else cat
+    return esc(text)
 
 
 def _format_confirm_message(txn_data: dict) -> str:
-    """Format the confirmation card text."""
+    """Format the confirmation card text (HTML)."""
     txn_type = txn_data['type'].title()
     currency = txn_data.get('currency', 'MYR')
-    amount_str = format_currency(txn_data['amount'], currency)
-    desc = txn_data['description'] or txn_type
+    amount_str = esc(format_currency(txn_data['amount'], currency))
+    desc = esc(txn_data['description'] or txn_type)
     cat = _format_category_display(txn_data)
-    acc = txn_data.get('account_name') or "Unknown"
+    acc = esc(txn_data.get('account_name') or "Unknown")
     return (
-        f"*{txn_type}: {amount_str}*\n"
+        f"<b>{txn_type}: {amount_str}</b>\n"
         f"{desc}\n\n"
         f"Category: {cat}\n"
         f"Account: {acc}\n"
-        f"Currency: {currency}"
+        f"Currency: {esc(currency)}"
     )
 
 
 def _format_success_message(txn_data: dict) -> str:
-    """Format the success message."""
+    """Format the success message (HTML)."""
     txn_type = txn_data['type'].title()
     currency = txn_data.get('currency', 'MYR')
-    amount_str = format_currency(txn_data['amount'], currency)
-    desc = txn_data['description'] or txn_type
+    amount_str = esc(format_currency(txn_data['amount'], currency))
+    desc = esc(txn_data['description'] or txn_type)
     cat = _format_category_display(txn_data)
-    acc = txn_data.get('account_name') or "Unknown"
+    acc = esc(txn_data.get('account_name') or "Unknown")
     return (
-        f"*{txn_type} Recorded*\n\n"
+        f"<b>{txn_type} Recorded</b>\n\n"
         f"Amount: {amount_str}\n"
         f"Description: {desc}\n"
         f"Category: {cat}\n"
@@ -231,29 +260,51 @@ def _format_success_message(txn_data: dict) -> str:
     )
 
 
-def _resolve_user_and_setup(api_client: KuberanAPIClient, telegram_user_id: int, context: ContextTypes.DEFAULT_TYPE):
+def _format_category_prompt(txn_data: dict) -> str:
+    """Format the 'Select a category' prompt (HTML)."""
+    txn_type = txn_data['type'].title()
+    amount_str = esc(format_currency(txn_data['amount'], txn_data.get('currency', 'MYR')))
+    desc = esc(txn_data.get('description') or txn_type)
+    return f"<b>{txn_type}: {amount_str}</b>\n{desc}\n\nSelect a category:"
+
+
+async def _resolve_user_and_setup(api_client: KuberanAPIClient, telegram_user_id: int,
+                                  context: ContextTypes.DEFAULT_TYPE
+                                  ) -> Tuple[Optional[UserAPIClient], Optional[str]]:
     """Resolve user, fetch accounts and categories. Returns (user_client, error_msg)."""
-    user_data = api_client.resolve_user(telegram_user_id)
+    try:
+        user_data = await api_client.resolve_user(telegram_user_id)
+    except httpx.HTTPError as e:
+        logger.error("Failed to resolve Telegram user: %s", describe_error(e))
+        return None, SERVICE_UNAVAILABLE_MESSAGE
     if not user_data:
-        return None, "Your Telegram account is not linked.\nUse /start to link your account."
+        return None, NOT_LINKED_MESSAGE
 
-    api_client.record_activity(telegram_user_id)
+    await api_client.record_activity(telegram_user_id)
 
-    user_client = UserAPIClient(api_client.base_url, user_data['auth_token'])
-    accounts = user_client.get_accounts()
+    user_client = api_client.for_user(user_data['auth_token'])
+    try:
+        accounts = await user_client.get_accounts()
+    except httpx.HTTPError as e:
+        logger.error("Failed to fetch accounts: %s", describe_error(e))
+        return None, SERVICE_UNAVAILABLE_MESSAGE
 
     try:
-        preferred_id = user_client.get_profile().get('default_account_id')
-    except Exception:
+        preferred_id = (await user_client.get_profile()).get('default_account_id')
+    except httpx.HTTPError as e:
         # The default is a convenience; never block recording a transaction on it.
-        logger.warning("Failed to fetch profile for default account", exc_info=True)
+        logger.warning("Failed to fetch profile for default account: %s", describe_error(e))
         preferred_id = None
 
     default_account = _get_default_account(accounts, preferred_id)
     if not default_account:
         return None, "No active accounts found. Please create an account in the web app first."
 
-    categories = user_client.get_categories()
+    try:
+        categories = await user_client.get_categories()
+    except httpx.HTTPError as e:
+        logger.error("Failed to fetch categories: %s", describe_error(e))
+        return None, SERVICE_UNAVAILABLE_MESSAGE
 
     context.user_data[TXN_KEY] = {
         'accounts': accounts,
@@ -276,7 +327,7 @@ def create_transaction_conversation(api_client: KuberanAPIClient, txn_type: str)
     async def entry_point(update: Update, context: ContextTypes.DEFAULT_TYPE):
         telegram_user_id = update.message.from_user.id
 
-        _, error = _resolve_user_and_setup(api_client, telegram_user_id, context)
+        _, error = await _resolve_user_and_setup(api_client, telegram_user_id, context)
         if error:
             await update.message.reply_text(error)
             return ConversationHandler.END
@@ -301,7 +352,7 @@ def create_transaction_conversation(api_client: KuberanAPIClient, txn_type: str)
                 txn['category_name'] = matched_cat['name']
                 txn['category_icon'] = matched_cat.get('icon', '')
 
-            txn['amount'] = int(amount * 100)
+            txn['amount'] = amount
             txn['description'] = description
 
             categories = txn['categories']
@@ -310,17 +361,15 @@ def create_transaction_conversation(api_client: KuberanAPIClient, txn_type: str)
                 msg = await update.message.reply_text(
                     _format_confirm_message(txn),
                     reply_markup=_build_confirm_keyboard(),
-                    parse_mode='Markdown'
+                    parse_mode=ParseMode.HTML
                 )
                 txn['message_id'] = msg.message_id
                 return CONFIRM
 
             msg = await update.message.reply_text(
-                f"*{txn_type.title()}: {format_currency(txn['amount'], txn.get('currency', 'MYR'))}*\n"
-                f"{description or txn_type.title()}\n\n"
-                f"Select a category:",
+                _format_category_prompt(txn),
                 reply_markup=_build_category_keyboard(categories),
-                parse_mode='Markdown'
+                parse_mode=ParseMode.HTML
             )
             txn['message_id'] = msg.message_id
             return CATEGORY
@@ -328,8 +377,8 @@ def create_transaction_conversation(api_client: KuberanAPIClient, txn_type: str)
         # Guided path — ask for amount
         await update.message.reply_text(
             f"How much was the {txn_type}?\n"
-            f"Type the amount, or amount and description (e.g. `50 Coffee`)",
-            parse_mode='Markdown'
+            f"Type the amount, or amount and description (e.g. <code>50 Coffee</code>)",
+            parse_mode=ParseMode.HTML
         )
         return AMOUNT
 
@@ -341,7 +390,7 @@ def create_transaction_conversation(api_client: KuberanAPIClient, txn_type: str)
 
         amount, description = _parse_amount_description(update.message.text)
         if not amount:
-            await update.message.reply_text("Please enter a valid amount (e.g. `50` or `50 Coffee`)", parse_mode='Markdown')
+            await update.message.reply_text("Please enter a valid amount (e.g. <code>50</code> or <code>50 Coffee</code>)", parse_mode=ParseMode.HTML)
             return AMOUNT
 
         # Smart match: check if last words are account/category names
@@ -356,7 +405,7 @@ def create_transaction_conversation(api_client: KuberanAPIClient, txn_type: str)
             txn['category_name'] = matched_cat['name']
             txn['category_icon'] = matched_cat.get('icon', '')
 
-        txn['amount'] = int(amount * 100)
+        txn['amount'] = amount
         txn['description'] = description
 
         categories = txn['categories']
@@ -364,17 +413,15 @@ def create_transaction_conversation(api_client: KuberanAPIClient, txn_type: str)
             msg = await update.message.reply_text(
                 _format_confirm_message(txn),
                 reply_markup=_build_confirm_keyboard(),
-                parse_mode='Markdown'
+                parse_mode=ParseMode.HTML
             )
             txn['message_id'] = msg.message_id
             return CONFIRM
 
         msg = await update.message.reply_text(
-            f"*{txn_type.title()}: {format_currency(txn['amount'], txn.get('currency', 'MYR'))}*\n"
-            f"{description or txn_type.title()}\n\n"
-            f"Select a category:",
+            _format_category_prompt(txn),
             reply_markup=_build_category_keyboard(categories),
-            parse_mode='Markdown'
+            parse_mode=ParseMode.HTML
         )
         txn['message_id'] = msg.message_id
         return CATEGORY
@@ -394,11 +441,9 @@ def create_transaction_conversation(api_client: KuberanAPIClient, txn_type: str)
         if data.startswith("cat:page:"):
             page = int(data.split(":")[-1])
             await query.edit_message_text(
-                f"*{txn_type.title()}: {format_currency(txn['amount'], txn.get('currency', 'MYR'))}*\n"
-                f"{txn['description'] or txn_type.title()}\n\n"
-                f"Select a category:",
+                _format_category_prompt(txn),
                 reply_markup=_build_category_keyboard(txn['categories'], page),
-                parse_mode='Markdown'
+                parse_mode=ParseMode.HTML
             )
             return CATEGORY
 
@@ -421,7 +466,7 @@ def create_transaction_conversation(api_client: KuberanAPIClient, txn_type: str)
         await query.edit_message_text(
             _format_confirm_message(txn),
             reply_markup=_build_confirm_keyboard(),
-            parse_mode='Markdown'
+            parse_mode=ParseMode.HTML
         )
         return CONFIRM
 
@@ -457,9 +502,9 @@ def create_transaction_conversation(api_client: KuberanAPIClient, txn_type: str)
         ])
 
         msg = await update.message.reply_text(
-            f"Category: *{name}*\n\nIs this a subcategory of an existing category?",
+            f"Category: <b>{esc(name)}</b>\n\nIs this a subcategory of an existing category?",
             reply_markup=InlineKeyboardMarkup(buttons),
-            parse_mode='Markdown'
+            parse_mode=ParseMode.HTML
         )
         txn['message_id'] = msg.message_id
         return NEW_CAT_PARENT
@@ -490,7 +535,7 @@ def create_transaction_conversation(api_client: KuberanAPIClient, txn_type: str)
     async def _create_new_category_and_confirm(txn, reply_func):
         """Create the category via API and show confirmation."""
         user_client = txn['user_client']
-        category = user_client.create_category(
+        category = await user_client.create_category(
             name=txn['new_cat_name'],
             category_type=txn['type'],
             icon=txn.get('new_cat_icon', ''),
@@ -509,7 +554,7 @@ def create_transaction_conversation(api_client: KuberanAPIClient, txn_type: str)
         msg = await reply_func(
             _format_confirm_message(txn),
             reply_markup=_build_confirm_keyboard(),
-            parse_mode='Markdown'
+            parse_mode=ParseMode.HTML
         )
         if hasattr(msg, 'message_id'):
             txn['message_id'] = msg.message_id
@@ -555,11 +600,9 @@ def create_transaction_conversation(api_client: KuberanAPIClient, txn_type: str)
 
         if data == "txn:chg_cat":
             await query.edit_message_text(
-                f"*{txn_type.title()}: {format_currency(txn['amount'], txn.get('currency', 'MYR'))}*\n"
-                f"{txn['description'] or txn_type.title()}\n\n"
-                f"Select a category:",
+                _format_category_prompt(txn),
                 reply_markup=_build_category_keyboard(txn['categories']),
-                parse_mode='Markdown'
+                parse_mode=ParseMode.HTML
             )
             return CATEGORY
 
@@ -589,9 +632,9 @@ def create_transaction_conversation(api_client: KuberanAPIClient, txn_type: str)
                 transaction_data['category_id'] = txn['category_id']
 
             try:
-                user_client.create_transaction(transaction_data)
-            except Exception as e:
-                logger.error(f"Failed to create transaction: {e}")
+                await user_client.create_transaction(transaction_data)
+            except httpx.HTTPError as e:
+                logger.error("Failed to create transaction: %s", describe_error(e))
                 await query.edit_message_text(
                     "Failed to record transaction. Please try again.",
                     reply_markup=_build_confirm_keyboard(),
@@ -600,7 +643,7 @@ def create_transaction_conversation(api_client: KuberanAPIClient, txn_type: str)
 
             await query.edit_message_text(
                 _format_success_message(txn),
-                parse_mode='Markdown'
+                parse_mode=ParseMode.HTML
             )
             context.user_data.pop(TXN_KEY, None)
             return ConversationHandler.END
@@ -622,7 +665,7 @@ def create_transaction_conversation(api_client: KuberanAPIClient, txn_type: str)
             await query.edit_message_text(
                 _format_confirm_message(txn),
                 reply_markup=_build_confirm_keyboard(),
-                parse_mode='Markdown'
+                parse_mode=ParseMode.HTML
             )
             return CONFIRM
 
@@ -639,7 +682,7 @@ def create_transaction_conversation(api_client: KuberanAPIClient, txn_type: str)
         await query.edit_message_text(
             _format_confirm_message(txn),
             reply_markup=_build_confirm_keyboard(),
-            parse_mode='Markdown'
+            parse_mode=ParseMode.HTML
         )
         return CONFIRM
 
@@ -655,7 +698,7 @@ def create_transaction_conversation(api_client: KuberanAPIClient, txn_type: str)
             return NEW_ACCOUNT
 
         user_client = txn['user_client']
-        account = user_client.create_cash_account(name, currency=txn.get('currency', ''))
+        account = await user_client.create_cash_account(name, currency=txn.get('currency', ''))
         txn['account_id'] = account['id']
         txn['account_name'] = account['name']
         # Add to cached list so it appears if user goes back to account picker
@@ -664,7 +707,7 @@ def create_transaction_conversation(api_client: KuberanAPIClient, txn_type: str)
         msg = await update.message.reply_text(
             _format_confirm_message(txn),
             reply_markup=_build_confirm_keyboard(),
-            parse_mode='Markdown'
+            parse_mode=ParseMode.HTML
         )
         txn['message_id'] = msg.message_id
         return CONFIRM
@@ -684,7 +727,7 @@ def create_transaction_conversation(api_client: KuberanAPIClient, txn_type: str)
             await query.edit_message_text(
                 _format_confirm_message(txn),
                 reply_markup=_build_confirm_keyboard(),
-                parse_mode='Markdown'
+                parse_mode=ParseMode.HTML
             )
             return CONFIRM
 
@@ -700,7 +743,7 @@ def create_transaction_conversation(api_client: KuberanAPIClient, txn_type: str)
         await query.edit_message_text(
             _format_confirm_message(txn),
             reply_markup=_build_confirm_keyboard(),
-            parse_mode='Markdown'
+            parse_mode=ParseMode.HTML
         )
         return CONFIRM
 
@@ -722,7 +765,7 @@ def create_transaction_conversation(api_client: KuberanAPIClient, txn_type: str)
         msg = await update.message.reply_text(
             _format_confirm_message(txn),
             reply_markup=_build_confirm_keyboard(),
-            parse_mode='Markdown'
+            parse_mode=ParseMode.HTML
         )
         txn['message_id'] = msg.message_id
         return CONFIRM
@@ -736,24 +779,24 @@ def create_transaction_conversation(api_client: KuberanAPIClient, txn_type: str)
         context.user_data.pop(TXN_KEY, None)
 
     return ConversationHandler(
-        entry_points=[CommandHandler(txn_type, entry_point)],
+        entry_points=[CommandHandler(txn_type, entry_point, filters=filters.ChatType.PRIVATE)],
         states={
-            AMOUNT: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_amount)],
+            AMOUNT: [MessageHandler(PRIVATE_TEXT, receive_amount)],
             CATEGORY: [CallbackQueryHandler(handle_category_callback, pattern=r'^cat:')],
             CONFIRM: [CallbackQueryHandler(handle_confirm_callback, pattern=r'^txn:')],
             ACCOUNT: [CallbackQueryHandler(handle_account_callback, pattern=r'^acc:')],
-            NEW_CATEGORY: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_new_category)],
-            NEW_ACCOUNT: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_new_account)],
+            NEW_CATEGORY: [MessageHandler(PRIVATE_TEXT, receive_new_category)],
+            NEW_ACCOUNT: [MessageHandler(PRIVATE_TEXT, receive_new_account)],
             NEW_CAT_PARENT: [CallbackQueryHandler(handle_new_cat_parent, pattern=r'^ncp:')],
             NEW_CAT_ICON: [
                 CallbackQueryHandler(handle_new_cat_icon_skip, pattern=r'^nci:'),
-                MessageHandler(filters.TEXT & ~filters.COMMAND, receive_new_cat_icon),
+                MessageHandler(PRIVATE_TEXT, receive_new_cat_icon),
             ],
             CURRENCY: [CallbackQueryHandler(handle_currency_callback, pattern=r'^ccy:')],
-            NEW_CURRENCY: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_new_currency)],
+            NEW_CURRENCY: [MessageHandler(PRIVATE_TEXT, receive_new_currency)],
             ConversationHandler.TIMEOUT: [MessageHandler(filters.ALL, timeout)],
         },
-        fallbacks=[CommandHandler('cancel', cancel)],
+        fallbacks=[CommandHandler('cancel', cancel, filters=filters.ChatType.PRIVATE)],
         conversation_timeout=300,
         per_message=False,
         per_chat=True,

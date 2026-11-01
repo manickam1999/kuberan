@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"errors"
 	"net/http"
 	"strconv"
 
@@ -26,7 +27,7 @@ func NewTelegramHandler(telegramService services.TelegramServicer, auditService 
 
 // CompleteLinkRequest represents the request to complete linking
 type CompleteLinkRequest struct {
-	LinkCode          string `json:"link_code" binding:"required,len=6"`
+	LinkCode          string `json:"link_code" binding:"required,min=6,max=16"`
 	TelegramUserID    int64  `json:"telegram_user_id" binding:"required"`
 	TelegramUsername  string `json:"telegram_username"`
 	TelegramFirstName string `json:"telegram_first_name"`
@@ -144,9 +145,24 @@ func (h *TelegramHandler) CompleteLink(c *gin.Context) {
 	}
 
 	if err := h.telegramService.CompleteLink(req.LinkCode, req.TelegramUserID, req.TelegramUsername, req.TelegramFirstName, req.DefaultCurrency); err != nil {
+		reason := "error"
+		var appErr *apperrors.AppError
+		if errors.As(err, &appErr) {
+			reason = appErr.Code
+		}
+		h.auditService.Log("", "COMPLETE_TELEGRAM_LINK_FAILED", "telegram_link", "", c.ClientIP(),
+			map[string]interface{}{"telegram_user_id": req.TelegramUserID, "reason": reason})
 		respondWithError(c, err)
 		return
 	}
+
+	// Attribute the new link to its Kuberan user in the audit trail.
+	userID, linkID := "", ""
+	if link, err := h.telegramService.GetLinkByTelegramID(req.TelegramUserID); err == nil {
+		userID, linkID = link.UserID, link.ID
+	}
+	h.auditService.Log(userID, "COMPLETE_TELEGRAM_LINK", "telegram_link", linkID, c.ClientIP(),
+		map[string]interface{}{"telegram_user_id": req.TelegramUserID})
 
 	c.JSON(http.StatusOK, gin.H{
 		"message": "Telegram account linked successfully",

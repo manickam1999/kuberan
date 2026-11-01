@@ -34,6 +34,9 @@ type KuberanClient struct {
 	baseURL    string
 	apiKey     string
 	httpClient *http.Client
+	// longClient serves the long-running pipeline calls (snapshot computation,
+	// fixed-deposit processing). Defaults to httpClient.
+	longClient *http.Client
 }
 
 // NewKuberanClient creates a new Kuberan pipeline API client.
@@ -42,7 +45,17 @@ func NewKuberanClient(baseURL, apiKey string, httpClient *http.Client) *KuberanC
 		baseURL:    strings.TrimRight(baseURL, "/"),
 		apiKey:     apiKey,
 		httpClient: httpClient,
+		longClient: httpClient,
 	}
+}
+
+// WithLongRunningClient sets the HTTP client (typically with a longer timeout)
+// used for ComputeSnapshots and ProcessFixedDeposits, and returns c.
+func (c *KuberanClient) WithLongRunningClient(httpClient *http.Client) *KuberanClient {
+	if httpClient != nil {
+		c.longClient = httpClient
+	}
+	return c
 }
 
 // GetSecurities fetches all active securities from the pipeline API.
@@ -133,7 +146,7 @@ func (c *KuberanClient) ProcessFixedDeposits(ctx context.Context) (ProcessFixedD
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-API-Key", c.apiKey)
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.longClient.Do(req)
 	if err != nil {
 		return ProcessFixedDepositsResult{}, fmt.Errorf("processing fixed deposits: %w", err)
 	}
@@ -174,7 +187,7 @@ func (c *KuberanClient) ComputeSnapshots(ctx context.Context) (int, error) {
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-API-Key", c.apiKey)
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.longClient.Do(req)
 	if err != nil {
 		return 0, fmt.Errorf("computing snapshots: %w", err)
 	}

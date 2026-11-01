@@ -5,9 +5,11 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import type { ReactNode } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import type { User } from "@/types/models";
 import type {
@@ -16,19 +18,31 @@ import type {
   RegisterRequest,
   ProfileResponse,
 } from "@/types/api";
-import { apiClient, ApiClientError } from "@/lib/api-client";
+import { apiClient } from "@/lib/api-client";
 import {
+  bootstrapSession,
   clearTokens,
+  endSession,
   revokeSession,
-  setAccessToken,
-  setRefreshToken,
-  getAccessToken,
   setAuthCookie,
-  clearAuthCookie,
+  startSession,
 } from "@/lib/auth";
+import { broadcastAuthEvent, subscribeAuthEvents } from "@/lib/auth-channel";
+
+/**
+ * - loading: the app-start refresh has not settled yet
+ * - authenticated / unauthenticated: the session state is known
+ * - error: the server could not be reached; the session may still be valid
+ */
+export type SessionStatus =
+  | "loading"
+  | "authenticated"
+  | "unauthenticated"
+  | "error";
 
 export interface AuthContextValue {
   user: User | null;
+  status: SessionStatus;
   isLoading: boolean;
   isAuthenticated: boolean;
   hideBalances: boolean;
@@ -49,59 +63,102 @@ export interface AuthContextValue {
 export const AuthContext = createContext<AuthContextValue | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
+  const queryClient = useQueryClient();
   const [user, setUser] = useState<User | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [status, setStatus] = useState<SessionStatus>("loading");
+  const userIdRef = useRef<string | null>(null);
 
-  const isAuthenticated = user !== null;
-  const hideBalances = user?.hide_balances ?? false;
+  const isLoading = status === "loading";
+  const isAuthenticated = status === "authenticated" && user !== null;
+  // Mask balances until the user's preference is known, so a user who hides
+  // balances never sees them flash while the session loads.
+  const hideBalances = user ? user.hide_balances : isLoading;
   const defaultAccountId = user?.default_account_id ?? null;
 
-  // Fetch user profile using stored tokens. Returns null only when the
-  // session is really over; transient failures (offline, server restarting)
-  // are retried and then rethrown so the stored session is kept.
-  const fetchProfile = useCallback(async (): Promise<User | null> => {
-    for (let attempt = 0; ; attempt++) {
-      try {
-        const res = await apiClient.get<ProfileResponse>("/api/v1/profile");
-        return res.user;
-      } catch (err) {
-        const transient =
-          !(err instanceof ApiClientError) || err.status === 0 || err.status >= 500;
-        if (!transient) return null;
-        if (attempt >= 2) throw err;
-        await new Promise((resolve) => setTimeout(resolve, 1000 * 2 ** attempt));
-      }
-    }
-  }, []);
-
-  // On mount: try to restore session from stored tokens
   useEffect(() => {
+    userIdRef.current = user?.id ?? null;
+  }, [user]);
+
+  // On mount: restore the session from the refresh cookie. Page queries wait
+  // on the same bootstrap inside the API client, so they run in parallel with
+  // this instead of after it.
+  useEffect(() => {
+    let cancelled = false;
+
     async function init() {
-      const token = getAccessToken();
-      if (!token) {
-        setIsLoading(false);
+      const session = await bootstrapSession();
+      if (cancelled) return;
+
+      if (session.status === "unauthenticated") {
+        setStatus("unauthenticated");
+        return;
+      }
+      if (session.status === "error") {
+        // Keep the session cookie so a reload can restore it once the server
+        // is reachable again.
+        toast.error("Could not reach the server");
+        setStatus("error");
         return;
       }
 
-      try {
-        const profile = await fetchProfile();
-        if (profile) {
-          setUser(profile);
-          setAuthCookie();
-        } else {
-          clearTokens();
-          clearAuthCookie();
+      let sessionUser = session.user;
+      if (!sessionUser) {
+        // Older API without `user` in the refresh response.
+        try {
+          const res = await apiClient.get<ProfileResponse>("/api/v1/profile");
+          sessionUser = res.user;
+        } catch {
+          if (cancelled) return;
+          toast.error("Could not load your profile");
+          setStatus("error");
+          return;
         }
-      } catch {
-        // Server unreachable: keep the tokens so a reload can restore the
-        // session instead of forcing a fresh login.
-        toast.error("Could not reach the server");
+        if (cancelled) return;
       }
-      setIsLoading(false);
+      setUser(sessionUser);
+      setAuthCookie();
+      setStatus("authenticated");
     }
 
-    init();
-  }, [fetchProfile]);
+    void init();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Another tab logged in or out. Drop everything cached for the previous
+  // session: a logout ends this tab's session too (they share the cookie),
+  // and a login as a different user replaces it.
+  useEffect(() => {
+    return subscribeAuthEvents((event) => {
+      const currentUserId = userIdRef.current;
+      if (event.type === "logout") {
+        if (currentUserId === null) return;
+        queryClient.clear();
+        clearTokens();
+        window.location.href = "/login";
+        return;
+      }
+      if (event.userId !== currentUserId) {
+        queryClient.clear();
+        clearTokens();
+        window.location.reload();
+      }
+    });
+  }, [queryClient]);
+
+  const establishSession = useCallback(
+    (res: AuthResponse) => {
+      // Nothing cached for a previous session may leak into this one.
+      queryClient.clear();
+      startSession(res.access_token, res.user);
+      setAuthCookie();
+      setUser(res.user);
+      setStatus("authenticated");
+      broadcastAuthEvent("login", res.user.id);
+    },
+    [queryClient]
+  );
 
   const login = useCallback(
     async (email: string, password: string) => {
@@ -110,12 +167,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         "/api/v1/auth/login",
         data
       );
-      setAccessToken(res.access_token);
-      setRefreshToken(res.refresh_token);
-      setAuthCookie();
-      setUser(res.user);
+      establishSession(res);
     },
-    []
+    [establishSession]
   );
 
   const register = useCallback(
@@ -124,12 +178,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         "/api/v1/auth/register",
         data
       );
-      setAccessToken(res.access_token);
-      setRefreshToken(res.refresh_token);
-      setAuthCookie();
-      setUser(res.user);
+      establishSession(res);
     },
-    []
+    [establishSession]
   );
 
   const toggleHideBalances = useCallback(async () => {
@@ -153,18 +204,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const logout = useCallback(() => {
+    // revokeSession captures what it needs synchronously, before endSession
+    // clears local state.
     void revokeSession();
-    clearTokens();
-    clearAuthCookie();
+    endSession();
+    queryClient.clear();
+    broadcastAuthEvent("logout", null);
     setUser(null);
+    setStatus("unauthenticated");
     if (typeof window !== "undefined") {
       window.location.href = "/login";
     }
-  }, []);
+  }, [queryClient]);
 
   const value = useMemo<AuthContextValue>(
     () => ({
       user,
+      status,
       isLoading,
       isAuthenticated,
       hideBalances,
@@ -177,6 +233,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }),
     [
       user,
+      status,
       isLoading,
       isAuthenticated,
       hideBalances,

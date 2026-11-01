@@ -22,7 +22,7 @@ func TestMemBlobStore_PutGetRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Get: %v", err)
 	}
-	defer rc.Close()
+	defer func() { _ = rc.Close() }()
 
 	got, err := io.ReadAll(rc)
 	if err != nil {
@@ -71,14 +71,14 @@ func TestMemBlobStore_GetReturnsCopy(t *testing.T) {
 		t.Fatalf("Get: %v", err)
 	}
 	got, _ := io.ReadAll(rc)
-	rc.Close()
+	_ = rc.Close()
 	got[0] = 'z' // mutate the returned buffer
 
 	rc2, err := store.Get(ctx, "k")
 	if err != nil {
 		t.Fatalf("Get again: %v", err)
 	}
-	defer rc2.Close()
+	defer func() { _ = rc2.Close() }()
 	got2, _ := io.ReadAll(rc2)
 	if string(got2) != "abc" {
 		t.Fatalf("stored bytes were mutated via returned buffer: %q", got2)

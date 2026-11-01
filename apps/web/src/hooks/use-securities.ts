@@ -1,4 +1,10 @@
-import { useQuery } from "@tanstack/react-query";
+import {
+  keepPreviousData,
+  useQuery,
+  useQueryClient,
+  type QueryClient,
+} from "@tanstack/react-query";
+import { useCallback } from "react";
 import { apiClient } from "@/lib/api-client";
 import type { Security, SecurityPrice } from "@/types/models";
 import type {
@@ -26,20 +32,52 @@ export function useSecurities(params?: SecurityFilters) {
       apiClient.get<PageResponse<Security>>("/api/v1/securities", {
         ...params,
       }),
+    // Keep results on screen while a new page or search loads.
+    placeholderData: keepPreviousData,
   });
 }
 
+async function fetchSecurity(id: string): Promise<Security> {
+  const res = await apiClient.get<SecurityResponse>(`/api/v1/securities/${id}`);
+  return res.security;
+}
+
+/** A security already present in a cached list, to show while its detail loads. */
+function securityFromLists(
+  queryClient: QueryClient,
+  id: string
+): Security | undefined {
+  for (const [, page] of queryClient.getQueriesData<PageResponse<Security>>({
+    queryKey: securityKeys.lists(),
+  })) {
+    const found = page?.data?.find((s) => s.id === id);
+    if (found) return found;
+  }
+  return undefined;
+}
+
 export function useSecurity(id: string) {
+  const queryClient = useQueryClient();
   return useQuery({
     queryKey: securityKeys.detail(id),
-    queryFn: async () => {
-      const res = await apiClient.get<SecurityResponse>(
-        `/api/v1/securities/${id}`
-      );
-      return res.security;
-    },
+    queryFn: () => fetchSecurity(id),
     enabled: !!id,
+    placeholderData: () => securityFromLists(queryClient, id),
   });
+}
+
+/** Returns a callback that warms the detail cache, e.g. on row hover. */
+export function usePrefetchSecurity() {
+  const queryClient = useQueryClient();
+  return useCallback(
+    (id: string) => {
+      void queryClient.prefetchQuery({
+        queryKey: securityKeys.detail(id),
+        queryFn: () => fetchSecurity(id),
+      });
+    },
+    [queryClient]
+  );
 }
 
 export function useSecurityPriceHistory(

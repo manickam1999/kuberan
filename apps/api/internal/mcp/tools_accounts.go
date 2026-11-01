@@ -39,15 +39,16 @@ func (s *Server) handleListAccounts(ctx context.Context, _ mcp.CallToolRequest) 
 	}
 
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("Accounts (%d total):\n\n", result.TotalItems))
-	for _, a := range result.Data {
+	fmt.Fprintf(&sb, "Accounts (%d total):\n\n", result.TotalItems)
+	for i := range result.Data {
+		a := &result.Data[i]
 		status := ""
 		if !a.IsActive {
 			status = " [inactive]"
 		}
-		sb.WriteString(fmt.Sprintf("  %-30s %-12s %s (%s)%s\n",
-			a.Name, a.Type, formatCents(a.Balance), a.Currency, status))
-		sb.WriteString(fmt.Sprintf("    ID: %s\n", a.ID))
+		fmt.Fprintf(&sb, "  %-32s %-12s %s (%s)%s\n",
+			untrusted(a.Name), a.Type, formatCents(a.Balance), a.Currency, status)
+		fmt.Fprintf(&sb, "    ID: %s\n", a.ID)
 	}
 
 	return mcp.NewToolResultText(sb.String()), nil

@@ -1,9 +1,13 @@
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.constants import ParseMode
 from telegram.ext import (
     ContextTypes, ConversationHandler, CommandHandler,
     CallbackQueryHandler, MessageHandler, filters
 )
+import httpx
 from api_client import KuberanAPIClient
+from handlers.common import SERVICE_UNAVAILABLE_MESSAGE, describe_error
+from utils.formatting import esc
 import logging
 
 logger = logging.getLogger(__name__)
@@ -11,6 +15,7 @@ logger = logging.getLogger(__name__)
 PICK_CURRENCY, CUSTOM_CURRENCY = range(2)
 
 LINK_KEY = 'link'
+
 
 def _build_currency_keyboard():
     """Build inline keyboard for currency selection."""
@@ -29,7 +34,13 @@ def create_start_conversation(api_client: KuberanAPIClient) -> ConversationHandl
         telegram_user_id = update.message.from_user.id
 
         # Check if already linked
-        user_data = api_client.resolve_user(telegram_user_id)
+        try:
+            user_data = await api_client.resolve_user(telegram_user_id)
+        except httpx.HTTPError as e:
+            logger.error("Failed to resolve Telegram user: %s", describe_error(e))
+            await update.message.reply_text(SERVICE_UNAVAILABLE_MESSAGE)
+            return ConversationHandler.END
+
         if user_data:
             await update.message.reply_text(
                 "You're already linked to Kuberan!\n\n"
@@ -101,7 +112,7 @@ def create_start_conversation(api_client: KuberanAPIClient) -> ConversationHandl
     async def _complete_linking(reply_func, api_client, link_data, currency, context):
         """Complete the linking process with the chosen currency."""
         try:
-            api_client.complete_link(
+            await api_client.complete_link(
                 link_data['link_code'],
                 link_data['telegram_user_id'],
                 link_data['username'],
@@ -110,13 +121,15 @@ def create_start_conversation(api_client: KuberanAPIClient) -> ConversationHandl
             )
             await reply_func(
                 f"Your Telegram account is now linked to Kuberan!\n"
-                f"Default currency: *{currency}*\n\n"
+                f"Default currency: <b>{esc(currency)}</b>\n\n"
                 f"Use /help to see available commands.",
-                parse_mode='Markdown'
+                parse_mode=ParseMode.HTML
             )
-            logger.info(f"Successfully linked Telegram user {link_data['telegram_user_id']} with currency {currency}")
-        except Exception as e:
-            logger.error(f"Failed to complete link: {e}")
+            logger.info("Linked a Telegram account (currency %s)", currency)
+            logger.debug("Linked telegram_user_id=%s", link_data['telegram_user_id'])
+        except httpx.HTTPError as e:
+            # Never log the link code: it is a short-lived credential.
+            logger.error("Failed to complete Telegram link: %s", describe_error(e))
             await reply_func(
                 "Invalid or expired link code.\n"
                 "Please generate a new code from the web app."
@@ -131,12 +144,14 @@ def create_start_conversation(api_client: KuberanAPIClient) -> ConversationHandl
         return ConversationHandler.END
 
     return ConversationHandler(
-        entry_points=[CommandHandler("start", start_command)],
+        entry_points=[CommandHandler("start", start_command, filters=filters.ChatType.PRIVATE)],
         states={
             PICK_CURRENCY: [CallbackQueryHandler(handle_currency_pick, pattern=r'^cur:')],
-            CUSTOM_CURRENCY: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_custom_currency)],
+            CUSTOM_CURRENCY: [MessageHandler(
+                filters.ChatType.PRIVATE & filters.TEXT & ~filters.COMMAND, handle_custom_currency
+            )],
         },
-        fallbacks=[CommandHandler('cancel', cancel)],
+        fallbacks=[CommandHandler('cancel', cancel, filters=filters.ChatType.PRIVATE)],
         conversation_timeout=120,
         per_message=False,
         per_chat=True,

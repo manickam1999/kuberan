@@ -3,6 +3,7 @@ package services
 import (
 	"errors"
 	"strings"
+	"sync"
 	"time"
 
 	"golang.org/x/crypto/bcrypt"
@@ -33,16 +34,74 @@ func NewUserService(db *gorm.DB) UserServicer {
 	return &userService{db: db}
 }
 
+// MaxPasswordBytes is the longest password accepted. bcrypt only uses the first
+// 72 bytes (and x/crypto rejects longer input), so longer passwords are refused
+// up front with a clear error rather than silently truncated or failing late.
+const MaxPasswordBytes = 72
+
+// ErrLoginLocked is returned by AttemptLogin when the account is locked. It is
+// indistinguishable from ErrInvalidCredentials on the wire (same code, message
+// and status) so a lockout does not reveal that the email exists; callers
+// compare against it by identity only to audit the refusal distinctly.
+var ErrLoginLocked = apperrors.WithMessage(apperrors.ErrInvalidCredentials, apperrors.ErrInvalidCredentials.Message)
+
+// ErrLoginLockoutTriggered is returned by AttemptLogin for the failed attempt
+// that locked the account. Like ErrLoginLocked it looks like
+// ErrInvalidCredentials to clients.
+var ErrLoginLockoutTriggered = apperrors.WithMessage(apperrors.ErrInvalidCredentials, apperrors.ErrInvalidCredentials.Message)
+
+// NormalizeEmail trims and lowercases an email address so lookups and the
+// duplicate check agree with how emails are stored.
+func NormalizeEmail(email string) string {
+	return strings.ToLower(strings.TrimSpace(email))
+}
+
+// ValidatePassword enforces the password length limits shared by every path
+// that sets a password.
+func ValidatePassword(password string) error {
+	if password == "" {
+		return apperrors.WithMessage(apperrors.ErrInvalidInput, "password is required")
+	}
+	if len(password) > MaxPasswordBytes {
+		return apperrors.WithMessage(apperrors.ErrInvalidInput, "password must be at most 72 bytes")
+	}
+	return nil
+}
+
+var (
+	dummyHashOnce sync.Once
+	dummyHash     []byte
+)
+
+// dummyPasswordHash returns a bcrypt hash (at the default cost) of a random
+// value, used to spend comparable time on logins for unknown emails.
+func dummyPasswordHash() []byte {
+	dummyHashOnce.Do(func() {
+		h, err := bcrypt.GenerateFromPassword([]byte("kuberan-dummy-password"), bcrypt.DefaultCost)
+		if err == nil {
+			dummyHash = h
+		}
+	})
+	return dummyHash
+}
+
 // CreateUser registers a new user
 func (s *userService) CreateUser(email, password, firstName, lastName string) (*models.User, error) {
+	email = NormalizeEmail(email)
 	// Validate input
 	if email == "" || password == "" {
 		return nil, apperrors.WithMessage(apperrors.ErrInvalidInput, "email and password are required")
 	}
+	if err := ValidatePassword(password); err != nil {
+		return nil, err
+	}
 
-	// Check if user with email exists
+	// Check if user with email exists. Unscoped: the unique index on email
+	// also covers soft-deleted rows.
 	var count int64
-	s.db.Model(&models.User{}).Where("email = ?", email).Count(&count)
+	if err := s.db.Unscoped().Model(&models.User{}).Where("email = ?", email).Count(&count).Error; err != nil {
+		return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)
+	}
 	if count > 0 {
 		return nil, apperrors.ErrDuplicateEmail
 	}
@@ -55,7 +114,7 @@ func (s *userService) CreateUser(email, password, firstName, lastName string) (*
 
 	// Create user
 	user := &models.User{
-		Email:     strings.ToLower(email),
+		Email:     email,
 		Password:  string(hashedPassword),
 		FirstName: firstName,
 		LastName:  lastName,
@@ -63,16 +122,31 @@ func (s *userService) CreateUser(email, password, firstName, lastName string) (*
 	}
 
 	if err := s.db.Create(user).Error; err != nil {
+		// A concurrent registration can still win the unique index.
+		if isUniqueViolation(err) {
+			return nil, apperrors.ErrDuplicateEmail
+		}
 		return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)
 	}
 
 	return user, nil
 }
 
+// isUniqueViolation reports whether err is a unique-constraint violation on
+// Postgres or SQLite.
+func isUniqueViolation(err error) bool {
+	if errors.Is(err, gorm.ErrDuplicatedKey) {
+		return true
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "unique constraint") || strings.Contains(msg, "duplicate key") ||
+		strings.Contains(msg, "sqlstate 23505")
+}
+
 // GetUserByEmail retrieves a user by email
 func (s *userService) GetUserByEmail(email string) (*models.User, error) {
 	var user models.User
-	if err := s.db.Where("email = ? AND is_active = ?", strings.ToLower(email), true).First(&user).Error; err != nil {
+	if err := s.db.Where("email = ? AND is_active = ?", NormalizeEmail(email), true).First(&user).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, apperrors.ErrUserNotFound
 		}
@@ -101,47 +175,85 @@ func (s *userService) VerifyPassword(user *models.User, password string) bool {
 
 // AttemptLogin authenticates a user by email and password with lockout protection.
 // Returns the user on success, or an appropriate AppError on failure.
+//
+// Every failure returns a 401 INVALID_CREDENTIALS-shaped error, including a
+// locked account (ErrLoginLocked) and the attempt that triggers the lockout
+// (ErrLoginLockoutTriggered), so responses never reveal whether an email is
+// registered. Unknown emails still pay for a bcrypt comparison to keep timing
+// similar.
 func (s *userService) AttemptLogin(email, password string) (*models.User, error) {
 	user, err := s.GetUserByEmail(email)
 	if err != nil {
-		return nil, apperrors.ErrInvalidCredentials
-	}
-
-	// Check if account is locked
-	if user.LockedUntil != nil && user.LockedUntil.After(time.Now()) {
-		return nil, apperrors.ErrAccountLocked
-	}
-
-	// Verify password
-	if !s.VerifyPassword(user, password) {
-		user.FailedLoginAttempts++
-		if user.FailedLoginAttempts >= maxFailedAttempts {
-			lockUntil := time.Now().Add(lockoutDuration)
-			user.LockedUntil = &lockUntil
+		_ = bcrypt.CompareHashAndPassword(dummyPasswordHash(), []byte(password))
+		if errors.Is(err, apperrors.ErrUserNotFound) {
+			return nil, apperrors.ErrInvalidCredentials
 		}
-		s.saveLoginState(user)
+		return nil, err
+	}
+
+	passwordOK := len(password) <= MaxPasswordBytes && s.VerifyPassword(user, password)
+
+	now := time.Now()
+	if user.LockedUntil != nil && user.LockedUntil.After(now) {
+		return nil, ErrLoginLocked
+	}
+
+	if !passwordOK {
+		triggered, err := s.recordFailedLogin(user.ID, now)
+		if err != nil {
+			return nil, err
+		}
+		if triggered {
+			return nil, ErrLoginLockoutTriggered
+		}
 		return nil, apperrors.ErrInvalidCredentials
 	}
 
-	// Successful login: reset failed attempts
-	now := time.Now()
+	// Successful login: reset failed attempts, unless a concurrent failure
+	// locked the account after it was read above.
+	res := s.db.Model(&models.User{}).
+		Where("id = ? AND (locked_until IS NULL OR locked_until <= ?)", user.ID, now).
+		Updates(map[string]interface{}{
+			"failed_login_attempts": 0,
+			"locked_until":          nil,
+			"last_login_at":         now,
+		})
+	if res.Error != nil {
+		return nil, apperrors.Wrap(apperrors.ErrInternalServer, res.Error)
+	}
+	if res.RowsAffected == 0 {
+		return nil, ErrLoginLocked
+	}
 	user.FailedLoginAttempts = 0
 	user.LockedUntil = nil
 	user.LastLoginAt = &now
-	s.saveLoginState(user)
 
 	return user, nil
 }
 
-// saveLoginState writes only the login-tracking columns. Saving the whole row
-// would write back the copy read before the (slow) bcrypt check and undo any
-// profile change made in the meantime.
-func (s *userService) saveLoginState(user *models.User) {
-	s.db.Model(&models.User{}).Where("id = ?", user.ID).Updates(map[string]interface{}{
-		"failed_login_attempts": user.FailedLoginAttempts,
-		"locked_until":          user.LockedUntil,
-		"last_login_at":         user.LastLoginAt,
+// recordFailedLogin counts a failed attempt and locks the account once it
+// reaches maxFailedAttempts. Both steps are single conditional UPDATEs, so
+// concurrent failures are all counted (no read-modify-write) and exactly one
+// of them reports that it triggered the lockout. An expired lock restarts the
+// count.
+func (s *userService) recordFailedLogin(userID string, now time.Time) (lockoutTriggered bool, err error) {
+	expired := "locked_until IS NOT NULL AND locked_until <= ?"
+	res := s.db.Model(&models.User{}).Where("id = ?", userID).Updates(map[string]interface{}{
+		"failed_login_attempts": gorm.Expr("CASE WHEN "+expired+" THEN 1 ELSE failed_login_attempts + 1 END", now),
+		"locked_until":          gorm.Expr("CASE WHEN "+expired+" THEN NULL ELSE locked_until END", now),
 	})
+	if res.Error != nil {
+		return false, apperrors.Wrap(apperrors.ErrInternalServer, res.Error)
+	}
+
+	res = s.db.Model(&models.User{}).
+		Where("id = ? AND failed_login_attempts >= ? AND (locked_until IS NULL OR locked_until <= ?)",
+			userID, maxFailedAttempts, now).
+		Update("locked_until", now.Add(lockoutDuration))
+	if res.Error != nil {
+		return false, apperrors.Wrap(apperrors.ErrInternalServer, res.Error)
+	}
+	return res.RowsAffected == 1, nil
 }
 
 // CreateRefreshSession starts a new per-device refresh session holding the

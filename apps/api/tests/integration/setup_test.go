@@ -117,10 +117,17 @@ func setupApp(t *testing.T) *testApp {
 	hydraAdmin := hydra.NewAdminClient("http://127.0.0.1:1")
 	oauthScopes := "read:accounts"
 
-	// Router: same global middleware ordering as cmd/api/main.go minus logging/CORS,
+	// Router: same global middleware ordering as cmd/api/main.go minus logging,
 	// then the production route table.
 	router := gin.New()
+	if err := middleware.ConfigureTrustedProxies(router, nil); err != nil {
+		t.Fatalf("ConfigureTrustedProxies: %v", err)
+	}
 	router.Use(gin.Recovery())
+	router.Use(middleware.SecurityHeaders(false))
+	router.Use(middleware.CORS([]string{"http://localhost:3000"}))
+	router.Use(middleware.Gzip())
+	router.Use(middleware.BodySizeLimit(middleware.DefaultMaxBodyBytes, "POST "+handlers.AttachmentUploadRoute))
 	router.Use(middleware.ErrorHandler())
 
 	handlers.RegisterRoutes(router, handlers.Routes{
@@ -137,7 +144,7 @@ func setupApp(t *testing.T) *testApp {
 		Investment:           handlers.NewInvestmentHandler(investmentService, auditService),
 		Security:             handlers.NewSecurityHandler(securityService, auditService),
 		Snapshot:             handlers.NewPortfolioSnapshotHandler(snapshotService, auditService),
-		FixedDepositPipeline: handlers.NewFixedDepositPipelineHandler(fdService),
+		FixedDepositPipeline: handlers.NewFixedDepositPipelineHandler(fdService, auditService),
 		Telegram:             handlers.NewTelegramHandler(telegramService, auditService),
 	}, handlers.RouteSecrets{
 		BotInternalSecret: "test-bot-secret",
@@ -231,7 +238,30 @@ func (app *testApp) registerUser(t *testing.T, email, password string) (accessTo
 	}
 	result := parseJSON(t, rec)
 	user := result["user"].(map[string]interface{})
-	return result["access_token"].(string), result["refresh_token"].(string), user["id"].(string)
+	return result["access_token"].(string), refreshCookieValue(t, rec), user["id"].(string)
+}
+
+// refreshCookieValue returns the refresh token set in the kuberan_refresh
+// cookie, failing the test when the response did not set one.
+func refreshCookieValue(t *testing.T, rec *httptest.ResponseRecorder) string {
+	t.Helper()
+	for _, c := range rec.Result().Cookies() {
+		if c.Name == handlers.RefreshCookieName && c.Value != "" {
+			return c.Value
+		}
+	}
+	t.Fatalf("no %s cookie in response: %v", handlers.RefreshCookieName, rec.Header())
+	return ""
+}
+
+// requestWithRefreshCookie makes a request carrying the refresh cookie, as the
+// browser does for /api/v1/auth/*.
+func (app *testApp) requestWithRefreshCookie(method, path, refreshToken string) *httptest.ResponseRecorder {
+	req := httptest.NewRequest(method, path, http.NoBody)
+	req.AddCookie(&http.Cookie{Name: handlers.RefreshCookieName, Value: refreshToken})
+	rec := httptest.NewRecorder()
+	app.Router.ServeHTTP(rec, req)
+	return rec
 }
 
 // loginUser logs in and returns the access and refresh tokens.
@@ -243,5 +273,5 @@ func (app *testApp) loginUser(t *testing.T, email, password string) (accessToken
 		t.Fatalf("login failed: %d %s", rec.Code, rec.Body.String())
 	}
 	result := parseJSON(t, rec)
-	return result["access_token"].(string), result["refresh_token"].(string)
+	return result["access_token"].(string), refreshCookieValue(t, rec)
 }

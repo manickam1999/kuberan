@@ -9,6 +9,8 @@ import (
 	"math/big"
 	"net/http"
 	"net/http/httptest"
+	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -274,6 +276,74 @@ func TestHydraValidator_RefreshThrottle(t *testing.T) {
 	}
 	if got := atomic.LoadInt32(&hits); got != 1 {
 		t.Errorf("JWKS fetched %d times, want 1 (throttled)", got)
+	}
+}
+
+// Concurrent cold-start validations must share one JWKS download rather than
+// each hitting Hydra.
+func TestHydraValidator_ConcurrentColdStart(t *testing.T) {
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatalf("generate key: %v", err)
+	}
+	var hits int32
+	srv := newJWKSServer(t, &key.PublicKey, testKid, &hits)
+	v := NewHydraValidator(srv.URL, testIssuer, testAudience)
+	tok := signToken(t, key, testKid, validClaims())
+
+	var wg sync.WaitGroup
+	errs := make(chan error, 20)
+	for i := 0; i < 20; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if _, err := v.Validate(context.Background(), tok); err != nil {
+				errs <- err
+			}
+		}()
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		t.Fatalf("validate: %v", err)
+	}
+	if got := atomic.LoadInt32(&hits); got != 1 {
+		t.Errorf("JWKS fetched %d times, want 1", got)
+	}
+}
+
+// A JWKS body larger than maxJWKSBytes is not read in full and fails to parse.
+func TestHydraValidator_OversizedJWKS(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"keys":[],"pad":"`))
+		_, _ = w.Write([]byte(strings.Repeat("a", maxJWKSBytes+1)))
+		_, _ = w.Write([]byte(`"}`))
+	}))
+	t.Cleanup(srv.Close)
+	v := NewHydraValidator(srv.URL, testIssuer, testAudience)
+	if err := v.refresh(context.Background()); err == nil {
+		t.Fatal("an oversized JWKS document must be rejected")
+	}
+}
+
+// While Hydra is failing, callers reuse the last error for failureBackoff
+// instead of each retrying.
+func TestHydraValidator_FailureBackoff(t *testing.T) {
+	var hits int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		atomic.AddInt32(&hits, 1)
+		w.WriteHeader(http.StatusBadGateway)
+	}))
+	t.Cleanup(srv.Close)
+	v := NewHydraValidator(srv.URL, testIssuer, testAudience)
+	for i := 0; i < 5; i++ {
+		if err := v.refresh(context.Background()); err == nil {
+			t.Fatal("expected an error from a failing JWKS endpoint")
+		}
+	}
+	if got := atomic.LoadInt32(&hits); got != 1 {
+		t.Errorf("JWKS fetched %d times during backoff, want 1", got)
 	}
 }
 

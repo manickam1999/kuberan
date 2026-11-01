@@ -1,4 +1,10 @@
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import {
+  keepPreviousData,
+  useQuery,
+  useMutation,
+  useQueryClient,
+  type QueryClient,
+} from "@tanstack/react-query";
 import { apiClient } from "@/lib/api-client";
 import type { Account } from "@/types/models";
 import type {
@@ -29,19 +35,42 @@ export function useAccounts(params?: PaginationParams) {
       apiClient.get<PageResponse<Account>>("/api/v1/accounts", {
         ...params,
       }),
+    placeholderData: keepPreviousData,
   });
 }
 
+async function fetchAccount(id: string): Promise<Account> {
+  const res = await apiClient.get<AccountResponse>(`/api/v1/accounts/${id}`);
+  return res.account;
+}
+
+/** An account already present in a cached accounts list. */
+function accountFromLists(
+  queryClient: QueryClient,
+  id: string
+): Account | undefined {
+  for (const [, page] of queryClient.getQueriesData<PageResponse<Account>>({
+    queryKey: accountKeys.lists(),
+  })) {
+    const found = page?.data?.find((a) => a.id === id);
+    if (found) return found;
+  }
+  return undefined;
+}
+
 export function useAccount(id: string) {
+  const queryClient = useQueryClient();
   return useQuery({
     queryKey: accountKeys.detail(id),
-    queryFn: async () => {
-      const res = await apiClient.get<AccountResponse>(`/api/v1/accounts/${id}`);
-      return res.account;
-    },
+    queryFn: () => fetchAccount(id),
     enabled: !!id,
+    // Coming from the accounts list (the usual path), render the header and
+    // start the type-specific queries immediately instead of waiting for the
+    // detail round trip.
+    placeholderData: () => accountFromLists(queryClient, id),
   });
 }
+
 
 export function useCreateCashAccount() {
   const queryClient = useQueryClient();

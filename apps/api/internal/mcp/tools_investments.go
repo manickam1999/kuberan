@@ -37,16 +37,16 @@ func (s *Server) handleGetPortfolio(ctx context.Context, _ mcp.CallToolRequest) 
 
 	var sb strings.Builder
 	sb.WriteString("Portfolio Summary:\n\n")
-	sb.WriteString(fmt.Sprintf("  Total Value:          %s\n", formatCents(portfolio.TotalValue)))
-	sb.WriteString(fmt.Sprintf("  Total Cost Basis:     %s\n", formatCents(portfolio.TotalCostBasis)))
-	sb.WriteString(fmt.Sprintf("  Unrealized Gain/Loss: %s (%.2f%%)\n", formatCents(portfolio.TotalGainLoss), portfolio.GainLossPct))
-	sb.WriteString(fmt.Sprintf("  Realized Gain/Loss:   %s\n", formatCents(portfolio.TotalRealizedGainLoss)))
+	fmt.Fprintf(&sb, "  Total Value:          %s\n", formatCents(portfolio.TotalValue))
+	fmt.Fprintf(&sb, "  Total Cost Basis:     %s\n", formatCents(portfolio.TotalCostBasis))
+	fmt.Fprintf(&sb, "  Unrealized Gain/Loss: %s (%.2f%%)\n", formatCents(portfolio.TotalGainLoss), portfolio.GainLossPct)
+	fmt.Fprintf(&sb, "  Realized Gain/Loss:   %s\n", formatCents(portfolio.TotalRealizedGainLoss))
 
 	if len(portfolio.HoldingsByType) > 0 {
 		sb.WriteString("\n  By Asset Type:\n")
 		for assetType, summary := range portfolio.HoldingsByType {
-			sb.WriteString(fmt.Sprintf("    %-12s %12s  (%d holdings)\n",
-				assetType, formatCents(summary.Value), summary.Count))
+			fmt.Fprintf(&sb, "    %-12s %12s  (%d holdings)\n",
+				assetType, formatCents(summary.Value), summary.Count)
 		}
 	}
 
@@ -55,20 +55,18 @@ func (s *Server) handleGetPortfolio(ctx context.Context, _ mcp.CallToolRequest) 
 	holdings, err := s.services.Investments.GetAllInvestments(userID, services.InvestmentStatusOpen, page)
 	if err == nil && len(holdings.Data) > 0 {
 		sb.WriteString("\n  Holdings:\n")
-		sb.WriteString(fmt.Sprintf("    %-8s %-20s %10s %12s %12s\n",
-			"Symbol", "Name", "Qty", "Cost Basis", "Cur. Value"))
-		sb.WriteString(fmt.Sprintf("    %-8s %-20s %10s %12s %12s\n",
-			"------", "----", "---", "----------", "----------"))
+		fmt.Fprintf(&sb, "    %-8s %-25s %10s %12s %12s\n",
+			"Symbol", "Name", "Qty", "Cost Basis", "Cur. Value")
+		fmt.Fprintf(&sb, "    %-8s %-25s %10s %12s %12s\n",
+			"------", "----", "---", "----------", "----------")
 
-		for _, inv := range holdings.Data {
-			symbol := inv.Security.Symbol
-			name := inv.Security.Name
-			if len(name) > 20 {
-				name = name[:17] + "..."
-			}
+		for j := range holdings.Data {
+			inv := &holdings.Data[j]
+			symbol := cleanText(inv.Security.Symbol, 12)
+			name := untrusted(cleanText(inv.Security.Name, 20))
 			currentValue := int64(math.Round(inv.Quantity * float64(inv.CurrentPrice)))
-			sb.WriteString(fmt.Sprintf("    %-8s %-20s %10.2f %12s %12s\n",
-				symbol, name, inv.Quantity, formatCents(inv.CostBasis), formatCents(currentValue)))
+			fmt.Fprintf(&sb, "    %-8s %-25s %10.2f %12s %12s\n",
+				symbol, name, inv.Quantity, formatCents(inv.CostBasis), formatCents(currentValue))
 		}
 	}
 

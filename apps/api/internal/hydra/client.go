@@ -36,6 +36,11 @@ type AdminClient interface {
 	// the refresh tokens issued under it. Access tokens already issued (JWTs,
 	// validated offline) stay valid until they expire.
 	RevokeConsentSessions(ctx context.Context, subject, clientID string) error
+	// RevokeAllSessions revokes every consent subject has given any client
+	// (and the refresh tokens issued under them) and subject's login sessions,
+	// so no client can mint new tokens and the next authorization must sign in
+	// again. Use it when a user is deactivated.
+	RevokeAllSessions(ctx context.Context, subject string) error
 }
 
 // client is the concrete AdminClient backed by net/http.
@@ -79,7 +84,7 @@ func (c *client) AcceptLogin(ctx context.Context, challenge string, p AcceptLogi
 		"remember":     p.Remember,
 		"remember_for": p.RememberFor,
 	}
-	return c.redirect(ctx, http.MethodPut,
+	return c.redirect(ctx,
 		"/admin/oauth2/auth/requests/login/accept", url.Values{"login_challenge": {challenge}}, body)
 }
 
@@ -89,7 +94,7 @@ func (c *client) RejectLogin(ctx context.Context, challenge, reason string) (str
 		return "", apperrors.WithMessage(apperrors.ErrInvalidInput, "login_challenge is required")
 	}
 	body := map[string]any{"error": "access_denied", "error_description": reason}
-	return c.redirect(ctx, http.MethodPut,
+	return c.redirect(ctx,
 		"/admin/oauth2/auth/requests/login/reject", url.Values{"login_challenge": {challenge}}, body)
 }
 
@@ -117,7 +122,7 @@ func (c *client) AcceptConsent(ctx context.Context, challenge string, p AcceptCo
 		"remember":                    p.Remember,
 		"remember_for":                p.RememberFor,
 	}
-	return c.redirect(ctx, http.MethodPut,
+	return c.redirect(ctx,
 		"/admin/oauth2/auth/requests/consent/accept", url.Values{"consent_challenge": {challenge}}, body)
 }
 
@@ -127,7 +132,7 @@ func (c *client) RejectConsent(ctx context.Context, challenge, reason string) (s
 		return "", apperrors.WithMessage(apperrors.ErrInvalidInput, "consent_challenge is required")
 	}
 	body := map[string]any{"error": "access_denied", "error_description": reason}
-	return c.redirect(ctx, http.MethodPut,
+	return c.redirect(ctx,
 		"/admin/oauth2/auth/requests/consent/reject", url.Values{"consent_challenge": {challenge}}, body)
 }
 
@@ -188,10 +193,31 @@ func (c *client) RevokeConsentSessions(ctx context.Context, subject, clientID st
 	return err
 }
 
-// redirect performs a request whose response is a Hydra redirect envelope.
-func (c *client) redirect(ctx context.Context, method, path string, query url.Values, body any) (string, error) {
+// RevokeAllSessions revokes all of subject's consent sessions, across every
+// client, and its login sessions. Both calls are idempotent; it stops at the
+// first failure so the caller can retry.
+func (c *client) RevokeAllSessions(ctx context.Context, subject string) error {
+	if subject == "" {
+		return apperrors.WithMessage(apperrors.ErrInvalidInput, "subject is required")
+	}
+	err := c.do(ctx, http.MethodDelete, "/admin/oauth2/auth/sessions/consent",
+		url.Values{"subject": {subject}, "all": {"true"}}, nil, nil)
+	if err != nil && !stderrors.Is(err, apperrors.ErrNotFound) {
+		return err
+	}
+	err = c.do(ctx, http.MethodDelete, "/admin/oauth2/auth/sessions/login",
+		url.Values{"subject": {subject}}, nil, nil)
+	if err != nil && !stderrors.Is(err, apperrors.ErrNotFound) {
+		return err
+	}
+	return nil
+}
+
+// redirect performs a PUT whose response is a Hydra redirect envelope (the
+// accept/reject endpoints).
+func (c *client) redirect(ctx context.Context, path string, query url.Values, body any) (string, error) {
 	var out redirectResponse
-	if err := c.do(ctx, method, path, query, body, &out); err != nil {
+	if err := c.do(ctx, http.MethodPut, path, query, body, &out); err != nil {
 		return "", err
 	}
 	return out.RedirectTo, nil

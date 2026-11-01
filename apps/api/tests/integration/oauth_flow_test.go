@@ -61,6 +61,14 @@ func (f *fakeHydraAdmin) handle(w http.ResponseWriter, r *http.Request) {
 	defer f.mu.Unlock()
 
 	switch {
+	case r.Method == http.MethodGet && r.URL.Path == "/admin/oauth2/auth/requests/login":
+		challenge := r.URL.Query().Get("login_challenge")
+		if !strings.HasPrefix(challenge, "login-") {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		writeJSON(w, hydra.LoginRequest{Challenge: challenge})
+
 	case r.Method == http.MethodPut && r.URL.Path == "/admin/oauth2/auth/requests/login/accept":
 		f.lastLoginAccept = decodeBody(r)
 		writeJSON(w, map[string]string{"redirect_to": "https://auth.example/continue?login=1"})
@@ -172,6 +180,18 @@ func TestOAuthLoginBridge(t *testing.T) {
 		}
 		if got := app.hydra.lastLoginAccept["subject"]; got != userID {
 			t.Fatalf("expected AcceptLogin subject=%q, got %v", userID, got)
+		}
+	})
+
+	t.Run("an unknown challenge is refused before credentials are checked", func(t *testing.T) {
+		app.hydra.lastLoginAccept = nil
+		body := `{"login_challenge":"forged","email":"oauth@example.com","password":"SuperSecret123!"}`
+		rec := app.request("POST", "/api/v1/oauth/login", body, "")
+		if rec.Code != http.StatusNotFound {
+			t.Fatalf("expected 404, got %d: %s", rec.Code, rec.Body.String())
+		}
+		if app.hydra.lastLoginAccept != nil {
+			t.Fatal("login must not be accepted for an unknown challenge")
 		}
 	})
 

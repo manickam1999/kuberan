@@ -122,7 +122,7 @@ func TestListReceivables(t *testing.T) {
 	for _, want := range []string{
 		"Alice Smith", "[split]", "$30.00", "partially_paid",
 		"paid $10.00, written off $5.00, outstanding $15.00",
-		"Expense: Dinner on 2026-10-05 (total $90.00)", "ID: r1",
+		`Expense: "Dinner" on 2026-10-05 (total $90.00)`, "ID: r1",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("output missing %q:\n%s", want, out)

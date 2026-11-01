@@ -1,4 +1,11 @@
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import {
+  keepPreviousData,
+  useQuery,
+  useMutation,
+  useQueryClient,
+  type QueryClient,
+} from "@tanstack/react-query";
+import { useCallback } from "react";
 import { apiClient } from "@/lib/api-client";
 import type { Investment, InvestmentTransaction } from "@/types/models";
 import type {
@@ -54,20 +61,55 @@ export function useAllInvestments(params?: AllInvestmentsParams) {
       apiClient.get<PageResponse<Investment>>("/api/v1/investments", {
         ...params,
       }),
+    placeholderData: keepPreviousData,
   });
 }
 
+async function fetchInvestment(id: string): Promise<Investment> {
+  const res = await apiClient.get<InvestmentResponse>(
+    `/api/v1/investments/${id}`
+  );
+  return res.investment;
+}
+
+/** A holding already present in a cached list, to show while its detail loads. */
+function investmentFromLists(
+  queryClient: QueryClient,
+  id: string
+): Investment | undefined {
+  for (const prefix of [investmentKeys.lists(), [...investmentKeys.all, "all"]]) {
+    for (const [, page] of queryClient.getQueriesData<PageResponse<Investment>>({
+      queryKey: prefix,
+    })) {
+      const found = page?.data?.find((inv) => inv.id === id);
+      if (found) return found;
+    }
+  }
+  return undefined;
+}
+
 export function useInvestment(id: string) {
+  const queryClient = useQueryClient();
   return useQuery({
     queryKey: investmentKeys.detail(id),
-    queryFn: async () => {
-      const res = await apiClient.get<InvestmentResponse>(
-        `/api/v1/investments/${id}`
-      );
-      return res.investment;
-    },
+    queryFn: () => fetchInvestment(id),
     enabled: !!id,
+    placeholderData: () => investmentFromLists(queryClient, id),
   });
+}
+
+/** Returns a callback that warms the detail cache, e.g. on row hover. */
+export function usePrefetchInvestment() {
+  const queryClient = useQueryClient();
+  return useCallback(
+    (id: string) => {
+      void queryClient.prefetchQuery({
+        queryKey: investmentKeys.detail(id),
+        queryFn: () => fetchInvestment(id),
+      });
+    },
+    [queryClient]
+  );
 }
 
 export function useAccountInvestments(
@@ -82,6 +124,9 @@ export function useAccountInvestments(
         { ...params }
       ),
     enabled: !!accountId,
+    // Keep the current page while paging, never another account's holdings.
+    placeholderData: (previous, previousQuery) =>
+      previousQuery?.queryKey[2] === accountId ? previous : undefined,
   });
 }
 
@@ -97,6 +142,8 @@ export function useInvestmentTransactions(
         { ...params }
       ),
     enabled: !!investmentId,
+    placeholderData: (previous, previousQuery) =>
+      previousQuery?.queryKey[2] === investmentId ? previous : undefined,
   });
 }
 

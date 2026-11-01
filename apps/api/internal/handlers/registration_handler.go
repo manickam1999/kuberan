@@ -1,11 +1,12 @@
 package handlers
 
 import (
+	"net"
 	"net/http"
 	"net/url"
 	"slices"
 	"strings"
-	"unicode/utf8"
+	"unicode"
 
 	"github.com/gin-gonic/gin"
 
@@ -22,8 +23,9 @@ var allowedGrantTypes = []string{"authorization_code", "refresh_token"}
 
 // RegistrationHandler is a hardened RFC 7591 Dynamic Client Registration proxy in
 // front of Hydra's admin API. It forces every self-registered client to be a
-// public client (token_endpoint_auth_method=none, so Hydra mandates PKCE S256),
-// restricts grant types to authorization_code + refresh_token, forces the
+// public client (token_endpoint_auth_method=none; Hydra requires PKCE S256 for
+// public clients via oauth2.pkce.enforced_for_public_clients in
+// ory/hydra/hydra.yml), bounds the submitted metadata, restricts grant types to authorization_code + refresh_token, forces the
 // authorization-code response type, and caps requested scopes to the registered
 // read:* set. Every registration is audited and alerted on: on a single-user
 // instance a new OAuth client is a near-perfect intrusion signal.
@@ -69,9 +71,12 @@ type dcrRequest struct {
 // @Failure     400 {object} ErrorResponse "Invalid input"
 // @Router      /oauth/register [post]
 func (h *RegistrationHandler) Register(c *gin.Context) {
+	// The endpoint is public: bound the body before decoding it.
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxDCRBodyBytes)
 	var req dcrRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		respondWithError(c, apperrors.WithMessage(apperrors.ErrInvalidInput, err.Error()))
+		respondWithError(c, apperrors.WithMessage(apperrors.ErrInvalidInput,
+			"invalid client metadata: expected a JSON object of at most 16 KiB"))
 		return
 	}
 
@@ -79,9 +84,14 @@ func (h *RegistrationHandler) Register(c *gin.Context) {
 		respondWithError(c, apperrors.WithMessage(apperrors.ErrInvalidInput, "redirect_uris is required"))
 		return
 	}
+	if len(req.RedirectURIs) > maxRedirectURIs {
+		respondWithError(c, apperrors.WithMessage(apperrors.ErrInvalidInput, "too many redirect_uris (max 3)"))
+		return
+	}
 	for _, u := range req.RedirectURIs {
 		if !isValidRedirectURI(u) {
-			respondWithError(c, apperrors.WithMessage(apperrors.ErrInvalidInput, "invalid redirect_uri: "+u))
+			respondWithError(c, apperrors.WithMessage(apperrors.ErrInvalidInput,
+				"invalid redirect_uri: use https, http on a loopback address, or a native-app scheme (com.example.app:/callback)"))
 			return
 		}
 	}
@@ -108,7 +118,7 @@ func (h *RegistrationHandler) Register(c *gin.Context) {
 
 	// Force the hardened policy regardless of what the client asked for.
 	create := hydra.OAuth2ClientCreate{
-		ClientName:              truncateClientName(req.ClientName),
+		ClientName:              sanitizeClientName(req.ClientName),
 		RedirectURIs:            req.RedirectURIs,
 		GrantTypes:              allowedGrantTypes,
 		ResponseTypes:           []string{"code"},
@@ -140,17 +150,37 @@ func (h *RegistrationHandler) Register(c *gin.Context) {
 	c.JSON(http.StatusCreated, client)
 }
 
-// maxClientNameLen caps a self-registered client's display name. It is shown
-// on the consent screen and stored in oauth_client_grants.client_name
-// (VARCHAR(255)), so an oversized name must not make every consent fail.
-const maxClientNameLen = 255
+// Limits on self-registered client metadata. Registration is public, so
+// every field is bounded.
+const (
+	// maxDCRBodyBytes caps the registration request body.
+	maxDCRBodyBytes = 16 << 10
+	// maxRedirectURIs caps how many redirect URIs one client may register.
+	maxRedirectURIs = 3
+	// maxRedirectURILen caps each redirect URI.
+	maxRedirectURILen = 2048
+	// maxClientNameLen caps a self-registered client's display name. It is
+	// shown on the consent screen and in Settings > Connected apps.
+	maxClientNameLen = 100
+)
 
-// truncateClientName returns name cut to maxClientNameLen characters.
-func truncateClientName(name string) string {
-	if utf8.RuneCountInString(name) <= maxClientNameLen {
-		return name
+// sanitizeClientName returns name with control and format characters (newlines,
+// bidi overrides, zero-width characters) replaced by spaces, whitespace
+// collapsed, and cut to maxClientNameLen characters. The name is chosen by
+// whoever registers the client and is displayed to the user on the consent
+// screen, so it must not be able to fake extra lines or reorder text.
+func sanitizeClientName(name string) string {
+	clean := strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) || unicode.Is(unicode.Cf, r) || r == '\u2028' || r == '\u2029' {
+			return ' '
+		}
+		return r
+	}, strings.ToValidUTF8(name, ""))
+	clean = strings.Join(strings.Fields(clean), " ")
+	if runes := []rune(clean); len(runes) > maxClientNameLen {
+		clean = strings.TrimSpace(string(runes[:maxClientNameLen]))
 	}
-	return string([]rune(name)[:maxClientNameLen])
+	return clean
 }
 
 // defaultRegistrableScopes is the scope set assigned to a DCR client that
@@ -179,20 +209,49 @@ func appendMissing(scopes []string, add ...string) []string {
 	return scopes
 }
 
-// isValidRedirectURI reports whether s is an acceptable OAuth redirect URI: an
-// absolute URL with a scheme and either a host (https/http, incl. loopback) or a
-// custom native-app scheme with an opaque/path body.
+// forbiddenSchemes are URI schemes that can never be an OAuth redirect: they
+// run script, read local files or render attacker-chosen content.
+var forbiddenSchemes = map[string]bool{
+	"javascript": true, "data": true, "file": true, "vbscript": true,
+	"blob": true, "about": true, "ftp": true, "ws": true, "wss": true,
+}
+
+// isValidRedirectURI reports whether s is an acceptable OAuth redirect URI for
+// a self-registered client (RFC 6749 3.1.2, RFC 8252 7, OAuth 2.1):
+//
+//   - an absolute URI of at most maxRedirectURILen characters, with no
+//     fragment and no userinfo;
+//   - https with a host; or
+//   - http only on a loopback host (127.0.0.1, [::1] or localhost), for
+//     native apps that listen locally; or
+//   - a private-use scheme for native apps. RFC 8252 recommends reverse-DNS
+//     form (com.example.app:/callback), but common MCP clients register
+//     single-word schemes (cursor://, vscode://), so any scheme is accepted
+//     except one that runs script or reads local content. The consent screen
+//     warns the user when the target is a custom scheme.
 func isValidRedirectURI(s string) bool {
-	if s == "" {
+	if s == "" || len(s) > maxRedirectURILen || strings.ContainsAny(s, " \t\r\n\\") {
 		return false
 	}
 	u, err := url.Parse(s)
-	if err != nil || u.Scheme == "" {
+	if err != nil || u.Scheme == "" || u.Fragment != "" || u.User != nil || strings.Contains(s, "#") {
 		return false
 	}
-	// http/https must carry a host; custom schemes (native apps) need not.
-	if (u.Scheme == "http" || u.Scheme == "https") && u.Host == "" {
-		return false
+	scheme := strings.ToLower(u.Scheme)
+	switch scheme {
+	case "https":
+		return u.Hostname() != ""
+	case "http":
+		return isLoopbackHost(u.Hostname())
 	}
-	return true
+	return !forbiddenSchemes[scheme]
+}
+
+// isLoopbackHost reports whether host is a loopback address or localhost.
+func isLoopbackHost(host string) bool {
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }

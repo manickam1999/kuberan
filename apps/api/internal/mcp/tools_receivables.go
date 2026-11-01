@@ -80,10 +80,12 @@ func (s *Server) handleListReceivables(ctx context.Context, req mcp.CallToolRequ
 		}
 		filter.Kind = kind
 	}
-	if v, ok := args["counterparty"].(string); ok {
-		// The service normalizes the key the same way stored keys are derived.
-		filter.CounterpartyKey = v
+	counterparty, res := filterTextArg(args, "counterparty")
+	if res != nil {
+		return res, nil
 	}
+	// The service normalizes the key the same way stored keys are derived.
+	filter.CounterpartyKey = counterparty
 
 	result, err := s.services.Receivables.ListReceivables(userID, page, filter)
 	if err != nil {
@@ -96,19 +98,19 @@ func (s *Server) handleListReceivables(ctx context.Context, req mcp.CallToolRequ
 	}
 
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("Receivables (page %d of %d, %d total):\n\n", result.Page, result.TotalPages, result.TotalItems))
+	fmt.Fprintf(&sb, "Receivables (page %d of %d, %d total):\n\n", result.Page, result.TotalPages, result.TotalItems)
 
 	for i := range result.Data {
 		r := &result.Data[i]
-		sb.WriteString(fmt.Sprintf("  %s  [%s]  %s  status: %s\n",
-			r.CounterpartyName, r.Kind, formatCents(r.Amount), r.Status))
-		sb.WriteString(fmt.Sprintf("    paid %s, written off %s, outstanding %s\n",
-			formatCents(r.PaidAmount), formatCents(r.WrittenOffAmount), formatCents(r.OutstandingAmount())))
+		fmt.Fprintf(&sb, "  %s  [%s]  %s  status: %s\n",
+			untrusted(r.CounterpartyName), r.Kind, formatCents(r.Amount), r.Status)
+		fmt.Fprintf(&sb, "    paid %s, written off %s, outstanding %s\n",
+			formatCents(r.PaidAmount), formatCents(r.WrittenOffAmount), formatCents(r.OutstandingAmount()))
 		if r.Transaction != nil {
-			sb.WriteString(fmt.Sprintf("    Expense: %s on %s (total %s)\n",
-				r.Transaction.Description, r.Transaction.Date.Format("2006-01-02"), formatCents(r.Transaction.Amount)))
+			fmt.Fprintf(&sb, "    Expense: %s on %s (total %s)\n",
+				untrusted(r.Transaction.Description), r.Transaction.Date.Format("2006-01-02"), formatCents(r.Transaction.Amount))
 		}
-		sb.WriteString(fmt.Sprintf("    ID: %s\n", r.ID))
+		fmt.Fprintf(&sb, "    ID: %s\n", r.ID)
 	}
 
 	return mcp.NewToolResultText(sb.String()), nil
@@ -133,18 +135,18 @@ func (s *Server) handleGetReceivablesSummary(ctx context.Context, _ mcp.CallTool
 	}
 
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("Open receivables: %s outstanding\n", formatCents(summary.TotalOutstanding)))
+	fmt.Fprintf(&sb, "Open receivables: %s outstanding\n", formatCents(summary.TotalOutstanding))
 	sb.WriteString(note)
 
 	sb.WriteString("\nBy counterparty:\n")
 	for _, c := range summary.ByCounterparty {
-		sb.WriteString(fmt.Sprintf("  %-25s %12s  (%d open, oldest %s)\n",
-			c.CounterpartyName, formatCents(c.Outstanding), c.OpenCount, c.OldestDate.Format("2006-01-02")))
+		fmt.Fprintf(&sb, "  %-27s %12s  (%d open, oldest %s)\n",
+			untrusted(c.CounterpartyName), formatCents(c.Outstanding), c.OpenCount, c.OldestDate.Format("2006-01-02"))
 	}
 
 	sb.WriteString("\nBy kind:\n")
 	for _, k := range summary.ByKind {
-		sb.WriteString(fmt.Sprintf("  %-25s %12s  (%d open)\n", k.Kind, formatCents(k.Outstanding), k.OpenCount))
+		fmt.Fprintf(&sb, "  %-25s %12s  (%d open)\n", k.Kind, formatCents(k.Outstanding), k.OpenCount)
 	}
 
 	return mcp.NewToolResultText(sb.String()), nil

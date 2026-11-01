@@ -27,20 +27,20 @@ func NewInvestmentHandler(investmentService services.InvestmentServicer, auditSe
 type AddInvestmentRequest struct {
 	AccountID     string     `json:"account_id" binding:"required"`
 	SecurityID    string     `json:"security_id" binding:"required"`
-	Quantity      float64    `json:"quantity" binding:"required,gt=0"`
-	PurchasePrice int64      `json:"purchase_price" binding:"required,gt=0"`
+	Quantity      float64    `json:"quantity" binding:"required,gt=0,lte=1e15"`
+	PurchasePrice int64      `json:"purchase_price" binding:"required,gt=0,lte=100000000000000"`
 	WalletAddress string     `json:"wallet_address,omitempty"`
-	Date          *time.Time `json:"date"`                    // optional, defaults to now
-	Fee           int64      `json:"fee" binding:"gte=0"`     // optional, defaults to 0
-	Notes         string     `json:"notes" binding:"max=500"` // optional, defaults to "Initial purchase"
+	Date          *time.Time `json:"date"`                                    // optional, defaults to now
+	Fee           int64      `json:"fee" binding:"gte=0,lte=100000000000000"` // optional, defaults to 0
+	Notes         string     `json:"notes" binding:"max=500"`                 // optional, defaults to "Initial purchase"
 }
 
 // RecordBuyRequest represents the request payload for recording a buy transaction.
 type RecordBuyRequest struct {
 	Date             time.Time `json:"date" binding:"required"`
-	Quantity         float64   `json:"quantity" binding:"required,gt=0"`
-	PricePerUnit     int64     `json:"price_per_unit" binding:"required,gt=0"`
-	Fee              int64     `json:"fee" binding:"gte=0"`
+	Quantity         float64   `json:"quantity" binding:"required,gt=0,lte=1e15"`
+	PricePerUnit     int64     `json:"price_per_unit" binding:"required,gt=0,lte=100000000000000"`
+	Fee              int64     `json:"fee" binding:"gte=0,lte=100000000000000"`
 	Notes            string    `json:"notes" binding:"max=500"`
 	FundingAccountID string    `json:"funding_account_id" binding:"omitempty"`
 }
@@ -48,9 +48,9 @@ type RecordBuyRequest struct {
 // RecordSellRequest represents the request payload for recording a sell transaction.
 type RecordSellRequest struct {
 	Date             time.Time `json:"date" binding:"required"`
-	Quantity         float64   `json:"quantity" binding:"required,gt=0"`
-	PricePerUnit     int64     `json:"price_per_unit" binding:"required,gt=0"`
-	Fee              int64     `json:"fee" binding:"gte=0"`
+	Quantity         float64   `json:"quantity" binding:"required,gt=0,lte=1e15"`
+	PricePerUnit     int64     `json:"price_per_unit" binding:"required,gt=0,lte=100000000000000"`
+	Fee              int64     `json:"fee" binding:"gte=0,lte=100000000000000"`
 	Notes            string    `json:"notes" binding:"max=500"`
 	DepositAccountID string    `json:"deposit_account_id" binding:"omitempty"`
 }
@@ -58,7 +58,7 @@ type RecordSellRequest struct {
 // RecordDividendRequest represents the request payload for recording a dividend.
 type RecordDividendRequest struct {
 	Date         time.Time `json:"date" binding:"required"`
-	Amount       int64     `json:"amount" binding:"required,gt=0"`
+	Amount       int64     `json:"amount" binding:"required,gt=0,lte=100000000000000"`
 	DividendType string    `json:"dividend_type" binding:"max=50"`
 	Notes        string    `json:"notes" binding:"max=500"`
 }
@@ -66,7 +66,7 @@ type RecordDividendRequest struct {
 // RecordSplitRequest represents the request payload for recording a stock split.
 type RecordSplitRequest struct {
 	Date       time.Time `json:"date" binding:"required"`
-	SplitRatio float64   `json:"split_ratio" binding:"required,gt=0"`
+	SplitRatio float64   `json:"split_ratio" binding:"required,gt=0,lte=1000000"`
 	Notes      string    `json:"notes" binding:"max=500"`
 }
 

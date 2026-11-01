@@ -22,7 +22,10 @@ import {
 import { useAccount, useUpdateAccount } from "@/hooks/use-accounts";
 import { useAuth } from "@/hooks/use-auth";
 import { useAccountTransactions } from "@/hooks/use-transactions";
-import { useAccountInvestments } from "@/hooks/use-investments";
+import {
+  useAccountInvestments,
+  usePrefetchInvestment,
+} from "@/hooks/use-investments";
 import { useCategories } from "@/hooks/use-categories";
 import { formatCurrency, formatDate, formatPayoutType, formatPayoutFrequency, formatCompounding } from "@/lib/format";
 import { Button } from "@/components/ui/button";
@@ -237,11 +240,15 @@ export default function AccountDetailPage() {
       page_size: PAGE_SIZE,
     });
   const { data: categoriesData } = useCategories({ page_size: 100 });
+  // While the account type is still unknown (direct load, nothing cached),
+  // fetch transactions and holdings in parallel instead of waiting for the
+  // account; once the type is known only the relevant one stays enabled.
   const { data: investmentsData, isLoading: investmentsLoading } =
     useAccountInvestments(
-      isInvestmentAccount ? accountId : "",
+      !account || isInvestmentAccount ? accountId : "",
       { page: investmentPage, page_size: PAGE_SIZE }
     );
+  const prefetchInvestment = usePrefetchInvestment();
 
   const transactions = transactionsData?.data ?? [];
   const totalPages = transactionsData?.total_pages ?? 1;
@@ -705,9 +712,15 @@ export default function AccountDetailPage() {
                           onClick={() =>
                             router.push(`/investments/${inv.id}`)
                           }
+                          onMouseEnter={() => prefetchInvestment(inv.id)}
                         >
                           <TableCell className="font-mono font-semibold">
-                            {inv.security.symbol}
+                            <Link
+                              href={`/investments/${inv.id}`}
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              {inv.security.symbol}
+                            </Link>
                           </TableCell>
                           <TableCell>{inv.security.name}</TableCell>
                           <TableCell className="text-right">

@@ -69,6 +69,8 @@ type UpdateAccountRequest struct {
 	PayoutType      *string `json:"payout_type" binding:"omitempty,oneof=cumulative periodic"`
 	PayoutFrequency *string `json:"payout_frequency" binding:"omitempty,oneof=monthly quarterly semiannual annual"`
 	Compounding     *string `json:"compounding" binding:"omitempty,oneof=monthly quarterly semiannual annual"`
+	// LinkedAccountID re-points FD payouts; "" clears it, otherwise a UUID of
+	// one of the user's own cash accounts.
 	LinkedAccountID *string `json:"linked_account_id"`
 }
 
@@ -357,6 +359,10 @@ func (h *AccountHandler) UpdateAccount(c *gin.Context) {
 	var req UpdateAccountRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		respondWithError(c, apperrors.WithMessage(apperrors.ErrInvalidInput, err.Error()))
+		return
+	}
+	if _, err := optionalUUID(req.LinkedAccountID, "linked_account_id"); err != nil {
+		respondWithError(c, err)
 		return
 	}
 

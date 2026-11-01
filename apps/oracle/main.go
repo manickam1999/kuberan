@@ -26,7 +26,12 @@ func main() {
 
 	httpClient := &http.Client{Timeout: cfg.RequestTimeout}
 
-	kuberanClient := client.NewKuberanClient(cfg.KuberanAPIURL, cfg.PipelineAPIKey, httpClient)
+	// Snapshot computation and fixed-deposit processing can run for minutes on
+	// large installs, so they get their own client with a longer timeout.
+	pipelineClient := &http.Client{Timeout: cfg.PipelineTimeout}
+
+	kuberanClient := client.NewKuberanClient(cfg.KuberanAPIURL, cfg.PipelineAPIKey, httpClient).
+		WithLongRunningClient(pipelineClient)
 
 	forexConverter := provider.NewForexConverter(httpClient, cfg.TargetCurrency)
 

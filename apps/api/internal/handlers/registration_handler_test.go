@@ -279,3 +279,89 @@ func TestRegistrationHandler_TruncatesClientName(t *testing.T) {
 		t.Errorf("client name has %d characters, want %d", n, maxClientNameLen)
 	}
 }
+
+func TestSanitizeClientName(t *testing.T) {
+	tests := map[string]string{
+		"Claude":                         "Claude",
+		"Claude\n\nVerified by Kuberan":  "Claude Verified by Kuberan",
+		"  Claude\t ":                    "Claude",
+		"Cla\u202Eude\u200B":             "Cla ude",
+		"bad\xffutf8":                    "badutf8",
+		"\x1b[1mBold\x1b[0m":             "[1mBold [0m",
+		strings.Repeat("a", 99) + " bcd": strings.Repeat("a", 99),
+	}
+	for in, want := range tests {
+		if got := sanitizeClientName(in); got != want {
+			t.Errorf("sanitizeClientName(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestIsValidRedirectURIPolicy(t *testing.T) {
+	valid := []string{
+		"https://claude.ai/api/mcp/auth_callback",
+		"https://ok/cb",
+		"https://example.com:8443/cb?x=1",
+		"http://127.0.0.1:33418/callback",
+		"http://localhost/cb",
+		"http://[::1]:8080/cb",
+		"com.example.app:/oauth2redirect",
+		"com.example.app://callback",
+		"cursor://anysphere.cursor-retrieval/oauth/callback",
+		"vscode://callback",
+	}
+	invalid := []string{
+		"",
+		"not a url",
+		"/relative/cb",
+		"https:///no-host",
+		"http://example.com/cb",       // plain http off loopback
+		"http://127.0.0.1.evil.com/x", // not actually loopback
+		"https://claude.ai/cb#frag",
+		"https://user:pw@claude.ai/cb",
+		"javascript:alert(1)",
+		"data:text/html,hi",
+		"file:///etc/passwd",
+		"vbscript:x",
+		"blob:https://claude.ai/x",
+		"about:blank",
+		"https://claude.ai/" + strings.Repeat("a", 2048),
+		"https://claude.ai/cb\nx",
+	}
+	for _, u := range valid {
+		if !isValidRedirectURI(u) {
+			t.Errorf("%q should be accepted", u)
+		}
+	}
+	for _, u := range invalid {
+		if isValidRedirectURI(u) {
+			t.Errorf("%q should be rejected", u)
+		}
+	}
+}
+
+func TestRegistrationHandler_Limits(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+	}{
+		{"too many redirect URIs", `{"redirect_uris":["https://a.example/1","https://a.example/2","https://a.example/3","https://a.example/4"]}`},
+		{"oversized body", `{"redirect_uris":["https://claude.ai/cb"],"client_name":"` + strings.Repeat("a", 17<<10) + `"}`},
+		{"javascript redirect", `{"redirect_uris":["javascript:alert(1)"]}`},
+		{"not JSON", `not-json`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			admin := &mockHydraAdmin{}
+			handler := NewRegistrationHandler(admin, &recordingAuditService{}, testScopes)
+			rec := doRequest(setupRegistrationRouter(handler), "POST", "/oauth/register", tt.body)
+			if rec.Code != http.StatusBadRequest {
+				t.Fatalf("expected 400, got %d: %s", rec.Code, rec.Body.String())
+			}
+			assertErrorCode(t, parseJSON(t, rec), apperrors.ErrInvalidInput.Code)
+			if admin.createClientCalled {
+				t.Error("CreateClient must not be called")
+			}
+		})
+	}
+}

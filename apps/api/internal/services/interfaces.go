@@ -75,6 +75,9 @@ type OAuthGrantServicer interface {
 	// clientID that includes scope, returning ErrOAuthScopeNotGranted otherwise.
 	// It records the grant's last use.
 	Authorize(userID, clientID, scope string) error
+	// RevokeAll marks every active grant of the user revoked (used when the
+	// user is deactivated) and returns how many were revoked.
+	RevokeAll(userID string) (int64, error)
 }
 
 // AccountUpdateFields holds optional fields for updating an account.

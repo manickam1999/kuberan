@@ -9,6 +9,7 @@ import type {
   OAuthRedirectResponse,
 } from "@/types/api";
 import { isProtocolScope, isWriteScope, scopeLabel } from "@/lib/oauth-scopes";
+import { describeRedirect, followHydraRedirect } from "../redirect";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
@@ -21,20 +22,26 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 
-// Show the host of the client's redirect target — the anti-phishing signal.
-function redirectHost(redirectUris?: string[]): string | null {
-  const uri = redirectUris?.[0];
-  if (!uri) return null;
-  try {
-    return new URL(uri).host;
-  } catch {
-    return uri;
-  }
+// Consent details as the API returns them. redirect_scheme/redirect_host
+// describe where this authorization sends its code (taken from the request
+// itself, not the client's first registered URI); client_verified is true only
+// for the operator's pinned client; every other client registered itself, so
+// its name is unverified.
+type ConsentDetails = OAuthConsentDetails & {
+  redirect_scheme?: string;
+  redirect_host?: string;
+  client_verified?: boolean;
+};
+
+function errorMessage(err: unknown): string {
+  if (err instanceof ApiClientError) return err.message;
+  if (err instanceof Error && err.message) return err.message;
+  return "An unexpected error occurred";
 }
 
 // Read scopes start ticked; write scopes only when the user approved them for
 // this client before (plan 022: write access is always an explicit opt-in).
-function initialSelection(details: OAuthConsentDetails): Set<string> {
+function initialSelection(details: ConsentDetails): Set<string> {
   const previous = new Set(details.previously_approved ?? []);
   return new Set(
     (details.requested_scopes ?? []).filter(
@@ -104,7 +111,7 @@ function OAuthConsent() {
   const searchParams = useSearchParams();
   const consentChallenge = searchParams.get("consent_challenge") ?? "";
 
-  const [details, setDetails] = useState<OAuthConsentDetails | null>(null);
+  const [details, setDetails] = useState<ConsentDetails | null>(null);
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [rememberClient, setRememberClient] = useState(true);
@@ -121,25 +128,21 @@ function OAuthConsent() {
     let cancelled = false;
     (async () => {
       try {
-        const res = await apiClient.get<OAuthConsentDetails>(
+        const res = await apiClient.get<ConsentDetails>(
           "/api/v1/oauth/consent",
           { consent_challenge: consentChallenge }
         );
         if (cancelled) return;
         // Trusted client: Hydra accepted server-side, just follow the redirect.
         if (res.redirect_to) {
-          window.location.href = res.redirect_to;
+          followHydraRedirect(res.redirect_to);
           return;
         }
         setDetails(res);
         setSelected(initialSelection(res));
       } catch (err) {
         if (cancelled) return;
-        setError(
-          err instanceof ApiClientError
-            ? err.message
-            : "An unexpected error occurred"
-        );
+        setError(errorMessage(err));
       } finally {
         if (!cancelled) setIsLoading(false);
       }
@@ -163,13 +166,9 @@ function OAuthConsent() {
         "/api/v1/oauth/consent/accept",
         body
       );
-      window.location.href = res.redirect_to;
+      followHydraRedirect(res.redirect_to);
     } catch (err) {
-      setError(
-        err instanceof ApiClientError
-          ? err.message
-          : "An unexpected error occurred"
-      );
+      setError(errorMessage(err));
       setIsSubmitting(false);
     }
   }
@@ -191,13 +190,9 @@ function OAuthConsent() {
         "/api/v1/oauth/consent/reject",
         { consent_challenge: consentChallenge }
       );
-      window.location.href = res.redirect_to;
+      followHydraRedirect(res.redirect_to);
     } catch (err) {
-      setError(
-        err instanceof ApiClientError
-          ? err.message
-          : "An unexpected error occurred"
-      );
+      setError(errorMessage(err));
       setIsSubmitting(false);
     }
   }
@@ -229,7 +224,8 @@ function OAuthConsent() {
   }
 
   const clientName = details?.client?.client_name || details?.client?.client_id || "An application";
-  const host = redirectHost(details?.redirect_uris);
+  const verified = details?.client_verified === true;
+  const redirect = describeRedirect(details?.redirect_scheme, details?.redirect_host);
   const scopes = details?.requested_scopes ?? [];
   const readScopes = scopes.filter((s) => !isProtocolScope(s) && !isWriteScope(s));
   const writeScopes = scopes.filter(isWriteScope);
@@ -245,8 +241,10 @@ function OAuthConsent() {
       <CardHeader>
         <CardTitle className="text-2xl">Authorize access</CardTitle>
         <CardDescription>
-          <span className="text-foreground font-medium">{clientName}</span> wants
-          to connect to your Kuberan account.
+          An application calling itself{" "}
+          <span className="text-foreground font-medium">{clientName}</span>
+          {verified ? " (verified)" : ""} wants to connect to your Kuberan
+          account.
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
@@ -255,12 +253,28 @@ function OAuthConsent() {
             {error}
           </div>
         )}
-        {host && (
-          <p className="text-muted-foreground text-sm">
-            Redirects to{" "}
-            <span className="text-foreground font-mono">{host}</span>
+        {!verified && (
+          <p className="text-muted-foreground text-xs">
+            Unverified: this app registered itself, so its name is not checked.
+            Judge it by where it sends you back to.
           </p>
         )}
+        <div className="flex flex-col gap-1">
+          <p className="text-muted-foreground text-sm">
+            Sends you back to{" "}
+            <span className="text-foreground font-mono break-all">
+              {redirect?.label ?? "an unknown address"}
+            </span>
+          </p>
+          {redirect?.note && (
+            <p className="text-muted-foreground text-xs">{redirect.note}</p>
+          )}
+          {!redirect && (
+            <p className="text-muted-foreground text-xs">
+              Deny unless you are sure you started this connection.
+            </p>
+          )}
+        </div>
         <div className="flex flex-col gap-2">
           <p className="text-sm font-medium">This will allow it to:</p>
           {readScopes.map((scope) => (

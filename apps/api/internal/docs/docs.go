@@ -723,13 +723,13 @@ const docTemplate = `{
                         }
                     },
                     "401": {
-                        "description": "Invalid credentials",
+                        "description": "Invalid credentials (also returned while the account is locked)",
                         "schema": {
                             "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
-                    "423": {
-                        "description": "Account locked",
+                    "429": {
+                        "description": "Too many attempts",
                         "schema": {
                             "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
@@ -745,7 +745,7 @@ const docTemplate = `{
         },
         "/auth/logout": {
             "post": {
-                "description": "Revoke the refresh session for this device",
+                "description": "Revoke the refresh session for this device and clear the refresh cookie",
                 "consumes": [
                     "application/json"
                 ],
@@ -755,10 +755,9 @@ const docTemplate = `{
                 "summary": "Logout",
                 "parameters": [
                     {
-                        "description": "Refresh token",
+                        "description": "Legacy: refresh token, only read when the cookie is absent",
                         "name": "request",
                         "in": "body",
-                        "required": true,
                         "schema": {
                             "$ref": "#/definitions/internal_handlers.RefreshRequest"
                         }
@@ -767,19 +766,13 @@ const docTemplate = `{
                 "responses": {
                     "204": {
                         "description": "Logged out"
-                    },
-                    "400": {
-                        "description": "Invalid input",
-                        "schema": {
-                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
-                        }
                     }
                 }
             }
         },
         "/auth/refresh": {
             "post": {
-                "description": "Exchange a valid refresh token for new access and refresh tokens",
+                "description": "Exchange the refresh cookie for a new access token and rotated refresh cookie",
                 "consumes": [
                     "application/json"
                 ],
@@ -792,10 +785,9 @@ const docTemplate = `{
                 "summary": "Refresh access token",
                 "parameters": [
                     {
-                        "description": "Refresh token",
+                        "description": "Legacy: refresh token, only read when the cookie is absent",
                         "name": "request",
                         "in": "body",
-                        "required": true,
                         "schema": {
                             "$ref": "#/definitions/internal_handlers.RefreshRequest"
                         }
@@ -803,19 +795,19 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "New tokens generated",
+                        "description": "New access token; refresh cookie rotated",
                         "schema": {
                             "$ref": "#/definitions/internal_handlers.AuthResponse"
                         }
                     },
-                    "400": {
-                        "description": "Invalid input",
+                    "401": {
+                        "description": "Missing, invalid or expired refresh token",
                         "schema": {
                             "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
-                    "401": {
-                        "description": "Invalid or expired refresh token",
+                    "429": {
+                        "description": "Too many requests",
                         "schema": {
                             "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
@@ -5723,9 +5715,6 @@ const docTemplate = `{
                 "access_token": {
                     "type": "string"
                 },
-                "refresh_token": {
-                    "type": "string"
-                },
                 "user": {
                     "$ref": "#/definitions/internal_handlers.UserResponse"
                 }
@@ -5786,7 +5775,9 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "link_code": {
-                    "type": "string"
+                    "type": "string",
+                    "maxLength": 16,
+                    "minLength": 6
                 },
                 "telegram_first_name": {
                     "type": "string"
@@ -6284,10 +6275,12 @@ const docTemplate = `{
             ],
             "properties": {
                 "email": {
-                    "type": "string"
+                    "type": "string",
+                    "maxLength": 254
                 },
                 "password": {
-                    "type": "string"
+                    "type": "string",
+                    "maxLength": 1024
                 }
             }
         },
@@ -6482,9 +6475,6 @@ const docTemplate = `{
         },
         "internal_handlers.RefreshRequest": {
             "type": "object",
-            "required": [
-                "refresh_token"
-            ],
             "properties": {
                 "refresh_token": {
                     "type": "string"
@@ -6500,7 +6490,7 @@ const docTemplate = `{
             "properties": {
                 "email": {
                     "type": "string",
-                    "maxLength": 255
+                    "maxLength": 254
                 },
                 "first_name": {
                     "type": "string",
@@ -6512,7 +6502,7 @@ const docTemplate = `{
                 },
                 "password": {
                     "type": "string",
-                    "maxLength": 128,
+                    "maxLength": 72,
                     "minLength": 8
                 }
             }
@@ -6722,6 +6712,7 @@ const docTemplate = `{
                     "type": "boolean"
                 },
                 "linked_account_id": {
+                    "description": "LinkedAccountID re-points FD payouts; \"\" clears it, otherwise a UUID of\none of the user's own cash accounts.",
                     "type": "string"
                 },
                 "maturity_date": {

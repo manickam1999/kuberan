@@ -2,6 +2,7 @@ package config
 
 import (
 	"slices"
+	"strings"
 	"testing"
 )
 
@@ -21,6 +22,38 @@ func TestWithWriteScopes(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			if got := withWriteScopes(tc.scopes, tc.enabled); got != tc.want {
 				t.Errorf("withWriteScopes(%q, %v) = %q, want %q", tc.scopes, tc.enabled, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestValidateProduction(t *testing.T) {
+	valid := func() *Config {
+		return &Config{
+			Env:         Production,
+			JWTSecret:   strings.Repeat("s", 32),
+			DBPassword:  "strong",
+			DBSSLMode:   "require",
+			CORSOrigins: []string{"https://kuberan.example.com"},
+		}
+	}
+	if err := valid().validateProduction(); err != nil {
+		t.Fatalf("valid config rejected: %v", err)
+	}
+
+	tests := map[string]func(c *Config){
+		"default JWT secret":  func(c *Config) { c.JWTSecret = "fallback-secret-key-for-dev-only" },
+		"short JWT secret":    func(c *Config) { c.JWTSecret = strings.Repeat("s", 31) },
+		"default DB password": func(c *Config) { c.DBPassword = "kuberan" },
+		"wildcard CORS":       func(c *Config) { c.CORSOrigins = []string{"*"} },
+		"no CORS origins":     func(c *Config) { c.CORSOrigins = nil },
+	}
+	for name, mutate := range tests {
+		t.Run(name, func(t *testing.T) {
+			c := valid()
+			mutate(c)
+			if err := c.validateProduction(); err == nil {
+				t.Error("expected a validation error")
 			}
 		})
 	}

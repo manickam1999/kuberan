@@ -57,7 +57,9 @@ func today() string { return time.Now().UTC().Format("2006-01-02") }
 func monthQuery() string {
 	now := time.Now().UTC()
 	from := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)
-	to := from.AddDate(0, 1, -1)
+	// to_date is parsed as midnight, so use the first day of next month to keep
+	// rows created "today" in range on the last day of a month.
+	to := from.AddDate(0, 1, 0)
 	return fmt.Sprintf("from_date=%s&to_date=%s", from.Format("2006-01-02"), to.Format("2006-01-02"))
 }
 

@@ -65,9 +65,12 @@ cd /opt/kuberan
 ```
 
 The deploy script:
-1. Builds the images
-2. Runs app-database migrations directly against Postgres (port 5432)
-3. Starts all services: API, web, MCP server, Hydra (after `hydra-migrate` completes), bot, and any profile-gated services (postgres, backup, oracle)
+1. Builds the images (tagged with the git SHA)
+2. Starts Postgres and, with the `backup` profile, takes a pre-migration backup
+3. Runs app-database migrations directly against Postgres (port 5432)
+4. Starts all services health-gated: API, web, MCP server, Hydra (after `hydra-migrate` completes), bot, and any profile-gated services (postgres, backup)
+
+See [backup-and-dr.md](backup-and-dr.md#6--deploys-and-rollback) for rollback.
 
 ### 4. Verify
 
@@ -222,13 +225,15 @@ Kuberan includes a `backup` service that runs `pg_dump` on a schedule and stores
 ### How It Works
 
 - A lightweight Alpine container runs [supercronic](https://github.com/aptible/supercronic) (a container-friendly cron)
-- Executes `pg_dump` daily at **2:00 AM UTC**
-- Stores compressed custom-format (`.dump`) backups in `./backups/` on the host
+- Executes `pg_dump` daily at **2:00 AM UTC**, plus before every deploy's migrations
+- Stores compressed custom-format (`.dump`) backups in `./backups/` on the host, verified with `pg_restore --list` and readable only by the backup user
+- Also dumps the self-hosted `hydra` database (`hydra_<ts>.dump`); on Supabase the hydra schema is already part of the main dump
 - Automatically prunes backups older than **30 days**
 - Runs an initial backup immediately on container start
+- Optional weekly automated restore test (`RESTORE_TEST_ENABLED=true`)
 - All output is logged to stdout (visible via `docker logs`)
 
-> **Note:** the backup service dumps only the app database (`DB_NAME`). Hydra's OAuth database is not backed up; losing it means MCP clients must re-register and re-authorize, but no financial data is affected.
+Details, off-host replication and restore drills: [backup-and-dr.md](backup-and-dr.md).
 
 ### Enable the Backup Service
 
@@ -257,8 +262,11 @@ The backup service uses the same `DB_*` variables from `.env.prod`. It overrides
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `BACKUP_RETENTION_DAYS` | `30` | Days to keep backups before pruning |
+| `BACKUP_HYDRA_DB_NAME` | `hydra` | Hydra database to dump too (empty disables) |
+| `BACKUP_REQUIRE_OFFHOST` | `false` | Fail the run when R2 replication is not configured |
+| `RESTORE_TEST_ENABLED` | `false` | Weekly restore drill into a scratch database |
 
-To customize retention, edit the `environment` section of the `backup` service in `docker-compose.prod.yml`.
+Set these in `.env.prod`.
 
 ### Managing Backups
 

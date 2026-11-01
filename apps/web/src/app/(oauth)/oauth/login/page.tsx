@@ -4,6 +4,7 @@ import { Suspense, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { apiClient, ApiClientError } from "@/lib/api-client";
 import type { OAuthLoginRequest, OAuthRedirectResponse } from "@/types/api";
+import { followHydraRedirect } from "../redirect";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -27,6 +28,7 @@ function getErrorMessage(error: unknown): string {
         return error.message || "An unexpected error occurred";
     }
   }
+  if (error instanceof Error && error.message) return error.message;
   return "An unexpected error occurred";
 }
 
@@ -86,7 +88,7 @@ function OAuthLoginForm() {
         body
       );
       // Hand control back to Hydra, which drives the consent step next.
-      window.location.href = res.redirect_to;
+      followHydraRedirect(res.redirect_to);
     } catch (err) {
       setError(getErrorMessage(err));
       setIsSubmitting(false);
@@ -104,7 +106,7 @@ function OAuthLoginForm() {
         "/api/v1/oauth/login/reject",
         { login_challenge: loginChallenge }
       );
-      window.location.href = res.redirect_to;
+      followHydraRedirect(res.redirect_to);
     } catch (err) {
       setError(getErrorMessage(err));
       setIsSubmitting(false);

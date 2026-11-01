@@ -62,15 +62,24 @@ export interface RegisterRequest {
   last_name?: string;
 }
 
+// The refresh token travels in the HttpOnly `kuberan_refresh` cookie. The body
+// field is only sent once, to migrate a session stored before the cookie.
 export interface RefreshRequest {
-  refresh_token: string;
+  refresh_token?: string;
 }
 
-// Auth response (login, register, refresh all return this)
+// Auth response (login, register). The refresh token is set as an HttpOnly
+// cookie and is no longer part of the body.
 export interface AuthResponse {
   access_token: string;
-  refresh_token: string;
   user: User;
+}
+
+// POST /auth/refresh response. `user` lets the app bootstrap a session in one
+// call; it is optional so an older API (without it) still works.
+export interface RefreshResponse {
+  access_token: string;
+  user?: User;
 }
 
 // Profile response

@@ -274,6 +274,32 @@ func TestAccountHandler_CreateFixedDepositAccount(t *testing.T) {
 	})
 }
 
+func TestAccountHandler_UpdateAccount_LinkedAccountID(t *testing.T) {
+	const fdID = "00000000-0000-0000-0000-0000000000f1"
+	cases := []struct {
+		name string
+		body string
+		want int
+	}{
+		{"uuid accepted", `{"linked_account_id":"00000000-0000-0000-0000-000000000001"}`, http.StatusOK},
+		{"empty clears", `{"linked_account_id":""}`, http.StatusOK},
+		{"non-uuid rejected", `{"linked_account_id":"not-a-uuid"}`, http.StatusBadRequest},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			acctSvc := &mockAccountService{
+				updateAccountFn: func(_, _ string, _ services.AccountUpdateFields) (*models.Account, error) {
+					return &models.Account{Base: models.Base{ID: fdID}}, nil
+				},
+			}
+			r := fdRouter(NewAccountHandler(acctSvc, &mockAuditService{}))
+			if rec := doRequest(r, "PUT", "/accounts/"+fdID, tc.body); rec.Code != tc.want {
+				t.Errorf("expected %d, got %d: %s", tc.want, rec.Code, rec.Body.String())
+			}
+		})
+	}
+}
+
 func TestAccountHandler_CloseFixedDeposit(t *testing.T) {
 	t.Run("returns_200_on_success", func(t *testing.T) {
 		acctSvc := &mockAccountService{

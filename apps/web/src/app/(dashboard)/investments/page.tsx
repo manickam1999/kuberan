@@ -38,6 +38,7 @@ import { StatCard } from "@/components/ui/stat-card";
 import {
   usePortfolio,
   useAllInvestments,
+  usePrefetchInvestment,
   type InvestmentStatus,
 } from "@/hooks/use-investments";
 import { formatCurrency, formatPercentage } from "@/lib/format";
@@ -79,19 +80,36 @@ function returnPct(investment: Investment) {
   return (investment.realized_gain_loss / investment.total_invested) * 100;
 }
 
-function HoldingCard({ investment, onClick }: { investment: Investment; onClick: () => void }) {
+function HoldingCard({
+  investment,
+  onClick,
+  onPrefetch,
+}: {
+  investment: Investment;
+  onClick: () => void;
+  onPrefetch: () => void;
+}) {
   const marketValue = Math.round(investment.quantity * investment.current_price);
   const unrealizedGL = marketValue - investment.cost_basis;
   const isUnrealizedPositive = unrealizedGL >= 0;
   const isRealizedPositive = investment.realized_gain_loss >= 0;
 
   return (
-    <Card className="cursor-pointer transition-colors hover:bg-accent/50" onClick={onClick}>
+    <Card
+      className="cursor-pointer transition-colors hover:bg-accent/50"
+      onClick={onClick}
+      onMouseEnter={onPrefetch}
+    >
       <CardHeader className="pb-3">
         <div className="flex items-start justify-between gap-2 overflow-hidden">
           <div className="min-w-0 flex-shrink overflow-hidden max-w-[50%] sm:max-w-[60%]">
             <CardTitle className="text-base font-mono font-semibold truncate">
-              {investment.security.symbol}
+              <Link
+                href={`/investments/${investment.id}`}
+                onClick={(e) => e.stopPropagation()}
+              >
+                {investment.security.symbol}
+              </Link>
             </CardTitle>
             <p className="text-sm text-muted-foreground truncate">
               {investment.security.name}
@@ -158,20 +176,31 @@ function HoldingCard({ investment, onClick }: { investment: Investment; onClick:
 function ClosedHoldingCard({
   investment,
   onClick,
+  onPrefetch,
 }: {
   investment: Investment;
   onClick: () => void;
+  onPrefetch: () => void;
 }) {
   const isRealizedPositive = investment.realized_gain_loss >= 0;
   const pct = returnPct(investment);
 
   return (
-    <Card className="cursor-pointer transition-colors hover:bg-accent/50" onClick={onClick}>
+    <Card
+      className="cursor-pointer transition-colors hover:bg-accent/50"
+      onClick={onClick}
+      onMouseEnter={onPrefetch}
+    >
       <CardHeader className="pb-3">
         <div className="flex items-start justify-between gap-2 overflow-hidden">
           <div className="min-w-0 flex-shrink overflow-hidden max-w-[55%] sm:max-w-[65%]">
             <CardTitle className="text-base font-mono font-semibold truncate">
-              {investment.security.symbol}
+              <Link
+                href={`/investments/${investment.id}`}
+                onClick={(e) => e.stopPropagation()}
+              >
+                {investment.security.symbol}
+              </Link>
             </CardTitle>
             <p className="text-sm text-muted-foreground truncate">
               {investment.security.name}
@@ -223,6 +252,7 @@ function ClosedHoldingCard({
 
 function AllHoldingsTable() {
   const router = useRouter();
+  const prefetchInvestment = usePrefetchInvestment();
   const [page, setPage] = useState(1);
   const [status, setStatus] = useState<InvestmentStatus>("open");
   const [sortColumn, setSortColumn] = useState<SortColumn | null>(null);
@@ -411,12 +441,14 @@ function AllHoldingsTable() {
                     key={inv.id}
                     investment={inv}
                     onClick={() => router.push(`/investments/${inv.id}`)}
+                    onPrefetch={() => prefetchInvestment(inv.id)}
                   />
                 ) : (
                   <HoldingCard
                     key={inv.id}
                     investment={inv}
                     onClick={() => router.push(`/investments/${inv.id}`)}
+                    onPrefetch={() => prefetchInvestment(inv.id)}
                   />
                 )
               )}
@@ -489,9 +521,15 @@ function AllHoldingsTable() {
                           key={inv.id}
                           className="cursor-pointer"
                           onClick={() => router.push(`/investments/${inv.id}`)}
+                          onMouseEnter={() => prefetchInvestment(inv.id)}
                         >
                           <TableCell className="font-mono font-semibold">
-                            {inv.security.symbol}
+                            <Link
+                              href={`/investments/${inv.id}`}
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              {inv.security.symbol}
+                            </Link>
                           </TableCell>
                           <TableCell>{inv.security.name}</TableCell>
                           <TableCell>
@@ -535,9 +573,15 @@ function AllHoldingsTable() {
                         key={inv.id}
                         className="cursor-pointer"
                         onClick={() => router.push(`/investments/${inv.id}`)}
+                        onMouseEnter={() => prefetchInvestment(inv.id)}
                       >
                         <TableCell className="font-mono font-semibold">
-                          {inv.security.symbol}
+                          <Link
+                            href={`/investments/${inv.id}`}
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            {inv.security.symbol}
+                          </Link>
                         </TableCell>
                         <TableCell>{inv.security.name}</TableCell>
                         <TableCell>

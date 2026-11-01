@@ -138,13 +138,14 @@ func (p *YahooProvider) FetchPrices(ctx context.Context, securities []Security) 
 func (p *YahooProvider) fetchOne(ctx context.Context, ticker string, secID string, now time.Time) (*PriceResult, error) {
 	url := p.baseURL + "/" + ticker + "?interval=1d&range=1d"
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return nil, fmt.Errorf("building request: %w", err)
-	}
-	req.Header.Set("User-Agent", yahooUA)
-
-	resp, err := p.httpClient.Do(req)
+	resp, err := doWithRetry(ctx, p.httpClient, func() (*http.Request, error) {
+		req, reqErr := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+		if reqErr != nil {
+			return nil, fmt.Errorf("building request: %w", reqErr)
+		}
+		req.Header.Set("User-Agent", yahooUA)
+		return req, nil
+	})
 	if err != nil {
 		return nil, fmt.Errorf("http request: %w", err)
 	}

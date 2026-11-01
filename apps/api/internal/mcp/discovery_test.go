@@ -16,7 +16,7 @@ var testOAuthConfig = OAuthConfig{
 
 func TestDiscoveryHandler(t *testing.T) {
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, ProtectedResourceMetadataPath, nil)
+	req := httptest.NewRequest(http.MethodGet, ProtectedResourceMetadataPath, http.NoBody)
 
 	discoveryHandler(testOAuthConfig).ServeHTTP(rec, req)
 
@@ -74,7 +74,7 @@ func TestWithWWWAuthenticate(t *testing.T) {
 		}), testOAuthConfig)
 
 		rec := httptest.NewRecorder()
-		h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/mcp", nil))
+		h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/mcp", http.NoBody))
 
 		if rec.Code != http.StatusUnauthorized {
 			t.Fatalf("status = %d, want 401", rec.Code)
@@ -91,7 +91,7 @@ func TestWithWWWAuthenticate(t *testing.T) {
 		}), testOAuthConfig)
 
 		rec := httptest.NewRecorder()
-		h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/mcp", nil))
+		h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/mcp", http.NoBody))
 
 		if rec.Code != http.StatusOK {
 			t.Fatalf("status = %d, want 200", rec.Code)
@@ -109,7 +109,7 @@ func TestWithWWWAuthenticate(t *testing.T) {
 		}), testOAuthConfig)
 
 		rec := httptest.NewRecorder()
-		h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/mcp", nil))
+		h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/mcp", http.NoBody))
 
 		if got := rec.Header().Get("WWW-Authenticate"); got != custom {
 			t.Errorf("WWW-Authenticate = %q, want %q", got, custom)

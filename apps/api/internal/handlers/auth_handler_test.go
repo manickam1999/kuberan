@@ -132,6 +132,52 @@ func doRequest(r *gin.Engine, method, path, body string) *httptest.ResponseRecor
 	return rec
 }
 
+// doRequestWithCookie is doRequest with the refresh cookie attached.
+func doRequestWithCookie(r *gin.Engine, method, path, body, refreshToken string) *httptest.ResponseRecorder {
+	req := httptest.NewRequest(method, path, strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: RefreshCookieName, Value: refreshToken})
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	return rec
+}
+
+// refreshCookie returns the kuberan_refresh cookie set on the response, failing
+// the test when absent.
+func refreshCookie(t *testing.T, rec *httptest.ResponseRecorder) *http.Cookie {
+	t.Helper()
+	for _, c := range rec.Result().Cookies() {
+		if c.Name == RefreshCookieName {
+			return c
+		}
+	}
+	t.Fatalf("no %s cookie set; headers: %v", RefreshCookieName, rec.Header())
+	return nil
+}
+
+// assertRefreshCookieIssued checks the cookie attributes from the shared
+// contract and that the body no longer carries the refresh token.
+func assertRefreshCookieIssued(t *testing.T, rec *httptest.ResponseRecorder, secure bool) *http.Cookie {
+	t.Helper()
+	c := refreshCookie(t, rec)
+	if c.Value == "" {
+		t.Error("expected a refresh token in the cookie")
+	}
+	if !c.HttpOnly || c.SameSite != http.SameSiteStrictMode || c.Path != "/api/v1/auth" || c.Domain != "" {
+		t.Errorf("unexpected cookie attributes: %+v", c)
+	}
+	if c.Secure != secure {
+		t.Errorf("expected Secure=%v, got %v", secure, c.Secure)
+	}
+	if c.MaxAge != int(middleware.RefreshTokenExpiry/time.Second) {
+		t.Errorf("expected Max-Age %d, got %d", int(middleware.RefreshTokenExpiry/time.Second), c.MaxAge)
+	}
+	if _, ok := parseJSON(t, rec)["refresh_token"]; ok {
+		t.Error("refresh_token must not be returned in the body")
+	}
+	return c
+}
+
 func parseJSON(t *testing.T, rec *httptest.ResponseRecorder) map[string]interface{} {
 	t.Helper()
 	var result map[string]interface{}
@@ -179,12 +225,22 @@ func TestAuthHandler_Register(t *testing.T) {
 		if result["access_token"] == nil || result["access_token"] == "" {
 			t.Error("expected non-empty access_token")
 		}
-		if result["refresh_token"] == nil || result["refresh_token"] == "" {
-			t.Error("expected non-empty refresh_token")
-		}
+		assertRefreshCookieIssued(t, rec, true)
 		user := result["user"].(map[string]interface{})
 		if user["email"] != "test@example.com" {
 			t.Errorf("expected email test@example.com, got %v", user["email"])
+		}
+	})
+
+	t.Run("returns 400 on a password over 72 characters", func(t *testing.T) {
+		handler := NewAuthHandler(&mockUserService{}, &mockAuditService{})
+		r := setupAuthRouter(handler)
+
+		rec := doRequest(r, "POST", "/auth/register",
+			`{"email":"test@example.com","password":"`+strings.Repeat("a", 73)+`"}`)
+
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("expected 400, got %d", rec.Code)
 		}
 	})
 
@@ -293,7 +349,7 @@ func TestAuthHandler_Login(t *testing.T) {
 				return &models.User{Base: models.Base{ID: "1"}, Email: email, FirstName: "Test"}, nil
 			},
 		}
-		handler := NewAuthHandler(userSvc, &mockAuditService{})
+		handler := NewAuthHandler(userSvc, &mockAuditService{}, WithSecureCookie(false))
 		r := setupAuthRouter(handler)
 
 		rec := doRequest(r, "POST", "/auth/login", `{"email":"test@example.com","password":"password123"}`)
@@ -305,8 +361,30 @@ func TestAuthHandler_Login(t *testing.T) {
 		if result["access_token"] == nil || result["access_token"] == "" {
 			t.Error("expected non-empty access_token")
 		}
-		if result["refresh_token"] == nil || result["refresh_token"] == "" {
-			t.Error("expected non-empty refresh_token")
+		assertRefreshCookieIssued(t, rec, false)
+	})
+
+	t.Run("audits failures with a truncated email", func(t *testing.T) {
+		audit := &recordingAudit{}
+		userSvc := &mockUserService{
+			attemptLoginFn: func(_, _ string) (*models.User, error) {
+				return nil, apperrors.ErrInvalidCredentials
+			},
+		}
+		r := setupAuthRouter(NewAuthHandler(userSvc, audit))
+		long := strings.Repeat("a", 240) + "@example.com"
+
+		rec := doRequest(r, "POST", "/auth/login", `{"email":"`+long+`","password":"x"}`)
+
+		if rec.Code != http.StatusUnauthorized {
+			t.Fatalf("expected 401, got %d: %s", rec.Code, rec.Body.String())
+		}
+		e := audit.only(t)
+		if e.action != "LOGIN_FAILED" || e.changes["reason"] != "invalid_credentials" {
+			t.Errorf("unexpected audit entry %+v", e)
+		}
+		if got, _ := e.changes["email"].(string); len(got) > maxAuditEmailLen {
+			t.Errorf("audit email not truncated: %d chars", len(got))
 		}
 	})
 
@@ -327,21 +405,46 @@ func TestAuthHandler_Login(t *testing.T) {
 		assertErrorCode(t, parseJSON(t, rec), "INVALID_CREDENTIALS")
 	})
 
-	t.Run("returns 423 on locked account", func(t *testing.T) {
+	t.Run("locked account looks like invalid credentials but is audited distinctly", func(t *testing.T) {
+		audit := &recordingAudit{}
 		userSvc := &mockUserService{
 			attemptLoginFn: func(_, _ string) (*models.User, error) {
-				return nil, apperrors.ErrAccountLocked
+				return nil, services.ErrLoginLocked
 			},
 		}
-		handler := NewAuthHandler(userSvc, &mockAuditService{})
-		r := setupAuthRouter(handler)
+		r := setupAuthRouter(NewAuthHandler(userSvc, audit))
 
 		rec := doRequest(r, "POST", "/auth/login", `{"email":"locked@example.com","password":"password123"}`)
 
-		if rec.Code != http.StatusLocked {
-			t.Fatalf("expected 423, got %d", rec.Code)
+		if rec.Code != http.StatusUnauthorized {
+			t.Fatalf("expected 401, got %d", rec.Code)
 		}
-		assertErrorCode(t, parseJSON(t, rec), "ACCOUNT_LOCKED")
+		assertErrorCode(t, parseJSON(t, rec), "INVALID_CREDENTIALS")
+		if e := audit.only(t); e.changes["reason"] != "account_locked" {
+			t.Errorf("expected reason account_locked, got %+v", e)
+		}
+	})
+
+	t.Run("lockout trigger is audited as ACCOUNT_LOCKED", func(t *testing.T) {
+		audit := &recordingAudit{}
+		userSvc := &mockUserService{
+			attemptLoginFn: func(_, _ string) (*models.User, error) {
+				return nil, services.ErrLoginLockoutTriggered
+			},
+			getUserByEmailFn: func(_ string) (*models.User, error) {
+				return &models.User{Base: models.Base{ID: "u9"}}, nil
+			},
+		}
+		r := setupAuthRouter(NewAuthHandler(userSvc, audit))
+
+		rec := doRequest(r, "POST", "/auth/login", `{"email":"x@example.com","password":"bad"}`)
+
+		if rec.Code != http.StatusUnauthorized {
+			t.Fatalf("expected 401, got %d", rec.Code)
+		}
+		if len(audit.entries) != 2 || audit.entries[1].action != "ACCOUNT_LOCKED" || audit.entries[1].userID != "u9" {
+			t.Errorf("expected LOGIN_FAILED then ACCOUNT_LOCKED for u9, got %+v", audit.entries)
+		}
 	})
 
 	t.Run("returns 400 on missing fields", func(t *testing.T) {
@@ -378,34 +481,76 @@ func TestAuthHandler_RefreshToken(t *testing.T) {
 		}
 		r := setupAuthRouter(NewAuthHandler(userSvc, &mockAuditService{}))
 
-		rec := doRequest(r, "POST", "/auth/refresh", body)
+		rec := doRequestWithCookie(r, "POST", "/auth/refresh", "", refreshToken)
 
 		if rec.Code != http.StatusOK {
 			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
 		}
 		result := parseJSON(t, rec)
-		newToken, _ := result["refresh_token"].(string)
+		if u, ok := result["user"].(map[string]interface{}); !ok || u["id"] != "u1" {
+			t.Errorf("expected the user in the refresh response, got %v", result["user"])
+		}
+		newToken := assertRefreshCookieIssued(t, rec, true).Value
 		if gotOld != middleware.HashToken(refreshToken) {
 			t.Error("old hash does not match the presented refresh token")
 		}
 		if newToken == "" || gotNew != middleware.HashToken(newToken) {
-			t.Error("new hash does not match the returned refresh token")
+			t.Error("new hash does not match the cookie's refresh token")
 		}
 	})
 
-	t.Run("returns 401 when no session matches", func(t *testing.T) {
+	t.Run("falls back to a legacy body token when there is no cookie", func(t *testing.T) {
+		var gotOld string
 		userSvc := &mockUserService{
 			getUserByIDFn: func(_ string) (*models.User, error) { return user, nil },
-			rotateRefreshSessionFn: func(_, _, _ string, _ time.Time) error {
-				return apperrors.ErrUnauthorized
+			rotateRefreshSessionFn: func(_, oldHash, _ string, _ time.Time) error {
+				gotOld = oldHash
+				return nil
 			},
 		}
 		r := setupAuthRouter(NewAuthHandler(userSvc, &mockAuditService{}))
 
 		rec := doRequest(r, "POST", "/auth/refresh", body)
 
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+		}
+		if gotOld != middleware.HashToken(refreshToken) {
+			t.Error("legacy body token was not used")
+		}
+		assertRefreshCookieIssued(t, rec, true)
+	})
+
+	t.Run("returns 401 with neither cookie nor body", func(t *testing.T) {
+		r := setupAuthRouter(NewAuthHandler(&mockUserService{}, &mockAuditService{}))
+
+		rec := doRequest(r, "POST", "/auth/refresh", "")
+
 		if rec.Code != http.StatusUnauthorized {
 			t.Fatalf("expected 401, got %d", rec.Code)
+		}
+	})
+
+	t.Run("returns 401, clears the cookie and audits when no session matches", func(t *testing.T) {
+		audit := &recordingAudit{}
+		userSvc := &mockUserService{
+			getUserByIDFn: func(_ string) (*models.User, error) { return user, nil },
+			rotateRefreshSessionFn: func(_, _, _ string, _ time.Time) error {
+				return apperrors.ErrUnauthorized
+			},
+		}
+		r := setupAuthRouter(NewAuthHandler(userSvc, audit))
+
+		rec := doRequestWithCookie(r, "POST", "/auth/refresh", "", refreshToken)
+
+		if rec.Code != http.StatusUnauthorized {
+			t.Fatalf("expected 401, got %d", rec.Code)
+		}
+		if c := refreshCookie(t, rec); c.MaxAge >= 0 {
+			t.Errorf("expected the cookie to be cleared, got %+v", c)
+		}
+		if e := audit.only(t); e.action != "REFRESH_REJECTED" || e.userID != "u1" {
+			t.Errorf("unexpected audit entry %+v", e)
 		}
 	})
 
@@ -443,7 +588,40 @@ func TestAuthHandler_Logout(t *testing.T) {
 		t.Fatalf("GenerateRefreshToken: %v", err)
 	}
 
-	t.Run("revokes the session for the token", func(t *testing.T) {
+	t.Run("revokes the cookie's session and clears the cookie", func(t *testing.T) {
+		var revoked string
+		userSvc := &mockUserService{
+			revokeRefreshSessionFn: func(_, hash string) error {
+				revoked = hash
+				return nil
+			},
+		}
+		r := setupAuthRouter(NewAuthHandler(userSvc, &mockAuditService{}))
+
+		rec := doRequestWithCookie(r, "POST", "/auth/logout", "", refreshToken)
+
+		if rec.Code != http.StatusNoContent {
+			t.Fatalf("expected 204, got %d", rec.Code)
+		}
+		if revoked != middleware.HashToken(refreshToken) {
+			t.Error("revoked hash does not match the cookie's refresh token")
+		}
+		if c := refreshCookie(t, rec); c.MaxAge >= 0 || c.Value != "" {
+			t.Errorf("expected the cookie to be cleared, got %+v", c)
+		}
+	})
+
+	t.Run("succeeds with no token at all", func(t *testing.T) {
+		r := setupAuthRouter(NewAuthHandler(&mockUserService{}, &mockAuditService{}))
+
+		rec := doRequest(r, "POST", "/auth/logout", "")
+
+		if rec.Code != http.StatusNoContent {
+			t.Fatalf("expected 204, got %d", rec.Code)
+		}
+	})
+
+	t.Run("revokes the session for a legacy body token", func(t *testing.T) {
 		var revoked string
 		userSvc := &mockUserService{
 			revokeRefreshSessionFn: func(_, hash string) error {
@@ -602,12 +780,16 @@ func TestAuthHandler_UpdateProfileSettings(t *testing.T) {
 
 	t.Run("hide_balances alone leaves the default account untouched", func(t *testing.T) {
 		var calls []services.ProfileSettingsUpdate
-		r := setupAuthRouter(NewAuthHandler(recordUpdates(&calls), &mockAuditService{}))
+		audit := &recordingAudit{}
+		r := setupAuthRouter(NewAuthHandler(recordUpdates(&calls), audit))
 
 		rec := doRequest(r, "PATCH", "/profile", `{"hide_balances":true}`)
 
 		if rec.Code != http.StatusOK {
 			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+		}
+		if e := audit.only(t); e.action != "UPDATE_PROFILE" || e.changes["hide_balances"] != true {
+			t.Errorf("unexpected audit entry %+v", e)
 		}
 		if len(calls) != 1 || calls[0].SetDefaultAccount ||
 			calls[0].HideBalances == nil || !*calls[0].HideBalances {

@@ -1,10 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { ChevronLeft, ChevronRight, Search } from "lucide-react";
 
-import { useSecurities } from "@/hooks/use-securities";
+import { usePrefetchSecurity, useSecurities } from "@/hooks/use-securities";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -34,18 +34,19 @@ const PAGE_SIZE = 20;
 
 function SecurityRow({
   security,
-  onClick,
+  onPrefetch,
 }: {
   security: Security;
-  onClick: () => void;
+  onPrefetch: () => void;
 }) {
   const assetType = security.asset_type.toLowerCase() as AssetType;
   const color = ASSET_TYPE_COLOR[assetType] ?? "var(--muted-foreground)";
 
   return (
-    <button
-      type="button"
-      onClick={onClick}
+    <Link
+      href={`/securities/${security.id}`}
+      onMouseEnter={onPrefetch}
+      onFocus={onPrefetch}
       className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-accent/40"
     >
       <span
@@ -74,12 +75,12 @@ function SecurityRow({
       <Badge variant="outline" className="shrink-0">
         {ASSET_TYPE_LABELS[assetType] ?? security.asset_type}
       </Badge>
-    </button>
+    </Link>
   );
 }
 
 export default function SecuritiesPage() {
-  const router = useRouter();
+  const prefetchSecurity = usePrefetchSecurity();
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [page, setPage] = useState(1);
@@ -145,7 +146,7 @@ export default function SecuritiesPage() {
               <SecurityRow
                 key={security.id}
                 security={security}
-                onClick={() => router.push(`/securities/${security.id}`)}
+                onPrefetch={() => prefetchSecurity(security.id)}
               />
             ))}
           </div>

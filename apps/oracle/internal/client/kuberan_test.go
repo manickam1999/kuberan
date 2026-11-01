@@ -300,3 +300,50 @@ func searchString(s, substr string) bool {
 	}
 	return false
 }
+
+// countingTransport records how many requests went through it.
+type countingTransport struct {
+	calls int
+	next  http.RoundTripper
+}
+
+func (c *countingTransport) RoundTrip(r *http.Request) (*http.Response, error) {
+	c.calls++
+	return c.next.RoundTrip(r)
+}
+
+func TestLongRunningClient_UsedForSnapshotsAndFixedDeposits(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v1/pipeline/snapshots":
+			_ = json.NewEncoder(w).Encode(map[string]int{"snapshots_recorded": 1})
+		case "/api/v1/pipeline/fixed-deposits/process":
+			_ = json.NewEncoder(w).Encode(map[string]int{"payouts_posted": 0, "fds_matured": 0})
+		default:
+			_ = json.NewEncoder(w).Encode(map[string]any{"securities": []any{}})
+		}
+	}))
+	defer server.Close()
+
+	short := &countingTransport{next: http.DefaultTransport}
+	long := &countingTransport{next: http.DefaultTransport}
+	c := NewKuberanClient(server.URL, "k", &http.Client{Transport: short}).
+		WithLongRunningClient(&http.Client{Transport: long})
+
+	if _, err := c.ComputeSnapshots(context.Background()); err != nil {
+		t.Fatalf("ComputeSnapshots: %v", err)
+	}
+	if _, err := c.ProcessFixedDeposits(context.Background()); err != nil {
+		t.Fatalf("ProcessFixedDeposits: %v", err)
+	}
+	if _, err := c.GetSecurities(context.Background()); err != nil {
+		t.Fatalf("GetSecurities: %v", err)
+	}
+
+	if long.calls != 2 {
+		t.Errorf("long client calls = %d, want 2", long.calls)
+	}
+	if short.calls != 1 {
+		t.Errorf("short client calls = %d, want 1", short.calls)
+	}
+}

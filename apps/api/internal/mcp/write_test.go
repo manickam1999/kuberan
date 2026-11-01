@@ -287,6 +287,52 @@ func TestRateLimiter(t *testing.T) {
 	}
 }
 
+// One user's writes are capped across all of their clients, not only per
+// client, so many registered clients cannot multiply the budget.
+func TestRateLimiterPerUserAcrossClients(t *testing.T) {
+	now := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
+	l := newRateLimiter(2, 100, func() time.Time { return now })
+
+	for i, client := range []string{"a", "b", "c"} {
+		for j := 0; j < 2; j++ {
+			ok, _ := l.allowCaller("user-1", client, 1)
+			// The per-user minute limit is 2*2 = 4: client c gets nothing.
+			if want := i < 2; ok != want {
+				t.Fatalf("client %s write %d: ok=%v, want %v", client, j+1, ok, want)
+			}
+		}
+	}
+	if ok, _ := l.allowCaller("user-2", "c", 1); !ok {
+		t.Fatal("another user must have its own budget")
+	}
+
+	// A refused write is not counted against either bucket.
+	now = now.Add(time.Minute)
+	if ok, _ := l.allowCaller("user-1", "a", 3); ok {
+		t.Fatal("3 writes exceed the per-client limit of 2")
+	}
+	if ok, _ := l.allowCaller("user-1", "b", 2); !ok {
+		t.Fatal("the refused batch must not have used the user's budget")
+	}
+}
+
+func TestRateLimiterEvictsIdleBuckets(t *testing.T) {
+	now := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
+	l := newRateLimiter(10, 100, func() time.Time { return now })
+	for i := 0; i < 50; i++ {
+		l.allowCaller(fmt.Sprintf("user-%d", i), "client", 1)
+	}
+	if len(l.buckets) != 100 {
+		t.Fatalf("expected 100 buckets, got %d", len(l.buckets))
+	}
+
+	now = now.Add(25 * time.Hour)
+	l.allowCaller("user-0", "client", 1)
+	if len(l.buckets) != 2 {
+		t.Fatalf("idle buckets must be evicted, %d remain", len(l.buckets))
+	}
+}
+
 func TestCreateTransactionTool(t *testing.T) {
 	const scope = "write:transactions"
 

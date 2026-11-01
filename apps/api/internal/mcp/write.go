@@ -23,7 +23,8 @@ type WriteConfig struct {
 	// MaxAmount is the per-change ceiling for any amount, in cents.
 	MaxAmount int64
 	// RatePerMinute and RatePerDay cap writes per (user, client); 0 disables
-	// that window.
+	// that window. Each user is also capped across all their clients at
+	// userRateMultiplier times these values.
 	RatePerMinute int
 	RatePerDay    int
 }
@@ -152,7 +153,7 @@ func (s *Server) chargeWrites(c caller, n int) *mcp.CallToolResult {
 			"this change touches %d records, more than the limit of %d per minute; split it into smaller batches",
 			n, s.write.RatePerMinute))
 	}
-	if ok, retry := s.limiter.allow(c.UserID+"|"+c.ClientID, n); !ok {
+	if ok, retry := s.limiter.allowCaller(c.UserID, c.ClientID, n); !ok {
 		return mcp.NewToolResultError(fmt.Sprintf(
 			"rate limited: too many changes, try again in %ds", int(math.Ceil(retry.Seconds()))))
 	}
@@ -382,15 +383,33 @@ func stringListArg(args map[string]interface{}, name string, maxLen int) ([]stri
 	return out, nil
 }
 
-// rateLimiter is a fixed-window counter per key, with a one-minute and a
-// one-day window. The MCP server runs as a single instance, so in-memory state
-// is enough; a restart resets the windows.
-type rateLimiter struct {
-	mu        sync.Mutex
+// userRateMultiplier sets the per-user write limit, across all of a user's
+// clients, as a multiple of the per-(user, client) limit: one connection
+// cannot exceed its own limit, and several connections (for example a burst
+// of freshly registered clients a phished user approved) together cannot
+// exceed this multiple.
+const userRateMultiplier = 2
+
+// rateSweepInterval is how often idle buckets are evicted.
+const rateSweepInterval = 10 * time.Minute
+
+// rateLimit is a pair of fixed-window limits; 0 disables a window.
+type rateLimit struct {
 	perMinute int
 	perDay    int
+}
+
+// rateLimiter is a fixed-window counter per key, with a one-minute and a
+// one-day window. State is held in memory, per MCP server instance: the
+// server runs as a single instance, and a restart resets the windows. Buckets
+// idle for a full day are evicted.
+type rateLimiter struct {
+	mu        sync.Mutex
+	client    rateLimit // per (user, client)
+	user      rateLimit // per user, across clients
 	now       func() time.Time
 	buckets   map[string]*rateBucket
+	lastSweep time.Time
 }
 
 type rateBucket struct {
@@ -400,37 +419,88 @@ type rateBucket struct {
 	dayCount    int
 }
 
+// newRateLimiter returns a limiter allowing perMinute/perDay events per
+// (user, client) and userRateMultiplier times that per user.
 func newRateLimiter(perMinute, perDay int, now func() time.Time) *rateLimiter {
-	return &rateLimiter{perMinute: perMinute, perDay: perDay, now: now, buckets: map[string]*rateBucket{}}
+	return &rateLimiter{
+		client:    rateLimit{perMinute: perMinute, perDay: perDay},
+		user:      rateLimit{perMinute: perMinute * userRateMultiplier, perDay: perDay * userRateMultiplier},
+		now:       now,
+		buckets:   map[string]*rateBucket{},
+		lastSweep: now(),
+	}
 }
 
-// allow counts n events for key and reports whether they fit in both windows.
-// When they do not, nothing is counted and retry is how long until the
-// blocking window resets.
+// allowCaller counts n writes for a user and client against both the
+// per-(user, client) and the per-user limits. Either refusing refuses both,
+// and nothing is counted.
+func (l *rateLimiter) allowCaller(userID, clientID string, n int) (ok bool, retry time.Duration) {
+	return l.allowKeys(n,
+		limitedKey{key: "c|" + userID + "|" + clientID, limit: l.client},
+		limitedKey{key: "u|" + userID, limit: l.user},
+	)
+}
+
+// allow counts n events for key against the per-(user, client) limit.
 func (l *rateLimiter) allow(key string, n int) (ok bool, retry time.Duration) {
+	return l.allowKeys(n, limitedKey{key: key, limit: l.client})
+}
+
+// limitedKey is a bucket key and the limit that applies to it.
+type limitedKey struct {
+	key   string
+	limit rateLimit
+}
+
+// allowKeys counts n events against every key and reports whether they fit in
+// all of their windows. When they do not, nothing is counted and retry is how
+// long until the blocking window resets.
+func (l *rateLimiter) allowKeys(n int, keys ...limitedKey) (ok bool, retry time.Duration) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
 	now := l.now()
-	b := l.buckets[key]
-	if b == nil {
-		b = &rateBucket{minuteStart: now, dayStart: now}
-		l.buckets[key] = b
-	}
-	if now.Sub(b.minuteStart) >= time.Minute {
-		b.minuteStart, b.minuteCount = now, 0
-	}
-	if now.Sub(b.dayStart) >= 24*time.Hour {
-		b.dayStart, b.dayCount = now, 0
-	}
+	l.sweep(now)
 
-	if l.perDay > 0 && b.dayCount+n > l.perDay {
-		return false, b.dayStart.Add(24 * time.Hour).Sub(now)
+	buckets := make([]*rateBucket, len(keys))
+	for i, k := range keys {
+		b := l.buckets[k.key]
+		if b == nil {
+			b = &rateBucket{minuteStart: now, dayStart: now}
+			l.buckets[k.key] = b
+		}
+		if now.Sub(b.minuteStart) >= time.Minute {
+			b.minuteStart, b.minuteCount = now, 0
+		}
+		if now.Sub(b.dayStart) >= 24*time.Hour {
+			b.dayStart, b.dayCount = now, 0
+		}
+		if k.limit.perDay > 0 && b.dayCount+n > k.limit.perDay {
+			return false, b.dayStart.Add(24 * time.Hour).Sub(now)
+		}
+		if k.limit.perMinute > 0 && b.minuteCount+n > k.limit.perMinute {
+			return false, b.minuteStart.Add(time.Minute).Sub(now)
+		}
+		buckets[i] = b
 	}
-	if l.perMinute > 0 && b.minuteCount+n > l.perMinute {
-		return false, b.minuteStart.Add(time.Minute).Sub(now)
+	for _, b := range buckets {
+		b.minuteCount += n
+		b.dayCount += n
 	}
-	b.minuteCount += n
-	b.dayCount += n
 	return true, 0
+}
+
+// sweep evicts buckets whose day window has expired (both windows are then
+// empty, so dropping one is the same as keeping it). It runs at most every
+// rateSweepInterval. The caller holds l.mu.
+func (l *rateLimiter) sweep(now time.Time) {
+	if now.Sub(l.lastSweep) < rateSweepInterval {
+		return
+	}
+	l.lastSweep = now
+	for k, b := range l.buckets {
+		if now.Sub(b.dayStart) >= 24*time.Hour {
+			delete(l.buckets, k)
+		}
+	}
 }

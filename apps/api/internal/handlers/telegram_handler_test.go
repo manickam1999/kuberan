@@ -363,6 +363,42 @@ func TestTelegramHandler_CompleteLink(t *testing.T) {
 	})
 }
 
+func TestTelegramHandler_CompleteLinkAudit(t *testing.T) {
+	body := `{"link_code":"ABCD2345","telegram_user_id":55}`
+
+	t.Run("audits success against the linked user", func(t *testing.T) {
+		audit := &recordingAudit{}
+		svc := &mockTelegramService{
+			getLinkByTelegramIDFn: func(_ int64) (*models.TelegramLink, error) {
+				return &models.TelegramLink{Base: models.Base{ID: "l1"}, UserID: "u1"}, nil
+			},
+		}
+		r := setupInternalTelegramRouter(NewTelegramHandler(svc, audit))
+
+		if rec := doTelegramRequest(r, "POST", "/internal/telegram/complete-link", body); rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d", rec.Code)
+		}
+		if e := audit.only(t); e.action != "COMPLETE_TELEGRAM_LINK" || e.userID != "u1" || e.resourceID != "l1" {
+			t.Errorf("unexpected audit entry %+v", e)
+		}
+	})
+
+	t.Run("audits failures with the reason", func(t *testing.T) {
+		audit := &recordingAudit{}
+		svc := &mockTelegramService{
+			completeLinkFn: func(_ string, _ int64, _, _, _ string) error { return apperrors.ErrTooManyLinkAttempts },
+		}
+		r := setupInternalTelegramRouter(NewTelegramHandler(svc, audit))
+
+		if rec := doTelegramRequest(r, "POST", "/internal/telegram/complete-link", body); rec.Code != http.StatusTooManyRequests {
+			t.Fatalf("expected 429, got %d", rec.Code)
+		}
+		if e := audit.only(t); e.action != "COMPLETE_TELEGRAM_LINK_FAILED" || e.changes["reason"] != "TOO_MANY_LINK_ATTEMPTS" {
+			t.Errorf("unexpected audit entry %+v", e)
+		}
+	})
+}
+
 func TestTelegramHandler_ResolveUser(t *testing.T) {
 	t.Run("returns_200_with_user_data", func(t *testing.T) {
 		telegramSvc := &mockTelegramService{

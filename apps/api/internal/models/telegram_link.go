@@ -9,7 +9,7 @@ type TelegramLink struct {
 	TelegramUserID    int64      `gorm:"uniqueIndex;not null" json:"telegram_user_id"`
 	TelegramUsername  string     `json:"telegram_username,omitempty"`
 	TelegramFirstName string     `json:"telegram_first_name,omitempty"`
-	LinkCode          string     `gorm:"size:6" json:"-"`
+	LinkCode          string     `gorm:"size:16;index:idx_telegram_links_link_code,unique,where:link_code <> ''" json:"-"`
 	LinkCodeExpiresAt *time.Time `json:"-"`
 	DefaultCurrency   string     `gorm:"size:3;not null;default:'MYR'" json:"default_currency"`
 	IsActive          bool       `gorm:"default:false" json:"is_active"`

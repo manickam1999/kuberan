@@ -1,7 +1,8 @@
 "use client";
 
 import { useMemo } from "react";
-import { ThemedDonut, type DonutSlice } from "@/components/charts/themed-donut";
+import type { DonutSlice } from "@/components/charts/themed-donut";
+import { LazyThemedDonut as ThemedDonut } from "@/components/charts/lazy";
 import { DitherFill } from "@/components/charts/dither-fill";
 import { ditherColorAt, ditherFill } from "@/lib/dither";
 import {

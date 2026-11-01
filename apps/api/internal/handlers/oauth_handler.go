@@ -3,6 +3,7 @@ package handlers
 import (
 	"errors"
 	"net/http"
+	"net/url"
 	"slices"
 	"strings"
 
@@ -36,6 +37,20 @@ type OAuthHandler struct {
 	auditService  services.AuditServicer
 	allowedScopes []string // registered API scopes; grants are capped to this set.
 	resourceURL   string   // MCP resource identifier always stamped into the granted audience.
+	// pinnedClientID is the pre-registered OAuth client (HYDRA_PINNED_CLIENT_ID),
+	// shown as verified on the consent screen. Every other client registered
+	// itself through DCR, so its name is whatever it chose to call itself.
+	pinnedClientID string
+}
+
+// OAuthHandlerOption configures optional OAuthHandler settings.
+type OAuthHandlerOption func(*OAuthHandler)
+
+// WithPinnedClientID marks clientID (config.HydraPinnedClientID) as the
+// operator's pre-registered client: the consent screen shows it as verified
+// rather than as a self-registered (unverified) client. Empty means none.
+func WithPinnedClientID(clientID string) OAuthHandlerOption {
+	return func(h *OAuthHandler) { h.pinnedClientID = clientID }
 }
 
 // NewOAuthHandler creates a new OAuthHandler. scopes is the space-delimited set
@@ -51,8 +66,9 @@ func NewOAuthHandler(
 	auditService services.AuditServicer,
 	scopes string,
 	resourceURL string,
+	opts ...OAuthHandlerOption,
 ) *OAuthHandler {
-	return &OAuthHandler{
+	h := &OAuthHandler{
 		hydra:         adminClient,
 		userService:   userService,
 		grants:        grants,
@@ -60,6 +76,16 @@ func NewOAuthHandler(
 		allowedScopes: strings.Fields(scopes),
 		resourceURL:   resourceURL,
 	}
+	for _, opt := range opts {
+		opt(h)
+	}
+	return h
+}
+
+// invalidBody is the error for a request body that fails to bind. It does not
+// echo the binding error, which names internal struct fields and validators.
+func invalidBody(required string) error {
+	return apperrors.WithMessage(apperrors.ErrInvalidInput, "invalid request body: "+required)
 }
 
 // oauthLoginRequest is the payload the apps/web login page submits.
@@ -92,9 +118,11 @@ type oauthConsentRejectRequest struct {
 	ConsentChallenge string `json:"consent_challenge" binding:"required"`
 }
 
-// Login resolves a Hydra login challenge. It verifies the submitted credentials
-// through the existing login/lockout path and, on success, accepts the login
-// with subject = user ID, returning Hydra's redirect_to.
+// Login resolves a Hydra login challenge. It first confirms with Hydra that
+// the challenge is a live login request, so the endpoint cannot be used to
+// test credentials outside a real authorization flow; then it verifies the
+// credentials through the existing login/lockout path and, on success,
+// accepts the login with subject = user ID, returning Hydra's redirect_to.
 //
 // @Summary     Resolve an OAuth login challenge
 // @Description Verify credentials and accept Hydra's login challenge
@@ -105,18 +133,27 @@ type oauthConsentRejectRequest struct {
 // @Success     200 {object} map[string]string "redirect_to"
 // @Failure     400 {object} ErrorResponse "Invalid input"
 // @Failure     401 {object} ErrorResponse "Invalid credentials"
+// @Failure     404 {object} ErrorResponse "Unknown or expired challenge"
 // @Router      /oauth/login [post]
 func (h *OAuthHandler) Login(c *gin.Context) {
 	var req oauthLoginRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		respondWithError(c, apperrors.WithMessage(apperrors.ErrInvalidInput, err.Error()))
+		respondWithError(c, invalidBody("login_challenge, a valid email and password are required"))
+		return
+	}
+
+	// Validate the challenge before touching credentials: a bad or spent
+	// challenge must not reveal whether the password was right, nor count
+	// toward (or reset) the account lockout.
+	if _, err := h.hydra.GetLoginRequest(c.Request.Context(), req.LoginChallenge); err != nil {
+		respondWithError(c, err)
 		return
 	}
 
 	user, err := h.userService.AttemptLogin(req.Email, req.Password)
 	if err != nil {
 		h.auditService.Log("", "OAUTH_LOGIN_FAILED", "user", "", c.ClientIP(),
-			map[string]interface{}{"email": req.Email})
+			map[string]interface{}{"email": truncateRunes(req.Email, maxAuditEmailLen)})
 		respondWithError(c, err)
 		return
 	}
@@ -155,7 +192,7 @@ func (h *OAuthHandler) Login(c *gin.Context) {
 func (h *OAuthHandler) RejectLogin(c *gin.Context) {
 	var req oauthLoginRejectRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		respondWithError(c, apperrors.WithMessage(apperrors.ErrInvalidInput, err.Error()))
+		respondWithError(c, invalidBody("login_challenge is required"))
 		return
 	}
 
@@ -223,17 +260,55 @@ func (h *OAuthHandler) GetConsent(c *gin.Context) {
 	}
 
 	// Hand the consent page what it needs to render the anti-phishing screen
-	// (client name, redirect host, grantable scopes) and pre-tick what the
-	// user approved last time.
+	// (client name and whether it is verified, where the authorization code
+	// will be sent, grantable scopes) and pre-tick what the user approved last
+	// time.
+	target := consentRedirectTarget(consent)
 	c.JSON(http.StatusOK, gin.H{
 		"client": gin.H{
 			"client_id":   consent.Client.ClientID,
 			"client_name": consent.Client.ClientName,
 		},
+		"client_verified":     h.pinnedClientID != "" && consent.Client.ClientID == h.pinnedClientID,
+		"redirect_scheme":     target.Scheme,
+		"redirect_host":       target.Host,
 		"requested_scopes":    requested,
 		"previously_approved": previouslyApproved,
-		"redirect_uris":       consent.Client.RedirectURIs,
 	})
+}
+
+// redirectTarget is where an authorization code will be delivered: the scheme
+// and, for http/https, the host (with port). A native app's private-use
+// scheme (com.example.app:/cb) has no host.
+type redirectTarget struct {
+	Scheme string
+	Host   string
+}
+
+// consentRedirectTarget returns where this authorization will send its code.
+// That is the redirect_uri of the authorization request itself (Hydra's
+// request_url), which Hydra has already matched against the client's
+// registration; a client may register several, so the first registered URI is
+// not necessarily the one in use. When the request names none, Hydra uses the
+// client's only registered URI. Anything unparseable yields an empty target,
+// which the consent page shows as unknown.
+func consentRedirectTarget(consent *hydra.ConsentRequest) redirectTarget {
+	raw := ""
+	if u, err := url.Parse(consent.RequestURL); err == nil && consent.RequestURL != "" {
+		raw = u.Query().Get("redirect_uri")
+	}
+	if raw == "" && len(consent.Client.RedirectURIs) == 1 {
+		raw = consent.Client.RedirectURIs[0]
+	}
+	u, err := url.Parse(raw)
+	if err != nil || u.Scheme == "" {
+		return redirectTarget{}
+	}
+	t := redirectTarget{Scheme: strings.ToLower(u.Scheme)}
+	if t.Scheme == "http" || t.Scheme == "https" {
+		t.Host = strings.ToLower(u.Host)
+	}
+	return t
 }
 
 // mergedDecision combines this consent screen's decision with the client's
@@ -302,7 +377,7 @@ func (h *OAuthHandler) activeGrant(consent *hydra.ConsentRequest) (*models.OAuth
 func (h *OAuthHandler) AcceptConsent(c *gin.Context) {
 	var req oauthConsentAcceptRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		respondWithError(c, apperrors.WithMessage(apperrors.ErrInvalidInput, err.Error()))
+		respondWithError(c, invalidBody("consent_challenge is required"))
 		return
 	}
 
@@ -378,7 +453,7 @@ func (h *OAuthHandler) AcceptConsent(c *gin.Context) {
 func (h *OAuthHandler) RejectConsent(c *gin.Context) {
 	var req oauthConsentRejectRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		respondWithError(c, apperrors.WithMessage(apperrors.ErrInvalidInput, err.Error()))
+		respondWithError(c, invalidBody("consent_challenge is required"))
 		return
 	}
 

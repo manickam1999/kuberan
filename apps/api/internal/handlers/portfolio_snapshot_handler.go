@@ -61,6 +61,9 @@ func (h *PortfolioSnapshotHandler) ComputeSnapshots(c *gin.Context) {
 		return
 	}
 
+	h.auditService.Log("", "PIPELINE_COMPUTE_SNAPSHOTS", "portfolio_snapshot", "", c.ClientIP(),
+		map[string]interface{}{"snapshots_recorded": count})
+
 	c.JSON(http.StatusOK, gin.H{"snapshots_recorded": count})
 }
 

@@ -58,10 +58,15 @@ func (s *Server) handleListCategories(ctx context.Context, req mcp.CallToolReque
 	}
 
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("Categories (%d total):\n\n", total))
-	for _, c := range data {
-		sb.WriteString(fmt.Sprintf("  %-30s %-8s %s\n", c.Name, c.Type, c.Description))
-		sb.WriteString(fmt.Sprintf("    ID: %s\n", c.ID))
+	fmt.Fprintf(&sb, "Categories (%d total):\n\n", total)
+	for i := range data {
+		c := &data[i]
+		line := fmt.Sprintf("  %-32s %-8s", untrusted(c.Name), c.Type)
+		if c.Description != "" {
+			line += " " + untrusted(c.Description)
+		}
+		sb.WriteString(line + "\n")
+		fmt.Fprintf(&sb, "    ID: %s\n", c.ID)
 	}
 
 	return mcp.NewToolResultText(sb.String()), nil

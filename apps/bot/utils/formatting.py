@@ -1,10 +1,14 @@
+import html
+from typing import Any
+
+
 def format_currency(amount_cents: int, currency: str = "MYR") -> str:
     """
     Format amount in cents to currency string.
 
     Args:
         amount_cents: Amount in cents (e.g., 1050 for $10.50)
-        currency: Currency code (default: USD)
+        currency: Currency code (default: MYR)
 
     Returns:
         Formatted currency string (e.g., "$10.50")
@@ -19,7 +23,7 @@ def format_currency(amount_cents: int, currency: str = "MYR") -> str:
         "MYR": "RM",
     }
 
-    symbol = currency_symbols.get(currency, currency + " ")
+    symbol = currency_symbols.get(currency, f"{currency} ")
 
     return f"{symbol}{amount_dollars:,.2f}"
 
@@ -40,12 +44,12 @@ def format_percentage(value: float) -> str:
     return f"{value:.1f}%"
 
 
-def escape_markdown(text: str) -> str:
-    """Escape the characters Telegram legacy Markdown treats as entity markers.
+def esc(value: Any) -> str:
+    """Escape a value for a Telegram message sent with parse_mode='HTML'.
 
-    Legacy Markdown only supports escaping _, *, ` and [ (a backslash before
-    any other character is shown literally), so backslashes are left as-is.
+    Every piece of user- or API-supplied text (names, descriptions, icons,
+    currency codes) must go through this before it is interpolated into an
+    HTML reply, otherwise a stray '<' or '&' breaks the message (Telegram
+    rejects it) or injects formatting/links.
     """
-    for ch in ("_", "*", "`", "["):
-        text = text.replace(ch, "\\" + ch)
-    return text
+    return html.escape("" if value is None else str(value), quote=False)

@@ -12,7 +12,11 @@ export const profileKeys = {
 };
 
 export function useProfile() {
+  // The session bootstrap already returned the user; show it while the
+  // authoritative profile loads.
+  const { user } = useAuth();
   return useQuery({
+    placeholderData: user ?? undefined,
     queryKey: profileKeys.all,
     queryFn: async () => {
       const res = await apiClient.get<ProfileResponse>("/api/v1/profile");

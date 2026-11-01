@@ -237,6 +237,13 @@ func (s *accountService) UpdateAccount(userID, accountID string, fields AccountU
 	// Principal and StartDate are immutable; any attempt to change them is silently
 	// ignored here — the handler should reject such requests before calling this.
 	if account.Type == models.AccountTypeFixedDeposit {
+		// Validate the payout destination before writing anything, so a
+		// rejected linked account leaves the whole update unapplied.
+		if fields.LinkedAccountID != nil && *fields.LinkedAccountID != "" {
+			if err := s.validateFDLinkedAccount(account, *fields.LinkedAccountID); err != nil {
+				return nil, err
+			}
+		}
 		if fields.InterestRate != nil {
 			updates["interest_rate"] = *fields.InterestRate
 		}
@@ -307,6 +314,8 @@ func (s *accountService) updateFixedDepositDetails(account *models.Account, fiel
 		if *fields.LinkedAccountID == "" {
 			detailUpdates["linked_account_id"] = nil
 		} else {
+			// Ownership/type/currency checked by validateFDLinkedAccount in
+			// UpdateAccount before any write.
 			detailUpdates["linked_account_id"] = *fields.LinkedAccountID
 		}
 	}
@@ -328,6 +337,27 @@ func (s *accountService) updateFixedDepositDetails(account *models.Account, fiel
 		}
 	}
 
+	return nil
+}
+
+// validateFDLinkedAccount checks that linkedID may receive the payouts of the
+// fixed deposit fd: another active account of the same user, of type cash, in
+// the same currency — the rules CreateFixedDepositAccount applies. Without it an
+// update could point interest payouts at another user's account.
+func (s *accountService) validateFDLinkedAccount(fd *models.Account, linkedID string) error {
+	if linkedID == fd.ID {
+		return apperrors.WithMessage(apperrors.ErrInvalidInput, "linked account must not be the fixed deposit itself")
+	}
+	linkedAccount, err := s.GetAccountByID(fd.UserID, linkedID)
+	if err != nil {
+		return err
+	}
+	if linkedAccount.Type != models.AccountTypeCash {
+		return apperrors.WithMessage(apperrors.ErrInvalidAccountType, "linked account must be a cash account")
+	}
+	if linkedAccount.Currency != fd.Currency {
+		return apperrors.WithMessage(apperrors.ErrInvalidInput, "linked account currency must match the fixed deposit currency")
+	}
 	return nil
 }
 
@@ -817,7 +847,7 @@ func (s *accountService) enrichInvestmentBalances(accounts []models.Account) err
 	// Accumulate market value per account
 	balances := make(map[string]int64)
 	for _, h := range holdings {
-		balances[h.AccountID] += int64(h.Quantity * float64(prices[h.SecurityID]))
+		balances[h.AccountID] += valueCents(h.Quantity, prices[h.SecurityID])
 	}
 
 	// Set balances on the account slice

@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { ArrowUpRight, ArrowDownRight } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
-import { ThemedAreaChart } from "@/components/charts/themed-area-chart";
+import { LazyThemedAreaChart as ThemedAreaChart } from "@/components/charts/lazy";
 import {
   Card,
   CardContent,

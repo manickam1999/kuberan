@@ -1,35 +1,44 @@
 "use client";
 
 import { useEffect, useState, forwardRef, useImperativeHandle } from "react";
+import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
-import {
-  LayoutDashboard,
-  Wallet,
-  ArrowLeftRight,
-  Tag,
-  Filter,
-  PiggyBank,
-  HandCoins,
-  Database,
-  TrendingUp,
-  Plus,
-  Receipt,
-  FolderPlus,
-  Handshake,
-} from "lucide-react";
-import {
-  CommandDialog,
-  CommandEmpty,
-  CommandGroup,
-  CommandInput,
-  CommandItem,
-  CommandList,
-  CommandSeparator,
-} from "@/components/ui/command";
-import { CreateAccountDialog } from "@/components/accounts/create-account-dialog";
-import { CreateTransactionDialog } from "@/components/transactions/create-transaction-dialog";
-import { LendMoneyDialog } from "@/components/receivables/lend-money-dialog";
-import { CreateCategoryDialog } from "@/components/categories/create-category-dialog";
+import type { QuickAction } from "./command-palette-menu";
+
+// Everything behind the palette is loaded on first use. The create dialogs
+// fetch accounts/categories when mounted, so mounting them eagerly in the
+// layout cost several requests on every page load.
+const CommandPaletteMenu = dynamic(() => import("./command-palette-menu"), {
+  ssr: false,
+});
+const CreateAccountDialog = dynamic(
+  () =>
+    import("@/components/accounts/create-account-dialog").then(
+      (m) => m.CreateAccountDialog
+    ),
+  { ssr: false }
+);
+const CreateTransactionDialog = dynamic(
+  () =>
+    import("@/components/transactions/create-transaction-dialog").then(
+      (m) => m.CreateTransactionDialog
+    ),
+  { ssr: false }
+);
+const LendMoneyDialog = dynamic(
+  () =>
+    import("@/components/receivables/lend-money-dialog").then(
+      (m) => m.LendMoneyDialog
+    ),
+  { ssr: false }
+);
+const CreateCategoryDialog = dynamic(
+  () =>
+    import("@/components/categories/create-category-dialog").then(
+      (m) => m.CreateCategoryDialog
+    ),
+  { ssr: false }
+);
 
 export interface CommandPaletteRef {
   toggle: () => void;
@@ -39,126 +48,76 @@ export const CommandPalette = forwardRef<CommandPaletteRef>(
   function CommandPalette(_, ref) {
     const router = useRouter();
     const [open, setOpen] = useState(false);
+    // Once something has been opened it stays mounted, so closing it can
+    // still animate out.
+    const [menuUsed, setMenuUsed] = useState(false);
+    const [activeAction, setActiveAction] = useState<QuickAction | null>(null);
+    const [usedActions, setUsedActions] = useState<ReadonlySet<QuickAction>>(
+      () => new Set()
+    );
+
+    const setPaletteOpen = (next: boolean | ((prev: boolean) => boolean)) => {
+      setMenuUsed(true);
+      setOpen(next);
+    };
 
     // Expose toggle method to parent components
     useImperativeHandle(ref, () => ({
-      toggle: () => setOpen((prev) => !prev),
+      toggle: () => setPaletteOpen((prev) => !prev),
     }));
 
-  // Dialog states for quick actions
-  const [createAccountOpen, setCreateAccountOpen] = useState(false);
-  const [createTransactionOpen, setCreateTransactionOpen] = useState(false);
-  const [createCategoryOpen, setCreateCategoryOpen] = useState(false);
-  const [lendOpen, setLendOpen] = useState(false);
+    // Keyboard listener for Cmd+K / Ctrl+K
+    useEffect(() => {
+      const down = (e: KeyboardEvent) => {
+        if (e.key === "k" && (e.metaKey || e.ctrlKey)) {
+          e.preventDefault();
+          setMenuUsed(true);
+          setOpen((prev) => !prev);
+        }
+      };
 
-  // Keyboard listener for Cmd+K / Ctrl+K
-  useEffect(() => {
-    const down = (e: KeyboardEvent) => {
-      if (e.key === "k" && (e.metaKey || e.ctrlKey)) {
-        e.preventDefault();
-        setOpen((open) => !open);
-      }
+      document.addEventListener("keydown", down);
+      return () => document.removeEventListener("keydown", down);
+    }, []);
+
+    const navigateTo = (path: string) => {
+      setOpen(false);
+      router.push(path);
     };
 
-    document.addEventListener("keydown", down);
-    return () => document.removeEventListener("keydown", down);
-  }, []);
+    const openAction = (action: QuickAction) => {
+      setOpen(false);
+      setUsedActions((prev) => new Set(prev).add(action));
+      setActiveAction(action);
+    };
 
-  // Navigation handler
-  const navigateTo = (path: string) => {
-    setOpen(false);
-    router.push(path);
-  };
+    const dialogProps = (action: QuickAction) => ({
+      open: activeAction === action,
+      onOpenChange: (next: boolean) => setActiveAction(next ? action : null),
+    });
 
-  // Action handler
-  const openDialog = (dialogSetter: (open: boolean) => void) => {
-    setOpen(false);
-    dialogSetter(true);
-  };
+    return (
+      <>
+        {menuUsed && (
+          <CommandPaletteMenu
+            open={open}
+            onOpenChange={setOpen}
+            onNavigate={navigateTo}
+            onAction={openAction}
+          />
+        )}
 
-  return (
-    <>
-      <CommandDialog open={open} onOpenChange={setOpen}>
-        <CommandInput placeholder="Type a command or search..." />
-        <CommandList>
-          <CommandEmpty>No results found.</CommandEmpty>
-
-          <CommandGroup heading="Navigation">
-            <CommandItem onSelect={() => navigateTo("/")}>
-              <LayoutDashboard />
-              <span>Dashboard</span>
-            </CommandItem>
-            <CommandItem onSelect={() => navigateTo("/accounts")}>
-              <Wallet />
-              <span>Accounts</span>
-            </CommandItem>
-            <CommandItem onSelect={() => navigateTo("/transactions")}>
-              <ArrowLeftRight />
-              <span>Transactions</span>
-            </CommandItem>
-            <CommandItem onSelect={() => navigateTo("/categories")}>
-              <Tag />
-              <span>Categories</span>
-            </CommandItem>
-            <CommandItem onSelect={() => navigateTo("/rules")}>
-              <Filter />
-              <span>Rules</span>
-            </CommandItem>
-            <CommandItem onSelect={() => navigateTo("/budgets")}>
-              <PiggyBank />
-              <span>Budgets</span>
-            </CommandItem>
-            <CommandItem onSelect={() => navigateTo("/receivables")}>
-              <HandCoins />
-              <span>Owed to me</span>
-            </CommandItem>
-            <CommandItem onSelect={() => navigateTo("/securities")}>
-              <Database />
-              <span>Securities</span>
-            </CommandItem>
-            <CommandItem onSelect={() => navigateTo("/investments")}>
-              <TrendingUp />
-              <span>Investments</span>
-            </CommandItem>
-          </CommandGroup>
-
-          <CommandSeparator />
-
-          <CommandGroup heading="Quick Actions">
-            <CommandItem onSelect={() => openDialog(setCreateAccountOpen)}>
-              <Plus />
-              <span>Create Account</span>
-            </CommandItem>
-            <CommandItem onSelect={() => openDialog(setCreateTransactionOpen)}>
-              <Receipt />
-              <span>Add Transaction</span>
-            </CommandItem>
-            <CommandItem onSelect={() => openDialog(setLendOpen)}>
-              <Handshake />
-              <span>Lend money</span>
-            </CommandItem>
-            <CommandItem onSelect={() => openDialog(setCreateCategoryOpen)}>
-              <FolderPlus />
-              <span>Create Category</span>
-            </CommandItem>
-          </CommandGroup>
-        </CommandList>
-      </CommandDialog>
-
-      {/* All action dialogs */}
-      <CreateAccountDialog
-        open={createAccountOpen}
-        onOpenChange={setCreateAccountOpen}
-      />
-      <CreateTransactionDialog
-        open={createTransactionOpen}
-        onOpenChange={setCreateTransactionOpen}
-      />
-      <LendMoneyDialog open={lendOpen} onOpenChange={setLendOpen} />
-      <CreateCategoryDialog
-        open={createCategoryOpen}
-        onOpenChange={setCreateCategoryOpen}
-      />
-    </>
-  );
-});
+        {usedActions.has("account") && (
+          <CreateAccountDialog {...dialogProps("account")} />
+        )}
+        {usedActions.has("transaction") && (
+          <CreateTransactionDialog {...dialogProps("transaction")} />
+        )}
+        {usedActions.has("lend") && <LendMoneyDialog {...dialogProps("lend")} />}
+        {usedActions.has("category") && (
+          <CreateCategoryDialog {...dialogProps("category")} />
+        )}
+      </>
+    );
+  }
+);

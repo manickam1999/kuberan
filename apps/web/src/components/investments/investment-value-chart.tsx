@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { ThemedAreaChart } from "@/components/charts/themed-area-chart";
+import { LazyThemedAreaChart as ThemedAreaChart } from "@/components/charts/lazy";
 import {
   Card,
   CardContent,

@@ -1,13 +1,15 @@
-FROM golang:1.25
+FROM golang:1.26
 
 WORKDIR /app
 
-# Install Air for hot reloading
-RUN go install github.com/air-verse/air@latest
+# Install Air for hot reloading (pinned; bump deliberately)
+RUN go install github.com/air-verse/air@v1.67.4
 
-# We'll initialize modules in the container to avoid the go.sum issue
-COPY go.mod ./
-RUN go mod tidy
+# Warm the module cache from the committed go.mod/go.sum. Never run
+# `go mod tidy` here: it would rewrite dependencies at build time instead of
+# using what is committed.
+COPY go.mod go.sum ./
+RUN go mod download
 
 # Source code will be mounted as a volume
 EXPOSE 8080

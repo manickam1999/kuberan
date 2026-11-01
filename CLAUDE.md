@@ -28,7 +28,7 @@ Monorepo with five applications:
 ## Technology Stack
 
 ### Backend (`apps/api/`)
-- **Language**: Go 1.24
+- **Language**: Go 1.26
 - **Framework**: Gin (HTTP router)
 - **ORM**: GORM with PostgreSQL 16
 - **Auth**: JWT (golang-jwt/jwt/v5) with bcrypt password hashing
@@ -145,7 +145,8 @@ Note: Budgets exist in the backend API but have no page in the redesigned UI (on
 - **Route groups**: `(auth)` for public pages, `(oauth)` for the Hydra login/consent pages (MCP OAuth flow), `(dashboard)` for protected pages with sidebar layout
 - **Provider chain**: Root layout wraps `ThemeProvider` > `QueryProvider` > `AuthProvider` > `Toaster`
 - **Data fetching**: All API calls go through `lib/api-client.ts`, consumed by React Query hooks in `src/hooks/`. Each hook file exports a query key factory for structured cache management
-- **Auth flow**: JWT access tokens (localStorage) + auth flag cookie (for middleware). Auto-refresh on 401 with concurrent request deduplication
+- **Auth flow**: access token in memory only; refresh token in the HttpOnly `kuberan_refresh` cookie (API-set, `credentials: "include"` on `/api/v1/auth/*`). The session is bootstrapped with `POST /auth/refresh` on load (page queries wait on it in `api-client.ts`), legacy localStorage tokens are migrated once. Auth flag cookie (non-secret) drives middleware redirects. Auto-refresh on 401 with concurrent request deduplication; cross-tab login/logout (BroadcastChannel, `lib/auth-channel.ts`) clears the query cache
+- **Security headers**: per-request nonce CSP in `src/middleware.ts` (pass the nonce from `headers().get("x-nonce")` to any new inline script); static headers (HSTS, nosniff, Referrer/Permissions-Policy) in `next.config.ts`
 - **Component organization**: ShadCN primitives in `ui/`, feature-specific dialogs in domain folders (`accounts/`, `transactions/`, etc.)
 - **Forms**: react-hook-form with zod schemas for validation, ShadCN Form components for UI
 
@@ -177,8 +178,10 @@ Non-monetary floats that remain as float64: `Investment.Quantity`, `SplitRatio`,
 ### Authentication
 - JWT access tokens (short-lived, 15min) + refresh tokens (7d)
 - Refresh tokens are per device: each login creates a `refresh_sessions` row (token hash only); refresh rotates within that session with a 2-minute grace for the rotated-out token, so other devices and racing tabs stay signed in
-- `POST /api/v1/auth/logout` revokes the current device's session
-- Account lockout after 5 failed login attempts (15min cooldown)
+- The refresh token lives only in the HttpOnly `kuberan_refresh` cookie (SameSite=Strict, Path=/api/v1/auth, Secure unless `COOKIE_SECURE=false`); `/auth/refresh` and `/auth/logout` read it from the cookie (legacy JSON body `refresh_token` accepted only when no cookie is sent) and `/auth/refresh` also returns the user
+- `POST /api/v1/auth/logout` revokes the current device's session and clears the cookie
+- Account lockout after 5 failed login attempts (15min cooldown), counted atomically; a locked account gets the same 401 `INVALID_CREDENTIALS` as a wrong password (audited as `ACCOUNT_LOCKED` / `reason: account_locked`)
+- Login, register, refresh and OAuth DCR are rate limited in memory (per IP, logins also per email; 429 `RATE_LIMITED` + `Retry-After`)
 - `LastLoginAt` tracking
 
 ### Logging
@@ -263,7 +266,7 @@ POST /api/v1/auth/login        # Login, returns access + refresh tokens
 POST /api/v1/auth/refresh      # Refresh access token (rotates this device's session)
 POST /api/v1/auth/logout       # Revoke this device's refresh session
 GET  /api/health               # Health check (includes DB ping)
-GET  /swagger/*                # Swagger UI
+GET  /swagger/*                # Swagger UI (not served in production)
 
 # OAuth login/consent bridge (drives the Hydra authorization flow for MCP clients)
 POST /api/v1/oauth/login
@@ -394,11 +397,20 @@ DB_USER=kuberan
 DB_PASSWORD=kuberan
 DB_NAME=kuberan
 DB_SSLMODE=disable
+DB_MAX_OPEN_CONNS=20             # pool defaults; also DB_MAX_IDLE_CONNS=10, DB_CONN_MAX_IDLE_TIME=5m, DB_CONN_MAX_LIFETIME=1h
 JWT_SECRET=<required in production>
 JWT_EXPIRES_IN=24h               # config default; access-token lifetime is hardcoded to 15m in middleware
 PIPELINE_API_KEY=<key for pipeline endpoints; shared with the oracle>
 BOT_INTERNAL_SECRET=<shared secret for internal telegram routes>
-CORS_ORIGIN=*                    # default
+CORS_ORIGIN=http://localhost:3000 # comma-separated exact-origin allowlist (default shown); no wildcards in production
+COOKIE_SECURE=true               # Secure flag on the refresh cookie; defaults to false only when ENV=development
+API_TRUSTED_PROXY_CIDRS=         # CIDRs whose CF-Connecting-IP/X-Forwarded-For the api trusts for ClientIP (prod: tunnel network)
+MAX_BODY_BYTES=1048576           # JSON body cap (the attachment upload uses MAX_UPLOAD_BYTES)
+RATE_LIMIT_LOGIN_PER_MINUTE=10   # per IP, /auth/login + /oauth/login (0 disables)
+RATE_LIMIT_LOGIN_EMAIL_PER_HOUR=20
+RATE_LIMIT_REGISTER_PER_HOUR=5
+RATE_LIMIT_REFRESH_PER_MINUTE=60
+RATE_LIMIT_DCR_PER_HOUR=10
 HYDRA_ISSUER_URL=http://localhost:4444   # default
 HYDRA_ADMIN_URL=http://localhost:4445    # default
 MCP_RESOURCE_URL=http://localhost:8081   # default; must match the aud in Hydra tokens
@@ -413,4 +425,4 @@ HYDRA_PINNED_CLIENT_ID=<optional pinned OAuth client>
 
 The MCP server additionally reads `MCP_PORT` (default `8081`). Hydra itself is configured via `HYDRA_DSN`, `HYDRA_SECRETS_SYSTEM`, `HYDRA_LOGIN_URL`, `HYDRA_CONSENT_URL`, and `HYDRA_TLS_TERMINATION_CIDR` (see `.env.prod.example` and `docker-compose.prod.yml`). The bot service reads `TELEGRAM_BOT_TOKEN`, `API_BASE_URL`, and `LOG_LEVEL` (see `apps/bot/.env.example`).
 
-In production, `JWT_SECRET` must be explicitly set (not the default) and `DB_PASSWORD` must not be the development default.
+In production, `JWT_SECRET` must be explicitly set (not the default, at least 32 bytes), `CORS_ORIGIN` must list explicit origins (no `*`), and `DB_PASSWORD` must not be the development default; startup warns when `DB_SSLMODE=disable` or `PIPELINE_API_KEY`/`BOT_INTERNAL_SECRET` are shorter than 32 characters.

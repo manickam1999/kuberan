@@ -76,7 +76,7 @@ func (s *Server) prepareCreateBudget(c caller, args map[string]interface{}) (*wr
 		if err != nil {
 			return "", nil, serviceError("create budget", err)
 		}
-		return fmt.Sprintf("Created %s budget %q of %s\n  ID: %s\n", budget.Period, budget.Name, formatCents(budget.Amount), budget.ID),
+		return fmt.Sprintf("Created %s budget %s of %s\n  ID: %s\n", budget.Period, untrusted(budget.Name), formatCents(budget.Amount), budget.ID),
 			[]auditEntry{{
 				Action: "MCP_CREATE_BUDGET", ResourceType: "budget", ResourceID: budget.ID,
 				Changes: map[string]interface{}{"name": name, "amount": amount, "period": period, "category_id": categoryID},
@@ -142,8 +142,8 @@ func (s *Server) prepareUpdateBudget(c caller, args map[string]interface{}) (*wr
 		if !budget.IsActive {
 			state = "paused"
 		}
-		return fmt.Sprintf("Updated %s budget %q: %s (%s)\n  ID: %s\n",
-				budget.Period, budget.Name, formatCents(budget.Amount), state, budget.ID),
+		return fmt.Sprintf("Updated %s budget %s: %s (%s)\n  ID: %s\n",
+				budget.Period, untrusted(budget.Name), formatCents(budget.Amount), state, budget.ID),
 			[]auditEntry{{Action: "MCP_UPDATE_BUDGET", ResourceType: "budget", ResourceID: budget.ID, Changes: changes}}, nil
 	}}, nil
 }

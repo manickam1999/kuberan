@@ -1,3 +1,7 @@
-python-telegram-bot==21.0
-requests==2.31.0
-python-dotenv==1.0.0
+# Runtime dependencies, pinned (Dependabot keeps them current).
+# The job-queue extra installs APScheduler: ConversationHandler needs a
+# JobQueue for conversation_timeout to fire, and the health heartbeat uses it.
+python-telegram-bot[job-queue]==22.8
+APScheduler==3.11.3
+httpx==0.28.1
+python-dotenv==1.2.4

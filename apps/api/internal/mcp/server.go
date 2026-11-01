@@ -92,34 +92,25 @@ func requireScope(ctx context.Context, accepted ...string) *mcpgo.CallToolResult
 		"forbidden: missing required scope (" + strings.Join(accepted, " or ") + ")")
 }
 
-// makeAuthFromRequest returns an HTTP context function that extracts the Bearer
-// access token from the Authorization header, validates it against Hydra's
-// JWKS (signature, exp/nbf, issuer, audience), and stores the resulting subject
-// (Kuberan user ID), granted scope set and OAuth client ID in the context,
-// along with the caller's IP for audit logging. On any failure it returns the
-// context without a user; tools then reject the call via getUserID.
-func makeAuthFromRequest(v TokenValidator, trustedProxies []*net.IPNet) server.HTTPContextFunc {
+// claimsKey carries the validated access-token claims from requireBearer to
+// makeAuthFromRequest on the request context.
+type claimsKey struct{}
+
+// makeAuthFromRequest returns an HTTP context function that stores the
+// authenticated caller in the MCP request context: the subject (Kuberan user
+// ID), granted scope set and OAuth client ID from the access token that
+// requireBearer already validated, plus the caller's IP for audit logging.
+// The token is validated once per request, in requireBearer; this function
+// only reads the claims it attached. Without them it returns the context
+// without a user, and tools reject the call via getUserID.
+func makeAuthFromRequest(trustedProxies []*net.IPNet) server.HTTPContextFunc {
 	return func(ctx context.Context, r *http.Request) context.Context {
 		ctx = context.WithValue(ctx, clientIPKey{}, requestIP(r, trustedProxies))
 
-		authHeader := r.Header.Get("Authorization")
-		if authHeader == "" {
-			logger.Get().Warn("MCP auth: missing Authorization header")
+		claims, ok := r.Context().Value(claimsKey{}).(*AccessClaims)
+		if !ok || claims == nil {
 			return ctx
 		}
-
-		parts := strings.SplitN(authHeader, " ", 2)
-		if len(parts) != 2 || parts[0] != "Bearer" {
-			logger.Get().Warn("MCP auth: malformed Authorization header")
-			return ctx
-		}
-
-		claims, err := v.Validate(ctx, parts[1])
-		if err != nil {
-			logger.Get().Warnf("MCP auth: token rejected: %v", err)
-			return ctx
-		}
-
 		ctx = context.WithValue(ctx, userIDKey{}, claims.Subject)
 		ctx = context.WithValue(ctx, clientIDKey{}, claims.ClientID)
 		return context.WithValue(ctx, scopesKey{}, claims.Scopes)
@@ -172,19 +163,43 @@ func errUnauthorized() *mcpgo.CallToolResult {
 // OAuth discovery via the WWW-Authenticate challenge added by
 // withWWWAuthenticate; without it, clients would connect unauthenticated and
 // only fail in-band at tool-call time.
-func requireBearer(next http.Handler, v TokenValidator) http.Handler {
+//
+// When active is set, the token's user must also still be active (checked
+// against the database, cached briefly): access tokens are validated offline
+// and a refresh token keeps minting them, so without this a deactivated user
+// would keep read access for as long as the client keeps refreshing.
+//
+// The validated claims are attached to the request context for
+// makeAuthFromRequest, so each request validates its token once.
+func requireBearer(next http.Handler, v TokenValidator, active *activeUsers) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		parts := strings.SplitN(r.Header.Get("Authorization"), " ", 2)
 		if len(parts) != 2 || parts[0] != "Bearer" || parts[1] == "" {
 			writeUnauthorized(w)
 			return
 		}
-		if _, err := v.Validate(r.Context(), parts[1]); err != nil {
+		claims, err := v.Validate(r.Context(), parts[1])
+		if err != nil {
 			logger.Get().Warnf("MCP auth: token rejected: %v", err)
 			writeUnauthorized(w)
 			return
 		}
-		next.ServeHTTP(w, r)
+		if active != nil {
+			ok, err := active.isActive(claims.Subject)
+			if err != nil {
+				logger.Get().Errorf("MCP auth: user check failed: %v", err)
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusServiceUnavailable)
+				_, _ = w.Write([]byte(`{"error":"temporarily_unavailable"}`))
+				return
+			}
+			if !ok {
+				logger.Get().Warnw("MCP auth: token for inactive or deleted user", "user_id", claims.Subject)
+				writeUnauthorized(w)
+				return
+			}
+		}
+		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), claimsKey{}, claims)))
 	})
 }
 
@@ -235,8 +250,12 @@ func Run(svc Services, addr string, oauth OAuthConfig, validator TokenValidator,
 	s := newServer(svc, write)
 
 	mcpHandler := server.NewStreamableHTTPServer(s.mcp,
-		server.WithHTTPContextFunc(makeAuthFromRequest(validator, trustedProxies)),
+		server.WithHTTPContextFunc(makeAuthFromRequest(trustedProxies)),
 	)
+	var active *activeUsers
+	if svc.Users != nil {
+		active = newActiveUsers(svc.Users, activeUserTTL, time.Now)
+	}
 
 	// Wrap the MCP handler in our own mux so we can expose an unauthenticated
 	// /health endpoint for container/orchestrator health checks alongside the
@@ -246,7 +265,7 @@ func Run(svc Services, addr string, oauth OAuthConfig, validator TokenValidator,
 	// so those 401s carry a WWW-Authenticate challenge pointing at the Protected
 	// Resource Metadata document (RFC 9728); serve that document so MCP clients
 	// can discover the Hydra authorization server.
-	mux.Handle("/mcp", withWWWAuthenticate(requireBearer(mcpHandler, validator), oauth))
+	mux.Handle("/mcp", withWWWAuthenticate(requireBearer(mcpHandler, validator, active), oauth))
 	mux.Handle(ProtectedResourceMetadataPath, discoveryHandler(oauth))
 	mux.HandleFunc("/health", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")

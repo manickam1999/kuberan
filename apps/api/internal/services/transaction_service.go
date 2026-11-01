@@ -1,7 +1,9 @@
 package services
 
 import (
+	"fmt"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -120,6 +122,12 @@ func (s *transactionService) CreateTransfer(
 		}
 		fromAccount, toAccount := accounts[fromAccountID], accounts[toAccountID]
 
+		// Balances move by the same amount on both legs, so the accounts must
+		// share a currency (no FX conversion is performed).
+		if !strings.EqualFold(fromAccount.Currency, toAccount.Currency) {
+			return apperrors.ErrTransferCurrencyMismatch
+		}
+
 		if !isLiabilityAccount(fromAccount.Type) && fromAccount.Balance < amount {
 			return apperrors.ErrInsufficientBalance
 		}
@@ -162,24 +170,62 @@ func isCategorizableType(t models.TransactionType) bool {
 // ruleSampleLimit caps the number of sample transactions returned by preview/apply.
 const ruleSampleLimit = 10
 
+// ruleCandidate is the projection of a transaction the rule matcher needs.
+type ruleCandidate struct {
+	ID          string
+	AccountID   string
+	CategoryID  *string
+	Type        models.TransactionType
+	Amount      int64
+	Description string
+}
+
+// ruleUpdateBatchSize bounds the id list of each grouped category UPDATE.
+const ruleUpdateBatchSize = 500
+
 // candidateTransactions returns a user's categorizable (income/expense)
-// transactions, newest first. scope filters to uncategorized rows when given.
-func (s *transactionService) candidateTransactions(userID string, uncategorizedOnly bool) ([]models.Transaction, error) {
-	q := s.db.
+// transactions, newest first, projected to the columns the matcher needs.
+// scope filters to uncategorized rows when given.
+func (s *transactionService) candidateTransactions(userID string, uncategorizedOnly bool) ([]ruleCandidate, error) {
+	q := s.db.Model(&models.Transaction{}).
+		Select("id", "account_id", "category_id", "type", "amount", "description").
 		Where("user_id = ? AND type IN ?", userID,
 			[]models.TransactionType{models.TransactionTypeIncome, models.TransactionTypeExpense})
 	if uncategorizedOnly {
 		q = q.Where("category_id IS NULL")
 	}
-	var txns []models.Transaction
-	if err := q.Order("date DESC, created_at DESC").Find(&txns).Error; err != nil {
+	var txns []ruleCandidate
+	if err := q.Order("date DESC, created_at DESC").Scan(&txns).Error; err != nil {
 		return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)
 	}
 	return txns, nil
 }
 
-// txToRuleInput projects a transaction into the matcher's DB-free input.
-func txToRuleInput(t *models.Transaction) RuleInput {
+// loadSampleTransactions loads full transaction rows for the given ids,
+// returned in the order of ids (used for the small preview/apply sample).
+func (s *transactionService) loadSampleTransactions(userID string, ids []string) ([]models.Transaction, error) {
+	out := make([]models.Transaction, 0, len(ids))
+	if len(ids) == 0 {
+		return out, nil
+	}
+	var rows []models.Transaction
+	if err := s.db.Where("user_id = ? AND id IN ?", userID, ids).Find(&rows).Error; err != nil {
+		return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)
+	}
+	byID := make(map[string]models.Transaction, len(rows))
+	for i := range rows {
+		byID[rows[i].ID] = rows[i]
+	}
+	for _, id := range ids {
+		if t, ok := byID[id]; ok {
+			out = append(out, t)
+		}
+	}
+	return out, nil
+}
+
+// txToRuleInput projects a rule candidate into the matcher's DB-free input.
+func txToRuleInput(t *ruleCandidate) RuleInput {
 	return RuleInput{
 		Description: t.Description,
 		Amount:      t.Amount,
@@ -198,22 +244,28 @@ func (s *transactionService) PreviewRuleMatches(userID string, conditions []Rule
 		return nil, err
 	}
 
-	preview := &RuleMatchPreview{Sample: []models.Transaction{}}
+	preview := &RuleMatchPreview{}
+	var sampleIDs []string
 	for i := range txns {
 		if ConditionsMatch(modelConditions, txToRuleInput(&txns[i])) {
 			preview.Count++
-			if len(preview.Sample) < ruleSampleLimit {
-				preview.Sample = append(preview.Sample, txns[i])
+			if len(sampleIDs) < ruleSampleLimit {
+				sampleIDs = append(sampleIDs, txns[i].ID)
 			}
 		}
+	}
+	preview.Sample, err = s.loadSampleTransactions(userID, sampleIDs)
+	if err != nil {
+		return nil, err
 	}
 	return preview, nil
 }
 
 // ApplyRule backfills an existing rule over existing transactions. It resolves
 // each candidate through the shared matcher and applies a balance-neutral,
-// category-only update (never the balance-reversing UpdateTransaction path).
-// On dry run it reports the count and a sample without writing.
+// category-only update (never the balance-reversing UpdateTransaction path),
+// issuing one user-scoped UPDATE ... WHERE id IN (...) per target category and
+// id batch. On dry run it reports the count and a sample without writing.
 func (s *transactionService) ApplyRule(userID, ruleID string, opts ApplyRuleOptions) (*ApplyRuleResult, error) {
 	rule, err := s.ruleService.GetRule(userID, ruleID)
 	if err != nil {
@@ -232,9 +284,13 @@ func (s *transactionService) ApplyRule(userID, ruleID string, opts ApplyRuleOpti
 	active := *rule
 	active.IsActive = true
 	rules := []models.TransactionRule{active}
-	result := &ApplyRuleResult{Sample: []models.Transaction{}}
+	result := &ApplyRuleResult{}
 
-	var eligible []models.Transaction
+	// Ids to update, grouped by target category (in first-seen order).
+	byCategory := make(map[string][]string)
+	var categoryOrder []string
+	var sampleIDs []string
+	eligible := 0
 	for i := range txns {
 		t := &txns[i]
 		res := Match(rules, txToRuleInput(t))
@@ -249,22 +305,37 @@ func (s *transactionService) ApplyRule(userID, ruleID string, opts ApplyRuleOpti
 			}
 		}
 		result.Count++
-		if len(result.Sample) < ruleSampleLimit {
-			result.Sample = append(result.Sample, *t)
+		eligible++
+		if len(sampleIDs) < ruleSampleLimit {
+			sampleIDs = append(sampleIDs, t.ID)
 		}
-		eligible = append(eligible, models.Transaction{Base: models.Base{ID: t.ID}, CategoryID: res.CategoryID})
+		target := *res.CategoryID
+		if _, seen := byCategory[target]; !seen {
+			categoryOrder = append(categoryOrder, target)
+		}
+		byCategory[target] = append(byCategory[target], t.ID)
 	}
 
-	if opts.DryRun || len(eligible) == 0 {
+	// The sample reflects the rows before the update.
+	result.Sample, err = s.loadSampleTransactions(userID, sampleIDs)
+	if err != nil {
+		return nil, err
+	}
+
+	if opts.DryRun || eligible == 0 {
 		return result, nil
 	}
 
 	err = s.db.Transaction(func(tx *gorm.DB) error {
-		for i := range eligible {
-			if txErr := tx.Model(&models.Transaction{}).
-				Where("id = ? AND user_id = ?", eligible[i].ID, userID).
-				Update("category_id", eligible[i].CategoryID).Error; txErr != nil {
-				return apperrors.Wrap(apperrors.ErrInternalServer, txErr)
+		for _, categoryID := range categoryOrder {
+			ids := byCategory[categoryID]
+			for start := 0; start < len(ids); start += ruleUpdateBatchSize {
+				chunk := ids[start:min(start+ruleUpdateBatchSize, len(ids))]
+				if txErr := tx.Model(&models.Transaction{}).
+					Where("id IN ? AND user_id = ?", chunk, userID).
+					Update("category_id", categoryID).Error; txErr != nil {
+					return apperrors.Wrap(apperrors.ErrInternalServer, txErr)
+				}
 			}
 		}
 		return nil
@@ -273,7 +344,7 @@ func (s *transactionService) ApplyRule(userID, ruleID string, opts ApplyRuleOpti
 		return nil, err
 	}
 
-	result.Applied = len(eligible)
+	result.Applied = eligible
 	return result, nil
 }
 
@@ -682,125 +753,93 @@ func deleteReceivablesOfExpense(tx *gorm.DB, userID, transactionID string) error
 	return nil
 }
 
-// GetMonthlySummary returns monthly income and expense totals for the last N months.
+// GetMonthlySummary returns monthly income and expense totals for the last N
+// months (1..24), oldest first, with empty months zero-filled. All months are
+// read in a single grouped query.
 func (s *transactionService) GetMonthlySummary(userID string, months int) ([]MonthlySummaryItem, error) {
+	if months < minSummaryMonths || months > maxSummaryMonths {
+		return nil, apperrors.WithMessage(apperrors.ErrInvalidInput,
+			fmt.Sprintf("months must be between %d and %d", minSummaryMonths, maxSummaryMonths))
+	}
+
 	now := time.Now()
 	startMonth := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC).AddDate(0, -(months - 1), 0)
+	rangeEnd := startMonth.AddDate(0, months, 0).Add(-time.Nanosecond)
+
+	totals, err := periodTotals(s.db, userID, startMonth, rangeEnd, periodMonth, true)
+	if err != nil {
+		return nil, err
+	}
 
 	items := make([]MonthlySummaryItem, 0, months)
-
 	current := startMonth
 	for i := 0; i < months; i++ {
-		monthStart := current
-		monthEnd := current.AddDate(0, 1, 0).Add(-time.Nanosecond)
-
-		var income int64
-		if err := s.db.Model(&models.Transaction{}).
-			Select("COALESCE(SUM(amount), 0)").
-			Where("user_id = ? AND type = ? AND deleted_at IS NULL AND date BETWEEN ? AND ? AND description != ?",
-				userID, models.TransactionTypeIncome, monthStart, monthEnd, "Initial balance").
-			Scan(&income).Error; err != nil {
-			return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)
-		}
-
-		var expenses int64
-		if err := s.db.Model(&models.Transaction{}).
-			Select("COALESCE(SUM("+effectiveAmountSQL+"), 0)").
-			Where("user_id = ? AND type = ? AND deleted_at IS NULL AND date BETWEEN ? AND ?",
-				userID, models.TransactionTypeExpense, monthStart, monthEnd).
-			Scan(&expenses).Error; err != nil {
-			return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)
-		}
-
+		key := current.Format("2006-01")
+		t := totals[key]
 		items = append(items, MonthlySummaryItem{
-			Month:    monthStart.Format("2006-01"),
-			Income:   income,
-			Expenses: expenses,
+			Month:    key,
+			Income:   t.Income,
+			Expenses: t.Expenses,
 		})
-
 		current = current.AddDate(0, 1, 0)
 	}
 
 	return items, nil
 }
 
-// GetDailySpending returns daily expense totals for a date range.
+// GetDailySpending returns daily expense totals for a date range (at most
+// maxDailyRangeDays), with empty days zero-filled, from one grouped query.
 func (s *transactionService) GetDailySpending(userID string, from, to time.Time) ([]DailySpendingItem, error) {
-	// Normalize to start/end of day
-	current := time.Date(from.Year(), from.Month(), from.Day(), 0, 0, 0, 0, time.UTC)
-	end := time.Date(to.Year(), to.Month(), to.Day(), 0, 0, 0, 0, time.UTC)
-
-	var items []DailySpendingItem
-
-	for !current.After(end) {
-		dayStart := current
-		dayEnd := current.Add(24*time.Hour - time.Nanosecond)
-
-		var total int64
-		if err := s.db.Model(&models.Transaction{}).
-			Select("COALESCE(SUM("+effectiveAmountSQL+"), 0)").
-			Where("user_id = ? AND type = ? AND deleted_at IS NULL AND date BETWEEN ? AND ?",
-				userID, models.TransactionTypeExpense, dayStart, dayEnd).
-			Scan(&total).Error; err != nil {
-			return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)
-		}
-
-		items = append(items, DailySpendingItem{
-			Date:  dayStart.Format("2006-01-02"),
-			Total: total,
-		})
-
-		current = current.AddDate(0, 0, 1)
+	start, last, ok, err := dailyRange(from, to)
+	if err != nil {
+		return nil, err
+	}
+	items := []DailySpendingItem{}
+	if !ok {
+		return items, nil
 	}
 
-	if items == nil {
-		items = []DailySpendingItem{}
+	totals, err := periodTotals(s.db, userID, start, endOfDay(last), periodDay, false)
+	if err != nil {
+		return nil, err
+	}
+
+	for current := start; !current.After(last); current = current.AddDate(0, 0, 1) {
+		key := current.Format("2006-01-02")
+		items = append(items, DailySpendingItem{
+			Date:  key,
+			Total: totals[key].Expenses,
+		})
 	}
 
 	return items, nil
 }
 
-// GetDailySummary returns daily income and expense totals for a date range.
+// GetDailySummary returns daily income and expense totals for a date range (at
+// most maxDailyRangeDays), with empty days zero-filled, from one grouped query.
 func (s *transactionService) GetDailySummary(userID string, from, to time.Time) ([]DailySummaryItem, error) {
-	// Normalize to start/end of day
-	current := time.Date(from.Year(), from.Month(), from.Day(), 0, 0, 0, 0, time.UTC)
-	end := time.Date(to.Year(), to.Month(), to.Day(), 0, 0, 0, 0, time.UTC)
-
-	var items []DailySummaryItem
-
-	for !current.After(end) {
-		dayStart := current
-		dayEnd := current.Add(24*time.Hour - time.Nanosecond)
-
-		var income int64
-		if err := s.db.Model(&models.Transaction{}).
-			Select("COALESCE(SUM(amount), 0)").
-			Where("user_id = ? AND type = ? AND deleted_at IS NULL AND date BETWEEN ? AND ? AND description != ?",
-				userID, models.TransactionTypeIncome, dayStart, dayEnd, "Initial balance").
-			Scan(&income).Error; err != nil {
-			return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)
-		}
-
-		var expenses int64
-		if err := s.db.Model(&models.Transaction{}).
-			Select("COALESCE(SUM("+effectiveAmountSQL+"), 0)").
-			Where("user_id = ? AND type = ? AND deleted_at IS NULL AND date BETWEEN ? AND ?",
-				userID, models.TransactionTypeExpense, dayStart, dayEnd).
-			Scan(&expenses).Error; err != nil {
-			return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)
-		}
-
-		items = append(items, DailySummaryItem{
-			Date:     dayStart.Format("2006-01-02"),
-			Income:   income,
-			Expenses: expenses,
-		})
-
-		current = current.AddDate(0, 0, 1)
+	start, last, ok, err := dailyRange(from, to)
+	if err != nil {
+		return nil, err
+	}
+	items := []DailySummaryItem{}
+	if !ok {
+		return items, nil
 	}
 
-	if items == nil {
-		items = []DailySummaryItem{}
+	totals, err := periodTotals(s.db, userID, start, endOfDay(last), periodDay, true)
+	if err != nil {
+		return nil, err
+	}
+
+	for current := start; !current.After(last); current = current.AddDate(0, 0, 1) {
+		key := current.Format("2006-01-02")
+		t := totals[key]
+		items = append(items, DailySummaryItem{
+			Date:     key,
+			Income:   t.Income,
+			Expenses: t.Expenses,
+		})
 	}
 
 	return items, nil
@@ -867,6 +906,17 @@ func (s *transactionService) totalsByCategory(userID string, txnType models.Tran
 		return nil, 0, apperrors.Wrap(apperrors.ErrInternalServer, err)
 	}
 
+	catIDs := make([]string, 0, len(results))
+	for _, r := range results {
+		if r.CategoryID != nil {
+			catIDs = append(catIDs, *r.CategoryID)
+		}
+	}
+	categories, err := loadCategoriesByID(s.db, userID, catIDs)
+	if err != nil {
+		return nil, 0, err
+	}
+
 	var total int64
 	items := make([]SpendingByCategoryItem, 0, len(results))
 	for _, r := range results {
@@ -874,25 +924,7 @@ func (s *transactionService) totalsByCategory(userID string, txnType models.Tran
 			CategoryID: r.CategoryID,
 			Total:      r.Total,
 		}
-
-		if r.CategoryID != nil {
-			var category models.Category
-			if catErr := s.db.Where("id = ? AND user_id = ?", *r.CategoryID, userID).First(&category).Error; catErr != nil {
-				item.CategoryName = "Unknown Category"
-				item.CategoryColor = "#9CA3AF"
-			} else {
-				item.CategoryName = category.Name
-				item.CategoryColor = category.Color
-				item.CategoryIcon = category.Icon
-				// Use hash of UUID bytes for deterministic color if category has no color set
-				if item.CategoryColor == "" {
-					item.CategoryColor = getCategoryColorFromID(*r.CategoryID)
-				}
-			}
-		} else {
-			item.CategoryName = "Uncategorized"
-			item.CategoryColor = "#9CA3AF"
-		}
+		item.CategoryName, item.CategoryColor, item.CategoryIcon = categoryDisplay(categories, r.CategoryID)
 
 		total += r.Total
 		items = append(items, item)
@@ -982,41 +1014,36 @@ func (s *transactionService) GetTopExpenses(userID string, from, to time.Time, l
 		return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)
 	}
 
+	catIDs := make([]string, 0, len(rows))
+	accIDs := make([]string, 0, len(rows))
+	for _, r := range rows {
+		accIDs = append(accIDs, r.AccountID)
+		if r.CategoryID != nil {
+			catIDs = append(catIDs, *r.CategoryID)
+		}
+	}
+	categories, err := loadCategoriesByID(s.db, userID, catIDs)
+	if err != nil {
+		return nil, err
+	}
+	accountNames, err := loadAccountNamesByID(s.db, accIDs)
+	if err != nil {
+		return nil, err
+	}
+
 	items := make([]TopExpenseItem, 0, len(rows))
 	for _, r := range rows {
 		item := TopExpenseItem{
 			ID:             r.ID,
 			AccountID:      r.AccountID,
+			AccountName:    accountNames[r.AccountID],
 			CategoryID:     r.CategoryID,
 			Amount:         r.Amount,
 			PersonalAmount: r.PersonalAmount,
 			Description:    r.Description,
 			Date:           r.Date,
 		}
-
-		var account models.Account
-		if accErr := s.db.Select("name").Where("id = ?", r.AccountID).First(&account).Error; accErr == nil {
-			item.AccountName = account.Name
-		}
-
-		if r.CategoryID != nil {
-			var category models.Category
-			if catErr := s.db.Where("id = ? AND user_id = ?", *r.CategoryID, userID).First(&category).Error; catErr != nil {
-				item.CategoryName = "Unknown Category"
-				item.CategoryColor = "#9CA3AF"
-			} else {
-				item.CategoryName = category.Name
-				item.CategoryColor = category.Color
-				item.CategoryIcon = category.Icon
-				if item.CategoryColor == "" {
-					item.CategoryColor = getCategoryColorFromID(*r.CategoryID)
-				}
-			}
-		} else {
-			item.CategoryName = "Uncategorized"
-			item.CategoryColor = "#9CA3AF"
-		}
-
+		item.CategoryName, item.CategoryColor, item.CategoryIcon = categoryDisplay(categories, r.CategoryID)
 		items = append(items, item)
 	}
 
@@ -1026,4 +1053,58 @@ func (s *transactionService) GetTopExpenses(userID string, from, to time.Time, l
 		FromDate:   from,
 		ToDate:     to,
 	}, nil
+}
+
+// uncategorizedColor is the neutral color used for uncategorized and unknown categories.
+const uncategorizedColor = "#9CA3AF"
+
+// loadCategoriesByID batch-loads a user's non-deleted categories by id. Ids
+// that are missing (deleted or not the user's) are absent from the map.
+func loadCategoriesByID(db *gorm.DB, userID string, ids []string) (map[string]models.Category, error) {
+	out := make(map[string]models.Category, len(ids))
+	if len(ids) == 0 {
+		return out, nil
+	}
+	var cats []models.Category
+	if err := db.Where("id IN ? AND user_id = ?", ids, userID).Find(&cats).Error; err != nil {
+		return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)
+	}
+	for i := range cats {
+		out[cats[i].ID] = cats[i]
+	}
+	return out, nil
+}
+
+// loadAccountNamesByID batch-loads the names of non-deleted accounts by id.
+func loadAccountNamesByID(db *gorm.DB, ids []string) (map[string]string, error) {
+	out := make(map[string]string, len(ids))
+	if len(ids) == 0 {
+		return out, nil
+	}
+	var accounts []models.Account
+	if err := db.Select("id", "name").Where("id IN ?", ids).Find(&accounts).Error; err != nil {
+		return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)
+	}
+	for i := range accounts {
+		out[accounts[i].ID] = accounts[i].Name
+	}
+	return out, nil
+}
+
+// categoryDisplay resolves the display name, color and icon for a category id:
+// "Uncategorized" for nil, "Unknown Category" for an id missing from cats, and
+// a deterministic palette color when the category has none set.
+func categoryDisplay(cats map[string]models.Category, categoryID *string) (name, color, icon string) {
+	if categoryID == nil {
+		return "Uncategorized", uncategorizedColor, ""
+	}
+	category, ok := cats[*categoryID]
+	if !ok {
+		return "Unknown Category", uncategorizedColor, ""
+	}
+	color = category.Color
+	if color == "" {
+		color = getCategoryColorFromID(*categoryID)
+	}
+	return category.Name, color, category.Icon
 }

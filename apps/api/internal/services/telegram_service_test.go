@@ -1,9 +1,11 @@
 package services
 
 import (
+	"strings"
 	"testing"
 	"time"
 
+	"kuberan/internal/models"
 	"kuberan/internal/testutil"
 )
 
@@ -82,6 +84,83 @@ func TestGenerateLinkCode(t *testing.T) {
 		}
 		if updated.LinkCode == "" {
 			t.Error("expected new link code to be set")
+		}
+	})
+}
+
+func TestGenerateLinkCode_Format(t *testing.T) {
+	seen := map[string]bool{}
+	for i := 0; i < 200; i++ {
+		code, err := generateLinkCode(linkCodeLength)
+		testutil.AssertNoError(t, err)
+		if len(code) != 8 {
+			t.Fatalf("code %q: want 8 chars", code)
+		}
+		for _, r := range code {
+			if !strings.ContainsRune(linkCodeAlphabet, r) {
+				t.Fatalf("code %q has symbol %q outside the alphabet", code, r)
+			}
+		}
+		seen[code] = true
+	}
+	if len(seen) < 199 {
+		t.Errorf("codes are not random enough: %d distinct of 200", len(seen))
+	}
+	if strings.ContainsAny(linkCodeAlphabet, "01ILOU") {
+		t.Error("alphabet must not contain ambiguous characters")
+	}
+}
+
+func TestCompleteLink_Hardening(t *testing.T) {
+	t.Run("accepts_lowercase_and_dashes", func(t *testing.T) {
+		db := testutil.SetupTestDB(t)
+		defer testutil.TeardownTestDB(t, db)
+		svc := NewTelegramService(db)
+		user := testutil.CreateTestUser(t, db)
+
+		link, err := svc.GenerateLinkCode(user.ID)
+		testutil.AssertNoError(t, err)
+		typed := strings.ToLower(link.LinkCode[:4]) + "-" + strings.ToLower(link.LinkCode[4:])
+
+		testutil.AssertNoError(t, svc.CompleteLink(typed, 42, "u", "U", ""))
+	})
+
+	t.Run("limits_failed_attempts_per_telegram_user", func(t *testing.T) {
+		db := testutil.SetupTestDB(t)
+		defer testutil.TeardownTestDB(t, db)
+		svc := NewTelegramService(db)
+		user := testutil.CreateTestUser(t, db)
+		link, err := svc.GenerateLinkCode(user.ID)
+		testutil.AssertNoError(t, err)
+
+		for i := 0; i < maxLinkFailures; i++ {
+			err := svc.CompleteLink("ZZZZZZZZ", 777, "u", "U", "")
+			testutil.AssertAppError(t, err, "INVALID_LINK_CODE")
+		}
+		// Even the right code is refused once the budget is spent...
+		err = svc.CompleteLink(link.LinkCode, 777, "u", "U", "")
+		testutil.AssertAppError(t, err, "TOO_MANY_LINK_ATTEMPTS")
+		// ...but other Telegram users are unaffected.
+		testutil.AssertNoError(t, svc.CompleteLink(link.LinkCode, 778, "u", "U", ""))
+	})
+
+	t.Run("pending_codes_are_unique", func(t *testing.T) {
+		db := testutil.SetupTestDB(t)
+		defer testutil.TeardownTestDB(t, db)
+		svc := NewTelegramService(db)
+		u1 := testutil.CreateTestUser(t, db)
+		u2 := testutil.CreateTestUser(t, db)
+
+		l1, err := svc.GenerateLinkCode(u1.ID)
+		testutil.AssertNoError(t, err)
+		// The test schema's telegram_user_id index is not partial like the
+		// Postgres one, so give the first pending row a distinct id.
+		db.Model(&models.TelegramLink{}).Where("id = ?", l1.ID).Update("telegram_user_id", 1)
+		l2, err := svc.GenerateLinkCode(u2.ID)
+		testutil.AssertNoError(t, err)
+		if err := db.Model(&models.TelegramLink{}).Where("id = ?", l2.ID).
+			Update("link_code", l1.LinkCode).Error; err == nil {
+			t.Error("expected the unique index to reject a duplicate pending code")
 		}
 	})
 }

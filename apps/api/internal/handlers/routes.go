@@ -1,8 +1,11 @@
 package handlers
 
 import (
+	"time"
+
 	"github.com/gin-gonic/gin"
 
+	"kuberan/internal/config"
 	"kuberan/internal/middleware"
 )
 
@@ -25,6 +28,51 @@ type Routes struct {
 	Snapshot             *PortfolioSnapshotHandler
 	FixedDepositPipeline *FixedDepositPipelineHandler
 	Telegram             *TelegramHandler
+
+	// Limits rate-limits the public auth endpoints. The zero value applies no
+	// limits (used by tests that don't exercise them).
+	Limits RouteLimits
+}
+
+// AttachmentUploadRoute is the Gin route pattern of the receipt upload, which
+// enforces its own upload-size cap instead of the global body limit.
+const AttachmentUploadRoute = "/api/v1/transactions/:id/attachments"
+
+// RouteLimits holds the rate-limit middleware chains for public endpoints.
+// Nil entries are skipped.
+type RouteLimits struct {
+	Login        []gin.HandlerFunc // /auth/login and /oauth/login
+	Register     []gin.HandlerFunc // /auth/register
+	Refresh      []gin.HandlerFunc // /auth/refresh
+	Registration []gin.HandlerFunc // OAuth DCR (/oauth2/register and its alias)
+}
+
+// NewRouteLimits builds the rate limiters from configuration. Logins are
+// limited per client IP and, across both login endpoints, per submitted email
+// (so one account cannot be hammered from many IPs beyond the lockout).
+func NewRouteLimits(cfg config.RateLimits) RouteLimits {
+	return RouteLimits{
+		Login: []gin.HandlerFunc{
+			middleware.RateLimit(middleware.NewRateLimiter(cfg.LoginPerMinute, time.Minute), middleware.ClientIPKey),
+			middleware.RateLimit(middleware.NewRateLimiter(cfg.LoginEmailPerHour, time.Hour), middleware.EmailBodyKey),
+		},
+		Register: []gin.HandlerFunc{
+			middleware.RateLimit(middleware.NewRateLimiter(cfg.RegisterPerHour, time.Hour), middleware.ClientIPKey),
+		},
+		Refresh: []gin.HandlerFunc{
+			middleware.RateLimit(middleware.NewRateLimiter(cfg.RefreshPerMinute, time.Minute), middleware.ClientIPKey),
+		},
+		Registration: []gin.HandlerFunc{
+			middleware.RateLimit(middleware.NewRateLimiter(cfg.RegistrationPerHour, time.Hour), middleware.ClientIPKey),
+		},
+	}
+}
+
+// with prepends the rate-limit chain to a handler.
+func with(limits []gin.HandlerFunc, h gin.HandlerFunc) []gin.HandlerFunc {
+	out := make([]gin.HandlerFunc, 0, len(limits)+1)
+	out = append(out, limits...)
+	return append(out, h)
 }
 
 // RouteSecrets holds the shared secrets guarding the service-to-service route
@@ -45,15 +93,15 @@ func RegisterRoutes(router *gin.Engine, h Routes, secrets RouteSecrets) {
 
 	// Public routes
 	auth := v1.Group("/auth")
-	auth.POST("/register", h.Auth.Register)
-	auth.POST("/login", h.Auth.Login)
-	auth.POST("/refresh", h.Auth.RefreshToken)
+	auth.POST("/register", with(h.Limits.Register, h.Auth.Register)...)
+	auth.POST("/login", with(h.Limits.Login, h.Auth.Login)...)
+	auth.POST("/refresh", with(h.Limits.Refresh, h.Auth.RefreshToken)...)
 	auth.POST("/logout", h.Auth.Logout)
 
 	// OAuth login/consent bridge (public: driven by the apps/web pages during the
 	// Hydra authorization flow, before a Kuberan session exists). See plan 15.
 	oauth := v1.Group("/oauth")
-	oauth.POST("/login", h.OAuth.Login)
+	oauth.POST("/login", with(h.Limits.Login, h.OAuth.Login)...)
 	oauth.POST("/login/reject", h.OAuth.RejectLogin)
 	oauth.GET("/consent", h.OAuth.GetConsent)
 	oauth.POST("/consent/accept", h.OAuth.AcceptConsent)
@@ -64,8 +112,10 @@ func RegisterRoutes(router *gin.Engine, h Routes, secrets RouteSecrets) {
 	// so cloudflared can route DCR through this proxy via simple path matching
 	// (no path rewriting) instead of hitting Hydra's public endpoint directly.
 	// The /api/v1/oauth/register alias is retained for internal/test callers.
-	router.POST("/oauth2/register", h.Registration.Register)
-	oauth.POST("/register", h.Registration.Register)
+	// One DCR handler chain serves both paths, so they share a single budget.
+	dcr := with(h.Limits.Registration, h.Registration.Register)
+	router.POST("/oauth2/register", dcr...)
+	oauth.POST("/register", dcr...)
 
 	// Protected routes
 	protected := v1.Group("/")

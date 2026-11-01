@@ -55,11 +55,12 @@ func (s *Server) handleListBudgets(ctx context.Context, req mcp.CallToolRequest)
 	}
 
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("Budgets (%d total):\n\n", result.TotalItems))
-	for _, b := range result.Data {
-		sb.WriteString(fmt.Sprintf("  %-25s %12s  %-8s  %s\n",
-			b.Name, formatCents(b.Amount), b.Period, b.Category.Name))
-		sb.WriteString(fmt.Sprintf("    ID: %s\n", b.ID))
+	fmt.Fprintf(&sb, "Budgets (%d total):\n\n", result.TotalItems)
+	for i := range result.Data {
+		b := &result.Data[i]
+		fmt.Fprintf(&sb, "  %-27s %12s  %-8s  %s\n",
+			untrusted(b.Name), formatCents(b.Amount), b.Period, untrusted(b.Category.Name))
+		fmt.Fprintf(&sb, "    ID: %s\n", b.ID)
 	}
 
 	return mcp.NewToolResultText(sb.String()), nil
@@ -87,10 +88,10 @@ func (s *Server) handleGetBudgetProgress(ctx context.Context, req mcp.CallToolRe
 
 	var sb strings.Builder
 	sb.WriteString("Budget Progress:\n\n")
-	sb.WriteString(fmt.Sprintf("  Budgeted:   %s\n", formatCents(progress.Budgeted)))
-	sb.WriteString(fmt.Sprintf("  Spent:      %s\n", formatCents(progress.Spent)))
-	sb.WriteString(fmt.Sprintf("  Remaining:  %s\n", formatCents(progress.Remaining)))
-	sb.WriteString(fmt.Sprintf("  Used:       %.1f%%\n", progress.Percentage))
+	fmt.Fprintf(&sb, "  Budgeted:   %s\n", formatCents(progress.Budgeted))
+	fmt.Fprintf(&sb, "  Spent:      %s\n", formatCents(progress.Spent))
+	fmt.Fprintf(&sb, "  Remaining:  %s\n", formatCents(progress.Remaining))
+	fmt.Fprintf(&sb, "  Used:       %.1f%%\n", progress.Percentage)
 
 	return mcp.NewToolResultText(sb.String()), nil
 }

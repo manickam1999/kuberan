@@ -40,7 +40,7 @@ Kratos.
 | Ory Hydra (`oryd/hydra`, pinned in compose) | `:4444` public, `:4445` admin | Authorization Server: authorize/token endpoints, JWKS signing keys, refresh rotation, client store |
 | MCP server | `apps/api/cmd/mcp`, `internal/mcp/`, `:8081` | OAuth **Resource Server**: validates access tokens offline against Hydra's JWKS |
 | Login/consent bridge | `internal/handlers/oauth_handler.go`, `internal/hydra/` | Browser-callable endpoints that resolve Hydra's login/consent challenges via the admin API (the browser never talks to `:4445`) |
-| Hardened DCR proxy | `internal/handlers/registration_handler.go`, served at `/oauth2/register` on `:8080` | Fronts client self-registration: forces public clients + PKCE (S256), restricts grants to `authorization_code`/`refresh_token`, caps scopes to the registered API set (`read:*`, plus `write:*` when `MCP_WRITE_ENABLED`; a client requesting no scopes gets the full set rather than an unusable empty-scope client) and always registers `openid offline offline_access`, audits + alerts every registration |
+| Hardened DCR proxy | `internal/handlers/registration_handler.go`, served at `/oauth2/register` on `:8080` | Fronts client self-registration: forces public clients (`token_endpoint_auth_method=none`; Hydra then requires PKCE S256 for them, see below), restricts grants to `authorization_code`/`refresh_token`, caps scopes to the registered API set (`read:*`, plus `write:*` when `MCP_WRITE_ENABLED`; a client requesting no scopes gets the full set rather than an unusable empty-scope client) and always registers `openid offline offline_access`, bounds the metadata (see "DCR limits"), audits + alerts every registration |
 | Login/consent pages | `apps/web` `/oauth/login`, `/oauth/consent` | UI for Hydra's login/consent redirects; per-scope checkboxes, write scopes in a separate "Allow changes" section, unticked by default |
 | `oauth_client_grants` table | migration `000033` + `internal/services/oauth_grant_service.go` | Per-user, per-scope consent: what each client was granted and which scopes the user has reviewed. A remembered client auto-accepts only for reviewed scopes. Backs Settings > Connected apps and the MCP write guard (plan 022) |
 
@@ -83,6 +83,12 @@ sequenceDiagram
     RS-->>C: tool results
 ```
 
+The login bridge (`POST /api/v1/oauth/login`) first fetches the
+`login_challenge` from Hydra and only then checks the credentials, so a
+forged or spent challenge gets a 404 without revealing whether the password
+was right or touching the lockout counter. Malformed request bodies get a
+generic `INVALID_INPUT` message (binding errors are not echoed).
+
 Both interactive steps have an active refusal path: Cancel on the login page
 and Deny on the consent screen call `POST /api/v1/oauth/login/reject` /
 `POST /api/v1/oauth/consent/reject`, which reject the challenge via Hydra's
@@ -115,10 +121,25 @@ Each MCP tool then enforces its required scope via `requireScope` (e.g.
 policy is enforced entirely code-side (DCR proxy caps, consent bridge grants
 the subset the user ticks, RS enforces per tool).
 
-Tradeoff: dropping the per-request user lookup means `IsActive` is checked at
-login time, not per call. Mitigations: 15-minute access TTL + inactive users
-are rejected by `GetUserByEmail` at `AcceptLogin` (pinned by a regression
-test).
+The token is validated once per request: `requireBearer` validates it and
+attaches the claims to the request context, and the MCP context function
+(`makeAuthFromRequest`) only copies them into the tool context.
+
+JWKS downloads are serialized (concurrent unknown-`kid` misses wait for one
+download), throttled to one per 30s on success and one per 5s after a
+failure, and the body is capped at 1 MiB.
+
+**Deactivated users.** A refresh token keeps minting valid access tokens, so
+`requireBearer` also checks that the token's user still exists and is active
+(`internal/mcp/active.go`, cached per user for 60s; a database failure returns
+503 and is not cached). A deactivated user gets a 401 on every MCP request
+within a minute, for reads as well as writes, and re-authorizing fails at
+login. To also kill the refresh tokens, call
+`services.RevokeUserOAuthAccess(ctx, hydraAdmin, grants, userID)` wherever a
+user is deactivated: it revokes all of the user's Hydra consent sessions
+(`DELETE /admin/oauth2/auth/sessions/consent?subject=&all=true`) and login
+sessions, then marks every grant revoked. (There is no deactivation flow in
+the app today; wire it in when one is added.)
 
 ### Long-lived connections (refresh tokens)
 
@@ -139,7 +160,54 @@ access token and force re-authorization. So:
 Clients registered before this change lack `offline_access` in their
 registration; remove and re-add the connector so it re-registers.
 
+## PKCE
+
+Hydra does **not** require PKCE by default, not even for public clients.
+`ory/hydra/hydra.yml` sets `oauth2.pkce.enforced_for_public_clients: true`,
+and every DCR client is public, so every self-registered client must send a
+PKCE challenge (S256; Hydra does not accept `plain`). `oauth2.pkce.enforced`
+stays `false` so a confidential client pinned via `HYDRA_PINNED_CLIENT_ID`
+(authenticating with a secret) keeps working without PKCE; set it to `true`
+if no such client exists.
+
+## DCR limits
+
+Registration is public (rate limited in `routes.go`), so the proxy bounds
+everything a client submits:
+
+- body at most 16 KiB (`http.MaxBytesReader`);
+- 1 to 3 `redirect_uris`, each at most 2048 characters, no fragment, no
+  userinfo, and one of: `https://` with a host; `http://` only on a loopback
+  host (`127.0.0.1`, `[::1]`, `localhost`, RFC 8252 7.3); or a private-use
+  native-app scheme (RFC 8252 7.1 prefers reverse-DNS like
+  `com.example.app:/callback`, but single-word schemes such as `cursor://`
+  and `vscode://` are accepted because common MCP clients use them; the
+  consent screen warns when the target is a custom scheme). `javascript:`,
+  `data:`, `file:`, `vbscript:`, `blob:`, `about:` and similar are always
+  refused;
+- `client_name`: control and format characters (newlines, bidi overrides,
+  zero-width characters) become spaces, whitespace is collapsed, and it is
+  cut to 100 characters.
+
+Not implemented: clients that register but are never consented to stay in
+Hydra indefinitely. A periodic sweep would need to list Hydra clients and
+compare them with `oauth_client_grants` and Hydra consent sessions; for now,
+review `OAUTH_CLIENT_REGISTERED` audit events and delete strays with
+`hydra delete oauth2-client`.
+
 ## Consent and connected apps
+
+The consent screen shows where this authorization will send the user back
+to: the `redirect_uri` of the authorization request itself, parsed from
+Hydra's consent `request_url` (a client may register several URIs, so the
+first registered one is not necessarily in use; when the request names none,
+the client's only registered URI). The API returns `redirect_scheme` and
+`redirect_host` (host only for http/https); for a private-use scheme the page
+shows the scheme and warns that control passes to an installed app. Every
+DCR client named itself, so the page labels the name unverified;
+`client_verified` is true only for the client configured with
+`handlers.WithPinnedClientID` (`HYDRA_PINNED_CLIENT_ID`). Both OAuth pages
+only follow a Hydra `redirect_to` that is an absolute http(s) URL.
 
 Consent decisions are stored per user and client in `oauth_client_grants`
 (plan 022): `approved_scopes` (granted), `reviewed_scopes` (shown on the
@@ -195,9 +263,13 @@ read-only. Every write tool is registered through `addWriteTool`
    disconnecting and deactivation take effect immediately for writes;
 3. the tool validates its arguments (no side effects);
 4. a per-(user, client) rate limit (`MCP_WRITE_RATE_PER_MINUTE`, default 30;
-   `MCP_WRITE_RATE_PER_DAY`, default 500), held in memory and charged only for
-   valid writes, by the number of records changed (a batch's skipped items
-   don't count);
+   `MCP_WRITE_RATE_PER_DAY`, default 500) plus a per-user limit across all of
+   the user's clients at twice those values, charged only for valid writes,
+   by the number of records changed (a batch's skipped items don't count). A
+   write must fit both limits or neither is charged. The counters are held in
+   memory **per MCP server instance** (restarts reset them; running several
+   replicas would multiply the limits), and idle buckets are evicted after a
+   day;
 5. the write, then its audit rows, tagged with `via: "mcp"`, `client_id` and
    the tool name (updates record before and after values).
 
@@ -218,6 +290,31 @@ tools carry MCP annotations (`readOnlyHint`, `destructiveHint`) so clients can
 ask the user before a write, and every write tool's description tells the
 model to confirm first.
 
+## Tool input bounds and output hygiene
+
+Tool arguments come from a language model, and through it from whatever text
+it has read, so the read tools bound them before calling a service
+(`internal/mcp/args.go`):
+
+- dates must be `YYYY-MM-DD` within 1970..2100, and `to_date` must not
+  precede `from_date` (an invalid date is an error, never silently dropped);
+- per-day tools (`get_daily_spending`, `get_daily_summary`,
+  `get_net_worth_history` with `group_by=day`) accept at most 366 days;
+  aggregating tools (`get_spending_by_category`, `get_top_expenses`, grouped
+  net worth) at most ten years;
+- `months` is clamped to 1..24, `limit`/`page_size` to 1..100, `page` to
+  1..1000; amount filters must be finite and at most $10^12;
+- the `counterparty` filter is at most 255 bytes.
+
+Tool output is read by the model too. Every user-controlled string printed by
+a tool (descriptions, account/category/budget/security names, counterparties)
+goes through one helper, `untrusted` (`internal/mcp/sanitize.go`): control and
+format characters (newlines, ANSI escapes, bidi overrides, zero-width
+characters) become spaces, whitespace is collapsed, the value is capped at
+200 characters and printed in double quotes. A merchant name on an imported
+statement can therefore not start a new output line or pose as tool output
+or instructions. IDs, enums, dates and amounts are printed as-is.
+
 `MCP_WRITE_ENABLED` alone decides whether write scopes exist: when it is off,
 any `write:*` listed in an `OAUTH_SCOPES` override is stripped.
 
@@ -232,8 +329,9 @@ outside a client's registration. Runbook: `plans/015-mcp-oauth-hydra/PHASE-3-5-R
 ## Deployment topology
 
 Public ingress is an **external Cloudflare tunnel** (managed outside this
-repo) that reaches services via host-published ports. Required mapping - order
-matters, the path rule must precede the catch-all:
+repo, `cloudflared` running on the host) that reaches services via ports
+published on `127.0.0.1` only. Required mapping - order matters, the path rule
+must precede the catch-all:
 
 | Public hostname | Host port | Purpose |
 |---|---|---|
@@ -243,15 +341,18 @@ matters, the path rule must precede the catch-all:
 | app domain `/oauth/login`, `/oauth/consent` | `:3000` (web) | Login + consent pages |
 
 Hydra admin (`:4445`) is never published by compose and never mapped in the
-tunnel. Routing `/oauth2/register` straight to Hydra would bypass every DCR
-control.
+tunnel. It binds only to Hydra's fixed address on the internal `hydra-admin`
+Docker network, which only the api joins, so no other container can reach it.
+Routing `/oauth2/register` straight to Hydra would bypass every DCR control.
 
 Configuration is via `.env.prod` (see `.env.prod.example`): `HYDRA_DSN`,
-`HYDRA_SECRETS_SYSTEM`, `HYDRA_ISSUER_URL`, `HYDRA_ADMIN_URL` (must be the
-Docker-network URL `http://hydra:4445` - the localhost default silently breaks
-the bridge), `HYDRA_LOGIN_URL`, `HYDRA_CONSENT_URL`, `MCP_RESOURCE_URL`, and
-`HYDRA_TLS_TERMINATION_CIDR` (the Docker network CIDR the tunnel connects
-from, so Hydra trusts `X-Forwarded-Proto: https` from cloudflared).
+`HYDRA_SECRETS_SYSTEM`, `HYDRA_ISSUER_URL`, `HYDRA_LOGIN_URL`,
+`HYDRA_CONSENT_URL`, `MCP_RESOURCE_URL`, and `HYDRA_TLS_TERMINATION_CIDR` (the
+kuberan `edge` network the tunnel arrives from, `172.30.10.0/24`, so Hydra
+trusts `X-Forwarded-Proto: https` from cloudflared). `HYDRA_ADMIN_URL` is fixed
+in `docker-compose.prod.yml` to `http://hydra-admin:4445` (in other setups it
+must be a container-network URL - the localhost default silently breaks the
+bridge). See `docs/backup-and-dr.md#upgrade-notes`.
 
 ## Hard-won interop notes
 

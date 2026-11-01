@@ -95,13 +95,14 @@ func (f *ForexConverter) fetchRate(ctx context.Context, fromCurrency string) (fl
 	ticker := fromCurrency + f.targetCurrency + "=X"
 	url := f.baseURL + "/" + ticker + "?interval=1d&range=1d"
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return 0, fmt.Errorf("building forex request: %w", err)
-	}
-	req.Header.Set("User-Agent", yahooUA)
-
-	resp, err := f.httpClient.Do(req)
+	resp, err := doWithRetry(ctx, f.httpClient, func() (*http.Request, error) {
+		req, reqErr := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+		if reqErr != nil {
+			return nil, fmt.Errorf("building forex request: %w", reqErr)
+		}
+		req.Header.Set("User-Agent", yahooUA)
+		return req, nil
+	})
 	if err != nil {
 		return 0, fmt.Errorf("forex http request for %s: %w", ticker, err)
 	}

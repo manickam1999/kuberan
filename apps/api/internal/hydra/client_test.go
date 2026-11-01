@@ -254,6 +254,35 @@ func TestRevokeConsentSessionsServerError(t *testing.T) {
 	}
 }
 
+func TestRevokeAllSessions(t *testing.T) {
+	var calls []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls = append(calls, r.Method+" "+r.URL.Path+"?"+r.URL.RawQuery)
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	t.Cleanup(srv.Close)
+	c := NewAdminClient(srv.URL)
+
+	if err := c.RevokeAllSessions(context.Background(), "user-1"); err != nil {
+		t.Fatalf("RevokeAllSessions: %v", err)
+	}
+	want := []string{
+		"DELETE /admin/oauth2/auth/sessions/consent?all=true&subject=user-1",
+		"DELETE /admin/oauth2/auth/sessions/login?subject=user-1",
+	}
+	if len(calls) != len(want) || calls[0] != want[0] || calls[1] != want[1] {
+		t.Errorf("calls = %v, want %v", calls, want)
+	}
+	if err := c.RevokeAllSessions(context.Background(), ""); err == nil {
+		t.Error("an empty subject must be rejected")
+	}
+
+	failing := newRecordingServer(t, http.StatusInternalServerError, nil)
+	if err := NewAdminClient(failing.server.URL).RevokeAllSessions(context.Background(), "user-1"); err == nil {
+		t.Error("a Hydra failure must surface so the caller can retry")
+	}
+}
+
 func TestListConsentSessions(t *testing.T) {
 	rs := newRecordingServer(t, http.StatusOK, []map[string]any{{
 		"consent_request": map[string]any{"client": map[string]any{"client_id": "cid", "client_name": "Claude"}},

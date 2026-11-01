@@ -1,4 +1,5 @@
 import {
+  keepPreviousData,
   useMutation,
   useQuery,
   useQueryClient,
@@ -60,6 +61,7 @@ export function useReceivables(filters?: ReceivableFilters, enabled = true) {
         ...filters,
       }),
     enabled,
+    placeholderData: keepPreviousData,
   });
 }
 
@@ -74,19 +76,20 @@ export function useAllReceivables(filters?: ReceivableFilters, enabled = true) {
   return useQuery({
     queryKey: [...receivableKeys.lists(), "all", filters] as const,
     queryFn: async () => {
-      const all: Receivable[] = [];
-      let page = 1;
-      let totalPages = 1;
-      do {
-        const res = await apiClient.get<PageResponse<Receivable>>(
-          "/api/v1/receivables",
-          { ...filters, page, page_size: ALL_PAGE_SIZE }
-        );
-        all.push(...res.data);
-        totalPages = res.total_pages;
-        page += 1;
-      } while (page <= totalPages);
-      return all;
+      const fetchPage = (page: number) =>
+        apiClient.get<PageResponse<Receivable>>("/api/v1/receivables", {
+          ...filters,
+          page,
+          page_size: ALL_PAGE_SIZE,
+        });
+      // Page 1 tells us how many pages there are; fetch the rest in parallel.
+      const first = await fetchPage(1);
+      const rest = await Promise.all(
+        Array.from({ length: Math.max(0, first.total_pages - 1) }, (_, i) =>
+          fetchPage(i + 2)
+        )
+      );
+      return [first, ...rest].flatMap((res) => res.data);
     },
     enabled,
   });

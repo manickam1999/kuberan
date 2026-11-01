@@ -48,6 +48,10 @@ type ConsentRequest struct {
 	Client                       OAuth2Client `json:"client"`
 	RequestedScope               []string     `json:"requested_scope"`
 	RequestedAccessTokenAudience []string     `json:"requested_access_token_audience"`
+	// RequestURL is the original authorization request URL the client sent to
+	// Hydra (/oauth2/auth?...). Its redirect_uri parameter is where the
+	// authorization code will actually be delivered.
+	RequestURL string `json:"request_url"`
 }
 
 // AcceptLoginParams are the inputs for accepting a login challenge.

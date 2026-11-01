@@ -5,6 +5,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useMemo,
   useState,
   type ReactNode,
 } from "react";
@@ -62,8 +63,14 @@ export function ChartThemeProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  // Stable identity so consumers don't re-render on every provider render.
+  const value = useMemo(
+    () => ({ chartTheme, setChartTheme }),
+    [chartTheme, setChartTheme]
+  );
+
   return (
-    <ChartThemeContext.Provider value={{ chartTheme, setChartTheme }}>
+    <ChartThemeContext.Provider value={value}>
       {children}
     </ChartThemeContext.Provider>
   );

@@ -123,8 +123,9 @@ func run() error {
 	hydraAdmin := hydra.NewAdminClient(appConfig.HydraAdminURL)
 
 	// Initialize handlers
-	authHandler := handlers.NewAuthHandler(userService, auditService)
-	oauthHandler := handlers.NewOAuthHandler(hydraAdmin, userService, oauthGrantService, auditService, appConfig.OAuthScopes, appConfig.MCPResourceURL)
+	authHandler := handlers.NewAuthHandler(userService, auditService, handlers.WithSecureCookie(appConfig.CookieSecure))
+	oauthHandler := handlers.NewOAuthHandler(hydraAdmin, userService, oauthGrantService, auditService, appConfig.OAuthScopes, appConfig.MCPResourceURL,
+		handlers.WithPinnedClientID(appConfig.HydraPinnedClientID))
 	registrationHandler := handlers.NewRegistrationHandler(hydraAdmin, auditService, appConfig.OAuthScopes)
 	accountHandler := handlers.NewAccountHandler(accountService, auditService)
 	categoryHandler := handlers.NewCategoryHandler(categoryService, auditService)
@@ -136,7 +137,7 @@ func run() error {
 	investmentHandler := handlers.NewInvestmentHandler(investmentService, auditService)
 	securityHandler := handlers.NewSecurityHandler(securityService, auditService)
 	snapshotHandler := handlers.NewPortfolioSnapshotHandler(snapshotService, auditService)
-	fdPipelineHandler := handlers.NewFixedDepositPipelineHandler(fdService)
+	fdPipelineHandler := handlers.NewFixedDepositPipelineHandler(fdService, auditService)
 	telegramHandler := handlers.NewTelegramHandler(telegramService, auditService)
 
 	// Register custom validators before routes
@@ -149,27 +150,24 @@ func run() error {
 
 	// Initialize Gin router
 	router := gin.New()
+	// ClientIP (rate limiting, audit logs, refresh sessions) believes
+	// forwarding headers only from API_TRUSTED_PROXY_CIDRS.
+	if err := middleware.ConfigureTrustedProxies(router, appConfig.TrustedProxyCIDRs); err != nil {
+		return fmt.Errorf("invalid API_TRUSTED_PROXY_CIDRS: %w", err)
+	}
 	router.Use(gin.Recovery())
 	router.Use(middleware.RequestLogging())
+	router.Use(middleware.SecurityHeaders(appConfig.Env != config.Development))
+	router.Use(middleware.CORS(appConfig.CORSOrigins))
+	router.Use(middleware.Gzip())
+	// The attachment upload enforces its own (larger) MAX_UPLOAD_BYTES cap.
+	router.Use(middleware.BodySizeLimit(appConfig.MaxBodyBytes, "POST "+handlers.AttachmentUploadRoute))
 	router.Use(middleware.ErrorHandler())
 
-	// CORS middleware — CORS_ORIGIN env var controls allowed origins (default: *)
-	router.Use(func(c *gin.Context) {
-		c.Writer.Header().Set("Access-Control-Allow-Origin", appConfig.CORSOrigin)
-		c.Writer.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
-		c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-API-Key")
-		c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
-
-		if c.Request.Method == "OPTIONS" {
-			c.AbortWithStatus(http.StatusNoContent)
-			return
-		}
-
-		c.Next()
-	})
-
-	// Swagger documentation
-	router.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
+	// Swagger documentation (not served in production).
+	if appConfig.Env != config.Production {
+		router.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
+	}
 
 	// Health check endpoint
 	router.GET("/api/health", func(c *gin.Context) {
@@ -198,21 +196,31 @@ func run() error {
 		Snapshot:             snapshotHandler,
 		FixedDepositPipeline: fdPipelineHandler,
 		Telegram:             telegramHandler,
+		Limits:               handlers.NewRouteLimits(appConfig.RateLimits),
 	}, handlers.RouteSecrets{
 		BotInternalSecret: appConfig.BotInternalSecret,
 		PipelineAPIKey:    appConfig.PipelineAPIKey,
 	})
 
 	// Create HTTP server
+	// Timeouts bound slow-client (slowloris) and stuck-connection resource use;
+	// WriteTimeout leaves room for attachment uploads/downloads.
 	srv := &http.Server{
-		Addr:    ":" + appConfig.Port,
-		Handler: router,
+		Addr:              ":" + appConfig.Port,
+		Handler:           router,
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      120 * time.Second,
+		IdleTimeout:       120 * time.Second,
+		MaxHeaderBytes:    1 << 20,
 	}
 
 	// Start server in goroutine
 	go func() {
 		log.Infof("Starting Kuberan backend server on port %s", appConfig.Port)
-		log.Infof("Swagger documentation available at http://localhost:%s/swagger/index.html", appConfig.Port)
+		if appConfig.Env != config.Production {
+			log.Infof("Swagger documentation available at http://localhost:%s/swagger/index.html", appConfig.Port)
+		}
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatalf("Failed to start server: %v", err)
 		}

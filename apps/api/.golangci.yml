@@ -48,6 +48,12 @@ linters:
       - path: _test\.go
         linters:
           - unparam
+      # MCP tool handlers report failures as an error *result* (IsError=true)
+      # with a nil Go error: that is the MCP protocol contract, so a returned
+      # nil after `err != nil` is intentional there.
+      - path: internal/mcp/tools_.*\.go
+        linters:
+          - nilerr
     paths:
       - internal/docs/
 

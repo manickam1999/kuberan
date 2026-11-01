@@ -1,0 +1,71 @@
+version: 2
+
+# Weekly, grouped updates so each ecosystem produces at most one PR for
+# minor/patch bumps per week (security updates still open immediately).
+updates:
+  - package-ecosystem: gomod
+    directory: /apps/api
+    schedule:
+      interval: weekly
+    groups:
+      api-go:
+        patterns: ["*"]
+        update-types: [minor, patch]
+
+  - package-ecosystem: gomod
+    directory: /apps/oracle
+    schedule:
+      interval: weekly
+    groups:
+      oracle-go:
+        patterns: ["*"]
+        update-types: [minor, patch]
+
+  - package-ecosystem: npm
+    directory: /apps/web
+    schedule:
+      interval: weekly
+    groups:
+      web-npm:
+        patterns: ["*"]
+        update-types: [minor, patch]
+
+  - package-ecosystem: pip
+    directory: /apps/bot
+    schedule:
+      interval: weekly
+    groups:
+      bot-pip:
+        patterns: ["*"]
+        update-types: [minor, patch]
+
+  - package-ecosystem: docker
+    directories:
+      - /apps/api
+      - /apps/api/dockerfiles
+      - /apps/web
+      - /apps/web/dockerfiles
+      - /apps/bot
+      - /apps/oracle
+      - /apps/backup
+    schedule:
+      interval: weekly
+    groups:
+      docker-images:
+        patterns: ["*"]
+
+  - package-ecosystem: docker-compose
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      compose-images:
+        patterns: ["*"]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]

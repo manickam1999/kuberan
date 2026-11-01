@@ -246,7 +246,8 @@ func (s *budgetService) GetActiveBudgetsProgress(userID string) ([]BudgetProgres
 	// aggregated in a single grouped query.
 	now := time.Now()
 	categoriesByPeriod := make(map[models.BudgetPeriod][]string)
-	for _, b := range budgets {
+	for i := range budgets {
+		b := &budgets[i]
 		categoriesByPeriod[b.Period] = append(categoriesByPeriod[b.Period], b.CategoryID)
 	}
 
@@ -277,7 +278,8 @@ func (s *budgetService) GetActiveBudgetsProgress(userID string) ([]BudgetProgres
 	}
 
 	progress := make([]BudgetProgress, 0, len(budgets))
-	for _, b := range budgets {
+	for i := range budgets {
+		b := &budgets[i]
 		spent := spentByPeriodCategory[b.Period][b.CategoryID]
 		progress = append(progress, computeProgress(b.ID, b.Amount, spent))
 	}

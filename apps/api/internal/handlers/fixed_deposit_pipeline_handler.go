@@ -12,12 +12,18 @@ import (
 
 // FixedDepositPipelineHandler handles pipeline-triggered fixed deposit processing.
 type FixedDepositPipelineHandler struct {
-	fdService services.FixedDepositServicer
+	fdService    services.FixedDepositServicer
+	auditService services.AuditServicer
 }
 
 // NewFixedDepositPipelineHandler creates a new FixedDepositPipelineHandler.
-func NewFixedDepositPipelineHandler(fdService services.FixedDepositServicer) *FixedDepositPipelineHandler {
-	return &FixedDepositPipelineHandler{fdService: fdService}
+// An optional audit service records each processing run.
+func NewFixedDepositPipelineHandler(fdService services.FixedDepositServicer, auditService ...services.AuditServicer) *FixedDepositPipelineHandler {
+	h := &FixedDepositPipelineHandler{fdService: fdService}
+	if len(auditService) > 0 {
+		h.auditService = auditService[0]
+	}
+	return h
 }
 
 // ProcessFixedDepositsRequest is the optional request payload for triggering FD processing.
@@ -52,6 +58,15 @@ func (h *FixedDepositPipelineHandler) ProcessFixedDeposits(c *gin.Context) {
 	if err != nil {
 		respondWithError(c, apperrors.Wrap(apperrors.ErrInternalServer, err))
 		return
+	}
+
+	if h.auditService != nil {
+		h.auditService.Log("", "PIPELINE_PROCESS_FIXED_DEPOSITS", "fixed_deposit", "", c.ClientIP(),
+			map[string]interface{}{
+				"as_of":          asOf.Format(time.RFC3339),
+				"payouts_posted": result.PayoutsPosted,
+				"fds_matured":    result.FDsMatured,
+			})
 	}
 
 	c.JSON(http.StatusOK, gin.H{

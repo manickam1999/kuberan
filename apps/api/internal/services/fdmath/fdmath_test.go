@@ -443,7 +443,7 @@ func TestPeriodicInterest(t *testing.T) {
 			principal: 100000,
 			rate:      4.0,
 			perYear:   4,
-			want:      1000, // 100000 * 0.04 / 4 = 1000.0
+			want:      1000, // 100000 × 0.04 ÷ 4 = 1000.0
 		},
 
 		// Semiannual (2 per year)
@@ -453,7 +453,7 @@ func TestPeriodicInterest(t *testing.T) {
 			principal: 200000,
 			rate:      6.0,
 			perYear:   2,
-			want:      6000, // 200000 * 0.06 / 2 = 6000.0
+			want:      6000, // 200000 × 0.06 ÷ 2 = 6000.0
 		},
 
 		// Annual (1 per year)
@@ -463,7 +463,7 @@ func TestPeriodicInterest(t *testing.T) {
 			principal: 100000,
 			rate:      3.5,
 			perYear:   1,
-			want:      3500, // 100000 * 0.035 = 3500
+			want:      3500, // 100000 × 0.035 = 3500
 		},
 
 		// Monthly with rounding

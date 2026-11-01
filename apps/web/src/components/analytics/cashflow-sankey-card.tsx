@@ -1,11 +1,11 @@
 "use client";
 
 import { useMemo } from "react";
-import {
-  ThemedSankey,
-  type SankeyLinkInput,
-  type SankeyNodeInput,
+import type {
+  SankeyLinkInput,
+  SankeyNodeInput,
 } from "@/components/charts/themed-sankey";
+import { LazyThemedSankey as ThemedSankey } from "@/components/charts/lazy";
 import { ditherColorAt } from "@/lib/dither";
 import {
   Card,

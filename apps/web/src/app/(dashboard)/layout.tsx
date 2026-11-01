@@ -10,38 +10,45 @@ import {
   type CommandPaletteRef,
 } from "@/components/layout/command-palette";
 import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar";
-import { Skeleton } from "@/components/ui/skeleton";
+import { Button } from "@/components/ui/button";
 
 export default function DashboardLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  const { isLoading, isAuthenticated } = useAuth();
+  const { status } = useAuth();
   const router = useRouter();
   const commandPaletteRef = useRef<CommandPaletteRef>(null);
 
   useEffect(() => {
-    if (!isLoading && !isAuthenticated) {
+    if (status === "unauthenticated") {
       router.replace("/login");
     }
-  }, [isLoading, isAuthenticated, router]);
+  }, [status, router]);
 
-  if (isLoading) {
+  if (status === "unauthenticated") {
+    return null;
+  }
+
+  if (status === "error") {
     return (
-      <div className="flex h-screen items-center justify-center">
-        <div className="flex flex-col items-center gap-4">
-          <Skeleton className="h-8 w-32" />
-          <Skeleton className="h-4 w-48" />
+      <div className="flex h-screen items-center justify-center p-4">
+        <div className="flex max-w-sm flex-col items-center gap-3 text-center">
+          <h1 className="text-lg font-semibold">Could not reach the server</h1>
+          <p className="text-sm text-muted-foreground">
+            Your session is kept. Check your connection and try again.
+          </p>
+          <Button onClick={() => window.location.reload()}>Retry</Button>
         </div>
       </div>
     );
   }
 
-  if (!isAuthenticated) {
-    return null;
-  }
-
+  // Render the shell and the page while the session is still loading: the
+  // middleware only lets requests with the auth flag cookie through, and the
+  // API client holds page queries until the session bootstrap settles, so the
+  // page's queries start in parallel with it rather than after it.
   return (
     <SidebarProvider>
       <AppSidebar />

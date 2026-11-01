@@ -1,7 +1,9 @@
 package services
 
 import (
+	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -9,6 +11,7 @@ import (
 	"gorm.io/gorm/clause"
 
 	apperrors "kuberan/internal/errors"
+	"kuberan/internal/hydra"
 	"kuberan/internal/logger"
 	"kuberan/internal/models"
 )
@@ -154,6 +157,41 @@ func (s *oauthGrantService) Authorize(userID, clientID, scope string) error {
 		if err := s.db.Model(grant).UpdateColumn("last_used_at", now).Error; err != nil {
 			logger.Get().Warnw("failed to record OAuth grant last use", "error", err, "client_id", clientID)
 		}
+	}
+	return nil
+}
+
+// RevokeAll marks every active grant of userID revoked and stops them
+// auto-accepting. It returns the number of grants revoked.
+func (s *oauthGrantService) RevokeAll(userID string) (int64, error) {
+	if userID == "" {
+		return 0, apperrors.WithMessage(apperrors.ErrInvalidInput, "user_id is required")
+	}
+	res := s.db.Model(&models.OAuthClientGrant{}).
+		Where("user_id = ? AND revoked_at IS NULL", userID).
+		Updates(map[string]interface{}{"revoked_at": s.now(), "auto_accept": false})
+	if res.Error != nil {
+		return 0, apperrors.Wrap(apperrors.ErrInternalServer, res.Error)
+	}
+	return res.RowsAffected, nil
+}
+
+// RevokeUserOAuthAccess cuts off every OAuth client a user has connected: it
+// revokes all of the user's Hydra consent and login sessions (so no refresh
+// token can mint new access tokens and the next authorization must sign in
+// again), then marks all of the user's grants revoked (so the MCP write guard
+// refuses at once). Call it when a user is deactivated. Access tokens already
+// issued stay valid offline for at most their 15-minute lifetime, but the MCP
+// server also re-checks that the user is active on every request.
+//
+// Hydra is called first: if it fails, nothing is marked revoked and the call
+// can be retried.
+func RevokeUserOAuthAccess(ctx context.Context, admin hydra.AdminClient, grants OAuthGrantServicer, userID string) error {
+	if err := admin.RevokeAllSessions(ctx, userID); err != nil {
+		return fmt.Errorf("revoke hydra sessions: %w", err)
+	}
+	if _, err := grants.RevokeAll(userID); err != nil {
+		return fmt.Errorf("revoke oauth grants: %w", err)
 	}
 	return nil
 }

@@ -46,8 +46,25 @@ type Config struct {
 	// Pipeline
 	PipelineAPIKey string
 
-	// CORS
-	CORSOrigin string
+	// CORSOrigins is the exact-match allowlist of browser origins allowed to
+	// make credentialed cross-origin requests (CORS_ORIGIN, comma-separated).
+	CORSOrigins []string
+
+	// CookieSecure sets the Secure flag on the refresh-token cookie
+	// (COOKIE_SECURE; defaults to true outside development).
+	CookieSecure bool
+
+	// TrustedProxyCIDRs lists the networks whose forwarding headers
+	// (CF-Connecting-IP, X-Forwarded-For) the API believes for the client IP
+	// (API_TRUSTED_PROXY_CIDRS). Empty means the TCP peer address is used.
+	TrustedProxyCIDRs []string
+
+	// MaxBodyBytes caps JSON request bodies (MAX_BODY_BYTES, default 1 MiB).
+	// The attachment upload route uses MaxUploadBytes instead.
+	MaxBodyBytes int64
+
+	// RateLimits holds the per-route abuse limits for public auth endpoints.
+	RateLimits RateLimits
 
 	// Bot
 	BotInternalSecret string
@@ -90,6 +107,24 @@ const DefaultOAuthScopes = "read:accounts read:transactions read:budgets " +
 // MCP writes are enabled (plan 022).
 const DefaultOAuthWriteScopes = "write:transactions write:categories write:budgets"
 
+// RateLimits configures the in-memory rate limits on public auth endpoints.
+// Each value is the number of requests allowed per window; 0 disables that
+// limit.
+type RateLimits struct {
+	LoginPerMinute      int // per client IP: /auth/login and /oauth/login (RATE_LIMIT_LOGIN_PER_MINUTE, 10)
+	LoginEmailPerHour   int // per submitted email across both logins (RATE_LIMIT_LOGIN_EMAIL_PER_HOUR, 20)
+	RegisterPerHour     int // per client IP: /auth/register (RATE_LIMIT_REGISTER_PER_HOUR, 5)
+	RefreshPerMinute    int // per client IP: /auth/refresh (RATE_LIMIT_REFRESH_PER_MINUTE, 60)
+	RegistrationPerHour int // per client IP: OAuth DCR (RATE_LIMIT_DCR_PER_HOUR, 10)
+}
+
+// DefaultCORSOrigin is the development default for CORS_ORIGIN.
+const DefaultCORSOrigin = "http://localhost:3000"
+
+// minSecretLength is the minimum length required (JWT_SECRET) or recommended
+// (shared service secrets) in production.
+const minSecretLength = 32
+
 var appConfig *Config
 
 // Load loads configuration from environment variables
@@ -121,8 +156,17 @@ func Load() (*Config, error) {
 		// Pipeline
 		PipelineAPIKey: os.Getenv("PIPELINE_API_KEY"),
 
-		// CORS
-		CORSOrigin: getEnv("CORS_ORIGIN", "*"),
+		// CORS / cookies / proxies / request limits
+		CORSOrigins:       splitList(getEnv("CORS_ORIGIN", DefaultCORSOrigin)),
+		TrustedProxyCIDRs: splitList(os.Getenv("API_TRUSTED_PROXY_CIDRS")),
+		MaxBodyBytes:      getEnvInt64("MAX_BODY_BYTES", 1<<20),
+		RateLimits: RateLimits{
+			LoginPerMinute:      int(getEnvInt64("RATE_LIMIT_LOGIN_PER_MINUTE", 10)),
+			LoginEmailPerHour:   int(getEnvInt64("RATE_LIMIT_LOGIN_EMAIL_PER_HOUR", 20)),
+			RegisterPerHour:     int(getEnvInt64("RATE_LIMIT_REGISTER_PER_HOUR", 5)),
+			RefreshPerMinute:    int(getEnvInt64("RATE_LIMIT_REFRESH_PER_MINUTE", 60)),
+			RegistrationPerHour: int(getEnvInt64("RATE_LIMIT_DCR_PER_HOUR", 10)),
+		},
 
 		// Bot
 		BotInternalSecret: os.Getenv("BOT_INTERNAL_SECRET"),
@@ -152,6 +196,7 @@ func Load() (*Config, error) {
 	}
 
 	config.OAuthScopes = withWriteScopes(config.OAuthScopes, config.MCPWriteEnabled)
+	config.CookieSecure = getEnvBool("COOKIE_SECURE", config.Env != Development)
 
 	// Parse JWT expiration duration
 	expStr := getEnv("JWT_EXPIRES_IN", "24h")
@@ -193,11 +238,33 @@ func (c *Config) validateProduction() error {
 			return fmt.Errorf("JWT_SECRET must be explicitly set in production")
 		}
 	}
+	if len(c.JWTSecret) < minSecretLength {
+		return fmt.Errorf("JWT_SECRET must be at least %d bytes in production", minSecretLength)
+	}
 	if c.DBPassword == "kuberan" {
 		return fmt.Errorf("DB_PASSWORD must not be the default in production")
 	}
 	if c.StorageBucket != "" && c.StorageSecretKey == "" {
 		return fmt.Errorf("STORAGE_SECRET_KEY must be set when STORAGE_BUCKET is configured in production")
+	}
+	if len(c.CORSOrigins) == 0 {
+		return fmt.Errorf("CORS_ORIGIN must list the allowed web origins in production")
+	}
+	for _, o := range c.CORSOrigins {
+		if strings.Contains(o, "*") {
+			return fmt.Errorf("CORS_ORIGIN must not contain wildcards in production (got %q)", o)
+		}
+	}
+
+	log := logger.Get()
+	if c.DBSSLMode == "disable" {
+		log.Warn("DB_SSLMODE=disable in production: database traffic is unencrypted (fine only on a private Docker network)")
+	}
+	if c.PipelineAPIKey != "" && len(c.PipelineAPIKey) < minSecretLength {
+		log.Warnf("PIPELINE_API_KEY is shorter than %d characters; use a longer random key", minSecretLength)
+	}
+	if c.BotInternalSecret != "" && len(c.BotInternalSecret) < minSecretLength {
+		log.Warnf("BOT_INTERNAL_SECRET is shorter than %d characters; use a longer random secret", minSecretLength)
 	}
 	return nil
 }

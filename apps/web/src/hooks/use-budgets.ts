@@ -1,4 +1,9 @@
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import {
+  keepPreviousData,
+  useQuery,
+  useMutation,
+  useQueryClient,
+} from "@tanstack/react-query";
 import { apiClient } from "@/lib/api-client";
 import type { Budget } from "@/types/models";
 import type {
@@ -30,6 +35,7 @@ export function useBudgets(filters?: BudgetFilters) {
       apiClient.get<PageResponse<Budget>>("/api/v1/budgets", {
         ...filters,
       }),
+    placeholderData: keepPreviousData,
   });
 }
 

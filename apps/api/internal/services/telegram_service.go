@@ -2,8 +2,9 @@ package services
 
 import (
 	"crypto/rand"
-	"encoding/hex"
 	"errors"
+	"strconv"
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
@@ -14,18 +15,45 @@ import (
 )
 
 const (
-	linkCodeLength = 6
+	linkCodeLength = 8
 	linkCodeExpiry = 15 * time.Minute
+
+	// linkCodeAlphabet is Crockford-style base32 minus the characters people
+	// confuse when copying a code (0/O, 1/I/L) and U: 30 symbols, so an
+	// 8-character code has ~39 bits of entropy.
+	linkCodeAlphabet = "23456789ABCDEFGHJKMNPQRSTVWXYZ"
+
+	// maxLinkFailures failed CompleteLink attempts per Telegram user are
+	// allowed per linkFailureWindow before further attempts are refused.
+	maxLinkFailures   = 5
+	linkFailureWindow = 15 * time.Minute
+
+	// linkCodeInsertAttempts bounds retries on the (astronomically rare)
+	// unique-index collision of a freshly generated code.
+	linkCodeInsertAttempts = 3
 )
 
 // telegramService handles Telegram linking business logic.
 type telegramService struct {
 	db *gorm.DB
+	// linkFailures counts failed link attempts per Telegram user ID. It is
+	// in-memory (per process), which is enough to make guessing codes
+	// through the bot impractical.
+	linkFailures *middleware.RateLimiter
 }
 
 // NewTelegramService creates a new TelegramServicer.
 func NewTelegramService(db *gorm.DB) TelegramServicer {
-	return &telegramService{db: db}
+	return &telegramService{
+		db:           db,
+		linkFailures: middleware.NewRateLimiter(maxLinkFailures, linkFailureWindow),
+	}
+}
+
+// NormalizeLinkCode uppercases a link code and strips spaces and dashes, so
+// codes typed by hand still match.
+func NormalizeLinkCode(code string) string {
+	return strings.NewReplacer(" ", "", "-", "").Replace(strings.ToUpper(strings.TrimSpace(code)))
 }
 
 // GetLinkByUserID retrieves a Telegram link by user ID
@@ -57,17 +85,19 @@ func (s *telegramService) GenerateLinkCode(userID string) (*models.TelegramLink,
 	// Check if user already has a link
 	var existingLink models.TelegramLink
 	dbErr := s.db.Where("user_id = ?", userID).First(&existingLink).Error
-
-	// Generate random link code
-	code, err := generateRandomCode(linkCodeLength)
-	if err != nil {
-		return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)
+	if dbErr != nil && !errors.Is(dbErr, gorm.ErrRecordNotFound) {
+		return nil, apperrors.Wrap(apperrors.ErrInternalServer, dbErr)
 	}
 
-	expiresAt := time.Now().Add(linkCodeExpiry)
+	var lastErr error
+	for attempt := 0; attempt < linkCodeInsertAttempts; attempt++ {
+		code, err := generateLinkCode(linkCodeLength)
+		if err != nil {
+			return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)
+		}
+		expiresAt := time.Now().Add(linkCodeExpiry)
 
-	if dbErr != nil {
-		if errors.Is(dbErr, gorm.ErrRecordNotFound) {
+		if dbErr != nil {
 			// Create new link record with pending code
 			link := &models.TelegramLink{
 				UserID:            userID,
@@ -75,40 +105,56 @@ func (s *telegramService) GenerateLinkCode(userID string) (*models.TelegramLink,
 				LinkCodeExpiresAt: &expiresAt,
 				IsActive:          false,
 			}
-
-			if err := s.db.Create(link).Error; err != nil {
-				return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)
+			lastErr = s.db.Create(link).Error
+			if lastErr == nil {
+				return link, nil
 			}
-
-			return link, nil
+		} else {
+			// Update existing link with new code
+			existingLink.LinkCode = code
+			existingLink.LinkCodeExpiresAt = &expiresAt
+			lastErr = s.db.Save(&existingLink).Error
+			if lastErr == nil {
+				return &existingLink, nil
+			}
 		}
-		return nil, apperrors.Wrap(apperrors.ErrInternalServer, dbErr)
+		if !isUniqueViolation(lastErr) {
+			break
+		}
 	}
-
-	// Update existing link with new code
-	existingLink.LinkCode = code
-	existingLink.LinkCodeExpiresAt = &expiresAt
-
-	if err := s.db.Save(&existingLink).Error; err != nil {
-		return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)
-	}
-
-	return &existingLink, nil
+	return nil, apperrors.Wrap(apperrors.ErrInternalServer, lastErr)
 }
 
-// CompleteLink completes the linking process by verifying the code
+// linkFailureKey is the rate-limiter key for a Telegram user's link attempts.
+func linkFailureKey(telegramUserID int64) string {
+	return "tg:" + strconv.FormatInt(telegramUserID, 10)
+}
+
+// CompleteLink completes the linking process by verifying the code. A
+// Telegram user that fails maxLinkFailures times within linkFailureWindow is
+// refused (ErrTooManyLinkAttempts) until the window passes, so codes cannot be
+// brute-forced through the bot.
 func (s *telegramService) CompleteLink(linkCode string, telegramUserID int64, username, firstName, defaultCurrency string) error {
+	key := linkFailureKey(telegramUserID)
+	if s.linkFailures.Exhausted(key) {
+		return apperrors.ErrTooManyLinkAttempts
+	}
+	fail := func(err error) error {
+		s.linkFailures.Allow(key)
+		return err
+	}
+
 	var link models.TelegramLink
-	if err := s.db.Where("link_code = ?", linkCode).First(&link).Error; err != nil {
+	if err := s.db.Where("link_code = ? AND link_code <> ''", NormalizeLinkCode(linkCode)).First(&link).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return apperrors.ErrInvalidLinkCode
+			return fail(apperrors.ErrInvalidLinkCode)
 		}
 		return apperrors.Wrap(apperrors.ErrInternalServer, err)
 	}
 
 	// Check if code has expired
 	if link.LinkCodeExpiresAt == nil || time.Now().After(*link.LinkCodeExpiresAt) {
-		return apperrors.ErrLinkCodeExpired
+		return fail(apperrors.ErrLinkCodeExpired)
 	}
 
 	// Check if this Telegram user is already linked to another account
@@ -211,12 +257,28 @@ func (s *telegramService) GetUserWithAuthToken(telegramUserID int64) (*TelegramU
 	}, nil
 }
 
-// generateRandomCode generates a random alphanumeric code of specified length
-func generateRandomCode(length int) (string, error) {
-	bytes := make([]byte, length/2+1)
-	if _, err := rand.Read(bytes); err != nil {
-		return "", err
+// generateLinkCode returns a uniformly random code of length symbols from
+// linkCodeAlphabet, using crypto/rand with rejection sampling (no modulo bias).
+func generateLinkCode(length int) (string, error) {
+	const alphabetLen = len(linkCodeAlphabet)
+	// Largest multiple of alphabetLen that fits in a byte.
+	const limit = 256 - 256%alphabetLen
+
+	out := make([]byte, 0, length)
+	buf := make([]byte, length*2)
+	for len(out) < length {
+		if _, err := rand.Read(buf); err != nil {
+			return "", err
+		}
+		for _, b := range buf {
+			if int(b) >= limit {
+				continue
+			}
+			out = append(out, linkCodeAlphabet[int(b)%alphabetLen])
+			if len(out) == length {
+				break
+			}
+		}
 	}
-	code := hex.EncodeToString(bytes)[:length]
-	return code, nil
+	return string(out), nil
 }

@@ -7,8 +7,12 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	mcpgo "github.com/mark3labs/mcp-go/mcp"
+
+	apperrors "kuberan/internal/errors"
+	"kuberan/internal/models"
 )
 
 // fakeValidator is a TokenValidator stub for exercising makeAuthFromRequest.
@@ -109,9 +113,9 @@ func TestRequireBearer(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			nextCalled = false
-			h := withWWWAuthenticate(requireBearer(next, tt.validator), testOAuthConfig)
+			h := withWWWAuthenticate(requireBearer(next, tt.validator, nil), testOAuthConfig)
 
-			req := httptest.NewRequest("POST", "/mcp", nil)
+			req := httptest.NewRequest("POST", "/mcp", http.NoBody)
 			if tt.authHeader != "" {
 				req.Header.Set("Authorization", tt.authHeader)
 			}
@@ -136,14 +140,121 @@ func TestRequireBearer(t *testing.T) {
 	}
 }
 
-func TestMakeAuthFromRequest(t *testing.T) {
-	t.Run("valid token sets subject and scopes", func(t *testing.T) {
-		v := fakeValidator{claims: &AccessClaims{Subject: "user-42", Scopes: []string{"read:accounts"}}}
-		fn := makeAuthFromRequest(v, nil)
+// withClaims returns req carrying claims as requireBearer attaches them.
+func withClaims(req *http.Request, claims *AccessClaims) *http.Request {
+	return req.WithContext(context.WithValue(req.Context(), claimsKey{}, claims))
+}
 
-		req := httptest.NewRequest("POST", "/mcp", nil)
-		req.Header.Set("Authorization", "Bearer sometoken")
-		ctx := fn(context.Background(), req)
+// TestRequireBearerValidatesOnce proves the token is validated once per
+// request and its claims reach the MCP context through makeAuthFromRequest.
+func TestRequireBearerValidatesOnce(t *testing.T) {
+	v := &countingValidator{claims: &AccessClaims{Subject: "user-42", ClientID: "c1", Scopes: []string{"read:accounts"}}}
+	fn := makeAuthFromRequest(nil)
+	var got context.Context
+	next := http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		got = fn(r.Context(), r)
+	})
+	req := httptest.NewRequest("POST", "/mcp", http.NoBody)
+	req.Header.Set("Authorization", "Bearer tok")
+	requireBearer(next, v, nil).ServeHTTP(httptest.NewRecorder(), req)
+
+	if v.calls != 1 {
+		t.Fatalf("token validated %d times, want 1", v.calls)
+	}
+	if user, err := getUserID(got); err != nil || user != "user-42" {
+		t.Fatalf("expected user-42 in the MCP context, got %q err=%v", user, err)
+	}
+	if c, _ := got.Value(clientIDKey{}).(string); c != "c1" {
+		t.Fatalf("client ID = %q, want c1", c)
+	}
+}
+
+type countingValidator struct {
+	claims *AccessClaims
+	calls  int
+}
+
+func (c *countingValidator) Validate(context.Context, string) (*AccessClaims, error) {
+	c.calls++
+	return c.claims, nil
+}
+
+// fakeUsers is a userLookup stub for the active-user check.
+type fakeUsers struct {
+	users map[string]*models.User
+	err   error
+	calls int
+}
+
+func (f *fakeUsers) GetUserByID(id string) (*models.User, error) {
+	f.calls++
+	if f.err != nil {
+		return nil, f.err
+	}
+	if u, ok := f.users[id]; ok {
+		return u, nil
+	}
+	return nil, apperrors.ErrUserNotFound
+}
+
+// TestRequireBearerRejectsInactiveUser proves a deactivated user is cut off
+// from reads too (a refresh token would otherwise keep minting valid access
+// tokens), and that the check is cached.
+func TestRequireBearerRejectsInactiveUser(t *testing.T) {
+	users := &fakeUsers{users: map[string]*models.User{
+		"active":   {IsActive: true},
+		"inactive": {IsActive: false},
+	}}
+	now := time.Unix(1_700_000_000, 0)
+	active := newActiveUsers(users, time.Minute, func() time.Time { return now })
+	next := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
+
+	serve := func(sub string) int {
+		h := withWWWAuthenticate(requireBearer(next, fakeValidator{claims: &AccessClaims{Subject: sub}}, active), testOAuthConfig)
+		req := httptest.NewRequest("POST", "/mcp", http.NoBody)
+		req.Header.Set("Authorization", "Bearer tok")
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		return rec.Code
+	}
+
+	if got := serve("active"); got != http.StatusOK {
+		t.Fatalf("active user: status %d, want 200", got)
+	}
+	if got := serve("inactive"); got != http.StatusUnauthorized {
+		t.Fatalf("inactive user: status %d, want 401", got)
+	}
+	if got := serve("deleted"); got != http.StatusUnauthorized {
+		t.Fatalf("unknown user: status %d, want 401", got)
+	}
+	calls := users.calls
+	_ = serve("active")
+	if users.calls != calls {
+		t.Fatalf("the active check should be cached within the TTL")
+	}
+
+	// Deactivation takes effect once the cached entry expires.
+	users.users["active"].IsActive = false
+	now = now.Add(2 * time.Minute)
+	if got := serve("active"); got != http.StatusUnauthorized {
+		t.Fatalf("deactivated user after TTL: status %d, want 401", got)
+	}
+
+	// A database failure is not treated as "inactive" and not cached.
+	users.err = errors.New("db down")
+	now = now.Add(2 * time.Minute)
+	if got := serve("active"); got != http.StatusServiceUnavailable {
+		t.Fatalf("lookup failure: status %d, want 503", got)
+	}
+}
+
+func TestMakeAuthFromRequest(t *testing.T) {
+	t.Run("validated claims set subject and scopes", func(t *testing.T) {
+		fn := makeAuthFromRequest(nil)
+
+		req := withClaims(httptest.NewRequest("POST", "/mcp", http.NoBody),
+			&AccessClaims{Subject: "user-42", Scopes: []string{"read:accounts"}})
+		ctx := fn(req.Context(), req)
 
 		gotUser, err := getUserID(ctx)
 		if err != nil || gotUser != "user-42" {
@@ -154,14 +265,13 @@ func TestMakeAuthFromRequest(t *testing.T) {
 		}
 	})
 
-	t.Run("valid token sets client ID and caller IP", func(t *testing.T) {
-		v := fakeValidator{claims: &AccessClaims{Subject: "user-42", ClientID: "claude-client"}}
-		fn := makeAuthFromRequest(v, nil)
+	t.Run("validated claims set client ID and caller IP", func(t *testing.T) {
+		fn := makeAuthFromRequest(nil)
 
 		req := httptest.NewRequest("POST", "/mcp", http.NoBody)
 		req.RemoteAddr = "192.0.2.10:54321"
-		req.Header.Set("Authorization", "Bearer sometoken")
-		ctx := fn(context.Background(), req)
+		req = withClaims(req, &AccessClaims{Subject: "user-42", ClientID: "claude-client"})
+		ctx := fn(req.Context(), req)
 
 		if got, _ := ctx.Value(clientIDKey{}).(string); got != "claude-client" {
 			t.Errorf("client ID = %q, want claude-client", got)
@@ -197,35 +307,17 @@ func TestMakeAuthFromRequest(t *testing.T) {
 		}
 	})
 
-	t.Run("missing header yields no user", func(t *testing.T) {
-		fn := makeAuthFromRequest(fakeValidator{}, nil)
-		req := httptest.NewRequest("POST", "/mcp", nil)
-		ctx := fn(context.Background(), req)
+	t.Run("no validated claims yields no user", func(t *testing.T) {
+		fn := makeAuthFromRequest(nil)
+		req := httptest.NewRequest("POST", "/mcp", http.NoBody)
+		// A header alone is not trusted: only claims attached by requireBearer.
+		req.Header.Set("Authorization", "Bearer sometoken")
+		ctx := fn(req.Context(), req)
 		if _, err := getUserID(ctx); err == nil {
 			t.Fatalf("expected unauthorized context")
 		}
-	})
-
-	t.Run("malformed header yields no user", func(t *testing.T) {
-		fn := makeAuthFromRequest(fakeValidator{claims: &AccessClaims{Subject: "x"}}, nil)
-		req := httptest.NewRequest("POST", "/mcp", nil)
-		req.Header.Set("Authorization", "Basic abc")
-		ctx := fn(context.Background(), req)
-		if _, err := getUserID(ctx); err == nil {
-			t.Fatalf("expected unauthorized context for non-Bearer scheme")
-		}
-	})
-
-	t.Run("rejected token yields no user", func(t *testing.T) {
-		fn := makeAuthFromRequest(fakeValidator{err: errors.New("bad token")}, nil)
-		req := httptest.NewRequest("POST", "/mcp", nil)
-		req.Header.Set("Authorization", "Bearer sometoken")
-		ctx := fn(context.Background(), req)
-		if _, err := getUserID(ctx); err == nil {
-			t.Fatalf("expected unauthorized context for rejected token")
-		}
 		if got := scopesFromContext(ctx); got != nil {
-			t.Fatalf("expected no scopes for rejected token, got %v", got)
+			t.Fatalf("expected no scopes, got %v", got)
 		}
 	})
 }

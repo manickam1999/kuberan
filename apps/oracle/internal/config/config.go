@@ -15,6 +15,7 @@ type Config struct {
 	PipelineAPIKey       string
 	LogLevel             slog.Level
 	RequestTimeout       time.Duration
+	PipelineTimeout      time.Duration // timeout for long-running pipeline calls (snapshots, fixed deposits)
 	ComputeSnapshots     bool
 	ProcessFixedDeposits bool
 	TargetCurrency       string // Target currency for all prices (default: "MYR")
@@ -45,6 +46,12 @@ func Load() (*Config, error) {
 		return nil, err
 	}
 	cfg.RequestTimeout = timeout
+
+	pipelineTimeout, err := parseDuration("PIPELINE_TIMEOUT", os.Getenv("PIPELINE_TIMEOUT"), 5*time.Minute)
+	if err != nil {
+		return nil, err
+	}
+	cfg.PipelineTimeout = pipelineTimeout
 
 	snapshots, err := parseBool(os.Getenv("COMPUTE_SNAPSHOTS"), true)
 	if err != nil {
@@ -85,15 +92,21 @@ func parseLogLevel(s string) (slog.Level, error) {
 }
 
 func parseTimeout(s string) (time.Duration, error) {
+	return parseDuration("REQUEST_TIMEOUT", s, 30*time.Second)
+}
+
+// parseDuration parses a positive Go duration for the named variable,
+// returning def when s is empty.
+func parseDuration(name, s string, def time.Duration) (time.Duration, error) {
 	if s == "" {
-		return 30 * time.Second, nil
+		return def, nil
 	}
 	d, err := time.ParseDuration(s)
 	if err != nil {
-		return 0, fmt.Errorf("invalid REQUEST_TIMEOUT %q: %w", s, err)
+		return 0, fmt.Errorf("invalid %s %q: %w", name, s, err)
 	}
 	if d <= 0 {
-		return 0, fmt.Errorf("REQUEST_TIMEOUT must be positive, got %v", d)
+		return 0, fmt.Errorf("%s must be positive, got %v", name, d)
 	}
 	return d, nil
 }

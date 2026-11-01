@@ -1,5 +1,3 @@
-version: "3"
-
 services:
   api:
     build:
@@ -173,15 +171,17 @@ services:
   # MinIO: S3-compatible object store for receipt attachments (plan 017).
   # The S3 API (:9000) stays on the private Docker network and is NEVER
   # published; only the api service talks to it. The console (:9001) is
-  # published for local debugging convenience.
+  # published on loopback only, for local debugging convenience.
+  # Upstream minio/minio + minio/mc images are gone from Docker Hub; this is
+  # the community fork pinned in docker-compose.prod.yml (it ships `mc`).
   minio:
-    image: minio/minio:latest
+    image: ${MINIO_IMAGE:-pgsty/minio:RELEASE.2026-08-04T00-00-00Z@sha256:b6bfe7239bfc83fb90d31612d9704d86039dd714f7904b3f1ad68f211e602372}
     command: server /data --console-address ":9001"
     environment:
       - MINIO_ROOT_USER=${MINIO_ROOT_USER:-minioadmin}
       - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD:-minioadmin}
     ports:
-      - "9001:9001" # console only; :9000 (S3 API) intentionally NOT published
+      - "127.0.0.1:9001:9001" # console only; :9000 (S3 API) intentionally NOT published
     volumes:
       - minio_data:/data
     restart: unless-stopped
@@ -189,7 +189,7 @@ services:
   # One-shot: wait for MinIO, create the receipts bucket (private), and mint a
   # scoped service account whose keys the api uses. Idempotent — safe to re-run.
   minio-init:
-    image: minio/mc:latest
+    image: ${MINIO_IMAGE:-pgsty/minio:RELEASE.2026-08-04T00-00-00Z@sha256:b6bfe7239bfc83fb90d31612d9704d86039dd714f7904b3f1ad68f211e602372}
     depends_on:
       - minio
     entrypoint:
@@ -217,6 +217,7 @@ services:
         *) echo 'minio-init: ERROR service account is missing its scoped policy (would inherit root)' >&2; exit 1 ;;
         esac
     environment:
+      - MC_CONFIG_DIR=/tmp/.mc
       - MINIO_ROOT_USER=${MINIO_ROOT_USER:-minioadmin}
       - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD:-minioadmin}
       - STORAGE_ACCESS_KEY=${STORAGE_ACCESS_KEY:-kuberan-receipts}
@@ -226,18 +227,20 @@ services:
   postgres:
     image: postgres:16-alpine
     container_name: kuberan-postgres
+    # Bootstrap superuser is `postgres`; apps/api/dev/init.sql creates the
+    # non-superuser `kuberan` role that owns the kuberan and hydra databases.
     environment:
-      POSTGRES_USER: kuberan
-      POSTGRES_PASSWORD: kuberan
-      POSTGRES_DB: kuberan
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: postgres
       PGDATA: /var/lib/postgresql/data/pgdata
     ports:
-      - "5433:5432"
+      - "127.0.0.1:5433:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./apps/api/dev/init.sql:/docker-entrypoint-initdb.d/init.sql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U kuberan"]
+      test: ["CMD-SHELL", "pg_isready -U kuberan -d kuberan"]
       interval: 10s
       timeout: 5s
       retries: 5

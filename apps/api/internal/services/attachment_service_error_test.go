@@ -207,7 +207,7 @@ func TestAttachmentDeleteRowDBError(t *testing.T) {
 	}
 
 	if err := db.Callback().Delete().Before("gorm:delete").Register("force_delete_error", func(tx *gorm.DB) {
-		tx.AddError(errors.New("boom: delete failed"))
+		_ = tx.AddError(errors.New("boom: delete failed"))
 	}); err != nil {
 		t.Fatalf("register delete callback: %v", err)
 	}

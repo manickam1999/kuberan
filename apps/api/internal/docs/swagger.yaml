@@ -84,8 +84,6 @@ definitions:
     properties:
       access_token:
         type: string
-      refresh_token:
-        type: string
       user:
         $ref: '#/definitions/internal_handlers.UserResponse'
     type: object
@@ -123,6 +121,8 @@ definitions:
       default_currency:
         type: string
       link_code:
+        maxLength: 16
+        minLength: 6
         type: string
       telegram_first_name:
         type: string
@@ -470,8 +470,10 @@ definitions:
   internal_handlers.LoginRequest:
     properties:
       email:
+        maxLength: 254
         type: string
       password:
+        maxLength: 1024
         type: string
     required:
     - email
@@ -609,13 +611,11 @@ definitions:
     properties:
       refresh_token:
         type: string
-    required:
-    - refresh_token
     type: object
   internal_handlers.RegisterRequest:
     properties:
       email:
-        maxLength: 255
+        maxLength: 254
         type: string
       first_name:
         maxLength: 100
@@ -624,7 +624,7 @@ definitions:
         maxLength: 100
         type: string
       password:
-        maxLength: 128
+        maxLength: 72
         minLength: 8
         type: string
     required:
@@ -769,6 +769,9 @@ definitions:
       is_pinned:
         type: boolean
       linked_account_id:
+        description: |-
+          LinkedAccountID re-points FD payouts; "" clears it, otherwise a UUID of
+          one of the user's own cash accounts.
         type: string
       maturity_date:
         description: |-
@@ -2559,11 +2562,11 @@ paths:
           schema:
             $ref: '#/definitions/internal_handlers.ErrorResponse'
         "401":
-          description: Invalid credentials
+          description: Invalid credentials (also returned while the account is locked)
           schema:
             $ref: '#/definitions/internal_handlers.ErrorResponse'
-        "423":
-          description: Account locked
+        "429":
+          description: Too many attempts
           schema:
             $ref: '#/definitions/internal_handlers.ErrorResponse'
         "500":
@@ -2577,21 +2580,17 @@ paths:
     post:
       consumes:
       - application/json
-      description: Revoke the refresh session for this device
+      description: Revoke the refresh session for this device and clear the refresh
+        cookie
       parameters:
-      - description: Refresh token
+      - description: 'Legacy: refresh token, only read when the cookie is absent'
         in: body
         name: request
-        required: true
         schema:
           $ref: '#/definitions/internal_handlers.RefreshRequest'
       responses:
         "204":
           description: Logged out
-        "400":
-          description: Invalid input
-          schema:
-            $ref: '#/definitions/internal_handlers.ErrorResponse'
       summary: Logout
       tags:
       - auth
@@ -2599,27 +2598,27 @@ paths:
     post:
       consumes:
       - application/json
-      description: Exchange a valid refresh token for new access and refresh tokens
+      description: Exchange the refresh cookie for a new access token and rotated
+        refresh cookie
       parameters:
-      - description: Refresh token
+      - description: 'Legacy: refresh token, only read when the cookie is absent'
         in: body
         name: request
-        required: true
         schema:
           $ref: '#/definitions/internal_handlers.RefreshRequest'
       produces:
       - application/json
       responses:
         "200":
-          description: New tokens generated
+          description: New access token; refresh cookie rotated
           schema:
             $ref: '#/definitions/internal_handlers.AuthResponse'
-        "400":
-          description: Invalid input
+        "401":
+          description: Missing, invalid or expired refresh token
           schema:
             $ref: '#/definitions/internal_handlers.ErrorResponse'
-        "401":
-          description: Invalid or expired refresh token
+        "429":
+          description: Too many requests
           schema:
             $ref: '#/definitions/internal_handlers.ErrorResponse'
         "500":

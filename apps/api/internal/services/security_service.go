@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	apperrors "kuberan/internal/errors"
 	"kuberan/internal/models"
@@ -97,30 +98,47 @@ func (s *securityService) ListSecurities(search string, page pagination.PageRequ
 	return &result, nil
 }
 
-// RecordPrices bulk-inserts price entries, skipping duplicates.
+// priceInsertBatchSize bounds the rows per multi-row price INSERT (4 bind
+// parameters per row keeps each statement well under driver limits).
+const priceInsertBatchSize = 1000
+
+// RecordPrices bulk-inserts price entries, skipping duplicates (an existing
+// row, or an earlier entry in the same request, with the same security_id and
+// recorded_at). It runs batched INSERT ... ON CONFLICT DO NOTHING statements in
+// one DB transaction and returns the number of rows actually inserted.
 func (s *securityService) RecordPrices(prices []SecurityPriceInput) (int, error) {
 	if len(prices) == 0 {
 		return 0, apperrors.WithMessage(apperrors.ErrInvalidInput, "Prices array is empty")
 	}
 
-	count := 0
-	for _, p := range prices {
-		sp := models.SecurityPrice{
+	rows := make([]models.SecurityPrice, len(prices))
+	for i, p := range prices {
+		rows[i] = models.SecurityPrice{
 			SecurityID: p.SecurityID,
 			Price:      p.Price,
 			RecordedAt: p.RecordedAt,
 		}
-		result := s.db.Where("security_id = ? AND recorded_at = ?", sp.SecurityID, sp.RecordedAt).
-			FirstOrCreate(&sp)
-		if result.Error != nil {
-			return count, apperrors.Wrap(apperrors.ErrInternalServer, result.Error)
-		}
-		if result.RowsAffected > 0 {
-			count++
-		}
 	}
 
-	return count, nil
+	var inserted int64
+	err := s.db.Transaction(func(tx *gorm.DB) error {
+		for start := 0; start < len(rows); start += priceInsertBatchSize {
+			batch := rows[start:min(start+priceInsertBatchSize, len(rows))]
+			result := tx.Omit(clause.Associations).
+				Clauses(clause.OnConflict{DoNothing: true}).
+				Create(&batch)
+			if result.Error != nil {
+				return result.Error
+			}
+			inserted += result.RowsAffected
+		}
+		return nil
+	})
+	if err != nil {
+		return 0, apperrors.Wrap(apperrors.ErrInternalServer, err)
+	}
+
+	return int(inserted), nil
 }
 
 // GetPriceHistory returns paginated price history for a security within a date range.

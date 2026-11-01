@@ -79,7 +79,7 @@ func SniffContentType(head []byte) string {
 // unchanged after a magic-byte check.
 //
 // It returns the sanitized bytes and their final content type.
-func Normalize(data []byte, declaredType string) ([]byte, string, error) {
+func Normalize(data []byte, declaredType string) (normalized []byte, contentType string, err error) {
 	_ = declaredType // never trusted; kept for signature clarity and future logging
 
 	sniffed := SniffContentType(data)
@@ -96,7 +96,7 @@ func Normalize(data []byte, declaredType string) ([]byte, string, error) {
 // normalizeRaster decodes a raster image, enforces the pixel bound, and
 // re-encodes it (dropping metadata). JPEG/PNG keep their format; WebP is
 // transcoded to JPEG.
-func normalizeRaster(data []byte, sniffed string) ([]byte, string, error) {
+func normalizeRaster(data []byte, sniffed string) (normalized []byte, contentType string, err error) {
 	// Bound dimensions before a full decode using the cheap header-only path.
 	cfg, _, err := image.DecodeConfig(bytes.NewReader(data))
 	if err != nil {
@@ -139,7 +139,7 @@ func decodeRaster(data []byte, sniffed string) (image.Image, error) {
 
 // normalizePDF validates the PDF magic and returns the bytes unchanged.
 // Metadata scrubbing of PDFs is deferred (see plan 017).
-func normalizePDF(data []byte) ([]byte, string, error) {
+func normalizePDF(data []byte) (normalized []byte, contentType string, err error) {
 	if !bytes.HasPrefix(data, []byte("%PDF-")) {
 		return nil, "", ErrUnsupportedMediaType
 	}

@@ -1,5 +1,6 @@
-import type { ApiError } from "@/types/api";
-import { clearAuthCookie } from "./auth-cookie";
+import type { ApiError, RefreshResponse } from "@/types/api";
+import type { User } from "@/types/models";
+import { clearAuthCookie, hasAuthCookie } from "./auth-cookie";
 import { isTokenExpired } from "./token-utils";
 
 /**
@@ -7,7 +8,7 @@ import { isTokenExpired } from "./token-utils";
  * - In production or when explicitly set: uses NEXT_PUBLIC_API_URL
  * - Server-side (SSR): defaults to localhost
  * - Client-side: detects hostname and protocol from window.location
- * 
+ *
  * This allows seamless API access from:
  * - Desktop: http://localhost:3000 → http://localhost:8080
  * - Mobile (internal IP): http://192.168.x.x:3000 → http://192.168.x.x:8080
@@ -18,48 +19,69 @@ function getApiBaseUrl(): string {
   if (process.env.NEXT_PUBLIC_API_URL) {
     return process.env.NEXT_PUBLIC_API_URL;
   }
-  
+
   // 2. Server-side rendering fallback
   if (typeof window === "undefined") {
     return "http://localhost:8080";
   }
-  
+
   // 3. Dynamic client-side detection
   const protocol = window.location.protocol; // Matches frontend (http: or https:)
   const hostname = window.location.hostname; // localhost, 192.168.x.x, or domain
   const port = "8080";
-  
+
   return `${protocol}//${hostname}:${port}`;
 }
 
 const API_BASE_URL = getApiBaseUrl();
 
-// Token storage keys
-const ACCESS_TOKEN_KEY = "kuberan_access_token";
-const REFRESH_TOKEN_KEY = "kuberan_refresh_token";
+// Session model:
+// - The access token lives only in this module's memory, so an XSS payload
+//   cannot lift a long-lived credential out of localStorage.
+// - The refresh token is an HttpOnly `kuberan_refresh` cookie scoped to
+//   /api/v1/auth; JS never sees it. Auth endpoints are called with
+//   `credentials: "include"` so the browser sends and stores it.
+// - On app start the session is restored with POST /auth/refresh, whose
+//   response also carries the user (no separate /profile round trip).
 
-// Token management (localStorage)
+// Legacy localStorage keys from before the cookie migration. The refresh token
+// is sent once in the body of the first refresh so existing sessions survive
+// the upgrade; both keys are then deleted.
+const LEGACY_ACCESS_TOKEN_KEY = "kuberan_access_token";
+const LEGACY_REFRESH_TOKEN_KEY = "kuberan_refresh_token";
+
+let accessToken: string | null = null;
+
 function getAccessToken(): string | null {
+  return accessToken;
+}
+
+function setAccessToken(token: string | null): void {
+  accessToken = token;
+}
+
+function readLegacyRefreshToken(): string | null {
   if (typeof window === "undefined") return null;
-  return localStorage.getItem(ACCESS_TOKEN_KEY);
+  try {
+    return localStorage.getItem(LEGACY_REFRESH_TOKEN_KEY);
+  } catch {
+    return null;
+  }
 }
 
-function setAccessToken(token: string): void {
-  localStorage.setItem(ACCESS_TOKEN_KEY, token);
-}
-
-function getRefreshToken(): string | null {
-  if (typeof window === "undefined") return null;
-  return localStorage.getItem(REFRESH_TOKEN_KEY);
-}
-
-function setRefreshToken(token: string): void {
-  localStorage.setItem(REFRESH_TOKEN_KEY, token);
+function removeLegacyTokens(): void {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.removeItem(LEGACY_ACCESS_TOKEN_KEY);
+    localStorage.removeItem(LEGACY_REFRESH_TOKEN_KEY);
+  } catch {
+    // Storage unavailable: nothing to migrate.
+  }
 }
 
 function clearTokens(): void {
-  localStorage.removeItem(ACCESS_TOKEN_KEY);
-  localStorage.removeItem(REFRESH_TOKEN_KEY);
+  accessToken = null;
+  removeLegacyTokens();
 }
 
 // Error class for API errors
@@ -91,63 +113,159 @@ function buildQueryString(
   return `?${searchParams.toString()}`;
 }
 
-// Paths that should never trigger token refresh
-const NO_REFRESH_PATHS = ["/api/v1/auth/login", "/api/v1/auth/register", "/api/v1/auth/refresh"];
+// Endpoints that authenticate with credentials (or a Hydra challenge) rather
+// than a Bearer token. They never trigger a token refresh and never wait for
+// the session bootstrap: a 401 from them means "wrong password", not "session
+// expired" (the OAuth login page must show the error, not bounce to /login).
+const PUBLIC_PATH_PREFIXES = [
+  "/api/v1/auth/",
+  "/api/v1/oauth/login",
+  "/api/v1/oauth/consent",
+];
+
+function isPublicPath(path: string): boolean {
+  return PUBLIC_PATH_PREFIXES.some((prefix) => path.startsWith(prefix));
+}
+
+// The refresh cookie is scoped to /api/v1/auth, so only those calls need to
+// carry credentials; everything else authenticates with the Bearer header.
+function credentialsFor(path: string): RequestCredentials {
+  return path.startsWith("/api/v1/auth/") ? "include" : "same-origin";
+}
 
 // Outcome of a refresh attempt. "rejected" means the server refused the
-// refresh token (the session is really over); "failed" means the attempt
+// refresh cookie (the session is really over); "failed" means the attempt
 // could not complete (offline, server error) and the session may still be
-// valid, so tokens must be kept.
-type RefreshResult = "ok" | "rejected" | "failed";
+// valid.
+type RefreshStatus = "ok" | "rejected" | "failed";
 
-// Cross-tab lock name. Tabs share tokens through localStorage, so without it
-// two tabs can refresh with the same token at once and race each other.
+interface RefreshResult {
+  status: RefreshStatus;
+  /** The session user, when the server included it. */
+  user: User | null;
+}
+
+// Cross-tab lock name. Tabs share the refresh cookie, so serialising refreshes
+// makes each one present the most recently rotated cookie.
 const REFRESH_LOCK = "kuberan-token-refresh";
 
 let refreshPromise: Promise<RefreshResult> | null = null;
 
-async function refreshTokens(startingToken: string | null): Promise<RefreshResult> {
-  const refreshToken = getRefreshToken();
-  if (!refreshToken) return "rejected";
-  // Another tab refreshed while we waited for the lock: use its tokens.
-  if (refreshToken !== startingToken) return "ok";
-
+async function refreshTokens(): Promise<RefreshResult> {
+  const legacyRefreshToken = readLegacyRefreshToken();
   try {
     const res = await fetch(`${API_BASE_URL}/api/v1/auth/refresh`, {
       method: "POST",
+      credentials: "include",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ refresh_token: refreshToken }),
+      // The cookie carries the token. The body is only used once, to migrate
+      // a session that predates the cookie.
+      body: JSON.stringify(
+        legacyRefreshToken ? { refresh_token: legacyRefreshToken } : {}
+      ),
     });
 
-    // 4xx means the server refused this token; 5xx, timeouts and rate
+    // 4xx means the server refused the token; 5xx, timeouts and rate
     // limits are transient.
-    if (res.status >= 500 || res.status === 408 || res.status === 429) return "failed";
-    if (!res.ok) return "rejected";
+    if (res.status >= 500 || res.status === 408 || res.status === 429) {
+      return { status: "failed", user: null };
+    }
+    // The legacy token has now been presented and answered, so it is never
+    // needed again (on success the server has set the cookie).
+    if (legacyRefreshToken) removeLegacyTokens();
+    if (!res.ok) {
+      accessToken = null;
+      return { status: "rejected", user: null };
+    }
 
-    const data = await res.json();
-    setAccessToken(data.access_token);
-    setRefreshToken(data.refresh_token);
-    return "ok";
+    const data = (await res.json()) as RefreshResponse;
+    accessToken = data.access_token;
+    return { status: "ok", user: data.user ?? null };
   } catch {
-    return "failed";
+    return { status: "failed", user: null };
   }
 }
 
-async function attemptTokenRefresh(): Promise<RefreshResult> {
-  // Deduplicate concurrent refresh attempts within this tab
+function attemptTokenRefresh(): Promise<RefreshResult> {
+  // Deduplicate concurrent refresh attempts within this tab.
   if (refreshPromise) return refreshPromise;
 
-  const startingToken = getRefreshToken();
-  refreshPromise =
+  const run =
     typeof navigator !== "undefined" && navigator.locks
-      ? navigator.locks.request(REFRESH_LOCK, () => refreshTokens(startingToken))
-      : refreshTokens(startingToken);
-
-  try {
-    return await refreshPromise;
-  } finally {
+      ? navigator.locks.request(REFRESH_LOCK, () => refreshTokens())
+      : refreshTokens();
+  refreshPromise = run.finally(() => {
     refreshPromise = null;
+  });
+  return refreshPromise;
+}
+
+/** Result of restoring the session on app start. */
+export type SessionBootstrap =
+  | { status: "authenticated"; user: User | null }
+  | { status: "unauthenticated" }
+  // The server could not be reached; the session may still be valid.
+  | { status: "error" };
+
+let bootstrapPromise: Promise<SessionBootstrap> | null = null;
+
+const BOOTSTRAP_ATTEMPTS = 3;
+
+async function runBootstrap(): Promise<SessionBootstrap> {
+  // Without the auth flag cookie or a legacy token there is no session to
+  // restore, so skip the request (and its 401) entirely.
+  if (!hasAuthCookie() && !readLegacyRefreshToken()) {
+    return { status: "unauthenticated" };
   }
+  for (let attempt = 0; attempt < BOOTSTRAP_ATTEMPTS; attempt++) {
+    const result = await attemptTokenRefresh();
+    if (result.status === "ok") {
+      return { status: "authenticated", user: result.user };
+    }
+    if (result.status === "rejected") {
+      clearTokens();
+      clearAuthCookie();
+      return { status: "unauthenticated" };
+    }
+    if (attempt < BOOTSTRAP_ATTEMPTS - 1) {
+      await new Promise((resolve) => setTimeout(resolve, 1000 * 2 ** attempt));
+    }
+  }
+  return { status: "error" };
+}
+
+/**
+ * Restore the session from the refresh cookie, once per page load. Requests
+ * made before it settles wait for it, so pages can issue their queries in
+ * parallel with the bootstrap instead of after it.
+ */
+export function bootstrapSession(): Promise<SessionBootstrap> {
+  if (!bootstrapPromise) {
+    bootstrapPromise = runBootstrap();
+  }
+  return bootstrapPromise;
+}
+
+/** Record a session established by login or register. */
+function startSession(token: string, user: User): void {
+  accessToken = token;
+  removeLegacyTokens();
+  bootstrapPromise = Promise.resolve({ status: "authenticated", user });
+}
+
+/** Forget the session locally (logout or a refused refresh). */
+function endSession(): void {
+  clearTokens();
+  clearAuthCookie();
+  bootstrapPromise = Promise.resolve({ status: "unauthenticated" });
+}
+
+function sessionExpired(): never {
+  endSession();
+  if (typeof window !== "undefined") {
+    window.location.href = "/login";
+  }
+  throw new ApiClientError("UNAUTHORIZED", "Session expired", 401);
 }
 
 // How the caller wants the successful response body decoded.
@@ -161,6 +279,8 @@ async function request<T>(
   responseKind: ResponseKind = "json"
 ): Promise<T> {
   const url = `${API_BASE_URL}${path}${buildQueryString(query)}`;
+  const publicPath = isPublicPath(path);
+  const credentials = credentialsFor(path);
 
   // FormData bodies must be sent as-is: the browser sets a multipart
   // Content-Type with the correct boundary, so we must NOT set it ourselves
@@ -180,16 +300,32 @@ async function request<T>(
         ? (body as FormData)
         : JSON.stringify(body);
 
-  let token = getAccessToken();
-
-  // Proactive refresh: if the token is expired (or about to expire within 30s),
-  // attempt a refresh before sending the request to avoid a wasted 401 round-trip.
-  if (token && isTokenExpired(token) && !NO_REFRESH_PATHS.includes(path)) {
-    const refreshed = await attemptTokenRefresh();
-    if (refreshed === "ok") {
-      token = getAccessToken();
+  if (!publicPath && !accessToken) {
+    // Wait for the app-start refresh instead of sending a request that is
+    // bound to 401.
+    const session = await bootstrapSession();
+    if (session.status === "unauthenticated") {
+      throw new ApiClientError("UNAUTHORIZED", "Not signed in", 401);
     }
-    // If refresh failed, proceed anyway — the 401 handler below will handle cleanup.
+  }
+
+  let token = accessToken;
+
+  // Proactive refresh: if the token is expired (or about to expire within
+  // 30s), refresh before sending to avoid a wasted 401 round-trip.
+  if (token && !publicPath && isTokenExpired(token)) {
+    const refreshed = await attemptTokenRefresh();
+    if (refreshed.status === "ok") {
+      token = accessToken;
+    } else if (refreshed.status === "rejected") {
+      // The session is over: do not send the request with a dead token.
+      sessionExpired();
+    } else if (isTokenExpired(token, 0)) {
+      // Offline and the token has already expired: the request cannot
+      // succeed, but the session may recover once the server is reachable.
+      throw new ApiClientError("NETWORK_ERROR", "Could not reach the server", 0);
+    }
+    // Otherwise the token is still valid for a few seconds: use it.
   }
 
   if (token) {
@@ -200,30 +336,35 @@ async function request<T>(
     method,
     headers,
     body: encodedBody,
+    credentials,
   });
 
-  // Attempt token refresh on 401 (unless this is already an auth request)
-  if (res.status === 401 && !NO_REFRESH_PATHS.includes(path)) {
-    const refreshed = await attemptTokenRefresh();
-    if (refreshed === "ok") {
-      headers["Authorization"] = `Bearer ${getAccessToken()}`;
-      res = await fetch(url, {
-        method,
-        headers,
-        body: encodedBody,
-      });
-    } else if (refreshed === "failed") {
-      // Keep the session: the refresh token may still be valid once the
-      // network or server recovers.
-      throw new ApiClientError("NETWORK_ERROR", "Could not reach the server", 0);
+  // Attempt token refresh on 401 (unless this is a credential endpoint).
+  if (res.status === 401 && !publicPath) {
+    let retryToken: string | null;
+    if (accessToken && accessToken !== token) {
+      // Another request refreshed while this one was in flight: retry with
+      // the newer token instead of rotating the session again.
+      retryToken = accessToken;
     } else {
-      clearTokens();
-      clearAuthCookie(); // Prevent middleware redirect loop on expired sessions
-      if (typeof window !== "undefined") {
-        window.location.href = "/login";
+      const refreshed = await attemptTokenRefresh();
+      if (refreshed.status === "failed") {
+        // Keep the session: the refresh cookie may still be valid once the
+        // network or server recovers.
+        throw new ApiClientError("NETWORK_ERROR", "Could not reach the server", 0);
       }
-      throw new ApiClientError("UNAUTHORIZED", "Session expired", 401);
+      if (refreshed.status === "rejected" || !accessToken) {
+        sessionExpired();
+      }
+      retryToken = accessToken;
     }
+    headers["Authorization"] = `Bearer ${retryToken}`;
+    res = await fetch(url, {
+      method,
+      headers,
+      body: encodedBody,
+      credentials,
+    });
   }
 
   if (!res.ok) {
@@ -300,17 +441,19 @@ export const apiClient = {
 };
 
 /**
- * Revoke this device's refresh session on the server. Best effort: logout
- * proceeds locally even if the request fails.
+ * Revoke this device's refresh session on the server (which also clears the
+ * refresh cookie). Best effort: logout proceeds locally even if it fails.
  */
 async function revokeSession(): Promise<void> {
-  const refreshToken = getRefreshToken();
-  if (!refreshToken) return;
+  const legacyRefreshToken = readLegacyRefreshToken();
   try {
     await fetch(`${API_BASE_URL}/api/v1/auth/logout`, {
       method: "POST",
+      credentials: "include",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ refresh_token: refreshToken }),
+      body: JSON.stringify(
+        legacyRefreshToken ? { refresh_token: legacyRefreshToken } : {}
+      ),
       keepalive: true,
     });
   } catch {
@@ -318,12 +461,12 @@ async function revokeSession(): Promise<void> {
   }
 }
 
-// Re-export token utilities for use by auth provider
+// Session helpers for the auth provider.
 export const tokenStore = {
   getAccessToken,
   setAccessToken,
-  getRefreshToken,
-  setRefreshToken,
   clearTokens,
+  startSession,
+  endSession,
   revokeSession,
 };

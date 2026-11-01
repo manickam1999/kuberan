@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"math/big"
 	"net/http"
 	"strings"
@@ -63,7 +64,21 @@ type HydraValidator struct {
 	// minRefreshInterval bounds how often an unknown-kid miss will hit the
 	// network, so a stream of bogus kids cannot be used to hammer Hydra.
 	minRefreshInterval time.Duration
+
+	// refreshMu serializes JWKS downloads: concurrent misses (a cold start, a
+	// key rotation, a burst of bogus kids) wait for one download and reuse its
+	// result instead of each hitting Hydra.
+	refreshMu sync.Mutex
+	// failedAt and lastErr remember the last failed download, so while Hydra
+	// is unreachable callers get that error for failureBackoff instead of each
+	// retrying.
+	failedAt       time.Time
+	lastErr        error
+	failureBackoff time.Duration
 }
+
+// maxJWKSBytes caps the JWKS response body the validator will read.
+const maxJWKSBytes = 1 << 20
 
 // NewHydraValidator constructs a validator. jwksURL is the authorization
 // server's JWKS endpoint (e.g. issuer + "/.well-known/jwks.json"), issuer is the
@@ -77,6 +92,7 @@ func NewHydraValidator(jwksURL, issuer, audience string) *HydraValidator {
 		client:             &http.Client{Timeout: 10 * time.Second},
 		keys:               make(map[string]*rsa.PublicKey),
 		minRefreshInterval: 30 * time.Second,
+		failureBackoff:     5 * time.Second,
 	}
 }
 
@@ -152,31 +168,55 @@ func (v *HydraValidator) keyForKid(ctx context.Context, kid string) (*rsa.Public
 }
 
 // refresh fetches and caches the current JWKS, throttled by minRefreshInterval.
+// Downloads are serialized by refreshMu; a caller that waited for another's
+// download sees the new fetchedAt and returns without downloading again.
 func (v *HydraValidator) refresh(ctx context.Context) error {
-	v.mu.Lock()
-	if !v.fetchedAt.IsZero() && time.Since(v.fetchedAt) < v.minRefreshInterval {
-		v.mu.Unlock()
+	v.refreshMu.Lock()
+	defer v.refreshMu.Unlock()
+
+	v.mu.RLock()
+	recent := !v.fetchedAt.IsZero() && time.Since(v.fetchedAt) < v.minRefreshInterval
+	v.mu.RUnlock()
+	if recent {
 		return nil
 	}
-	v.mu.Unlock()
+	if v.lastErr != nil && time.Since(v.failedAt) < v.failureBackoff {
+		return v.lastErr
+	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, v.jwksURL, nil)
+	keys, err := v.download(ctx)
 	if err != nil {
-		return fmt.Errorf("build JWKS request: %w", err)
+		v.lastErr, v.failedAt = err, time.Now()
+		return err
+	}
+	v.lastErr = nil
+
+	v.mu.Lock()
+	v.keys = keys
+	v.fetchedAt = time.Now()
+	v.mu.Unlock()
+	return nil
+}
+
+// download retrieves and parses the JWKS document (at most maxJWKSBytes).
+func (v *HydraValidator) download(ctx context.Context) (map[string]*rsa.PublicKey, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, v.jwksURL, http.NoBody)
+	if err != nil {
+		return nil, fmt.Errorf("build JWKS request: %w", err)
 	}
 	resp, err := v.client.Do(req)
 	if err != nil {
-		return fmt.Errorf("fetch JWKS: %w", err)
+		return nil, fmt.Errorf("fetch JWKS: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("fetch JWKS: unexpected status %d", resp.StatusCode)
+		return nil, fmt.Errorf("fetch JWKS: unexpected status %d", resp.StatusCode)
 	}
 
 	var doc jwks
-	if err := json.NewDecoder(resp.Body).Decode(&doc); err != nil {
-		return fmt.Errorf("decode JWKS: %w", err)
+	if err := json.NewDecoder(io.LimitReader(resp.Body, maxJWKSBytes)).Decode(&doc); err != nil {
+		return nil, fmt.Errorf("decode JWKS: %w", err)
 	}
 
 	keys := make(map[string]*rsa.PublicKey, len(doc.Keys))
@@ -190,12 +230,7 @@ func (v *HydraValidator) refresh(ctx context.Context) error {
 		}
 		keys[k.Kid] = pub
 	}
-
-	v.mu.Lock()
-	v.keys = keys
-	v.fetchedAt = time.Now()
-	v.mu.Unlock()
-	return nil
+	return keys, nil
 }
 
 // rsaPublicKey reconstructs an *rsa.PublicKey from the JWK's base64url modulus

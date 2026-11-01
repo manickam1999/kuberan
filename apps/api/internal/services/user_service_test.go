@@ -2,6 +2,8 @@ package services
 
 import (
 	"fmt"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -76,6 +78,29 @@ func TestCreateUser(t *testing.T) {
 		if user.Email != "alice@example.com" {
 			t.Errorf("expected lowercased email, got %s", user.Email)
 		}
+	})
+
+	t.Run("duplicate_email_differs_only_in_case", func(t *testing.T) {
+		db := testutil.SetupTestDB(t)
+		defer testutil.TeardownTestDB(t, db)
+		svc := NewUserService(db)
+
+		_, err := svc.CreateUser("alice@x.com", "password123", "", "")
+		testutil.AssertNoError(t, err)
+		_, err = svc.CreateUser(" Alice@X.com", "password456", "", "")
+		testutil.AssertAppError(t, err, "DUPLICATE_EMAIL")
+	})
+
+	t.Run("password_over_72_bytes_rejected", func(t *testing.T) {
+		db := testutil.SetupTestDB(t)
+		defer testutil.TeardownTestDB(t, db)
+		svc := NewUserService(db)
+
+		// 25 three-byte runes = 75 bytes, under any rune-count limit.
+		_, err := svc.CreateUser("long@example.com", strings.Repeat("€", 25), "", "")
+		testutil.AssertAppError(t, err, "INVALID_INPUT")
+		_, err = svc.CreateUser("ok@example.com", strings.Repeat("a", 72), "", "")
+		testutil.AssertNoError(t, err)
 	})
 }
 
@@ -244,8 +269,94 @@ func TestAttemptLogin(t *testing.T) {
 		lockUntil := time.Now().Add(15 * time.Minute)
 		db.Exec("UPDATE users SET locked_until = ?, failed_login_attempts = 5 WHERE email = ?", lockUntil, "locked@example.com")
 
+		// Locked accounts look like bad credentials (no enumeration), even
+		// with the correct password, but are identifiable for auditing.
 		_, err = svc.AttemptLogin("locked@example.com", "password123")
-		testutil.AssertAppError(t, err, "ACCOUNT_LOCKED")
+		testutil.AssertAppError(t, err, "INVALID_CREDENTIALS")
+		if err != ErrLoginLocked {
+			t.Errorf("expected ErrLoginLocked, got %v", err)
+		}
+	})
+
+	t.Run("fifth_failure_reports_lockout_triggered", func(t *testing.T) {
+		db := testutil.SetupTestDB(t)
+		defer testutil.TeardownTestDB(t, db)
+		svc := NewUserService(db)
+
+		testutil.CreateTestUserWithEmail(t, db, "trigger@example.com")
+		var err error
+		for i := 0; i < 4; i++ {
+			_, err = svc.AttemptLogin("trigger@example.com", "wrong")
+			if err == ErrLoginLockoutTriggered || err == ErrLoginLocked {
+				t.Fatalf("attempt %d: unexpected lock error", i+1)
+			}
+		}
+		_, err = svc.AttemptLogin("TRIGGER@example.com ", "wrong")
+		if err != ErrLoginLockoutTriggered {
+			t.Fatalf("expected ErrLoginLockoutTriggered, got %v", err)
+		}
+		_, err = svc.AttemptLogin("trigger@example.com", "wrong")
+		if err != ErrLoginLocked {
+			t.Fatalf("expected ErrLoginLocked, got %v", err)
+		}
+	})
+
+	t.Run("expired_lock_restarts_count", func(t *testing.T) {
+		db := testutil.SetupTestDB(t)
+		defer testutil.TeardownTestDB(t, db)
+		svc := NewUserService(db)
+
+		testutil.CreateTestUserWithEmail(t, db, "expired@example.com")
+		var err error
+		db.Exec("UPDATE users SET locked_until = ?, failed_login_attempts = 5 WHERE email = ?",
+			time.Now().Add(-time.Minute), "expired@example.com")
+
+		_, err = svc.AttemptLogin("expired@example.com", "wrong")
+		testutil.AssertAppError(t, err, "INVALID_CREDENTIALS")
+		user, _ := svc.GetUserByEmail("expired@example.com")
+		if user.FailedLoginAttempts != 1 || user.LockedUntil != nil {
+			t.Errorf("expected count reset to 1 and no lock, got %d / %v", user.FailedLoginAttempts, user.LockedUntil)
+		}
+	})
+
+	t.Run("concurrent_failures_all_count", func(t *testing.T) {
+		db := testutil.SetupTestDB(t)
+		defer testutil.TeardownTestDB(t, db)
+		// One connection serialises statements, so a read-modify-write
+		// counter would lose updates deterministically-enough here.
+		sqlDB, err := db.DB()
+		testutil.AssertNoError(t, err)
+		sqlDB.SetMaxOpenConns(1)
+		svc := NewUserService(db)
+
+		testutil.CreateTestUserWithEmail(t, db, "race@example.com")
+
+		const attempts = maxFailedAttempts - 1
+		var wg sync.WaitGroup
+		for i := 0; i < attempts; i++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				_, _ = svc.AttemptLogin("race@example.com", "wrong")
+			}()
+		}
+		wg.Wait()
+
+		user, _ := svc.GetUserByEmail("race@example.com")
+		if user.FailedLoginAttempts != attempts {
+			t.Errorf("expected %d failed attempts, got %d", attempts, user.FailedLoginAttempts)
+		}
+	})
+
+	t.Run("password_over_72_bytes_fails", func(t *testing.T) {
+		db := testutil.SetupTestDB(t)
+		defer testutil.TeardownTestDB(t, db)
+		svc := NewUserService(db)
+
+		testutil.CreateTestUserWithEmail(t, db, "long@example.com")
+		var err error
+		_, err = svc.AttemptLogin("long@example.com", strings.Repeat("a", 100))
+		testutil.AssertAppError(t, err, "INVALID_CREDENTIALS")
 	})
 
 	t.Run("nonexistent_user", func(t *testing.T) {

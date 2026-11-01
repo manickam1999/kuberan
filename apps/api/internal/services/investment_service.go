@@ -3,6 +3,7 @@ package services
 import (
 	"errors"
 	"fmt"
+	"math"
 	"time"
 
 	"gorm.io/gorm"
@@ -38,6 +39,11 @@ func applyStatusFilter(db *gorm.DB, status InvestmentStatus) *gorm.DB {
 // getLatestPrices fetches the most recent price for each security ID from security_prices.
 // Returns a map of security_id -> price (int64 cents). Securities with no price entries
 // are not included in the map.
+//
+// It uses a correlated "ORDER BY recorded_at DESC LIMIT 1" subquery per
+// security, which Postgres answers from the (security_id, recorded_at) unique
+// index with one index probe per id instead of scanning every price row. The
+// query is portable (it also runs on the SQLite used in tests).
 func getLatestPrices(db *gorm.DB, securityIDs []string) (map[string]int64, error) {
 	if len(securityIDs) == 0 {
 		return map[string]int64{}, nil
@@ -45,27 +51,40 @@ func getLatestPrices(db *gorm.DB, securityIDs []string) (map[string]int64, error
 
 	type priceRow struct {
 		SecurityID string
-		Price      int64
+		Price      *int64
 	}
 	var rows []priceRow
 
-	subq := db.Table("security_prices").
-		Select("security_id, MAX(recorded_at) AS max_recorded").
-		Where("security_id IN ?", securityIDs).
-		Group("security_id")
-
-	if err := db.Table("security_prices sp").
-		Select("sp.security_id, sp.price").
-		Joins("INNER JOIN (?) latest ON sp.security_id = latest.security_id AND sp.recorded_at = latest.max_recorded", subq).
+	if err := db.Table("securities s").
+		Select("s.id AS security_id, "+
+			"(SELECT sp.price FROM security_prices sp WHERE sp.security_id = s.id "+
+			"ORDER BY sp.recorded_at DESC LIMIT 1) AS price").
+		Where("s.id IN ?", uniqueStrings(securityIDs)).
 		Scan(&rows).Error; err != nil {
 		return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)
 	}
 
 	result := make(map[string]int64, len(rows))
 	for _, r := range rows {
-		result[r.SecurityID] = r.Price
+		if r.Price != nil {
+			result[r.SecurityID] = *r.Price
+		}
 	}
 	return result, nil
+}
+
+// uniqueStrings returns ids without duplicates, preserving first-seen order.
+func uniqueStrings(ids []string) []string {
+	seen := make(map[string]struct{}, len(ids))
+	out := make([]string, 0, len(ids))
+	for _, id := range ids {
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		out = append(out, id)
+	}
+	return out
 }
 
 // getTotalInvestedByID returns the sum of buy transaction TotalAmount per investment ID.
@@ -96,6 +115,9 @@ func getTotalInvestedByID(db *gorm.DB, investmentIDs []string) (map[string]int64
 	}
 	return result, nil
 }
+
+// investmentListOrder gives paginated investment lists a deterministic order.
+const investmentListOrder = "created_at ASC, id ASC"
 
 // investmentService handles investment-related business logic.
 type investmentService struct {
@@ -146,7 +168,11 @@ func (s *investmentService) AddInvestment(
 		txNotes = notes
 	}
 
-	costBasis := int64(quantity*float64(purchasePrice)) + fee
+	gross, err := lineAmount(quantity, purchasePrice)
+	if err != nil {
+		return nil, err
+	}
+	costBasis := gross + fee
 
 	investment := &models.Investment{
 		AccountID:     accountID,
@@ -210,6 +236,7 @@ func (s *investmentService) GetAccountInvestments(userID, accountID string, page
 
 	var investments []models.Investment
 	if err := s.db.Preload("Security").Where("account_id = ? AND quantity > 0", accountID).
+		Order(investmentListOrder).
 		Scopes(pagination.Paginate(page)).Find(&investments).Error; err != nil {
 		return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)
 	}
@@ -270,7 +297,7 @@ func (s *investmentService) GetAllInvestments(userID string, status InvestmentSt
 		s.db.Preload("Security").Preload("Account").Where("account_id IN ?", accountIDs),
 		status,
 	)
-	if err := query.Scopes(pagination.Paginate(page)).Find(&investments).Error; err != nil {
+	if err := query.Order(investmentListOrder).Scopes(pagination.Paginate(page)).Find(&investments).Error; err != nil {
 		return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)
 	}
 
@@ -375,7 +402,7 @@ func (s *investmentService) GetPortfolio(userID string) (*PortfolioSummary, erro
 
 		// Only include open positions in holdings counts, values, and cost basis
 		if inv.Quantity > 0 {
-			value := int64(inv.Quantity * float64(prices[inv.SecurityID]))
+			value := valueCents(inv.Quantity, prices[inv.SecurityID])
 			summary.TotalValue += value
 			summary.TotalCostBasis += inv.CostBasis
 
@@ -423,10 +450,20 @@ func (s *investmentService) RecordBuy(
 		fundingAccount = account
 	}
 
-	totalAmount := int64(quantity*float64(pricePerUnit)) + fee
+	gross, err := lineAmount(quantity, pricePerUnit)
+	if err != nil {
+		return nil, err
+	}
+	totalAmount := gross + fee
 
 	var invTx models.InvestmentTransaction
 	err = s.db.Transaction(func(tx *gorm.DB) error {
+		// Re-read the holding under a row lock so concurrent writes serialize.
+		locked, txErr := lockInvestment(tx, investmentID)
+		if txErr != nil {
+			return txErr
+		}
+
 		invTx = models.InvestmentTransaction{
 			InvestmentID: investmentID,
 			Type:         models.InvestmentTransactionBuy,
@@ -442,9 +479,9 @@ func (s *investmentService) RecordBuy(
 		}
 
 		// Update investment: quantity and cost basis increase
-		newQuantity := investment.Quantity + quantity
-		newCostBasis := investment.CostBasis + totalAmount
-		if txErr := tx.Model(investment).Updates(map[string]interface{}{
+		newQuantity := locked.Quantity + quantity
+		newCostBasis := locked.CostBasis + totalAmount
+		if txErr := tx.Model(&models.Investment{}).Where("id = ?", investmentID).Updates(map[string]interface{}{
 			"quantity":   newQuantity,
 			"cost_basis": newCostBasis,
 		}).Error; txErr != nil {
@@ -516,16 +553,31 @@ func (s *investmentService) RecordSell(
 		depositAccount = account
 	}
 
-	totalAmount := int64(quantity*float64(pricePerUnit)) - fee
-
-	// Proportional cost basis reduction
-	costBasisReduction := int64(float64(investment.CostBasis) * (quantity / investment.Quantity))
-
-	// Realized gain/loss = sell proceeds - proportional cost basis
-	realizedGainLoss := totalAmount - costBasisReduction
+	gross, err := lineAmount(quantity, pricePerUnit)
+	if err != nil {
+		return nil, err
+	}
+	totalAmount := gross - fee
 
 	var invTx models.InvestmentTransaction
 	err = s.db.Transaction(func(tx *gorm.DB) error {
+		// Re-read and re-validate the holding under a row lock so two concurrent
+		// sells can never oversell the position.
+		locked, txErr := lockInvestment(tx, investmentID)
+		if txErr != nil {
+			return txErr
+		}
+		if locked.Quantity <= 0 || quantity > locked.Quantity {
+			return apperrors.ErrInsufficientShares
+		}
+
+		// Proportional cost basis reduction (rounded to the nearest cent; never
+		// more than the remaining cost basis since quantity <= locked.Quantity)
+		costBasisReduction := int64(math.Round(float64(locked.CostBasis) * (quantity / locked.Quantity)))
+
+		// Realized gain/loss = sell proceeds - proportional cost basis
+		realizedGainLoss := totalAmount - costBasisReduction
+
 		invTx = models.InvestmentTransaction{
 			InvestmentID:     investmentID,
 			Type:             models.InvestmentTransactionSell,
@@ -541,10 +593,10 @@ func (s *investmentService) RecordSell(
 			return apperrors.Wrap(apperrors.ErrInternalServer, txErr)
 		}
 
-		newQuantity := investment.Quantity - quantity
-		newCostBasis := investment.CostBasis - costBasisReduction
-		newRealizedGainLoss := investment.RealizedGainLoss + realizedGainLoss
-		if txErr := tx.Model(investment).Updates(map[string]interface{}{
+		newQuantity := locked.Quantity - quantity
+		newCostBasis := locked.CostBasis - costBasisReduction
+		newRealizedGainLoss := locked.RealizedGainLoss + realizedGainLoss
+		if txErr := tx.Model(&models.Investment{}).Where("id = ?", investmentID).Updates(map[string]interface{}{
 			"quantity":           newQuantity,
 			"cost_basis":         newCostBasis,
 			"realized_gain_loss": newRealizedGainLoss,
@@ -618,18 +670,25 @@ func (s *investmentService) RecordSplit(
 	splitRatio float64,
 	notes string,
 ) (*models.InvestmentTransaction, error) {
-	investment, err := s.GetInvestmentByID(userID, investmentID)
+	_, err := s.GetInvestmentByID(userID, investmentID)
 	if err != nil {
 		return nil, err
 	}
 
 	var invTx models.InvestmentTransaction
 	err = s.db.Transaction(func(tx *gorm.DB) error {
+		// Re-read the holding under a row lock so the split multiplies the
+		// current quantity, not a stale pre-transaction read.
+		locked, txErr := lockInvestment(tx, investmentID)
+		if txErr != nil {
+			return txErr
+		}
+
 		invTx = models.InvestmentTransaction{
 			InvestmentID: investmentID,
 			Type:         models.InvestmentTransactionSplit,
 			Date:         date,
-			Quantity:     investment.Quantity,
+			Quantity:     locked.Quantity,
 			SplitRatio:   splitRatio,
 			Notes:        notes,
 		}
@@ -638,8 +697,8 @@ func (s *investmentService) RecordSplit(
 		}
 
 		// Multiply quantity by split ratio; cost basis stays the same
-		newQuantity := investment.Quantity * splitRatio
-		if txErr := tx.Model(investment).Update("quantity", newQuantity).Error; txErr != nil {
+		newQuantity := locked.Quantity * splitRatio
+		if txErr := tx.Model(&models.Investment{}).Where("id = ?", investmentID).Update("quantity", newQuantity).Error; txErr != nil {
 			return apperrors.Wrap(apperrors.ErrInternalServer, txErr)
 		}
 
@@ -674,4 +733,18 @@ func (s *investmentService) GetInvestmentTransactions(userID, investmentID strin
 
 	result := pagination.NewPageResponse(transactions, page.Page, page.PageSize, totalItems)
 	return &result, nil
+}
+
+// lockInvestment re-reads an investment row with a row lock (SELECT ... FOR
+// UPDATE on Postgres) inside an open DB transaction. Ownership must already
+// have been checked by the caller (GetInvestmentByID).
+func lockInvestment(tx *gorm.DB, investmentID string) (*models.Investment, error) {
+	var inv models.Investment
+	if err := lockUpdate(tx).Where("id = ?", investmentID).First(&inv).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, apperrors.ErrInvestmentNotFound
+		}
+		return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)
+	}
+	return &inv, nil
 }

@@ -40,7 +40,7 @@ type CreateSecurityRequest struct {
 
 // RecordPricesRequest represents the request payload for bulk price recording.
 type RecordPricesRequest struct {
-	Prices []RecordPriceEntry `json:"prices" binding:"required,min=1,dive"`
+	Prices []RecordPriceEntry `json:"prices" binding:"required,min=1,max=5000,dive"`
 }
 
 // RecordPriceEntry represents a single price entry in a bulk request.
@@ -203,6 +203,9 @@ func (h *SecurityHandler) RecordPrices(c *gin.Context) {
 		respondWithError(c, err)
 		return
 	}
+
+	h.auditService.Log("", "PIPELINE_RECORD_PRICES", "security_price", "", c.ClientIP(),
+		map[string]interface{}{"prices_recorded": count})
 
 	c.JSON(http.StatusOK, gin.H{"prices_recorded": count})
 }

@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -19,6 +20,7 @@ import (
 // --- mock Hydra admin client ---
 
 type mockHydraAdmin struct {
+	getLoginFn          func(ctx context.Context, challenge string) (*hydra.LoginRequest, error)
 	acceptLoginFn       func(ctx context.Context, challenge string, p hydra.AcceptLoginParams) (string, error)
 	getConsentFn        func(ctx context.Context, challenge string) (*hydra.ConsentRequest, error)
 	acceptConsentFn     func(ctx context.Context, challenge string, p hydra.AcceptConsentParams) (string, error)
@@ -41,8 +43,11 @@ type mockHydraAdmin struct {
 	lastRevokeClient    string
 }
 
-func (m *mockHydraAdmin) GetLoginRequest(context.Context, string) (*hydra.LoginRequest, error) {
-	return &hydra.LoginRequest{}, nil
+func (m *mockHydraAdmin) GetLoginRequest(ctx context.Context, challenge string) (*hydra.LoginRequest, error) {
+	if m.getLoginFn != nil {
+		return m.getLoginFn(ctx, challenge)
+	}
+	return &hydra.LoginRequest{Challenge: challenge}, nil
 }
 
 func (m *mockHydraAdmin) AcceptLogin(ctx context.Context, challenge string, p hydra.AcceptLoginParams) (string, error) {
@@ -112,6 +117,8 @@ func (m *mockHydraAdmin) ListConsentSessions(context.Context, string) ([]hydra.C
 	return m.sessions, m.sessionsErr
 }
 
+func (m *mockHydraAdmin) RevokeAllSessions(context.Context, string) error { return nil }
+
 func (m *mockHydraAdmin) RevokeConsentSessions(_ context.Context, subject, clientID string) error {
 	m.revokeCalled = true
 	m.lastRevokeSubject = subject
@@ -161,6 +168,8 @@ func (m *mockGrantService) Revoke(_, clientID string) error {
 }
 
 func (m *mockGrantService) Authorize(_, _, _ string) error { return nil }
+
+func (m *mockGrantService) RevokeAll(_ string) (int64, error) { return 0, nil }
 
 // rememberedGrant returns an auto-accepting grant for client "known".
 func rememberedGrant(approved, reviewed string) *models.OAuthClientGrant {
@@ -249,7 +258,40 @@ func TestOAuthHandler_Login(t *testing.T) {
 		if rec.Code != http.StatusBadRequest {
 			t.Fatalf("expected 400, got %d", rec.Code)
 		}
-		assertErrorCode(t, parseJSON(t, rec), apperrors.ErrInvalidInput.Code)
+		result := parseJSON(t, rec)
+		assertErrorCode(t, result, apperrors.ErrInvalidInput.Code)
+		// The binding error (Go struct and validator names) is not echoed.
+		if body := rec.Body.String(); strings.Contains(body, "oauthLoginRequest") || strings.Contains(body, "binding") {
+			t.Errorf("binding details leaked to the client: %s", body)
+		}
+	})
+
+	t.Run("checks the challenge with Hydra before the credentials", func(t *testing.T) {
+		attempted := false
+		userSvc := &mockUserService{
+			attemptLoginFn: func(_, _ string) (*models.User, error) {
+				attempted = true
+				return &models.User{Base: models.Base{ID: "user-42"}}, nil
+			},
+		}
+		admin := &mockHydraAdmin{getLoginFn: func(context.Context, string) (*hydra.LoginRequest, error) {
+			return nil, apperrors.WithMessage(apperrors.ErrNotFound, "hydra challenge or client not found")
+		}}
+		handler := NewOAuthHandler(admin, userSvc, &mockGrantService{}, &mockAuditService{}, testScopes, testResourceURL)
+		r := setupOAuthRouter(handler)
+
+		rec := doRequest(r, "POST", "/oauth/login",
+			`{"login_challenge":"bogus","email":"a@b.com","password":"secret123"}`)
+
+		if rec.Code != http.StatusNotFound {
+			t.Fatalf("expected 404 for an unknown challenge, got %d: %s", rec.Code, rec.Body.String())
+		}
+		if attempted {
+			t.Error("credentials must not be checked for an unknown challenge")
+		}
+		if admin.lastAcceptLogin.Subject != "" {
+			t.Error("AcceptLogin must not be called for an unknown challenge")
+		}
 	})
 }
 
@@ -304,6 +346,90 @@ func consentFor(requested ...string) *mockHydraAdmin {
 				RequestedScope: requested,
 			}, nil
 		},
+	}
+}
+
+func TestConsentRedirectTarget(t *testing.T) {
+	tests := []struct {
+		name       string
+		requestURL string
+		registered []string
+		want       redirectTarget
+	}{
+		{
+			"uses the redirect_uri of this request, not the first registered",
+			"https://auth.example/oauth2/auth?client_id=c&redirect_uri=https%3A%2F%2Fevil.example%2Fcb&response_type=code",
+			[]string{"https://claude.ai/cb", "https://evil.example/cb"},
+			redirectTarget{Scheme: "https", Host: "evil.example"},
+		},
+		{
+			"falls back to the only registered URI",
+			"https://auth.example/oauth2/auth?client_id=c&response_type=code",
+			[]string{"https://Claude.AI/cb"},
+			redirectTarget{Scheme: "https", Host: "claude.ai"},
+		},
+		{
+			"unknown when the request names none and several are registered",
+			"https://auth.example/oauth2/auth?client_id=c",
+			[]string{"https://a.example/cb", "https://b.example/cb"},
+			redirectTarget{},
+		},
+		{
+			"loopback keeps the port",
+			"https://auth.example/oauth2/auth?redirect_uri=http%3A%2F%2F127.0.0.1%3A33418%2Fcb",
+			nil,
+			redirectTarget{Scheme: "http", Host: "127.0.0.1:33418"},
+		},
+		{
+			"private-use scheme has no host",
+			"https://auth.example/oauth2/auth?redirect_uri=com.example.app%3A%2Fcb",
+			nil,
+			redirectTarget{Scheme: "com.example.app"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := consentRedirectTarget(&hydra.ConsentRequest{
+				RequestURL: tt.requestURL,
+				Client:     hydra.OAuth2Client{RedirectURIs: tt.registered},
+			})
+			if got != tt.want {
+				t.Errorf("got %+v, want %+v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestOAuthHandler_GetConsentShowsRedirectAndVerification(t *testing.T) {
+	admin := &mockHydraAdmin{getConsentFn: func(_ context.Context, challenge string) (*hydra.ConsentRequest, error) {
+		return &hydra.ConsentRequest{
+			Challenge: challenge, Subject: "user-7", RequestedScope: []string{"read:accounts"},
+			RequestURL: "https://auth.example/oauth2/auth?redirect_uri=https%3A%2F%2Fclaude.ai%2Fapi%2Fmcp%2Fauth_callback",
+			Client: hydra.OAuth2Client{ClientID: "dcr-1", ClientName: "Claude",
+				RedirectURIs: []string{"https://other.example/cb", "https://claude.ai/api/mcp/auth_callback"}},
+		}, nil
+	}}
+
+	for _, tt := range []struct {
+		pinned       string
+		wantVerified bool
+	}{{"", false}, {"someone-else", false}, {"dcr-1", true}} {
+		handler := NewOAuthHandler(admin, &mockUserService{}, &mockGrantService{}, &mockAuditService{},
+			testScopes, testResourceURL, WithPinnedClientID(tt.pinned))
+		rec := doRequest(setupOAuthRouter(handler), "GET", "/oauth/consent?consent_challenge=cc1", "")
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+		}
+		result := parseJSON(t, rec)
+		if result["redirect_host"] != "claude.ai" || result["redirect_scheme"] != "https" {
+			t.Errorf("unexpected redirect target: %v / %v", result["redirect_scheme"], result["redirect_host"])
+		}
+		if result["client_verified"] != tt.wantVerified {
+			t.Errorf("pinned %q: client_verified = %v, want %v", tt.pinned, result["client_verified"], tt.wantVerified)
+		}
+		if _, ok := result["redirect_uris"]; ok {
+			t.Error("the registered redirect URI list is no longer sent")
+		}
 	}
 }
 
