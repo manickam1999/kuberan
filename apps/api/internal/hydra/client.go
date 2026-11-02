@@ -28,6 +28,11 @@ type AdminClient interface {
 
 	GetClient(ctx context.Context, clientID string) (*OAuth2Client, error)
 	CreateClient(ctx context.Context, in OAuth2ClientCreate) (*OAuth2Client, error)
+	// ListClients lists registered OAuth 2.0 clients (the first page of up to
+	// maxListedClients).
+	ListClients(ctx context.Context) ([]OAuth2Client, error)
+	// SetClientAudience replaces a client's allowed access-token audiences.
+	SetClientAudience(ctx context.Context, clientID string, audience []string) error
 
 	// ListConsentSessions lists the consent sessions subject has granted, across
 	// all clients.
@@ -211,6 +216,31 @@ func (c *client) RevokeAllSessions(ctx context.Context, subject string) error {
 		return err
 	}
 	return nil
+}
+
+// maxListedClients is the page size requested by ListClients. A self-hosted
+// Kuberan has a handful of clients; EnsureClientAudience warns if a full page
+// comes back.
+const maxListedClients = 500
+
+// ListClients lists registered OAuth 2.0 clients.
+func (c *client) ListClients(ctx context.Context) ([]OAuth2Client, error) {
+	var out []OAuth2Client
+	if err := c.do(ctx, http.MethodGet, "/admin/clients",
+		url.Values{"page_size": {strconv.Itoa(maxListedClients)}}, nil, &out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// SetClientAudience replaces a client's allowed audiences with a JSON Patch,
+// leaving every other field (including any secret) untouched.
+func (c *client) SetClientAudience(ctx context.Context, clientID string, audience []string) error {
+	if clientID == "" {
+		return apperrors.WithMessage(apperrors.ErrInvalidInput, "client_id is required")
+	}
+	patch := []map[string]any{{"op": "replace", "path": "/audience", "value": audience}}
+	return c.do(ctx, http.MethodPatch, "/admin/clients/"+url.PathEscape(clientID), nil, patch, nil)
 }
 
 // redirect performs a PUT whose response is a Hydra redirect envelope (the

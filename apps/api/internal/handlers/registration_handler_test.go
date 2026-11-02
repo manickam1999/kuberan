@@ -365,3 +365,21 @@ func TestRegistrationHandler_Limits(t *testing.T) {
 		})
 	}
 }
+
+// Hydra refuses to refresh a token whose granted audience the client is not
+// allowed, and the consent bridge grants the MCP resource URL to every token,
+// so every registered client must allow it or it is logged out after 15 minutes.
+func TestRegistrationHandler_RegistersResourceAudience(t *testing.T) {
+	admin := &mockHydraAdmin{}
+	handler := NewRegistrationHandler(admin, &recordingAuditService{}, testScopes, WithResourceAudience(testResourceURL))
+
+	rec := doRequest(setupRegistrationRouter(handler), "POST", "/oauth/register",
+		`{"redirect_uris":["http://127.0.0.1:8765/callback"]}`)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if got := admin.lastCreateClient.Audience; len(got) != 1 || got[0] != testResourceURL {
+		t.Errorf("audience = %v, want [%s]", got, testResourceURL)
+	}
+}
