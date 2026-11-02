@@ -96,6 +96,14 @@ func (m *mockHydraAdmin) GetClient(context.Context, string) (*hydra.OAuth2Client
 	return &hydra.OAuth2Client{}, nil
 }
 
+func (m *mockHydraAdmin) ListClients(context.Context) ([]hydra.OAuth2Client, error) {
+	return nil, nil
+}
+
+func (m *mockHydraAdmin) SetClientAudience(context.Context, string, []string) error {
+	return nil
+}
+
 func (m *mockHydraAdmin) CreateClient(ctx context.Context, in hydra.OAuth2ClientCreate) (*hydra.OAuth2Client, error) {
 	m.createClientCalled = true
 	m.lastCreateClient = in

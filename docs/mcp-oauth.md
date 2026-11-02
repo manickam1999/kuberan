@@ -155,9 +155,20 @@ access token and force re-authorization. So:
 - `ttl.refresh_token` is `2160h` (refresh tokens rotate, so this is an idle
   timeout of 90 days);
 - `oauth2.grant.refresh_token.rotation_grace_period` is `5m`, so a concurrent
-  or retried refresh does not trip Hydra's reuse detection and revoke the chain.
+  or retried refresh does not trip Hydra's reuse detection and revoke the chain;
+- the DCR proxy registers every client with the MCP resource URL as an allowed
+  **audience** (`WithResourceAudience`). The consent bridge grants that
+  audience to every token, and on refresh Hydra checks the token's granted
+  audience against the client's allowed audiences
+  (`fosite/handler/oauth2/flow_refresh.go`). Without it every refresh fails
+  with `400 invalid_request` ("Requested audience ... has not been whitelisted
+  by the OAuth 2.0 Client"), the code exchange still works, and clients are
+  logged out each time their 15-minute access token expires. On startup the
+  api adds the audience to any existing client that lacks it
+  (`hydra.EnsureClientAudience`), so their refresh tokens work again without a
+  new login.
 
-Clients registered before this change lack `offline_access` in their
+Clients registered before `offline_access` was forced lack it in their
 registration; remove and re-add the connector so it re-registers.
 
 ## PKCE
@@ -356,8 +367,8 @@ bridge). See `docs/backup-and-dr.md#upgrade-notes`.
 
 ## Hard-won interop notes
 
-These four bugs passed all unit tests and only surfaced against the real
-Claude client + real Hydra. If auth breaks after an upgrade, start here:
+These five bugs passed all unit tests and only surfaced against real clients
+and real Hydra. If auth breaks after an upgrade, start here:
 
 1. **The 401 must be HTTP-level.** MCP clients begin OAuth discovery from a
    401 + `WWW-Authenticate` on the transport endpoint. Tool-level "unauthorized"
@@ -375,6 +386,12 @@ Claude client + real Hydra. If auth breaks after an upgrade, start here:
    `/.well-known/openid-configuration`. Clients should fall back, but serving
    the primary path removes the gamble. (Ory switched to CalVer; v25.x
    continues the 2.x line, config-compatible.)
+5. **A forced audience must also be allowed on the client.** Granting an
+   audience at consent that the client isn't registered for works for the
+   initial login and then breaks every refresh with `400 invalid_request`:
+   clients silently fall back to a full browser login every 15 minutes, and
+   headless clients (Hermes on a gateway) get stuck. See "Long-lived
+   connections" above.
 
 There is a fifth latent ambiguity, documented with its fix in the runbook §2b:
 the resource identity is host-only (`https://mcp.<domain>`), which is

@@ -34,17 +34,38 @@ type RegistrationHandler struct {
 	hydra         hydra.AdminClient
 	auditService  services.AuditServicer
 	allowedScopes []string
+	audience      []string // allowed access-token audiences forced onto every client
+}
+
+// RegistrationOption configures a RegistrationHandler.
+type RegistrationOption func(*RegistrationHandler)
+
+// WithResourceAudience registers every client with the MCP resource URL
+// (config.MCPResourceURL) as an allowed audience. The consent bridge grants
+// that audience to every token, and Hydra refuses to refresh a token whose
+// audience the client is not allowed, so without it clients are logged out
+// whenever their 15-minute access token expires.
+func WithResourceAudience(resourceURL string) RegistrationOption {
+	return func(h *RegistrationHandler) {
+		if resourceURL != "" {
+			h.audience = []string{resourceURL}
+		}
+	}
 }
 
 // NewRegistrationHandler creates a RegistrationHandler. scopes is the space-
 // delimited registered read:* set (config.OAuthScopes) that requested scopes are
 // capped to.
-func NewRegistrationHandler(adminClient hydra.AdminClient, auditService services.AuditServicer, scopes string) *RegistrationHandler {
-	return &RegistrationHandler{
+func NewRegistrationHandler(adminClient hydra.AdminClient, auditService services.AuditServicer, scopes string, opts ...RegistrationOption) *RegistrationHandler {
+	h := &RegistrationHandler{
 		hydra:         adminClient,
 		auditService:  auditService,
 		allowedScopes: strings.Fields(scopes),
 	}
+	for _, opt := range opts {
+		opt(h)
+	}
+	return h
 }
 
 // dcrRequest is the RFC 7591 client-metadata payload a client submits to register.
@@ -124,6 +145,7 @@ func (h *RegistrationHandler) Register(c *gin.Context) {
 		ResponseTypes:           []string{"code"},
 		Scope:                   strings.Join(scope, " "),
 		TokenEndpointAuthMethod: "none",
+		Audience:                h.audience,
 	}
 
 	client, err := h.hydra.CreateClient(c.Request.Context(), create)

@@ -122,11 +122,28 @@ func run() error {
 	// Hydra admin client for the OAuth login/consent bridge (private network only).
 	hydraAdmin := hydra.NewAdminClient(appConfig.HydraAdminURL)
 
+	// Let OAuth clients registered without the MCP audience refresh their
+	// tokens (see hydra.EnsureClientAudience). Runs in the background so a slow
+	// or unavailable Hydra never delays startup; failures are logged only.
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+		defer cancel()
+		patched, err := hydra.EnsureClientAudience(ctx, hydraAdmin, appConfig.MCPResourceURL)
+		if err != nil {
+			log.Warnw("could not add the MCP audience to existing OAuth clients", "error", err)
+			return
+		}
+		if patched > 0 {
+			log.Infow("added the MCP audience to existing OAuth clients so they can refresh", "clients", patched)
+		}
+	}()
+
 	// Initialize handlers
 	authHandler := handlers.NewAuthHandler(userService, auditService, handlers.WithSecureCookie(appConfig.CookieSecure))
 	oauthHandler := handlers.NewOAuthHandler(hydraAdmin, userService, oauthGrantService, auditService, appConfig.OAuthScopes, appConfig.MCPResourceURL,
 		handlers.WithPinnedClientID(appConfig.HydraPinnedClientID))
-	registrationHandler := handlers.NewRegistrationHandler(hydraAdmin, auditService, appConfig.OAuthScopes)
+	registrationHandler := handlers.NewRegistrationHandler(hydraAdmin, auditService, appConfig.OAuthScopes,
+		handlers.WithResourceAudience(appConfig.MCPResourceURL))
 	accountHandler := handlers.NewAccountHandler(accountService, auditService)
 	categoryHandler := handlers.NewCategoryHandler(categoryService, auditService)
 	transactionHandler := handlers.NewTransactionHandler(transactionService, auditService)

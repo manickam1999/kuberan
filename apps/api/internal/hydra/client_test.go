@@ -305,3 +305,48 @@ func TestListConsentSessions(t *testing.T) {
 		t.Error("an empty subject must be rejected")
 	}
 }
+
+func TestListClients(t *testing.T) {
+	rs := newRecordingServer(t, http.StatusOK, []map[string]any{
+		{"client_id": "a", "audience": []string{"https://mcp.example"}},
+		{"client_id": "b"},
+	})
+	c := NewAdminClient(rs.server.URL)
+
+	got, err := c.ListClients(context.Background())
+	if err != nil {
+		t.Fatalf("ListClients: %v", err)
+	}
+	if rs.lastMethod != http.MethodGet || rs.lastPath != "/admin/clients" || rs.lastQuery != "page_size=500" {
+		t.Errorf("unexpected request: %s %s?%s", rs.lastMethod, rs.lastPath, rs.lastQuery)
+	}
+	if len(got) != 2 || got[0].ClientID != "a" || len(got[0].Audience) != 1 || len(got[1].Audience) != 0 {
+		t.Errorf("unexpected clients: %+v", got)
+	}
+}
+
+func TestSetClientAudience(t *testing.T) {
+	var body []map[string]any
+	var method, path string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		method, path = r.Method, r.URL.Path
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	t.Cleanup(srv.Close)
+	c := NewAdminClient(srv.URL)
+
+	if err := c.SetClientAudience(context.Background(), "cid", []string{"https://mcp.example"}); err != nil {
+		t.Fatalf("SetClientAudience: %v", err)
+	}
+	if method != http.MethodPatch || path != "/admin/clients/cid" {
+		t.Errorf("unexpected request: %s %s", method, path)
+	}
+	if len(body) != 1 || body[0]["op"] != "replace" || body[0]["path"] != "/audience" {
+		t.Errorf("unexpected JSON Patch: %v", body)
+	}
+	if err := c.SetClientAudience(context.Background(), "", nil); err == nil {
+		t.Error("an empty client_id must be rejected")
+	}
+}

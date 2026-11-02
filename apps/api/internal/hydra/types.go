@@ -16,6 +16,9 @@ type OAuth2Client struct {
 	GrantTypes              []string `json:"grant_types,omitempty"`
 	ResponseTypes           []string `json:"response_types,omitempty"`
 	TokenEndpointAuthMethod string   `json:"token_endpoint_auth_method,omitempty"`
+	// Audience lists the access-token audiences the client may hold. Hydra
+	// re-checks a token's granted audience against it on every refresh.
+	Audience []string `json:"audience,omitempty"`
 }
 
 // OAuth2ClientCreate is the client metadata posted to Hydra's admin API to
@@ -28,6 +31,10 @@ type OAuth2ClientCreate struct {
 	ResponseTypes           []string `json:"response_types,omitempty"`
 	Scope                   string   `json:"scope,omitempty"`
 	TokenEndpointAuthMethod string   `json:"token_endpoint_auth_method,omitempty"`
+	// Audience must include the MCP resource URL: the consent bridge grants it
+	// to every token, and Hydra refuses to refresh a token whose audience the
+	// client is not allowed.
+	Audience []string `json:"audience,omitempty"`
 }
 
 // LoginRequest describes a pending Hydra login challenge.
