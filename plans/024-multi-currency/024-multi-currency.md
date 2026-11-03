@@ -238,7 +238,7 @@ Order matters. Run it in a maintenance window with the oracle stopped.
   | MYR (Bursa) | CARLSBG, CIMB, GAMUDA, MAYBANK, MBMR, RHBBANK, SENDAI, SIME, SUNREIT, UTDPLT, VERSA (0807EA.KL), YTLPOWR | 7 | 26 |
   | USD (NYSE/NASDAQ) | CCJ, CHA, IBKR, NVDA, NVO, SOUN, SPCX | 5 | 18 |
   | USD (LSE, USD lines) | VUAA.L, VWRA.L | 2 | 10 |
-  | CAD (TSX) | RBOT.TO | 0 (closed) | 5 |
+  | USD (LSE, USD line) | RBOT: **mis-mapped today** as TSX `RBOT.TO`. It is iShares Automation & Robotics USD-A (IE00BYZK4552), `RBOT.L` on LSE. Fix exchange, provider_symbol and currency. | 0 (closed) | 5 |
   | MYR (crypto, bought on Luno in MYR) | BTC, ETH, SUI | 2 | 22 |
 
   So **33 trades across 10 securities** (all in the Interactive Brokers account) need
@@ -254,7 +254,7 @@ Consequences for the steps below:
 - **New step 2a, relabel securities:** a one-off migration sets `securities.currency` to the
   table above, **before** the price currency guard (D4) and the currency lock are switched on.
   Otherwise every native price for those 10 securities would be rejected as a mismatch.
-- **FX backfill** needs USD→MYR and CAD→MYR from **2025-01-01**.
+- **FX backfill** needs only USD→MYR, from **2025-01-01** (no CAD once RBOT is corrected).
 - **Step 4:** with 33 trades, all from one broker, use **path (a)** (IBKR statement export) for
   all of them. Keep path (b) as a fallback for any trade missing from the export.
 - **Step 5** covers only IBKR Cash (see open item below).
@@ -276,19 +276,29 @@ section name and header, never by column position. Only `Data` rows are used.
 | `Trades` (DataDiscriminator `Order`) | buy (qty > 0) / sell (qty < 0) | `T. Price` → price_per_unit, `abs(Comm/Fee)` → fee, date from `Date/Time` (ET, date part). Codes `O`/`C`/`P`/`FPA`/`IM` are informational. Code `R` (dividend reinvestment) is a normal buy. Funded from / proceeds to IBKR Cash. |
 | `Dividends` | dividend | One per (symbol, date). "Payment in Lieu of Dividend" (shares lent out) counts as a dividend. Reversals net out against their original. Credited to IBKR Cash. |
 | `Withholding Tax`, `Fees` (lines that name a dividend / ADR fee) | dividend `fee` | Matched to the dividend by symbol + date, so `total_amount` = gross and `fee` = tax + fees. An ADR fee with no dividend that day (CHA 2026-04-14) becomes a plain expense on IBKR Cash. |
-| `Grant Activity` | buy with no funding account | One per vesting at the vesting `Price`, for the **net** quantity (vesting − withholding). Cost basis then matches IBKR's (USD 139) instead of today's 0. |
-| `Deposits & Withdrawals` | FX transfer leg into IBKR Cash | Matched with the MYR bank transaction by date ± 5 days. Unmatched deposits are listed for manual pairing. |
+| `Grant Activity`: "Stock Award Grant for Cash Deposit" / "Return for Cash Withdrawal" | buy (negative: sell) with no funding account, at the grant `Price` | IBKR counts granted shares in the position **from the grant date** (the 2025 year-end IBKR position of 2.3791 is entirely unvested lots, code `Un`). |
+| `Grant Activity`: "Stock Award Vesting" | **no-op** | The shares are already counted from the grant. |
+| `Grant Activity`: "Stock Award Withholding" | sell with no deposit account, at the row's `Price` | Shares withheld for tax at vesting. Check: 2.3791 + 0.0035 DRIP − 0.7120 withheld = 1.6706, which equals IBKR's 2026-11-02 position. |
+| `Corporate Actions` (description matches `Split N for M`) | split, ratio N/M | IBKR 4-for-1 on 2025-06-17. Any other corporate action fails the import loudly and lists the row. |
+| `Deposits & Withdrawals` | FX transfer leg into IBKR Cash | Only from the cash-ledger start date (below). Matched with the MYR bank transaction by date ± 5 days. Unmatched deposits are listed for manual pairing. |
 | `Open Positions` | **reconciliation only** | After import, each holding's quantity must equal IBKR's exactly. Cost basis is compared with a tolerance, since IBKR uses FIFO lots while Kuberan uses average cost (see the note below). |
 | `Cash Report` → Ending Cash | reconciliation only | IBKR Cash balance must equal it. |
 | Others (NAV, MTM, Realized/Unrealized, Accruals, Instrument Info, Codes, Notes) | ignored | `Financial Instrument Information` maps Symbol → ISIN and listing exchange for matching securities. |
 
-- **Coverage:** one statement covers at most a calendar year. Positions held at 2026-01-01
-  (CCJ, CHA, IBKR, NVO, VUAA, VWRA) and the 2025-only symbols (RBOT, SOUN) need the **2025
-  statement**, plus any earlier year since account opening. The import takes several files, and
-  replays every trade per holding in date order.
-- **Splits:** Kuberan has 4 `split` rows since 2026-03-27 that don't appear in the statement
-  (there's no corporate-actions section), so they look like manual quantity fixes. The import
-  replaces each holding's transactions wholesale, so they go away.
+- **Coverage: complete.** The account opened in 2025 (the 2025 statement's starting value is 0),
+  so the 2025 and 2026 statements together hold the full history. The import takes several files,
+  checks that their periods are contiguous with no gaps or overlaps, and replays each holding's
+  rows in date order. Each statement's `Open Positions` is a checkpoint: replay up to that
+  statement's end date and compare.
+- **Cash ledger start = 2026-01-01.** Kuberan's own records begin in January 2026, so 2025 bank
+  transfers have no MYR counterpart in Kuberan. **Holdings** replay from 2025-01-28. **IBKR Cash**
+  starts with an `opening_balance` of USD 4.65 on 2026-01-01 (the 2025 statement's ending cash), so
+  2025 trades and dividends are imported without a funding or deposit account. The 2025 base
+  amounts come from `fx_rates` on the trade date. From 2026 on, trades are funded from IBKR Cash
+  and deposits pair with the bank side.
+- **Splits:** the one real split (IBKR 4-for-1, 2025-06-17) comes from `Corporate Actions`.
+  Kuberan's 4 `split` rows since 2026-03-27 don't match any corporate action, so they look like
+  manual quantity fixes. The import replaces each holding's transactions wholesale, so they go away.
 - **Known mismatches today** (Kuberan vs IBKR at 2026-11-02): IBKR 1.9949 vs 1.6706, NVO 30 vs
   30.2548, NVDA 10.2 vs 10.2137. CCJ, VUAA, SPCX and CHA match. VWRA (48.2 vs 37) is a buy of
   11.2 made after the statement period, so reconciliation must only count trades up to the
