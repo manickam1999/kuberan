@@ -259,10 +259,43 @@ Consequences for the steps below:
   all of them. Keep path (b) as a fallback for any trade missing from the export.
 - **Step 5** covers only IBKR Cash (see open item below).
 
-**Open item:** does IBKR Cash really hold USD (or several currencies)? If so, split it into
-`IBKR Cash (USD)` (and `IBKR Cash (MYR)` if MYR is also held), and re-enter its 11 transactions
-with their real amounts. MYR deposits from Maybank become FX transfers (D6) or MYR deposits
-followed by an FX conversion inside IBKR.
+**IBKR Cash is USD** (confirmed; the IBKR base currency is USD, and the 2026 statement has no
+forex trades). It becomes a USD account, and its 11 transactions are re-entered from the statement.
+Deposits arrive as USD wires (e.g. 2026-06-04 USD 7,461.52), so each one becomes an FX transfer
+(D6) from the MYR bank account: `amount` is the MYR that left the bank (from the existing Kuberan
+transaction), `to_amount` is the USD from the statement. IBKR reports USD 120.55 of cash at
+2026-11-02, while Kuberan shows RM 37.47.
+
+#### D10.0a IBKR Activity Statement import
+Format: IBKR's default **Activity Statement CSV** (multi-section: column 1 is the section,
+column 2 is `Header`/`Data`/`SubTotal`/`Total`, and each section has its own header row). Parse by
+section name and header, never by column position. Only `Data` rows are used.
+
+| Section | Becomes | Notes |
+|---|---|---|
+| `Trades` (DataDiscriminator `Order`) | buy (qty > 0) / sell (qty < 0) | `T. Price` → price_per_unit, `abs(Comm/Fee)` → fee, date from `Date/Time` (ET, date part). Codes `O`/`C`/`P`/`FPA`/`IM` are informational. Code `R` (dividend reinvestment) is a normal buy. Funded from / proceeds to IBKR Cash. |
+| `Dividends` | dividend | One per (symbol, date). "Payment in Lieu of Dividend" (shares lent out) counts as a dividend. Reversals net out against their original. Credited to IBKR Cash. |
+| `Withholding Tax`, `Fees` (lines that name a dividend / ADR fee) | dividend `fee` | Matched to the dividend by symbol + date, so `total_amount` = gross and `fee` = tax + fees. An ADR fee with no dividend that day (CHA 2026-04-14) becomes a plain expense on IBKR Cash. |
+| `Grant Activity` | buy with no funding account | One per vesting at the vesting `Price`, for the **net** quantity (vesting − withholding). Cost basis then matches IBKR's (USD 139) instead of today's 0. |
+| `Deposits & Withdrawals` | FX transfer leg into IBKR Cash | Matched with the MYR bank transaction by date ± 5 days. Unmatched deposits are listed for manual pairing. |
+| `Open Positions` | **reconciliation only** | After import, each holding's quantity must equal IBKR's exactly. Cost basis is compared with a tolerance, since IBKR uses FIFO lots while Kuberan uses average cost (see the note below). |
+| `Cash Report` → Ending Cash | reconciliation only | IBKR Cash balance must equal it. |
+| Others (NAV, MTM, Realized/Unrealized, Accruals, Instrument Info, Codes, Notes) | ignored | `Financial Instrument Information` maps Symbol → ISIN and listing exchange for matching securities. |
+
+- **Coverage:** one statement covers at most a calendar year. Positions held at 2026-01-01
+  (CCJ, CHA, IBKR, NVO, VUAA, VWRA) and the 2025-only symbols (RBOT, SOUN) need the **2025
+  statement**, plus any earlier year since account opening. The import takes several files, and
+  replays every trade per holding in date order.
+- **Splits:** Kuberan has 4 `split` rows since 2026-03-27 that don't appear in the statement
+  (there's no corporate-actions section), so they look like manual quantity fixes. The import
+  replaces each holding's transactions wholesale, so they go away.
+- **Known mismatches today** (Kuberan vs IBKR at 2026-11-02): VWRA 48.2 vs 37, IBKR 1.9949 vs
+  1.6706, NVO 30 vs 30.2548, NVDA 10.2 vs 10.2137. CCJ, VUAA, SPCX and CHA match.
+- **Average cost vs FIFO:** for holdings that were partly sold (NVO), Kuberan's remaining cost
+  basis and realized P&L will differ from IBKR's FIFO figures. Quantities and cash still match
+  exactly. FIFO lots remain a non-goal of this plan.
+- The statement contains the account holder's name and account number. Test fixtures must be
+  anonymised, and statements are never committed.
 
 1. **Schema migrations** (D1, D2, D4–D7 columns), all nullable or defaulted, reversible.
 2. **FX history backfill:** `oracle backfill --fx --since <first transaction date>` for each needed
