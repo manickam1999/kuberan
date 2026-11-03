@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strings"
 	"time"
 	"unicode/utf8"
 
@@ -78,6 +79,8 @@ type UserResponse struct {
 	Email     string `json:"email"`
 	FirstName string `json:"first_name"`
 	LastName  string `json:"last_name"`
+	// BaseCurrency is the ISO 4217 currency the user's aggregates are reported in.
+	BaseCurrency string `json:"base_currency"`
 }
 
 // AuthResponse represents the authentication response. The refresh token is
@@ -381,6 +384,7 @@ func userPayload(user *models.User) gin.H {
 		"last_name":          user.LastName,
 		"hide_balances":      user.HideBalances,
 		"default_account_id": user.DefaultAccountID,
+		"base_currency":      user.BaseCurrency,
 	}
 }
 
@@ -391,6 +395,9 @@ type UpdateProfileSettingsRequest struct {
 	// DefaultAccountID sets the account preselected for new transactions;
 	// null or "" clears it. Must be a UUID otherwise.
 	DefaultAccountID optionalString `json:"default_account_id" swaggertype:"string"`
+	// BaseCurrency sets the currency aggregates are reported in (ISO 4217,
+	// upper-case). It must be a supported currency with an exchange rate to USD.
+	BaseCurrency *string `json:"base_currency" binding:"omitempty,iso4217"`
 }
 
 // optionalString distinguishes an absent JSON field (Set=false) from an
@@ -408,7 +415,7 @@ func (o *optionalString) UnmarshalJSON(data []byte) error {
 
 // UpdateProfileSettings updates the authenticated user's profile settings.
 // @Summary     Update profile settings
-// @Description Update the authenticated user's profile settings (dashboard balance visibility, default transaction account)
+// @Description Update the authenticated user's profile settings (dashboard balance visibility, default transaction account, base currency)
 // @Tags        user
 // @Accept      json
 // @Produce     json
@@ -432,15 +439,16 @@ func (h *AuthHandler) UpdateProfileSettings(c *gin.Context) {
 		return
 	}
 
-	if req.HideBalances == nil && !req.DefaultAccountID.Set {
+	if req.HideBalances == nil && !req.DefaultAccountID.Set && req.BaseCurrency == nil {
 		respondWithError(c, apperrors.WithMessage(apperrors.ErrInvalidInput,
-			"at least one of hide_balances or default_account_id is required"))
+			"at least one of hide_balances, default_account_id or base_currency is required"))
 		return
 	}
 
 	update := services.ProfileSettingsUpdate{
 		HideBalances:      req.HideBalances,
 		SetDefaultAccount: req.DefaultAccountID.Set,
+		BaseCurrency:      req.BaseCurrency,
 	}
 	if req.DefaultAccountID.Set {
 		update.DefaultAccountID, err = optionalUUID(req.DefaultAccountID.Value, "default_account_id")
@@ -448,6 +456,17 @@ func (h *AuthHandler) UpdateProfileSettings(c *gin.Context) {
 			respondWithError(c, err)
 			return
 		}
+	}
+
+	// The previous base currency goes into the audit entry.
+	oldBaseCurrency := ""
+	if update.BaseCurrency != nil {
+		before, err := h.userService.GetUserByID(userID)
+		if err != nil {
+			respondWithError(c, err)
+			return
+		}
+		oldBaseCurrency = before.BaseCurrency
 	}
 
 	if err := h.userService.UpdateProfileSettings(userID, update); err != nil {
@@ -462,7 +481,13 @@ func (h *AuthHandler) UpdateProfileSettings(c *gin.Context) {
 	if update.SetDefaultAccount {
 		changes["default_account_id"] = update.DefaultAccountID
 	}
-	h.auditService.Log(userID, "UPDATE_PROFILE", "user", userID, c.ClientIP(), changes)
+	if len(changes) > 0 {
+		h.auditService.Log(userID, "UPDATE_PROFILE", "user", userID, c.ClientIP(), changes)
+	}
+	if update.BaseCurrency != nil {
+		h.auditService.Log(userID, "UPDATE_BASE_CURRENCY", "user", userID, c.ClientIP(),
+			map[string]interface{}{"old": oldBaseCurrency, "new": strings.ToUpper(strings.TrimSpace(*update.BaseCurrency))})
+	}
 
 	user, err := h.userService.GetUserByID(userID)
 	if err != nil {

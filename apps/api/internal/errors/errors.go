@@ -203,3 +203,12 @@ var (
 	// has been revoked, or belongs to an inactive user.
 	ErrOAuthScopeNotGranted = &AppError{Code: "OAUTH_SCOPE_NOT_GRANTED", Message: "This app is not allowed to perform this action", StatusCode: http.StatusForbidden}
 )
+
+// Currency and exchange-rate errors (plan 024).
+var (
+	// ErrFXRateUnavailable is returned when no exchange rate (direct, inverse or via the USD pivot) exists for a pair.
+	ErrFXRateUnavailable = &AppError{Code: "FX_RATE_UNAVAILABLE", Message: "Exchange rate unavailable", StatusCode: http.StatusServiceUnavailable}
+
+	// ErrUnsupportedCurrency is returned when a currency cannot be used (unknown, not 2-decimal, or without a USD rate).
+	ErrUnsupportedCurrency = &AppError{Code: "UNSUPPORTED_CURRENCY", Message: "Currency is not supported", StatusCode: http.StatusBadRequest}
+)

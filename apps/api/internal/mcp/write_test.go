@@ -38,7 +38,7 @@ func setupWriteEnv(t *testing.T, approved ...string) *writeEnv {
 	rules := services.NewRuleService(db, categories)
 	grants := services.NewOAuthGrantService(db)
 	s := newServer(Services{
-		Users:        services.NewUserService(db),
+		Users:        services.NewUserService(db, services.NewFXService(db, 168*time.Hour)),
 		Accounts:     accounts,
 		Categories:   categories,
 		Transactions: services.NewTransactionService(db, accounts, rules),

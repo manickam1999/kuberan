@@ -281,7 +281,7 @@ POST /oauth2/register          # Hardened RFC 7591 DCR proxy (alias: POST /api/v
 ```
 # User
 GET    /api/v1/profile
-PATCH  /api/v1/profile
+PATCH  /api/v1/profile               # hide_balances, default_account_id, base_currency (must be supported: 2-decimal, USD or has a USD rate)
 
 # Accounts
 POST   /api/v1/accounts/cash
@@ -336,6 +336,10 @@ GET    /api/v1/securities
 GET    /api/v1/securities/:id
 GET    /api/v1/securities/:id/prices
 
+# FX rates (rates are always JSON decimal strings; plan 024)
+GET    /api/v1/fx-rates?base=&quote=&from=&to=   # direct-pair history (default last 30 days, max 3700)
+GET    /api/v1/fx-rates/latest?base=&quote=      # direct, inverse or USD-pivot quote; 503 FX_RATE_UNAVAILABLE
+
 # Connected apps (OAuth client grants)
 GET    /api/v1/oauth/clients
 DELETE /api/v1/oauth/clients/:client_id
@@ -359,6 +363,8 @@ GET    /api/v1/pipeline/securities          # List all securities
 POST   /api/v1/pipeline/securities          # Create security
 POST   /api/v1/pipeline/securities/prices   # Record security prices
 POST   /api/v1/pipeline/snapshots           # Compute portfolio snapshots for all users
+POST   /api/v1/pipeline/fx-rates            # Upsert exchange rates (decimal-string rates, <= 5000 per call)
+GET    /api/v1/pipeline/fx-pairs            # Pairs to publish + users' base currencies
 ```
 
 ## Testing Strategy
@@ -401,6 +407,7 @@ DB_MAX_OPEN_CONNS=20             # pool defaults; also DB_MAX_IDLE_CONNS=10, DB_
 JWT_SECRET=<required in production>
 JWT_EXPIRES_IN=24h               # config default; access-token lifetime is hardcoded to 15m in middleware
 PIPELINE_API_KEY=<key for pipeline endpoints; shared with the oracle>
+FX_MAX_STALENESS=168h            # Go duration; an FX quote older than this (as of the lookup time) is flagged stale
 BOT_INTERNAL_SECRET=<shared secret for internal telegram routes>
 CORS_ORIGIN=http://localhost:3000 # comma-separated exact-origin allowlist (default shown); no wildcards in production
 COOKIE_SECURE=true               # Secure flag on the refresh cookie; defaults to false only when ENV=development

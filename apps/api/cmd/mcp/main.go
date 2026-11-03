@@ -39,7 +39,7 @@ func run() error {
 
 	db := dbManager.DB()
 
-	userService := services.NewUserService(db)
+	userService := services.NewUserService(db, services.NewFXService(db, cfg.FXMaxStaleness))
 	accountService := services.NewAccountService(db)
 	categoryService := services.NewCategoryService(db)
 	ruleService := services.NewRuleService(db, categoryService)

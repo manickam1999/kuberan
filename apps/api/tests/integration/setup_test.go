@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/driver/sqlite"
@@ -65,6 +66,7 @@ func setupIsolatedDB(t *testing.T) *gorm.DB {
 		&models.Budget{},
 		&models.Security{},
 		&models.SecurityPrice{},
+		&models.FXRate{},
 		&models.PortfolioSnapshot{},
 		&models.Investment{},
 		&models.InvestmentTransaction{},
@@ -92,7 +94,8 @@ func setupApp(t *testing.T) *testApp {
 	db := setupIsolatedDB(t)
 
 	// Services
-	userService := services.NewUserService(db)
+	fxService := services.NewFXService(db, 168*time.Hour)
+	userService := services.NewUserService(db, fxService)
 	categoryService := services.NewCategoryService(db)
 	accountService := services.NewAccountService(db, categoryService)
 	ruleService := services.NewRuleService(db, categoryService)
@@ -146,6 +149,7 @@ func setupApp(t *testing.T) *testApp {
 		Snapshot:             handlers.NewPortfolioSnapshotHandler(snapshotService, auditService),
 		FixedDepositPipeline: handlers.NewFixedDepositPipelineHandler(fdService, auditService),
 		Telegram:             handlers.NewTelegramHandler(telegramService, auditService),
+		FX:                   handlers.NewFXHandler(fxService, auditService),
 	}, handlers.RouteSecrets{
 		BotInternalSecret: "test-bot-secret",
 		PipelineAPIKey:    "test-pipeline-key",

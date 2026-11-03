@@ -28,6 +28,7 @@ type Routes struct {
 	Snapshot             *PortfolioSnapshotHandler
 	FixedDepositPipeline *FixedDepositPipelineHandler
 	Telegram             *TelegramHandler
+	FX                   *FXHandler
 
 	// Limits rate-limits the public auth endpoints. The zero value applies no
 	// limits (used by tests that don't exercise them).
@@ -134,6 +135,10 @@ func RegisterRoutes(router *gin.Engine, h Routes, secrets RouteSecrets) {
 	registerSecurityRoutes(protected, h)
 	registerCategoryRoutes(protected, h)
 
+	// Exchange rates (plan 024). Static /latest is registered beside the list route.
+	protected.GET("/fx-rates", h.FX.ListRates)
+	protected.GET("/fx-rates/latest", h.FX.LatestRate)
+
 	// Telegram routes
 	// Connected apps: the user's OAuth client grants (plan 022).
 	protected.GET("/oauth/clients", h.OAuth.ListConnectedApps)
@@ -159,6 +164,8 @@ func RegisterRoutes(router *gin.Engine, h Routes, secrets RouteSecrets) {
 	pipeline.POST("/securities/prices", h.Security.RecordPrices)
 	pipeline.POST("/snapshots", h.Snapshot.ComputeSnapshots)
 	pipeline.POST("/fixed-deposits/process", h.FixedDepositPipeline.ProcessFixedDeposits)
+	pipeline.POST("/fx-rates", h.FX.RecordRates)
+	pipeline.GET("/fx-pairs", h.FX.GetPairs)
 }
 
 // registerAccountRoutes registers the /accounts tree.

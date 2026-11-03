@@ -6,6 +6,7 @@ import (
 
 	"gorm.io/gorm"
 
+	"kuberan/internal/fx"
 	"kuberan/internal/models"
 	"kuberan/internal/pagination"
 )
@@ -425,6 +426,61 @@ type InvestmentServicer interface {
 	RecordDividend(userID, investmentID string, date time.Time, amount int64, dividendType, notes string) (*models.InvestmentTransaction, error)
 	RecordSplit(userID, investmentID string, date time.Time, splitRatio float64, notes string) (*models.InvestmentTransaction, error)
 	GetInvestmentTransactions(userID, investmentID string, page pagination.PageRequest) (*pagination.PageResponse[models.InvestmentTransaction], error)
+}
+
+// CurrencyPair names an exchange-rate pair: one unit of Base is worth Rate
+// units of Quote. Codes are upper-case ISO 4217.
+type CurrencyPair struct{ Base, Quote string }
+
+// FX quote paths, describing how an FXQuote was resolved.
+const (
+	// FXPathIdentity is a quote of a currency against itself.
+	FXPathIdentity = "identity"
+	// FXPathDirect is a stored base→quote observation.
+	FXPathDirect = "direct"
+	// FXPathInverse is the inverse of a stored quote→base observation.
+	FXPathInverse = "inverse"
+	// FXPathPivotUSD is the product of two legs through USD.
+	FXPathPivotUSD = "pivot:USD"
+)
+
+// FXQuote is an exchange rate resolved for a point in time.
+type FXQuote struct {
+	Base, Quote string
+	Rate        fx.Rate
+	// RecordedAt is when the rate was observed; for a pivot, the older of the two legs.
+	RecordedAt time.Time
+	// Stale is true when at - RecordedAt exceeds the configured maximum staleness.
+	Stale bool
+	// Path is one of the FXPath* constants.
+	Path string
+}
+
+// FXRateInput is one rate to record.
+type FXRateInput struct {
+	Base, Quote string
+	Rate        fx.Rate
+	RecordedAt  time.Time
+	// Source names the provider; empty means "yahoo".
+	Source string
+}
+
+// FXServicer defines the contract for exchange-rate lookups and recording.
+type FXServicer interface {
+	// Rate resolves from→to as of at (identity, direct, inverse, then USD pivot).
+	// It returns ErrFXRateUnavailable when none exists.
+	Rate(from, to string, at time.Time) (*FXQuote, error)
+	// Rates resolves many pairs in a bounded number of queries. Pairs with no
+	// rate are absent from the map (no error).
+	Rates(pairs []CurrencyPair, at time.Time) (map[CurrencyPair]*FXQuote, error)
+	// RecordRates upserts rates on (base, quote, recorded_at) and returns the count written.
+	RecordRates(rates []FXRateInput) (int, error)
+	// ListRates returns the stored observations of the direct pair in [from, to], oldest first.
+	ListRates(base, quote string, from, to time.Time) ([]models.FXRate, error)
+	// NeededPairs lists the pairs the oracle should publish and the users' base currencies.
+	NeededPairs() (pairs []CurrencyPair, baseCurrencies []string, err error)
+	// IsSupportedCurrency reports whether code can be used as a base currency.
+	IsSupportedCurrency(code string, at time.Time) bool
 }
 
 // SecurityPriceInput represents a single price entry for bulk recording.

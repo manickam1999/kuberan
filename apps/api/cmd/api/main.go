@@ -83,7 +83,8 @@ func run() error {
 
 	// Initialize services
 	db := dbManager.DB()
-	userService := services.NewUserService(db)
+	fxService := services.NewFXService(db, appConfig.FXMaxStaleness)
+	userService := services.NewUserService(db, fxService)
 	categoryService := services.NewCategoryService(db)
 	accountService := services.NewAccountService(db, categoryService)
 	ruleService := services.NewRuleService(db, categoryService)
@@ -156,6 +157,7 @@ func run() error {
 	snapshotHandler := handlers.NewPortfolioSnapshotHandler(snapshotService, auditService)
 	fdPipelineHandler := handlers.NewFixedDepositPipelineHandler(fdService, auditService)
 	telegramHandler := handlers.NewTelegramHandler(telegramService, auditService)
+	fxHandler := handlers.NewFXHandler(fxService, auditService)
 
 	// Register custom validators before routes
 	validator.Register()
@@ -213,6 +215,7 @@ func run() error {
 		Snapshot:             snapshotHandler,
 		FixedDepositPipeline: fdPipelineHandler,
 		Telegram:             telegramHandler,
+		FX:                   fxHandler,
 		Limits:               handlers.NewRouteLimits(appConfig.RateLimits),
 	}, handlers.RouteSecrets{
 		BotInternalSecret: appConfig.BotInternalSecret,

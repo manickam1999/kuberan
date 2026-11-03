@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -129,7 +130,7 @@ func setupOAuthApp(t *testing.T) *oauthApp {
 	t.Cleanup(fake.close)
 
 	adminClient := hydra.NewAdminClient(fake.server.URL)
-	userService := services.NewUserService(db)
+	userService := services.NewUserService(db, services.NewFXService(db, 168*time.Hour))
 	grants := services.NewOAuthGrantService(db)
 	auditService := services.NewAuditService(db)
 

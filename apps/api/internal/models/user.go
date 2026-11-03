@@ -11,6 +11,7 @@ type User struct {
 	LastName            string        `json:"last_name"`
 	IsActive            bool          `gorm:"default:true" json:"is_active"`
 	HideBalances        bool          `gorm:"default:false" json:"hide_balances"`
+	BaseCurrency        string        `gorm:"size:3;not null;default:'MYR'" json:"base_currency"`
 	DefaultAccountID    *string       `gorm:"type:uuid" json:"default_account_id"`
 	FailedLoginAttempts int           `gorm:"default:0" json:"-"`
 	LockedUntil         *time.Time    `json:"-"`
