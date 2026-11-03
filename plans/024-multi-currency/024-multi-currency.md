@@ -1,7 +1,8 @@
 # Plan 024 — Multi-Currency (native amounts, convert on read)
 
-**Status: proposed.** Nothing implemented yet. Open decisions are marked **Q1–Q8**, each with a
-recommended default, and collected at the end.
+**Status: proposed.** Nothing implemented yet. Decisions **Q1–Q8** were all settled on the
+recommended option (see the table at the end). The production data inventory that shapes the
+migration is in **D10.0**.
 
 ## Context
 
@@ -223,6 +224,46 @@ Items whose rate is missing are **left out of the base total and listed** in
 ### D10. Data migration (existing single-user MYR data)
 Order matters. Run it in a maintenance window with the oracle stopped.
 
+#### D10.0 Production inventory (queried 2026-11-03)
+- **Accounts:** all 19 are labelled `MYR`, and all except possibly **IBKR Cash** really are MYR.
+  The `'USD'` column default never caught anything, so the mislabelled-account risk below is
+  limited to IBKR Cash. IBKR Cash has 11 transactions since 2026-03-27 and a balance of RM 37.47.
+  Investment accounts carry no balance and no cash transactions (funding goes through the cash
+  accounts).
+- **Securities: all 25 are labelled `MYR`, including foreign listings.** That label is what the
+  oracle's converted prices made true. Correct currencies (Yahoo's reported currency):
+
+  | Currency | Securities | Open positions | Trades |
+  |---|---|---|---|
+  | MYR (Bursa) | CARLSBG, CIMB, GAMUDA, MAYBANK, MBMR, RHBBANK, SENDAI, SIME, SUNREIT, UTDPLT, VERSA (0807EA.KL), YTLPOWR | 7 | 26 |
+  | USD (NYSE/NASDAQ) | CCJ, CHA, IBKR, NVDA, NVO, SOUN, SPCX | 5 | 18 |
+  | USD (LSE, USD lines) | VUAA.L, VWRA.L | 2 | 10 |
+  | CAD (TSX) | RBOT.TO | 0 (closed) | 5 |
+  | MYR (crypto, bought on Luno in MYR) | BTC, ETH, SUI | 2 | 22 |
+
+  So **33 trades across 10 securities** (all in the Interactive Brokers account) need
+  converting, the earliest on **2025-01-28**. Crypto stays MYR: it was bought with MYR on Luno and
+  Luno quotes MYR, so MYR is its native currency.
+- **Investment transactions:** 81 in total (45 buy, 25 sell, 7 dividend, 4 split), earliest 2023-08-21.
+- **IBKR holding:** 1.9949 shares with `cost_basis = 0` (probably promo or transferred shares).
+  The replay has to keep zero-cost lots working.
+- **Snapshots:** 11,586 rows since 2026-02-13, all MYR. Keep as recorded (Q6).
+- **Receivables:** none.
+
+Consequences for the steps below:
+- **New step 2a, relabel securities:** a one-off migration sets `securities.currency` to the
+  table above, **before** the price currency guard (D4) and the currency lock are switched on.
+  Otherwise every native price for those 10 securities would be rejected as a mismatch.
+- **FX backfill** needs USD→MYR and CAD→MYR from **2025-01-01**.
+- **Step 4:** with 33 trades, all from one broker, use **path (a)** (IBKR statement export) for
+  all of them. Keep path (b) as a fallback for any trade missing from the export.
+- **Step 5** covers only IBKR Cash (see open item below).
+
+**Open item:** does IBKR Cash really hold USD (or several currencies)? If so, split it into
+`IBKR Cash (USD)` (and `IBKR Cash (MYR)` if MYR is also held), and re-enter its 11 transactions
+with their real amounts. MYR deposits from Maybank become FX transfers (D6) or MYR deposits
+followed by an FX conversion inside IBKR.
+
 1. **Schema migrations** (D1, D2, D4–D7 columns), all nullable or defaulted, reversible.
 2. **FX history backfill:** `oracle backfill --fx --since <first transaction date>` for each needed
    pair (USD→MYR, plus any others in use).
@@ -307,9 +348,11 @@ Rough size: phases 1–2 ≈ small/medium, phase 3 is the largest (replay + migr
 - **Editing old investment transactions.** With replay in place this becomes safe. Without it, keep
   them append-only as today.
 
-## Open decisions
+## Decisions
 
-| # | Question | Recommendation |
+All accepted as recommended (2026-11-03).
+
+| # | Question | Decision |
 |---|---|---|
 | Q1 | FX rate type in Go: scaled `int64` (1e10) vs `shopspring/decimal` | Scaled `int64` with `math/big` for the multiply. No new dependency, deterministic. |
 | Q2 | Holding amounts in **security** currency vs **account** currency | Security currency (matches per-position broker statements, keeps P&L FX-free). |
