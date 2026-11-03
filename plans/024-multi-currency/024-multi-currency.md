@@ -289,8 +289,10 @@ section name and header, never by column position. Only `Data` rows are used.
 - **Splits:** Kuberan has 4 `split` rows since 2026-03-27 that don't appear in the statement
   (there's no corporate-actions section), so they look like manual quantity fixes. The import
   replaces each holding's transactions wholesale, so they go away.
-- **Known mismatches today** (Kuberan vs IBKR at 2026-11-02): VWRA 48.2 vs 37, IBKR 1.9949 vs
-  1.6706, NVO 30 vs 30.2548, NVDA 10.2 vs 10.2137. CCJ, VUAA, SPCX and CHA match.
+- **Known mismatches today** (Kuberan vs IBKR at 2026-11-02): IBKR 1.9949 vs 1.6706, NVO 30 vs
+  30.2548, NVDA 10.2 vs 10.2137. CCJ, VUAA, SPCX and CHA match. VWRA (48.2 vs 37) is a buy of
+  11.2 made after the statement period, so reconciliation must only count trades up to the
+  statement's end date.
 - **Average cost vs FIFO:** for holdings that were partly sold (NVO), Kuberan's remaining cost
   basis and realized P&L will differ from IBKR's FIFO figures. Quantities and cash still match
   exactly. FIFO lots remain a non-goal of this plan.
