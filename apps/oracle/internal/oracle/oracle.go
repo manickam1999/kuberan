@@ -2,9 +2,12 @@
 package oracle
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"log/slog"
+	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -20,6 +23,8 @@ type SecurityClient interface {
 	RecordPrices(ctx context.Context, prices []client.RecordPriceEntry) (int, error)
 	ComputeSnapshots(ctx context.Context) (int, error)
 	ProcessFixedDeposits(ctx context.Context) (client.ProcessFixedDepositsResult, error)
+	GetFXPairs(ctx context.Context) (client.FXPairs, error)
+	RecordFXRates(ctx context.Context, rates []client.FXRateEntry) (int, error)
 }
 
 // CurrencyConverter converts prices from one currency to the target currency.
@@ -30,6 +35,9 @@ type CurrencyConverter interface {
 	Convert(ctx context.Context, priceCents int64, fromCurrency string) (int64, error)
 	// TargetCurrency returns the target currency code (e.g. "MYR").
 	TargetCurrency() string
+	// FetchRate returns the rate of one unit of base in quote. Rates are cached
+	// by the converter, so a pair fetched here is not requested again by Convert.
+	FetchRate(ctx context.Context, base, quote string) (float64, error)
 }
 
 // RunResult contains the outcome of an oracle run.
@@ -39,6 +47,7 @@ type RunResult struct {
 	SnapshotsRecorded int
 	FDPayoutsPosted   int
 	FDsMatured        int
+	FXRatesRecorded   int
 	Errors            []provider.FetchError
 	Duration          time.Duration
 }
@@ -71,6 +80,120 @@ func normalizeAssetType(assetType string) string {
 		return "crypto"
 	}
 	return t
+}
+
+// fxSymbol builds the label used in FetchError for a currency pair.
+func fxSymbol(base, quote string) string {
+	return fmt.Sprintf("fx:%s/%s", base, quote)
+}
+
+// unionFXPairs returns the deduplicated, sorted union of the pipeline's configured
+// pairs and, for every distinct provider-reported currency c: (c, b) for each base
+// currency b, and (c, target). Currencies are upper-cased, and identity pairs
+// (base == quote) and empty codes are dropped.
+func unionFXPairs(configured []client.CurrencyPair, baseCurrencies []string, reported []string, target string) []client.CurrencyPair {
+	target = strings.ToUpper(target)
+	set := make(map[client.CurrencyPair]struct{})
+	add := func(base, quote string) {
+		b, q := strings.ToUpper(base), strings.ToUpper(quote)
+		if b == "" || q == "" || b == q {
+			return
+		}
+		set[client.CurrencyPair{Base: b, Quote: q}] = struct{}{}
+	}
+
+	for _, p := range configured {
+		add(p.Base, p.Quote)
+	}
+
+	currencies := make(map[string]struct{})
+	for _, c := range reported {
+		if c = strings.ToUpper(c); c != "" {
+			currencies[c] = struct{}{}
+		}
+	}
+	for c := range currencies {
+		for _, b := range baseCurrencies {
+			add(c, b)
+		}
+		add(c, target)
+	}
+
+	pairs := make([]client.CurrencyPair, 0, len(set))
+	for p := range set {
+		pairs = append(pairs, p)
+	}
+	slices.SortFunc(pairs, func(a, b client.CurrencyPair) int {
+		return cmp.Or(strings.Compare(a.Base, b.Base), strings.Compare(a.Quote, b.Quote))
+	})
+	return pairs
+}
+
+// publishFXRates fetches the rates for the union of needed pairs through the
+// converter (which caches them, so step 5b does not refetch) and posts them to the
+// pipeline. Every failure is logged and recorded in result.Errors; none of them
+// are returned, so the run continues.
+func (o *Oracle) publishFXRates(ctx context.Context, start time.Time, results []provider.PriceResult, result *RunResult) {
+	if o.converter == nil {
+		o.logger.Warn("no currency converter configured, skipping fx rate publishing")
+		return
+	}
+
+	fxPairs, err := o.client.GetFXPairs(ctx)
+	if err != nil {
+		o.logger.Warn("failed to fetch fx pairs, skipping fx rate publishing", "error", err)
+		result.Errors = append(result.Errors, provider.FetchError{
+			Symbol: "fx-pairs",
+			Err:    fmt.Errorf("fetching fx pairs: %w", err),
+		})
+		return
+	}
+
+	reported := make([]string, 0, len(results))
+	for _, r := range results {
+		reported = append(reported, r.Currency)
+	}
+	pairs := unionFXPairs(fxPairs.Pairs, fxPairs.BaseCurrencies, reported, o.converter.TargetCurrency())
+
+	// One timestamp per run, truncated to the minute, so runs are comparable.
+	recordedAt := start.UTC().Truncate(time.Minute).Format(time.RFC3339)
+
+	entries := make([]client.FXRateEntry, 0, len(pairs))
+	for _, p := range pairs {
+		rate, err := o.converter.FetchRate(ctx, p.Base, p.Quote)
+		if err != nil {
+			o.logger.Warn("fx rate fetch failed, skipping pair", "base", p.Base, "quote", p.Quote, "error", err)
+			result.Errors = append(result.Errors, provider.FetchError{
+				Symbol: fxSymbol(p.Base, p.Quote),
+				Err:    fmt.Errorf("fetching fx rate %s/%s: %w", p.Base, p.Quote, err),
+			})
+			continue
+		}
+		entries = append(entries, client.FXRateEntry{
+			Base:       p.Base,
+			Quote:      p.Quote,
+			Rate:       strconv.FormatFloat(rate, 'f', 10, 64),
+			RecordedAt: recordedAt,
+			Source:     "yahoo",
+		})
+	}
+
+	if len(entries) == 0 {
+		o.logger.Info("no fx rates to publish", "pairs", len(pairs))
+		return
+	}
+
+	recorded, err := o.client.RecordFXRates(ctx, entries)
+	result.FXRatesRecorded = recorded
+	if err != nil {
+		o.logger.Warn("failed to record fx rates", "recorded", recorded, "attempted", len(entries), "error", err)
+		result.Errors = append(result.Errors, provider.FetchError{
+			Symbol: "fx-rates",
+			Err:    fmt.Errorf("recording fx rates: %w", err),
+		})
+		return
+	}
+	o.logger.Info("fx rates published", "pairs", len(pairs), "recorded", recorded)
 }
 
 // Run executes a single oracle cycle: fetch securities, get prices, record results.
@@ -142,6 +265,13 @@ func (o *Oracle) Run(ctx context.Context) (*RunResult, error) {
 	wg.Wait()
 
 	result.Errors = allErrors
+
+	// 3. Publish FX rates for the pairs the pipeline needs and for every currency
+	// reported by the providers in this run. Failures are recorded in result.Errors
+	// but never stop the run, so prices are still recorded.
+	if o.config.PublishFX {
+		o.publishFXRates(ctx, start, allResults, result)
+	}
 
 	// 5. If no prices fetched, return early.
 	if len(allResults) == 0 {

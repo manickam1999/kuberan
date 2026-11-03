@@ -205,3 +205,107 @@ func (c *KuberanClient) ComputeSnapshots(ctx context.Context) (int, error) {
 	}
 	return result.SnapshotsRecorded, nil
 }
+
+// CurrencyPair is an ordered (base, quote) ISO 4217 currency pair.
+type CurrencyPair struct {
+	Base  string `json:"base"`
+	Quote string `json:"quote"`
+}
+
+// FXPairs is the response of the pipeline FX pairs endpoint: the pairs the
+// pipeline wants rates for, and the base currencies of active users.
+type FXPairs struct {
+	Pairs          []CurrencyPair `json:"pairs"`
+	BaseCurrencies []string       `json:"base_currencies"`
+}
+
+// FXRateEntry is a single exchange rate to submit to the pipeline API. Rate is
+// a decimal string so no precision is lost in transit.
+type FXRateEntry struct {
+	Base       string `json:"base"`
+	Quote      string `json:"quote"`
+	Rate       string `json:"rate"`
+	RecordedAt string `json:"recorded_at"` // RFC3339
+	Source     string `json:"source"`
+}
+
+// maxFXRatesPerRequest is the largest batch the pipeline FX rates endpoint accepts.
+const maxFXRatesPerRequest = 5000
+
+// GetFXPairs fetches the currency pairs and base currencies the pipeline needs rates for.
+func (c *KuberanClient) GetFXPairs(ctx context.Context) (FXPairs, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/api/v1/pipeline/fx-pairs", nil)
+	if err != nil {
+		return FXPairs{}, fmt.Errorf("creating request: %w", err)
+	}
+	req.Header.Set("X-API-Key", c.apiKey)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return FXPairs{}, fmt.Errorf("fetching fx pairs: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		return FXPairs{}, fmt.Errorf("fetching fx pairs: unexpected status %d", resp.StatusCode)
+	}
+
+	var result FXPairs
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return FXPairs{}, fmt.Errorf("decoding fx pairs response: %w", err)
+	}
+	return result, nil
+}
+
+// RecordFXRates submits FX rates to the pipeline API, in batches of at most
+// 5000 entries, and returns the total number recorded. On a failed batch it
+// returns the count recorded by earlier batches together with the error.
+func (c *KuberanClient) RecordFXRates(ctx context.Context, rates []FXRateEntry) (int, error) {
+	total := 0
+	for start := 0; start < len(rates); start += maxFXRatesPerRequest {
+		end := min(start+maxFXRatesPerRequest, len(rates))
+		n, err := c.recordFXRatesBatch(ctx, rates[start:end])
+		total += n
+		if err != nil {
+			return total, err
+		}
+	}
+	return total, nil
+}
+
+// recordFXRatesBatch posts a single batch of FX rates.
+func (c *KuberanClient) recordFXRatesBatch(ctx context.Context, rates []FXRateEntry) (int, error) {
+	body := struct {
+		Rates []FXRateEntry `json:"rates"`
+	}{Rates: rates}
+
+	jsonBody, err := json.Marshal(body)
+	if err != nil {
+		return 0, fmt.Errorf("marshaling fx rates: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/api/v1/pipeline/fx-rates", strings.NewReader(string(jsonBody)))
+	if err != nil {
+		return 0, fmt.Errorf("creating request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-API-Key", c.apiKey)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return 0, fmt.Errorf("recording fx rates: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		return 0, fmt.Errorf("recording fx rates: unexpected status %d", resp.StatusCode)
+	}
+
+	var result struct {
+		Recorded int `json:"recorded"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return 0, fmt.Errorf("decoding fx rates response: %w", err)
+	}
+	return result.Recorded, nil
+}

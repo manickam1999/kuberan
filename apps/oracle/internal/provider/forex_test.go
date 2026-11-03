@@ -262,3 +262,98 @@ func TestForexConverter_TargetCurrency(t *testing.T) {
 		t.Errorf("TargetCurrency() = %q, want %q", fc.TargetCurrency(), "MYR")
 	}
 }
+
+func TestForexConverter_FetchRate_Pairs(t *testing.T) {
+	requested := map[string]int{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ticker := strings.TrimPrefix(r.URL.Path, "/")
+		requested[ticker]++
+		w.Header().Set("Content-Type", "application/json")
+		rates := map[string]float64{"USDMYR=X": 4.47, "SGDUSD=X": 0.74, "EURUSD=X": 1.08}
+		rate, ok := rates[ticker]
+		if !ok {
+			_ = json.NewEncoder(w).Encode(v8ChartErrorResponse("Not Found", "No data found for "+ticker))
+			return
+		}
+		_ = json.NewEncoder(w).Encode(v8ChartResponse(ticker, rate))
+	}))
+	defer server.Close()
+
+	tests := []struct {
+		name        string
+		base, quote string
+		want        float64
+		wantTicker  string
+	}{
+		{"target pair", "USD", "MYR", 4.47, "USDMYR=X"},
+		{"non-target pair", "SGD", "USD", 0.74, "SGDUSD=X"},
+		{"lowercase input normalised", "eur", "usd", 1.08, "EURUSD=X"},
+		{"identical currencies need no request", "MYR", "myr", 1.0, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fc := &ForexConverter{
+				httpClient:     server.Client(),
+				baseURL:        server.URL,
+				targetCurrency: "MYR",
+				rates:          make(map[string]float64),
+			}
+			before := len(requested)
+			got, err := fc.FetchRate(context.Background(), tt.base, tt.quote)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if got != tt.want {
+				t.Errorf("FetchRate(%s, %s) = %v, want %v", tt.base, tt.quote, got, tt.want)
+			}
+			if tt.wantTicker == "" {
+				if len(requested) != before {
+					t.Errorf("identical pair triggered a request")
+				}
+				return
+			}
+			if requested[tt.wantTicker] == 0 {
+				t.Errorf("ticker %s was not requested; requests: %v", tt.wantTicker, requested)
+			}
+		})
+	}
+}
+
+func TestForexConverter_FetchRate_CacheSharedWithGetRateAndConvert(t *testing.T) {
+	requestCount := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestCount++
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(v8ChartResponse(strings.TrimPrefix(r.URL.Path, "/"), 4.47))
+	}))
+	defer server.Close()
+
+	fc := &ForexConverter{
+		httpClient:     server.Client(),
+		baseURL:        server.URL,
+		targetCurrency: "MYR",
+		rates:          make(map[string]float64),
+	}
+
+	// Publishing fetches the pair first; the later conversion must reuse it.
+	if _, err := fc.FetchRate(context.Background(), "USD", "MYR"); err != nil {
+		t.Fatalf("FetchRate: %v", err)
+	}
+	if _, err := fc.GetRate(context.Background(), "USD"); err != nil {
+		t.Fatalf("GetRate: %v", err)
+	}
+	if _, err := fc.Convert(context.Background(), 10000, "usd"); err != nil {
+		t.Fatalf("Convert: %v", err)
+	}
+	if requestCount != 1 {
+		t.Errorf("requestCount = %d, want 1 (FetchRate, GetRate and Convert share one cache entry)", requestCount)
+	}
+
+	// A different pair is a different cache entry.
+	if _, err := fc.FetchRate(context.Background(), "USD", "SGD"); err != nil {
+		t.Fatalf("FetchRate USD/SGD: %v", err)
+	}
+	if requestCount != 2 {
+		t.Errorf("requestCount = %d, want 2 after a new pair", requestCount)
+	}
+}

@@ -347,3 +347,186 @@ func TestLongRunningClient_UsedForSnapshotsAndFixedDeposits(t *testing.T) {
 		t.Errorf("short client calls = %d, want 1", short.calls)
 	}
 }
+
+func TestGetFXPairs_Success(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			t.Errorf("expected GET, got %s", r.Method)
+		}
+		if r.URL.Path != "/api/v1/pipeline/fx-pairs" {
+			t.Errorf("unexpected path: %s", r.URL.Path)
+		}
+		if r.Header.Get("X-API-Key") != "test-key" {
+			t.Errorf("missing or wrong API key header")
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"pairs":           []map[string]string{{"base": "USD", "quote": "MYR"}, {"base": "MYR", "quote": "USD"}},
+			"base_currencies": []string{"MYR"},
+		})
+	}))
+	defer server.Close()
+
+	c := NewKuberanClient(server.URL, "test-key", server.Client())
+	fx, err := c.GetFXPairs(context.Background())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(fx.Pairs) != 2 || fx.Pairs[0] != (CurrencyPair{Base: "USD", Quote: "MYR"}) {
+		t.Errorf("pairs mismatch: %+v", fx.Pairs)
+	}
+	if len(fx.BaseCurrencies) != 1 || fx.BaseCurrencies[0] != "MYR" {
+		t.Errorf("base currencies mismatch: %+v", fx.BaseCurrencies)
+	}
+}
+
+func TestGetFXPairs_ServerError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	c := NewKuberanClient(server.URL, "test-key", server.Client())
+	_, err := c.GetFXPairs(context.Background())
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if want := "unexpected status 500"; !contains(err.Error(), want) {
+		t.Errorf("error %q should contain %q", err.Error(), want)
+	}
+}
+
+func TestRecordFXRates_ValidatesRequestBody(t *testing.T) {
+	var capturedBody []byte
+	var capturedAPIKey, capturedContentType string
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Errorf("expected POST, got %s", r.Method)
+		}
+		if r.URL.Path != "/api/v1/pipeline/fx-rates" {
+			t.Errorf("unexpected path: %s", r.URL.Path)
+		}
+		capturedAPIKey = r.Header.Get("X-API-Key")
+		capturedContentType = r.Header.Get("Content-Type")
+		var err error
+		capturedBody, err = io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatalf("reading body: %v", err)
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]int{"recorded": 1})
+	}))
+	defer server.Close()
+
+	c := NewKuberanClient(server.URL, "my-secret-key", server.Client())
+	n, err := c.RecordFXRates(context.Background(), []FXRateEntry{
+		{Base: "USD", Quote: "MYR", Rate: "4.4712000000", RecordedAt: "2026-11-03T08:00:00Z", Source: "yahoo"},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if n != 1 {
+		t.Errorf("recorded = %d, want 1", n)
+	}
+	if capturedAPIKey != "my-secret-key" {
+		t.Errorf("API key = %q, want %q", capturedAPIKey, "my-secret-key")
+	}
+	if capturedContentType != "application/json" {
+		t.Errorf("Content-Type = %q, want application/json", capturedContentType)
+	}
+
+	// The rate must travel as a JSON string, not a number.
+	var parsed struct {
+		Rates []map[string]any `json:"rates"`
+	}
+	if err := json.Unmarshal(capturedBody, &parsed); err != nil {
+		t.Fatalf("parsing captured body: %v", err)
+	}
+	if len(parsed.Rates) != 1 {
+		t.Fatalf("expected 1 rate in body, got %d", len(parsed.Rates))
+	}
+	want := map[string]any{
+		"base":        "USD",
+		"quote":       "MYR",
+		"rate":        "4.4712000000",
+		"recorded_at": "2026-11-03T08:00:00Z",
+		"source":      "yahoo",
+	}
+	for k, v := range want {
+		if parsed.Rates[0][k] != v {
+			t.Errorf("rate field %q = %#v, want %#v", k, parsed.Rates[0][k], v)
+		}
+	}
+}
+
+func TestRecordFXRates_BatchesOf5000(t *testing.T) {
+	var batchSizes []int
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Rates []FXRateEntry `json:"rates"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("decoding body: %v", err)
+		}
+		batchSizes = append(batchSizes, len(body.Rates))
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]int{"recorded": len(body.Rates)})
+	}))
+	defer server.Close()
+
+	entries := make([]FXRateEntry, 5001)
+	for i := range entries {
+		entries[i] = FXRateEntry{Base: "USD", Quote: "MYR", Rate: "4.4712000000", RecordedAt: "2026-11-03T08:00:00Z", Source: "yahoo"}
+	}
+
+	c := NewKuberanClient(server.URL, "test-key", server.Client())
+	n, err := c.RecordFXRates(context.Background(), entries)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if n != 5001 {
+		t.Errorf("recorded = %d, want 5001", n)
+	}
+	if len(batchSizes) != 2 || batchSizes[0] != 5000 || batchSizes[1] != 1 {
+		t.Errorf("batch sizes = %v, want [5000 1]", batchSizes)
+	}
+}
+
+func TestRecordFXRates_LaterBatchFailureKeepsEarlierCount(t *testing.T) {
+	calls := 0
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		if calls == 2 {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		var body struct {
+			Rates []FXRateEntry `json:"rates"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]int{"recorded": len(body.Rates)})
+	}))
+	defer server.Close()
+
+	entries := make([]FXRateEntry, 10001)
+	c := NewKuberanClient(server.URL, "test-key", server.Client())
+	n, err := c.RecordFXRates(context.Background(), entries)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if want := "unexpected status 400"; !contains(err.Error(), want) {
+		t.Errorf("error %q should contain %q", err.Error(), want)
+	}
+	if n != 5000 {
+		t.Errorf("recorded = %d, want 5000 (first batch only)", n)
+	}
+	if calls != 2 {
+		t.Errorf("requests = %d, want 2 (third batch must not be sent)", calls)
+	}
+}

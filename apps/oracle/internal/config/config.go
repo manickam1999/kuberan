@@ -18,6 +18,7 @@ type Config struct {
 	PipelineTimeout      time.Duration // timeout for long-running pipeline calls (snapshots, fixed deposits)
 	ComputeSnapshots     bool
 	ProcessFixedDeposits bool
+	PublishFX            bool   // publish FX rates to the pipeline before recording prices (default: true)
 	TargetCurrency       string // Target currency for all prices (default: "MYR")
 }
 
@@ -64,6 +65,12 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("invalid PROCESS_FIXED_DEPOSITS value: %w", err)
 	}
 	cfg.ProcessFixedDeposits = processFixedDeposits
+
+	publishFX, err := parseBool(os.Getenv("PUBLISH_FX_RATES"), true)
+	if err != nil {
+		return nil, fmt.Errorf("invalid PUBLISH_FX_RATES value: %w", err)
+	}
+	cfg.PublishFX = publishFX
 
 	cfg.TargetCurrency = strings.ToUpper(os.Getenv("TARGET_CURRENCY"))
 	if cfg.TargetCurrency == "" {
