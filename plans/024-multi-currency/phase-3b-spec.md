@@ -10,9 +10,7 @@ default**, and is applied atomically when asked. It's general for any IBKR accou
 owner's real data (below).
 
 ## Inputs and privacy
-- Real statements (development only, **never commit, never copy into the repo**):
-  `/root/.claude/uploads/4a138c8d-c36b-50fc-a153-208054244a5e/4ddf6e41-U10253327_2025_2025.csv` (2025) and
-  `/root/.claude/uploads/4a138c8d-c36b-50fc-a153-208054244a5e/19c39f51-U10253327_20260101_20261102.csv` (2026-01-01 to 2026-11-02).
+- Real statements: the owner's 2025 and 2026 Activity Statements, uploaded to the development session (development only, **never commit, never copy into the repo**; their paths are given to agents in the task brief, not recorded here).
 - Test fixtures under `internal/importers/ibkr/testdata/` must be **anonymised** copies: replace the name, account
   number and addresses. Keep every number. Use a fake account like `U00000000` and the name `Test User`. Grep the fixtures
   for the real name and account id before finishing.
