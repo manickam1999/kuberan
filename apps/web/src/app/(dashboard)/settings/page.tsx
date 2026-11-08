@@ -4,6 +4,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { TelegramSettings } from "@/components/settings/telegram-settings";
 import { AppearanceSettings } from "@/components/settings/appearance-settings";
 import { DefaultAccountSettings } from "@/components/settings/default-account-settings";
+import { ReportingCurrencySettings } from "@/components/settings/reporting-currency-settings";
 import { ConnectedAppsSettings } from "@/components/settings/connected-apps-settings";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -87,6 +88,8 @@ function ProfileTab() {
       </Card>
 
       <DefaultAccountSettings />
+
+      <ReportingCurrencySettings />
     </div>
   );
 }

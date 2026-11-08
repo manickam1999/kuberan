@@ -88,13 +88,57 @@ function clearTokens(): void {
 export class ApiClientError extends Error {
   code: string;
   status: number;
+  /** Machine-readable context from `error.details`, when the API sent any. */
+  details?: Record<string, unknown>;
 
-  constructor(code: string, message: string, status: number) {
+  constructor(
+    code: string,
+    message: string,
+    status: number,
+    details?: Record<string, unknown>
+  ) {
     super(message);
     this.name = "ApiClientError";
     this.code = code;
     this.status = status;
+    this.details = details;
   }
+}
+
+/** Parsed `details` of a 400 `FX_AMOUNT_REQUIRED` error. */
+export interface FxAmountRequired {
+  /** Request field the caller must fill (e.g. "to_amount", "funding_amount"). */
+  field: string;
+  /** ISO 4217 currency the amount must be stated in. */
+  currency: string;
+  /** Market-rate suggestion in cents of `currency`, when a rate exists. */
+  suggestedAmount?: number;
+  /** Decimal-string rate behind the suggestion. */
+  rate?: string;
+  /** RFC 3339 time the rate was recorded. */
+  rateRecordedAt?: string;
+}
+
+/**
+ * Extract the details of an `FX_AMOUNT_REQUIRED` error so a dialog can reveal
+ * the second-amount field (pre-filled with `suggestedAmount`).
+ * @returns null when `err` is not an FX_AMOUNT_REQUIRED ApiClientError
+ */
+export function getFxAmountRequired(err: unknown): FxAmountRequired | null {
+  if (!(err instanceof ApiClientError) || err.code !== "FX_AMOUNT_REQUIRED") {
+    return null;
+  }
+  const d = err.details ?? {};
+  const str = (v: unknown): string | undefined =>
+    typeof v === "string" && v !== "" ? v : undefined;
+  return {
+    field: str(d.field) ?? "",
+    currency: str(d.currency) ?? "",
+    suggestedAmount:
+      typeof d.suggested_amount === "number" ? d.suggested_amount : undefined,
+    rate: str(d.rate),
+    rateRecordedAt: str(d.rate_recorded_at),
+  };
 }
 
 // Build query string from params object, omitting undefined/null values
@@ -370,14 +414,16 @@ async function request<T>(
   if (!res.ok) {
     let code = "UNKNOWN_ERROR";
     let message = `Request failed with status ${res.status}`;
+    let details: Record<string, unknown> | undefined;
     try {
       const errorBody: ApiError = await res.json();
       code = errorBody.error.code;
       message = errorBody.error.message;
+      details = errorBody.error.details;
     } catch {
       // Response body is not valid JSON; keep defaults
     }
-    throw new ApiClientError(code, message, res.status);
+    throw new ApiClientError(code, message, res.status, details);
   }
 
   // Handle 204 No Content

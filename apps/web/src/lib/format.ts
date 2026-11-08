@@ -2,9 +2,32 @@
 export const MASKED_AMOUNT = "****";
 
 /**
- * Format cents as a currency string.
+ * Format cents in an explicit currency, using `Intl` (en-US): `US$1,234.00`,
+ * `MYR 1,234.00`, `£1,234.00`. The currency is required so a call site can
+ * never silently fall back to the wrong one.
+ * @param cents - Amount in minor units (e.g., 1050 = 10.50)
+ * @param currency - ISO 4217 currency code
+ * @param masked - If true, returns {@link MASKED_AMOUNT} instead of the formatted value
+ */
+export function formatMoney(
+  cents: number,
+  currency: string,
+  masked = false
+): string {
+  if (masked) return MASKED_AMOUNT;
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency,
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(cents / 100);
+}
+
+/**
+ * Format cents as a currency string, defaulting to MYR.
+ * @deprecated Use {@link formatMoney} (currency required) or `<Money>`.
  * @param cents - Amount in cents (e.g., 1050 = $10.50)
- * @param currency - ISO 4217 currency code (default: "USD")
+ * @param currency - ISO 4217 currency code (default: "MYR")
  * @param masked - If true, returns {@link MASKED_AMOUNT} instead of the formatted value
  */
 export function formatCurrency(
