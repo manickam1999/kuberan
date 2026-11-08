@@ -28,6 +28,8 @@ type CreateBudgetRequest struct {
 	Name       string              `json:"name" binding:"required,min=1,max=100"`
 	Amount     int64               `json:"amount" binding:"required,gt=0"`
 	Period     models.BudgetPeriod `json:"period" binding:"required,budget_period"`
+	// Currency is optional (ISO 4217); it defaults to the user's base currency.
+	Currency string `json:"currency" binding:"omitempty,iso4217"`
 }
 
 // UpdateBudgetRequest represents the request payload for updating a budget.
@@ -36,6 +38,8 @@ type UpdateBudgetRequest struct {
 	Amount   *int64               `json:"amount" binding:"omitempty,gt=0"`
 	Period   *models.BudgetPeriod `json:"period" binding:"omitempty,budget_period"`
 	IsActive *bool                `json:"is_active,omitempty"`
+	// Currency optionally changes the budget's currency (ISO 4217).
+	Currency string `json:"currency" binding:"omitempty,iso4217"`
 }
 
 // CreateBudget handles the creation of a new budget.
@@ -68,6 +72,7 @@ func (h *BudgetHandler) CreateBudget(c *gin.Context) {
 
 	budget, err := h.budgetService.CreateBudget(
 		userID, req.CategoryID, req.Name, req.Amount, req.Period,
+		services.WithBudgetCurrency(req.Currency),
 	)
 	if err != nil {
 		respondWithError(c, err)
@@ -214,7 +219,8 @@ func (h *BudgetHandler) UpdateBudget(c *gin.Context) {
 		return
 	}
 
-	budget, err := h.budgetService.UpdateBudget(userID, budgetID, req.Name, req.Amount, req.Period, req.IsActive)
+	budget, err := h.budgetService.UpdateBudget(userID, budgetID, req.Name, req.Amount, req.Period, req.IsActive,
+		services.WithBudgetCurrency(req.Currency))
 	if err != nil {
 		respondWithError(c, err)
 		return

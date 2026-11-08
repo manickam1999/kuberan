@@ -52,6 +52,7 @@ func TestDailySummary_GroupedBucketsAndInitialBalance(t *testing.T) {
 	defer testutil.TeardownTestDB(t, db)
 	svc := NewTransactionService(db, NewAccountService(db), nil)
 	user := testutil.CreateTestUser(t, db)
+	setBaseUSD(t, db, user.ID)
 	acct := testutil.CreateTestCashAccount(t, db, user.ID)
 
 	day1 := time.Date(2026, 3, 1, 9, 0, 0, 0, time.UTC)
@@ -74,9 +75,9 @@ func TestDailySummary_GroupedBucketsAndInitialBalance(t *testing.T) {
 	items, err := svc.GetDailySummary(user.ID, day1, day3)
 	testutil.AssertNoError(t, err)
 	want := []DailySummaryItem{
-		{Date: "2026-03-01", Income: 1000, Expenses: 300},
-		{Date: "2026-03-02", Income: 0, Expenses: 0},
-		{Date: "2026-03-03", Income: 0, Expenses: 600},
+		{Date: "2026-03-01", Income: 1000, Expenses: 300, Currency: "USD"},
+		{Date: "2026-03-02", Income: 0, Expenses: 0, Currency: "USD"},
+		{Date: "2026-03-03", Income: 0, Expenses: 600, Currency: "USD"},
 	}
 	if len(items) != len(want) {
 		t.Fatalf("got %d items, want %d: %v", len(items), len(want), items)
@@ -199,8 +200,9 @@ func TestComputeAndRecordSnapshots_SetBasedUpsert(t *testing.T) {
 
 	u1 := testutil.CreateTestUser(t, db)
 	u2 := testutil.CreateTestUserWithEmail(t, db, "second@example.com")
-	testutil.CreateTestCashAccountWithBalance(t, db, u1.ID, 10000)
-	testutil.CreateTestCreditCardAccount(t, db, u1.ID, 2500)
+	// The users' base is MYR (the default): keep the balances in MYR too.
+	p4Account(t, db, testutil.CreateTestCashAccountWithBalance(t, db, u1.ID, 10000), "MYR")
+	p4Account(t, db, testutil.CreateTestCreditCardAccount(t, db, u1.ID, 2500), "MYR")
 	inv := testutil.CreateTestInvestmentAccount(t, db, u1.ID)
 	sec := testutil.CreateTestSecurity(t, db)
 	holding := testutil.CreateTestInvestment(t, db, inv.ID, sec.ID) // qty 10
@@ -208,7 +210,7 @@ func TestComputeAndRecordSnapshots_SetBasedUpsert(t *testing.T) {
 		t.Fatal(err)
 	}
 	testutil.CreateTestSecurityPrice(t, db, sec.ID, 100, time.Now().Add(-time.Hour))
-	testutil.CreateTestCashAccountWithBalance(t, db, u2.ID, 700)
+	p4Account(t, db, testutil.CreateTestCashAccountWithBalance(t, db, u2.ID, 700), "MYR")
 
 	at := time.Date(2026, 2, 1, 12, 0, 0, 0, time.UTC)
 	n, err := svc.ComputeAndRecordSnapshots(at)

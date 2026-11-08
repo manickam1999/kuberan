@@ -30,13 +30,28 @@ type receivableService struct {
 	db             *gorm.DB
 	accountService AccountServicer
 	ruleService    RuleServicer
+	fxService      FXServicer
+}
+
+// ReceivableServiceOption configures optional dependencies of the receivable service.
+type ReceivableServiceOption func(*receivableService)
+
+// WithReceivableFXService sets the FX service used to convert the summary into
+// the user's base currency and to suggest an account_amount. A nil service is
+// allowed (tests only): then only same-currency amounts convert.
+func WithReceivableFXService(fxs FXServicer) ReceivableServiceOption {
+	return func(s *receivableService) { s.fxService = fxs }
 }
 
 // NewReceivableService creates a new ReceivableServicer. The ruleService is
 // used to auto-categorize new shared expenses (like CreateTransaction does) and
 // may be nil to disable that.
-func NewReceivableService(db *gorm.DB, accountService AccountServicer, ruleService RuleServicer) ReceivableServicer {
-	return &receivableService{db: db, accountService: accountService, ruleService: ruleService}
+func NewReceivableService(db *gorm.DB, accountService AccountServicer, ruleService RuleServicer, opts ...ReceivableServiceOption) ReceivableServicer {
+	s := &receivableService{db: db, accountService: accountService, ruleService: ruleService}
+	for _, opt := range opts {
+		opt(s)
+	}
+	return s
 }
 
 // share is one validated counterparty share of an expense.
@@ -386,6 +401,7 @@ func (s *receivableService) Settle(userID, receivableID string, in SettleInput) 
 
 	var rec *models.Receivable
 	var settlement *models.ReceivableSettlement
+	var recCurrency string
 	err = s.db.Transaction(func(tx *gorm.DB) error {
 		cur, txErr := lockReceivable(tx, userID, first.TransactionID, receivableID)
 		if txErr != nil {
@@ -412,6 +428,17 @@ func (s *receivableService) Settle(userID, receivableID string, in SettleInput) 
 		if date.IsZero() {
 			date = time.Now()
 		}
+
+		// The receivable is in the currency of its expense's account; the
+		// settlement account may use another one (plan 024, phase 4).
+		recCurrency, txErr = expenseAccountCurrency(tx, userID, expense.AccountID)
+		if txErr != nil {
+			return txErr
+		}
+		credit, stored, txErr := s.resolveAccountAmount(recCurrency, account.Currency, in, date)
+		if txErr != nil {
+			return txErr
+		}
 		description := strings.TrimSpace(in.Description)
 		if description == "" {
 			description = "Repayment from " + cur.CounterpartyName
@@ -425,14 +452,14 @@ func (s *receivableService) Settle(userID, receivableID string, in SettleInput) 
 			UserID:      userID,
 			AccountID:   account.ID,
 			Type:        models.TransactionTypeReimbursement,
-			Amount:      in.Amount,
+			Amount:      credit,
 			Description: description,
 			Date:        date,
 		}
 		if txErr := tx.Create(reimbursement).Error; txErr != nil {
 			return apperrors.Wrap(apperrors.ErrInternalServer, txErr)
 		}
-		if txErr := s.accountService.ApplyBalanceDelta(tx, account.ID, account.Type, models.TransactionTypeReimbursement, in.Amount); txErr != nil {
+		if txErr := s.accountService.ApplyBalanceDelta(tx, account.ID, account.Type, models.TransactionTypeReimbursement, credit); txErr != nil {
 			return txErr
 		}
 
@@ -451,6 +478,7 @@ func (s *receivableService) Settle(userID, receivableID string, in SettleInput) 
 			TransactionID:    reimbursement.ID,
 			AccountID:        account.ID,
 			Amount:           in.Amount,
+			AccountAmount:    stored,
 			WrittenOffAmount: writtenOff,
 			Date:             date,
 		}
@@ -472,7 +500,47 @@ func (s *receivableService) Settle(userID, receivableID string, in SettleInput) 
 	if err := s.attachExpenses(userID, []*models.Receivable{rec}); err != nil {
 		return nil, nil, err
 	}
+	settlement.Currency = rec.Currency
 	return rec, settlement, nil
+}
+
+// expenseAccountCurrency returns the (upper-case) currency of the account that
+// holds a receivable's expense. The account may have been deactivated since, so
+// soft-deleted rows are included.
+func expenseAccountCurrency(tx *gorm.DB, userID, accountID string) (string, error) {
+	var codes []string
+	if err := tx.Unscoped().Model(&models.Account{}).
+		Where("id = ? AND user_id = ?", accountID, userID).Limit(1).
+		Pluck("currency", &codes).Error; err != nil {
+		return "", apperrors.Wrap(apperrors.ErrInternalServer, err)
+	}
+	if len(codes) == 0 {
+		return "", apperrors.Wrap(apperrors.ErrInternalServer, fmt.Errorf("account %s of the receivable's expense not found", accountID))
+	}
+	return normalizeCode(codes[0]), nil
+}
+
+// resolveAccountAmount validates in.AccountAmount against the receivable's and
+// the settlement account's currencies. It returns the amount to credit the
+// account with and the value to store in receivable_settlements.account_amount
+// (nil for a same-currency settlement).
+func (s *receivableService) resolveAccountAmount(recCurrency, accountCurrency string, in SettleInput, at time.Time) (credit int64, stored *int64, err error) {
+	if in.AccountAmount != nil && *in.AccountAmount <= 0 {
+		return 0, nil, apperrors.WithMessage(apperrors.ErrInvalidInput, "account_amount must be greater than zero")
+	}
+	accountCurrency = normalizeCode(accountCurrency)
+	if recCurrency == accountCurrency {
+		if in.AccountAmount != nil && *in.AccountAmount != in.Amount {
+			return 0, nil, apperrors.WithMessage(apperrors.ErrInvalidInput,
+				"account_amount must be omitted or equal amount when the account and the receivable share a currency")
+		}
+		return in.Amount, nil, nil
+	}
+	if in.AccountAmount == nil {
+		return 0, nil, fxAmountRequiredError(s.fxService, recCurrency, accountCurrency, in.Amount, at, "account_amount")
+	}
+	v := *in.AccountAmount
+	return v, &v, nil
 }
 
 // DeleteSettlement reverses a repayment under the D10 locks: it soft-deletes the
@@ -524,7 +592,7 @@ func (s *receivableService) DeleteSettlement(userID, settlementID string) (*mode
 		if txErr != nil {
 			return txErr
 		}
-		if txErr := s.accountService.ApplyBalanceDelta(tx, account.ID, account.Type, reversal, settlement.Amount); txErr != nil {
+		if txErr := s.accountService.ApplyBalanceDelta(tx, account.ID, account.Type, reversal, settlement.EffectiveAccountAmount()); txErr != nil {
 			return txErr
 		}
 		if txErr := tx.Delete(&reimbursement).Error; txErr != nil {
@@ -660,10 +728,39 @@ func (s *receivableService) attachExpenses(userID string, recs []*models.Receiva
 			CategoryID:     t.CategoryID,
 		}
 	}
+	currencies, err := s.expenseCurrencies(userID, ids)
+	if err != nil {
+		return err
+	}
 	for _, r := range recs {
 		r.Transaction = views[r.TransactionID]
+		r.Currency = currencies[r.TransactionID]
+		for i := range r.Settlements {
+			r.Settlements[i].Currency = r.Currency
+		}
 	}
 	return nil
+}
+
+// expenseCurrencies maps each expense id to the currency of its account with
+// one join query (soft-deleted accounts included).
+func (s *receivableService) expenseCurrencies(userID string, transactionIDs []string) (map[string]string, error) {
+	var rows []struct {
+		ID       string
+		Currency string
+	}
+	if err := s.db.Table("transactions").
+		Select("transactions.id AS id, accounts.currency AS currency").
+		Joins("JOIN accounts ON accounts.id = transactions.account_id").
+		Where("transactions.user_id = ? AND transactions.id IN ?", userID, uniqueStrings(transactionIDs)).
+		Scan(&rows).Error; err != nil {
+		return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)
+	}
+	out := make(map[string]string, len(rows))
+	for _, r := range rows {
+		out[r.ID] = normalizeCode(r.Currency)
+	}
+	return out, nil
 }
 
 // ListReceivables returns a page of the user's receivables ordered by expense
@@ -747,6 +844,11 @@ func (s *receivableService) GetReceivable(userID, receivableID string) (*models.
 // receivable and its expense non-deleted) per kind and per counterparty. The
 // counterparty name is the one on its most recently created receivable;
 // counterparties are sorted by outstanding amount, largest first.
+//
+// Totals are converted into the user's base currency as of now: native amounts
+// are summed per (bucket, receivable currency) first and each group is
+// converted once. A group without a rate is left out (never counted 1:1) and
+// flags FXMissing. ByCurrency carries the unconverted totals.
 func (s *receivableService) Summary(userID string) (*ReceivableSummary, error) {
 	type row struct {
 		ID               string
@@ -756,34 +858,71 @@ func (s *receivableService) Summary(userID string) (*ReceivableSummary, error) {
 		CreatedAt        time.Time
 		Outstanding      int64
 		ExpenseDate      time.Time
+		Currency         string
 	}
 	var rows []row
 	if err := s.db.Model(&models.Receivable{}).
 		Select("receivables.id, receivables.kind, receivables.counterparty_key, receivables.counterparty_name, "+
 			"receivables.created_at, receivables.amount - receivables.paid_amount - receivables.written_off_amount AS outstanding, "+
-			"transactions.date AS expense_date").
+			"transactions.date AS expense_date, accounts.currency AS currency").
 		Joins("JOIN transactions ON transactions.id = receivables.transaction_id AND transactions.deleted_at IS NULL").
+		Joins("JOIN accounts ON accounts.id = transactions.account_id").
 		Where("receivables.user_id = ? AND receivables.amount - receivables.paid_amount - receivables.written_off_amount > 0", userID).
 		Scan(&rows).Error; err != nil {
 		return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)
 	}
 
+	base, err := userBaseCurrency(s.db, userID)
+	if err != nil {
+		return nil, err
+	}
+	currencySet := map[string]struct{}{}
+	currencyList := []string{}
+	for i := range rows {
+		rows[i].Currency = normalizeCode(rows[i].Currency)
+		if _, ok := currencySet[rows[i].Currency]; !ok {
+			currencySet[rows[i].Currency] = struct{}{}
+			currencyList = append(currencyList, rows[i].Currency)
+		}
+	}
+	sort.Strings(currencyList)
+	v, err := newValuer(s.fxService, base, time.Now(), currencyList)
+	if err != nil {
+		return nil, err
+	}
+
+	// Native sums per (bucket, currency); converted once per group below.
+	kindNative := map[models.ReceivableKind]map[string]int64{}
+	cpNative := map[string]map[string]int64{}
+	byCurrency := map[string]int64{}
+
 	summary := &ReceivableSummary{
+		Currency:       base,
+		ByCurrency:     []ReceivableCurrencyTotal{},
 		ByKind:         []ReceivableKindTotal{},
 		ByCounterparty: []ReceivableCounterpartyTotal{},
 	}
 	kinds := make(map[models.ReceivableKind]*ReceivableKindTotal)
 	cps := make(map[string]*ReceivableCounterpartyTotal)
 	latest := make(map[string]row)
-	for _, r := range rows {
-		summary.TotalOutstanding += r.Outstanding
+	for i := range rows {
+		r := &rows[i]
+		byCurrency[r.Currency] += r.Outstanding
+
+		if kindNative[r.Kind] == nil {
+			kindNative[r.Kind] = map[string]int64{}
+		}
+		kindNative[r.Kind][r.Currency] += r.Outstanding
+		if cpNative[r.CounterpartyKey] == nil {
+			cpNative[r.CounterpartyKey] = map[string]int64{}
+		}
+		cpNative[r.CounterpartyKey][r.Currency] += r.Outstanding
 
 		k := kinds[r.Kind]
 		if k == nil {
 			k = &ReceivableKindTotal{Kind: r.Kind}
 			kinds[r.Kind] = k
 		}
-		k.Outstanding += r.Outstanding
 		k.OpenCount++
 
 		c := cps[r.CounterpartyKey]
@@ -791,18 +930,39 @@ func (s *receivableService) Summary(userID string) (*ReceivableSummary, error) {
 			c = &ReceivableCounterpartyTotal{CounterpartyKey: r.CounterpartyKey, OldestDate: r.ExpenseDate}
 			cps[r.CounterpartyKey] = c
 		}
-		c.Outstanding += r.Outstanding
 		c.OpenCount++
 		if r.ExpenseDate.Before(c.OldestDate) {
 			c.OldestDate = r.ExpenseDate
 		}
 		if prev, ok := latest[r.CounterpartyKey]; !ok || r.CreatedAt.After(prev.CreatedAt) ||
 			(r.CreatedAt.Equal(prev.CreatedAt) && r.ID > prev.ID) {
-			latest[r.CounterpartyKey] = r
+			latest[r.CounterpartyKey] = *r
 		}
 	}
 
-	for _, k := range kinds {
+	// convertGroups converts each native currency group once and reports
+	// whether any group had no rate.
+	convertGroups := func(native map[string]int64) (total int64, missing bool) {
+		for cur, amt := range native {
+			out, _, ok := v.Convert(amt, cur)
+			if !ok {
+				missing = true
+				continue
+			}
+			total += out
+		}
+		return total, missing
+	}
+
+	total, missing := convertGroups(byCurrency)
+	summary.TotalOutstanding = total
+	summary.FXMissing = missing
+	for _, cur := range currencyList {
+		summary.ByCurrency = append(summary.ByCurrency, ReceivableCurrencyTotal{Currency: cur, Outstanding: byCurrency[cur]})
+	}
+
+	for kind, k := range kinds {
+		k.Outstanding, _ = convertGroups(kindNative[kind])
 		summary.ByKind = append(summary.ByKind, *k)
 	}
 	sort.Slice(summary.ByKind, func(i, j int) bool {
@@ -814,6 +974,7 @@ func (s *receivableService) Summary(userID string) (*ReceivableSummary, error) {
 	})
 	for key, c := range cps {
 		c.CounterpartyName = latest[key].CounterpartyName
+		c.Outstanding, _ = convertGroups(cpNative[key])
 		summary.ByCounterparty = append(summary.ByCounterparty, *c)
 	}
 	sort.Slice(summary.ByCounterparty, func(i, j int) bool {

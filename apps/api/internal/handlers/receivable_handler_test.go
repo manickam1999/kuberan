@@ -571,6 +571,39 @@ func TestReceivableHandler_Get(t *testing.T) {
 func TestReceivableHandler_Settle(t *testing.T) {
 	path := "/receivables/" + rcvUUID + "/settle"
 
+	t.Run("passes account_amount through and audits it", func(t *testing.T) {
+		var got services.SettleInput
+		svc := &mockReceivableService{settleFn: func(_, id string, in services.SettleInput) (*models.Receivable, *models.ReceivableSettlement, error) {
+			got = in
+			return &models.Receivable{Base: models.Base{ID: id}, Currency: "USD"},
+				&models.ReceivableSettlement{Base: models.Base{ID: "set-8"}, Amount: in.Amount, AccountAmount: in.AccountAmount, Currency: "USD"}, nil
+		}}
+		r, audit := newReceivableTest(svc)
+		rec := doRequest(r, "POST", path, `{"account_id":"`+rcvAcct+`","amount":1000,"account_amount":4450}`)
+		if rec.Code != http.StatusCreated {
+			t.Fatalf("expected 201, got %d: %s", rec.Code, rec.Body.String())
+		}
+		if got.AccountAmount == nil || *got.AccountAmount != 4450 {
+			t.Errorf("account_amount = %v, want 4450", got.AccountAmount)
+		}
+		settlement := parseJSON(t, rec)["settlement"].(map[string]interface{})
+		if settlement["account_amount"].(float64) != 4450 || settlement["currency"] != "USD" {
+			t.Errorf("settlement = %v", settlement)
+		}
+		if e := audit.only(t); e.changes["account_amount"] == nil {
+			t.Errorf("audit changes = %v, want account_amount", e.changes)
+		}
+	})
+
+	t.Run("FX_AMOUNT_REQUIRED surfaces with its details", func(t *testing.T) {
+		svc := &mockReceivableService{settleFn: func(string, string, services.SettleInput) (*models.Receivable, *models.ReceivableSettlement, error) {
+			return nil, nil, apperrors.WithDetails(apperrors.ErrFXAmountRequired, map[string]any{"currency": "MYR", "field": "account_amount"})
+		}}
+		r, _ := newReceivableTest(svc)
+		rec := doRequest(r, "POST", path, `{"account_id":"`+rcvAcct+`","amount":1000}`)
+		assertErrorCode(t, parseJSON(t, rec), "FX_AMOUNT_REQUIRED")
+	})
+
 	t.Run("returns 201 with receivable and settlement, audits", func(t *testing.T) {
 		var got services.SettleInput
 		var gotID string

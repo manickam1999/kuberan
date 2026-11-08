@@ -67,6 +67,23 @@ func (s *Server) prepareRecordRepayment(c caller, args map[string]interface{}) (
 		return nil, res
 	}
 
+	// A repayment into an account in another currency than the receivable's
+	// needs an account_amount; not supported over MCP until Phase 6, so refuse
+	// it before anything is written.
+	receivable, err := s.services.Receivables.GetReceivable(c.UserID, receivableID)
+	if err != nil {
+		return nil, serviceError("find receivable", err)
+	}
+	account, err := s.services.Accounts.GetAccountByID(c.UserID, accountID)
+	if err != nil {
+		return nil, serviceError("find account", err)
+	}
+	if receivable.Currency != "" && !strings.EqualFold(receivable.Currency, account.Currency) {
+		return nil, mcp.NewToolResultError(fmt.Sprintf(
+			"cross-currency repayments aren't supported over MCP yet (receivable in %s, account in %s); record this repayment in the app",
+			strings.ToUpper(receivable.Currency), strings.ToUpper(account.Currency)))
+	}
+
 	return &writeOp{Cost: 1, Run: func() (string, []auditEntry, *mcp.CallToolResult) {
 		rec, settlement, err := s.services.Receivables.Settle(c.UserID, receivableID, services.SettleInput{
 			AccountID:   accountID,

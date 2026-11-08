@@ -34,7 +34,7 @@ const snapshotUpsertBatchSize = 500
 // ComputeAndRecordSnapshots computes and stores a net worth snapshot for all
 // active users and returns how many were recorded.
 //
-// The computation is set-based: one GROUP BY (user_id, type) query for account
+// The computation is set-based: one GROUP BY (user_id, type, currency) query for account
 // balances, one query for all holdings in active investment accounts and one
 // batched latest-price lookup, regardless of the number of users. Snapshots
 // are upserted on (user_id, recorded_at) in multi-row batches; when a batch
@@ -97,15 +97,16 @@ func (s *portfolioSnapshotService) upsertSnapshots(snapshots []models.PortfolioS
 func (s *portfolioSnapshotService) computeAllSnapshots(recordedAt time.Time) ([]models.PortfolioSnapshot, error) {
 	// Balance sums per (user, account type) over active, non-deleted accounts.
 	type balanceRow struct {
-		UserID string
-		Type   models.AccountType
-		Total  int64
+		UserID   string
+		Type     models.AccountType
+		Currency string
+		Total    int64
 	}
 	var balances []balanceRow
 	if err := s.db.Model(&models.Account{}).
-		Select("user_id, type, COALESCE(SUM(balance), 0) AS total").
+		Select("user_id, type, UPPER(TRIM(currency)) AS currency, COALESCE(SUM(balance), 0) AS total").
 		Where("is_active = ?", true).
-		Group("user_id, type").
+		Group("user_id, type, UPPER(TRIM(currency))").
 		Scan(&balances).Error; err != nil {
 		return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)
 	}
@@ -120,17 +121,7 @@ func (s *portfolioSnapshotService) computeAllSnapshots(recordedAt time.Time) ([]
 		return snap
 	}
 	for _, b := range balances {
-		snap := snapshotFor(b.UserID)
-		switch b.Type {
-		case models.AccountTypeCash:
-			snap.CashBalance += b.Total
-		case models.AccountTypeFixedDeposit:
-			// Fixed deposit balance: active fixed_deposit accounts (plan 020, B8).
-			snap.FixedDepositBalance += b.Total
-		case models.AccountTypeDebt, models.AccountTypeCreditCard:
-			// Liabilities: balances count as debt and are subtracted from net worth.
-			snap.DebtBalance += b.Total
-		}
+		snapshotFor(b.UserID)
 	}
 
 	// Investment value: quantity * latest price over holdings in active
@@ -169,7 +160,18 @@ func (s *portfolioSnapshotService) computeAllSnapshots(recordedAt time.Time) ([]
 	if err != nil {
 		return nil, err
 	}
-	priceCurrencies := distinctPriceCurrencies(prices)
+	currencySet := map[string]struct{}{}
+	for _, c := range distinctPriceCurrencies(prices) {
+		currencySet[c] = struct{}{}
+	}
+	for _, b := range balances {
+		currencySet[b.Currency] = struct{}{}
+	}
+	priceCurrencies := make([]string, 0, len(currencySet))
+	for c := range currencySet {
+		priceCurrencies = append(priceCurrencies, c)
+	}
+	sort.Strings(priceCurrencies)
 	valuers := map[string]*valuer{}
 	for _, id := range userIDs {
 		base := baseOf[id]
@@ -184,6 +186,30 @@ func (s *portfolioSnapshotService) computeAllSnapshots(recordedAt time.Time) ([]
 	}
 	for _, id := range userIDs {
 		byUser[id].Currency = baseOf[id]
+	}
+	// Account balances are converted per (type, currency) group, once per
+	// group, at recordedAt. A group without a rate is left out of the totals
+	// (never counted 1:1) and flags the snapshot.
+	for _, b := range balances {
+		snap := byUser[b.UserID]
+		value, _, ok := valuers[snap.Currency].Convert(b.Total, b.Currency)
+		if !ok {
+			snap.FXMissing = true
+			logger.Get().Warnw("snapshot balance group skipped: no FX rate",
+				"user_id", b.UserID, "base_currency", snap.Currency, "account_currency", b.Currency,
+				"account_type", string(b.Type))
+			continue
+		}
+		switch b.Type {
+		case models.AccountTypeCash:
+			snap.CashBalance += value
+		case models.AccountTypeFixedDeposit:
+			// Fixed deposit balance: active fixed_deposit accounts (plan 020, B8).
+			snap.FixedDepositBalance += value
+		case models.AccountTypeDebt, models.AccountTypeCreditCard:
+			// Liabilities: balances count as debt and are subtracted from net worth.
+			snap.DebtBalance += value
+		}
 	}
 	for _, h := range holdings {
 		snap := snapshotFor(h.UserID)

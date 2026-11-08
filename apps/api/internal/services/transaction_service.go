@@ -833,7 +833,11 @@ func (s *transactionService) GetMonthlySummary(userID string, months int) ([]Mon
 	startMonth := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC).AddDate(0, -(months - 1), 0)
 	rangeEnd := startMonth.AddDate(0, months, 0).Add(-time.Nanosecond)
 
-	totals, err := periodTotals(s.db, userID, startMonth, rangeEnd, periodMonth, true)
+	base, err := userBaseCurrency(s.db, userID)
+	if err != nil {
+		return nil, err
+	}
+	totals, err := periodTotals(s.db, s.fxService, userID, base, startMonth, rangeEnd, periodMonth, true)
 	if err != nil {
 		return nil, err
 	}
@@ -844,9 +848,11 @@ func (s *transactionService) GetMonthlySummary(userID string, months int) ([]Mon
 		key := current.Format("2006-01")
 		t := totals[key]
 		items = append(items, MonthlySummaryItem{
-			Month:    key,
-			Income:   t.Income,
-			Expenses: t.Expenses,
+			Month:     key,
+			Income:    t.Income,
+			Expenses:  t.Expenses,
+			Currency:  base,
+			FXMissing: t.FXMissing,
 		})
 		current = current.AddDate(0, 1, 0)
 	}
@@ -866,7 +872,11 @@ func (s *transactionService) GetDailySpending(userID string, from, to time.Time)
 		return items, nil
 	}
 
-	totals, err := periodTotals(s.db, userID, start, endOfDay(last), periodDay, false)
+	base, err := userBaseCurrency(s.db, userID)
+	if err != nil {
+		return nil, err
+	}
+	totals, err := periodTotals(s.db, s.fxService, userID, base, start, endOfDay(last), periodDay, false)
 	if err != nil {
 		return nil, err
 	}
@@ -874,8 +884,10 @@ func (s *transactionService) GetDailySpending(userID string, from, to time.Time)
 	for current := start; !current.After(last); current = current.AddDate(0, 0, 1) {
 		key := current.Format("2006-01-02")
 		items = append(items, DailySpendingItem{
-			Date:  key,
-			Total: totals[key].Expenses,
+			Date:      key,
+			Total:     totals[key].Expenses,
+			Currency:  base,
+			FXMissing: totals[key].FXMissing,
 		})
 	}
 
@@ -894,7 +906,11 @@ func (s *transactionService) GetDailySummary(userID string, from, to time.Time) 
 		return items, nil
 	}
 
-	totals, err := periodTotals(s.db, userID, start, endOfDay(last), periodDay, true)
+	base, err := userBaseCurrency(s.db, userID)
+	if err != nil {
+		return nil, err
+	}
+	totals, err := periodTotals(s.db, s.fxService, userID, base, start, endOfDay(last), periodDay, true)
 	if err != nil {
 		return nil, err
 	}
@@ -903,9 +919,11 @@ func (s *transactionService) GetDailySummary(userID string, from, to time.Time) 
 		key := current.Format("2006-01-02")
 		t := totals[key]
 		items = append(items, DailySummaryItem{
-			Date:     key,
-			Income:   t.Income,
-			Expenses: t.Expenses,
+			Date:      key,
+			Income:    t.Income,
+			Expenses:  t.Expenses,
+			Currency:  base,
+			FXMissing: t.FXMissing,
 		})
 	}
 
@@ -950,103 +968,185 @@ func getCategoryColorFromID(id string) string {
 	return categoryColorPalette[hash%uint64(len(categoryColorPalette))]
 }
 
+// categoryTotals is the result of totalsByCategory.
+type categoryTotals struct {
+	Items       []SpendingByCategoryItem
+	Total       int64
+	Currency    string
+	FXMissing   bool
+	Unconverted []UnconvertedAmount
+}
+
 // totalsByCategory groups transactions of a single type by category and enriches
-// each row with category metadata (name, color, icon). Rows are sorted by amount
-// descending. Uncategorized transactions collapse into a single "Uncategorized"
-// row. Categories whose effective total is 0 (e.g. fully reimbursable expenses)
-// are omitted. The returned slice is never nil.
-func (s *transactionService) totalsByCategory(userID string, txnType models.TransactionType, from, to time.Time) ([]SpendingByCategoryItem, int64, error) {
+// each row with category metadata (name, color, icon). One query joins accounts
+// and groups by (UTC day, account currency, category); each group is converted
+// to the user's base currency at its own day's rate and rolled up per category
+// in Go. Groups with no rate are left out (never counted 1:1) and reported in
+// Unconverted. Rows are sorted by amount descending. Uncategorized transactions
+// collapse into a single "Uncategorized" row. Categories whose converted total
+// is 0 (e.g. fully reimbursable expenses) are omitted. Items is never nil.
+func (s *transactionService) totalsByCategory(userID string, txnType models.TransactionType, from, to time.Time) (*categoryTotals, error) {
 	type categorySpend struct {
+		Bucket     string
+		At         time.Time
+		Currency   string
 		CategoryID *string
 		Total      int64
 	}
 
+	base, err := userBaseCurrency(s.db, userID)
+	if err != nil {
+		return nil, err
+	}
+
+	dayExpr, dayGroup, isPostgres := dayExprs(s.db)
 	var results []categorySpend
-	err := s.db.Model(&models.Transaction{}).
-		Select("category_id, COALESCE(SUM("+effectiveAmountSQL+"), 0) as total").
-		Where("user_id = ? AND type = ? AND deleted_at IS NULL AND date BETWEEN ? AND ?",
+	err = s.db.Table("transactions t").
+		Joins("JOIN accounts a ON a.id = t.account_id").
+		Select(dayExpr+", a.currency AS currency, t.category_id AS category_id, COALESCE(SUM("+effectiveAmountSQL+"), 0) AS total").
+		Where("t.user_id = ? AND t.type = ? AND t.deleted_at IS NULL AND t.date BETWEEN ? AND ?",
 			userID, txnType, from, to).
-		Group("category_id").
+		Group(dayGroup + ", a.currency, t.category_id").
 		Having("COALESCE(SUM(" + effectiveAmountSQL + "), 0) > 0").
 		Scan(&results).Error
 	if err != nil {
-		return nil, 0, apperrors.Wrap(apperrors.ErrInternalServer, err)
+		return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)
 	}
 
-	catIDs := make([]string, 0, len(results))
+	days := map[string]struct{}{}
+	currencies := map[string]struct{}{}
 	for _, r := range results {
+		days[dayKey(isPostgres, r.Bucket, r.At)] = struct{}{}
+		currencies[normalizeCode(r.Currency)] = struct{}{}
+	}
+	var dv *datedValuer
+	if first, last, ok := dayBounds(days); ok {
+		if dv, err = newDatedValuer(s.fxService, base, first, last, currencyList(currencies)); err != nil {
+			return nil, err
+		}
+	}
+
+	type catKey struct {
+		id  string
+		set bool
+	}
+	sums := map[catKey]int64{}
+	order := []catKey{}
+	unconverted := map[string]int64{}
+	for _, r := range results {
+		k := catKey{}
 		if r.CategoryID != nil {
-			catIDs = append(catIDs, *r.CategoryID)
+			k = catKey{id: *r.CategoryID, set: true}
+		}
+		converted, ok := dv.Convert(r.Total, r.Currency, dayKey(isPostgres, r.Bucket, r.At))
+		if !ok {
+			unconverted[normalizeCode(r.Currency)] += r.Total
+			continue
+		}
+		if _, seen := sums[k]; !seen {
+			order = append(order, k)
+		}
+		sums[k] += converted
+	}
+
+	catIDs := make([]string, 0, len(order))
+	for _, k := range order {
+		if k.set {
+			catIDs = append(catIDs, k.id)
 		}
 	}
 	categories, err := loadCategoriesByID(s.db, userID, catIDs)
 	if err != nil {
-		return nil, 0, err
+		return nil, err
 	}
 
-	var total int64
-	items := make([]SpendingByCategoryItem, 0, len(results))
-	for _, r := range results {
-		item := SpendingByCategoryItem{
-			CategoryID: r.CategoryID,
-			Total:      r.Total,
+	out := &categoryTotals{
+		Items:       make([]SpendingByCategoryItem, 0, len(order)),
+		Currency:    base,
+		FXMissing:   len(unconverted) > 0,
+		Unconverted: unconvertedList(unconverted),
+	}
+	for _, k := range order {
+		if sums[k] <= 0 {
+			continue
 		}
-		item.CategoryName, item.CategoryColor, item.CategoryIcon = categoryDisplay(categories, r.CategoryID)
-
-		total += r.Total
-		items = append(items, item)
+		var id *string
+		if k.set {
+			cid := k.id
+			id = &cid
+		}
+		item := SpendingByCategoryItem{CategoryID: id, Total: sums[k]}
+		item.CategoryName, item.CategoryColor, item.CategoryIcon = categoryDisplay(categories, id)
+		out.Total += sums[k]
+		out.Items = append(out.Items, item)
 	}
 
-	sort.Slice(items, func(i, j int) bool {
-		return items[i].Total > items[j].Total
+	sort.SliceStable(out.Items, func(i, j int) bool {
+		return out.Items[i].Total > out.Items[j].Total
 	})
-
-	return items, total, nil
+	return out, nil
 }
 
-// GetSpendingByCategory returns expense totals grouped by category for a date range.
+// GetSpendingByCategory returns expense totals grouped by category for a date
+// range, in the user's base currency.
 func (s *transactionService) GetSpendingByCategory(userID string, from, to time.Time) (*SpendingByCategory, error) {
-	items, totalSpent, err := s.totalsByCategory(userID, models.TransactionTypeExpense, from, to)
+	t, err := s.totalsByCategory(userID, models.TransactionTypeExpense, from, to)
 	if err != nil {
 		return nil, err
 	}
 
 	return &SpendingByCategory{
-		Items:      items,
-		TotalSpent: totalSpent,
-		FromDate:   from,
-		ToDate:     to,
+		Items:       t.Items,
+		TotalSpent:  t.Total,
+		FromDate:    from,
+		ToDate:      to,
+		Currency:    t.Currency,
+		FXMissing:   t.FXMissing,
+		Unconverted: t.Unconverted,
 	}, nil
 }
 
 // GetCashflow returns income and expense totals grouped by category for a date
 // range, for rendering the income-to-expense cashflow Sankey. Transfers and
 // investment transactions are excluded (only "income" and "expense" types are
-// aggregated), so the flows reflect real cash entering and leaving.
+// aggregated), so the flows reflect real cash entering and leaving. Amounts are
+// in the user's base currency; Unconverted merges both directions' gaps.
 func (s *transactionService) GetCashflow(userID string, from, to time.Time) (*Cashflow, error) {
-	income, totalIncome, err := s.totalsByCategory(userID, models.TransactionTypeIncome, from, to)
+	income, err := s.totalsByCategory(userID, models.TransactionTypeIncome, from, to)
 	if err != nil {
 		return nil, err
 	}
 
-	expenses, totalExpenses, err := s.totalsByCategory(userID, models.TransactionTypeExpense, from, to)
+	expenses, err := s.totalsByCategory(userID, models.TransactionTypeExpense, from, to)
 	if err != nil {
 		return nil, err
+	}
+
+	merged := map[string]int64{}
+	for _, u := range append(append([]UnconvertedAmount{}, income.Unconverted...), expenses.Unconverted...) {
+		merged[u.Currency] += u.Amount
 	}
 
 	return &Cashflow{
-		Income:        income,
-		Expenses:      expenses,
-		TotalIncome:   totalIncome,
-		TotalExpenses: totalExpenses,
+		Income:        income.Items,
+		Expenses:      expenses.Items,
+		TotalIncome:   income.Total,
+		TotalExpenses: expenses.Total,
 		FromDate:      from,
 		ToDate:        to,
+		Currency:      income.Currency,
+		FXMissing:     income.FXMissing || expenses.FXMissing,
+		Unconverted:   unconvertedList(merged),
 	}, nil
 }
 
-// GetTopExpenses returns the largest expense transactions for a date range, ordered
-// by effective (personal) amount descending. Expenses whose effective amount is 0
-// (fully reimbursable) are excluded. Amount is always the full amount.
+// GetTopExpenses returns the largest expense transactions for a date range,
+// ranked by the effective (personal) amount converted to the user's base
+// currency at the expense's own day. Expenses whose effective amount is 0
+// (fully reimbursable) are excluded. Amount stays the full native amount;
+// AmountBase is the converted effective amount. Expenses with no rate rank
+// after every converted one and carry FXMissing. When every matching expense is
+// in the base currency the ranking and limit are done in SQL.
 func (s *transactionService) GetTopExpenses(userID string, from, to time.Time, limit int, categoryID *string) (*TopExpenses, error) {
 	type expenseRow struct {
 		ID             string
@@ -1056,15 +1156,25 @@ func (s *transactionService) GetTopExpenses(userID string, from, to time.Time, l
 		PersonalAmount *int64
 		Description    string
 		Date           time.Time
+		Currency       string
+		Effective      int64
 	}
 
-	query := s.db.Model(&models.Transaction{}).
-		Select("id, account_id, category_id, amount, personal_amount, description, date").
-		Where("user_id = ? AND type = ? AND deleted_at IS NULL AND date BETWEEN ? AND ?",
+	base, err := userBaseCurrency(s.db, userID)
+	if err != nil {
+		return nil, err
+	}
+
+	query := s.db.Table("transactions t").
+		Joins("JOIN accounts a ON a.id = t.account_id").
+		Select("t.id AS id, t.account_id AS account_id, t.category_id AS category_id, t.amount AS amount, "+
+			"t.personal_amount AS personal_amount, t.description AS description, t.date AS date, "+
+			"a.currency AS currency, "+effectiveAmountSQL+" AS effective").
+		Where("t.user_id = ? AND t.type = ? AND t.deleted_at IS NULL AND t.date BETWEEN ? AND ?",
 			userID, models.TransactionTypeExpense, from, to).
 		Where(effectiveAmountSQL + " > 0")
 	if categoryID != nil {
-		query = query.Where("category_id = ?", *categoryID)
+		query = query.Where("t.category_id = ?", *categoryID)
 	}
 
 	var totalCount int64
@@ -1072,21 +1182,83 @@ func (s *transactionService) GetTopExpenses(userID string, from, to time.Time, l
 		return nil, apperrors.Wrap(apperrors.ErrInternalServer, cntErr)
 	}
 
+	// Which currencies are involved decides between the SQL-ranked fast path and
+	// ranking converted amounts in Go.
+	var foreign int64
+	if fErr := query.Session(&gorm.Session{}).Where("UPPER(a.currency) <> ?", base).
+		Count(&foreign).Error; fErr != nil {
+		return nil, apperrors.Wrap(apperrors.ErrInternalServer, fErr)
+	}
+
 	var rows []expenseRow
-	err := query.
-		Order(effectiveAmountSQL + " DESC").
-		Limit(limit).
-		Scan(&rows).Error
+	if foreign == 0 {
+		err = query.Order(effectiveAmountSQL + " DESC").Limit(limit).Scan(&rows).Error
+	} else {
+		err = query.Scan(&rows).Error
+	}
 	if err != nil {
 		return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)
 	}
 
-	catIDs := make([]string, 0, len(rows))
-	accIDs := make([]string, 0, len(rows))
+	currencies := make([]string, 0, 2)
+	seenCur := map[string]struct{}{}
+	var first, last time.Time
+	for i, r := range rows {
+		c := normalizeCode(r.Currency)
+		if _, ok := seenCur[c]; !ok {
+			seenCur[c] = struct{}{}
+			currencies = append(currencies, c)
+		}
+		d := utcDay(r.Date)
+		if i == 0 || d.Before(first) {
+			first = d
+		}
+		if i == 0 || d.After(last) {
+			last = d
+		}
+	}
+	var dv *datedValuer
+	if len(rows) > 0 {
+		if dv, err = newDatedValuer(s.fxService, base, first, last, currencies); err != nil {
+			return nil, err
+		}
+	}
+
+	type ranked struct {
+		row     expenseRow
+		base    int64
+		missing bool
+	}
+	rankedRows := make([]ranked, 0, len(rows))
+	anyMissing := false
 	for _, r := range rows {
-		accIDs = append(accIDs, r.AccountID)
-		if r.CategoryID != nil {
-			catIDs = append(catIDs, *r.CategoryID)
+		conv, ok := dv.Convert(r.Effective, r.Currency, r.Date.UTC().Format(dayLayout))
+		if !ok {
+			anyMissing = true
+		}
+		rankedRows = append(rankedRows, ranked{row: r, base: conv, missing: !ok})
+	}
+	sort.SliceStable(rankedRows, func(i, j int) bool {
+		a, b := rankedRows[i], rankedRows[j]
+		if a.missing != b.missing {
+			return !a.missing
+		}
+		if a.missing {
+			return a.row.Effective > b.row.Effective
+		}
+		return a.base > b.base
+	})
+	if len(rankedRows) > limit {
+		rankedRows = rankedRows[:limit]
+	}
+
+	catIDs := make([]string, 0, len(rankedRows))
+	accIDs := make([]string, 0, len(rankedRows))
+	for i := range rankedRows {
+		rr := &rankedRows[i]
+		accIDs = append(accIDs, rr.row.AccountID)
+		if rr.row.CategoryID != nil {
+			catIDs = append(catIDs, *rr.row.CategoryID)
 		}
 	}
 	categories, err := loadCategoriesByID(s.db, userID, catIDs)
@@ -1098,8 +1270,10 @@ func (s *transactionService) GetTopExpenses(userID string, from, to time.Time, l
 		return nil, err
 	}
 
-	items := make([]TopExpenseItem, 0, len(rows))
-	for _, r := range rows {
+	items := make([]TopExpenseItem, 0, len(rankedRows))
+	for i := range rankedRows {
+		rr := &rankedRows[i]
+		r := rr.row
 		item := TopExpenseItem{
 			ID:             r.ID,
 			AccountID:      r.AccountID,
@@ -1109,6 +1283,9 @@ func (s *transactionService) GetTopExpenses(userID string, from, to time.Time, l
 			PersonalAmount: r.PersonalAmount,
 			Description:    r.Description,
 			Date:           r.Date,
+			Currency:       normalizeCode(r.Currency),
+			AmountBase:     rr.base,
+			FXMissing:      rr.missing,
 		}
 		item.CategoryName, item.CategoryColor, item.CategoryIcon = categoryDisplay(categories, r.CategoryID)
 		items = append(items, item)
@@ -1119,6 +1296,8 @@ func (s *transactionService) GetTopExpenses(userID string, from, to time.Time, l
 		TotalCount: totalCount,
 		FromDate:   from,
 		ToDate:     to,
+		Currency:   base,
+		FXMissing:  anyMissing,
 	}, nil
 }
 

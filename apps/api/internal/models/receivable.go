@@ -75,6 +75,10 @@ type Receivable struct {
 	// Call ComputeOutstanding to populate it before serializing.
 	Outstanding int64 `gorm:"-" json:"outstanding"`
 
+	// Currency is the currency of the account of the expense that created the
+	// receivable (plan 024, phase 4). Response-only; set by the service.
+	Currency string `gorm:"-" json:"currency"`
+
 	// Settlements are loaded on the detail endpoint only.
 	Settlements []ReceivableSettlement `gorm:"foreignKey:ReceivableID" json:"settlements,omitempty"`
 
@@ -139,6 +143,23 @@ type ReceivableSettlement struct {
 	// (write_off_remainder). Deleting the settlement reverses it together with
 	// the payment. Zero for a plain settlement.
 	WrittenOffAmount int64 `gorm:"type:bigint;not null;default:0;check:receivable_settlements_written_off_amount_check,written_off_amount >= 0" json:"written_off_amount"`
+
+	// AccountAmount is the amount credited to AccountID, in that account's
+	// currency. Amount stays in the receivable's currency. NULL for same-currency
+	// settlements (and rows predating plan 024 phase 4): the credit equals Amount.
+	AccountAmount *int64 `gorm:"type:bigint;check:receivable_settlements_account_amount_check,account_amount > 0" json:"account_amount,omitempty"`
+
+	// Currency is the receivable's currency (response-only; the unit of Amount).
+	Currency string `gorm:"-" json:"currency"`
+}
+
+// EffectiveAccountAmount returns the amount the settlement credited to its
+// account: AccountAmount when set, otherwise Amount.
+func (s *ReceivableSettlement) EffectiveAccountAmount() int64 {
+	if s.AccountAmount != nil {
+		return *s.AccountAmount
+	}
+	return s.Amount
 }
 
 // NormalizeCounterpartyKey returns the grouping key for a raw counterparty name

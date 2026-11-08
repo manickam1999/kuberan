@@ -21,6 +21,7 @@ func TestComputeAndRecordSnapshots(t *testing.T) {
 		testutil.CreateTestCashAccountWithBalance(t, db, user2.ID, 200000)
 
 		recordedAt := time.Now().Truncate(time.Second)
+		p4AllAccountsIn(t, db, "MYR") // match the users' MYR base
 		count, err := svc.ComputeAndRecordSnapshots(recordedAt)
 		testutil.AssertNoError(t, err)
 
@@ -46,6 +47,7 @@ func TestComputeAndRecordSnapshots(t *testing.T) {
 		testutil.CreateTestCashAccountWithBalance(t, db, user.ID, 500000)  // $5,000.00
 
 		recordedAt := time.Now().Truncate(time.Second)
+		p4AllAccountsIn(t, db, "MYR") // match the users' MYR base
 		count, err := svc.ComputeAndRecordSnapshots(recordedAt)
 		testutil.AssertNoError(t, err)
 
@@ -92,6 +94,7 @@ func TestComputeAndRecordSnapshots(t *testing.T) {
 		testutil.CreateTestSecurityPrice(t, db, sec2.ID, 20000, time.Now()) // $200/share
 
 		recordedAt := time.Now().Truncate(time.Second)
+		p4AllAccountsIn(t, db, "MYR") // match the users' MYR base
 		count, err := svc.ComputeAndRecordSnapshots(recordedAt)
 		testutil.AssertNoError(t, err)
 
@@ -119,6 +122,7 @@ func TestComputeAndRecordSnapshots(t *testing.T) {
 		testutil.CreateTestCashAccountWithBalance(t, db, user.ID, 100000) // need active account for user to appear
 
 		recordedAt := time.Now().Truncate(time.Second)
+		p4AllAccountsIn(t, db, "MYR") // match the users' MYR base
 		count, err := svc.ComputeAndRecordSnapshots(recordedAt)
 		testutil.AssertNoError(t, err)
 
@@ -165,6 +169,7 @@ func TestComputeAndRecordSnapshots(t *testing.T) {
 		testutil.CreateTestCreditCardAccount(t, db, user.ID, 200000)
 
 		recordedAt := time.Now().Truncate(time.Second)
+		p4AllAccountsIn(t, db, "MYR") // match the users' MYR base
 		_, err := svc.ComputeAndRecordSnapshots(recordedAt)
 		testutil.AssertNoError(t, err)
 
@@ -205,6 +210,7 @@ func TestComputeAndRecordSnapshots(t *testing.T) {
 		db.Model(inactiveAcct).Update("is_active", false)
 
 		recordedAt := time.Now().Truncate(time.Second)
+		p4AllAccountsIn(t, db, "MYR") // match the users' MYR base
 		_, err := svc.ComputeAndRecordSnapshots(recordedAt)
 		testutil.AssertNoError(t, err)
 
@@ -226,6 +232,7 @@ func TestComputeAndRecordSnapshots(t *testing.T) {
 
 		recordedAt := time.Now().Truncate(time.Second)
 
+		p4AllAccountsIn(t, db, "MYR") // match the users' MYR base
 		count1, err := svc.ComputeAndRecordSnapshots(recordedAt)
 		testutil.AssertNoError(t, err)
 		if count1 != 1 {
@@ -233,6 +240,7 @@ func TestComputeAndRecordSnapshots(t *testing.T) {
 		}
 
 		// Second call with same recorded_at — should upsert, not fail
+		p4AllAccountsIn(t, db, "MYR") // match the users' MYR base
 		count2, err := svc.ComputeAndRecordSnapshots(recordedAt)
 		testutil.AssertNoError(t, err)
 		if count2 != 1 {

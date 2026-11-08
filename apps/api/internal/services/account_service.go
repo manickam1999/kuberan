@@ -178,6 +178,10 @@ func (s *accountService) GetUserAccounts(userID string, page pagination.PageRequ
 		return nil, err
 	}
 
+	if err := s.enrichBaseBalances(userID, accounts); err != nil {
+		return nil, err
+	}
+
 	result := pagination.NewPageResponse(accounts, page.Page, page.PageSize, totalItems)
 	return &result, nil
 }
@@ -200,7 +204,50 @@ func (s *accountService) GetAccountByID(userID, accountID string) (*models.Accou
 		account = accounts[0]
 	}
 
+	one := []models.Account{account}
+	if err := s.enrichBaseBalances(userID, one); err != nil {
+		return nil, err
+	}
+	account = one[0]
+
 	return &account, nil
+}
+
+// enrichBaseBalances fills the response-only base-currency fields of accounts
+// (balance_base, fx_rate, fx_stale, fx_missing) using the user's base currency
+// and one batched rate lookup as of now. Accounts already in the base currency
+// need no FX query; an account without a rate is flagged fx_missing and never
+// converted 1:1.
+func (s *accountService) enrichBaseBalances(userID string, accounts []models.Account) error {
+	if len(accounts) == 0 {
+		return nil
+	}
+	base, err := userBaseCurrency(s.db, userID)
+	if err != nil {
+		return err
+	}
+	currencies := make([]string, 0, len(accounts))
+	for i := range accounts {
+		currencies = append(currencies, accounts[i].Currency)
+	}
+	v, err := newValuer(s.fxService, base, time.Now(), currencies)
+	if err != nil {
+		return err
+	}
+	for i := range accounts {
+		converted, quote, ok := v.Convert(accounts[i].Balance, accounts[i].Currency)
+		if !ok {
+			accounts[i].BalanceBase = nil
+			accounts[i].FXMissing = true
+			continue
+		}
+		accounts[i].BalanceBase = &converted
+		if quote != nil {
+			accounts[i].FXRate = quote.Rate.String()
+			accounts[i].FXStale = quote.Stale
+		}
+	}
+	return nil
 }
 
 // UpdateAccount updates an existing account for any account type.

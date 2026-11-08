@@ -9,7 +9,7 @@ import (
 
 func TestBudgetFlow_CreateAndCheckProgress(t *testing.T) {
 	app := setupApp(t)
-	token, _, _ := app.registerUser(t, "budget@test.com", "password123")
+	token, _, _ := app.registerUserUSD(t, "budget@test.com", "password123")
 
 	// Step 1: Create an expense category
 	rec := app.request("POST", "/api/v1/categories",
@@ -97,7 +97,7 @@ func TestBudgetFlow_CreateAndCheckProgress(t *testing.T) {
 
 func TestBudgetFlow_OverBudget(t *testing.T) {
 	app := setupApp(t)
-	token, _, _ := app.registerUser(t, "overbudget@test.com", "password123")
+	token, _, _ := app.registerUserUSD(t, "overbudget@test.com", "password123")
 
 	// Create category, account, budget
 	rec := app.request("POST", "/api/v1/categories",
@@ -138,7 +138,7 @@ func TestBudgetFlow_OverBudget(t *testing.T) {
 
 func TestBudgetFlow_CRUDOperations(t *testing.T) {
 	app := setupApp(t)
-	token, _, _ := app.registerUser(t, "budgetcrud@test.com", "password123")
+	token, _, _ := app.registerUserUSD(t, "budgetcrud@test.com", "password123")
 
 	// Create category
 	rec := app.request("POST", "/api/v1/categories",
@@ -203,7 +203,7 @@ func TestBudgetFlow_CRUDOperations(t *testing.T) {
 
 func TestBudgetFlow_IncomeIgnored(t *testing.T) {
 	app := setupApp(t)
-	token, _, _ := app.registerUser(t, "budgetincome@test.com", "password123")
+	token, _, _ := app.registerUserUSD(t, "budgetincome@test.com", "password123")
 
 	// Create category, account, budget
 	rec := app.request("POST", "/api/v1/categories",
@@ -238,7 +238,7 @@ func TestBudgetFlow_IncomeIgnored(t *testing.T) {
 
 func TestBudgetFlow_DuplicateActiveRejected(t *testing.T) {
 	app := setupApp(t)
-	token, _, _ := app.registerUser(t, "budgetdup@test.com", "password123")
+	token, _, _ := app.registerUserUSD(t, "budgetdup@test.com", "password123")
 
 	rec := app.request("POST", "/api/v1/categories",
 		`{"name":"Groceries","type":"expense"}`, token)
@@ -270,7 +270,7 @@ func TestBudgetFlow_DuplicateActiveRejected(t *testing.T) {
 
 func TestBudgetFlow_BatchProgressExcludesInactive(t *testing.T) {
 	app := setupApp(t)
-	token, _, _ := app.registerUser(t, "budgetbatch@test.com", "password123")
+	token, _, _ := app.registerUserUSD(t, "budgetbatch@test.com", "password123")
 
 	rec := app.request("POST", "/api/v1/accounts/cash",
 		`{"name":"Checking","initial_balance":100000}`, token)

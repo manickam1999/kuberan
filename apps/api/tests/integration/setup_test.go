@@ -247,6 +247,17 @@ func (app *testApp) registerUser(t *testing.T, email, password string) (accessTo
 	return result["access_token"].(string), refreshCookieValue(t, rec), user["id"].(string)
 }
 
+// registerUserUSD registers a user whose base currency is USD, for tests whose
+// USD accounts must aggregate without exchange rates.
+func (app *testApp) registerUserUSD(t *testing.T, email, password string) (accessToken, refreshToken, userID string) {
+	t.Helper()
+	accessToken, refreshToken, userID = app.registerUser(t, email, password)
+	if err := app.DB.Model(&models.User{}).Where("id = ?", userID).Update("base_currency", "USD").Error; err != nil {
+		t.Fatalf("set base currency: %v", err)
+	}
+	return accessToken, refreshToken, userID
+}
+
 // refreshCookieValue returns the refresh token set in the kuberan_refresh
 // cookie, failing the test when the response did not set one.
 func refreshCookieValue(t *testing.T, rec *httptest.ResponseRecorder) string {

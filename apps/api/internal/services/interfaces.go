@@ -219,6 +219,19 @@ type SpendingByCategory struct {
 	TotalSpent int64                    `json:"total_spent"`
 	FromDate   time.Time                `json:"from_date"`
 	ToDate     time.Time                `json:"to_date"`
+	// Currency is the currency of every amount (the user's base currency).
+	Currency string `json:"currency"`
+	// FXMissing is true when some spending had no exchange rate and was left out.
+	FXMissing bool `json:"fx_missing"`
+	// Unconverted lists, per currency, the native amounts left out of the totals.
+	Unconverted []UnconvertedAmount `json:"unconverted"`
+}
+
+// UnconvertedAmount is a native-currency amount that could not be converted
+// because no exchange rate was available. It is excluded from converted totals.
+type UnconvertedAmount struct {
+	Currency string `json:"currency"`
+	Amount   int64  `json:"amount"` // minor units, in Currency
 }
 
 // Cashflow represents income and expense totals grouped by category for a date
@@ -231,26 +244,41 @@ type Cashflow struct {
 	TotalExpenses int64                    `json:"total_expenses"` // cents
 	FromDate      time.Time                `json:"from_date"`
 	ToDate        time.Time                `json:"to_date"`
+	Currency      string                   `json:"currency"`    // the user's base currency
+	FXMissing     bool                     `json:"fx_missing"`  // some amounts had no rate and are excluded
+	Unconverted   []UnconvertedAmount      `json:"unconverted"` // native amounts excluded from the totals
 }
 
 // DailySpendingItem represents expense total for a single day.
 type DailySpendingItem struct {
 	Date  string `json:"date"`  // "2026-02-01" format
-	Total int64  `json:"total"` // cents
+	Total int64  `json:"total"` // cents, in Currency
+	// Currency is the user's base currency; FXMissing is true when some of the
+	// day's spending had no exchange rate and is excluded from Total.
+	Currency  string `json:"currency"`
+	FXMissing bool   `json:"fx_missing"`
 }
 
 // MonthlySummaryItem represents income and expense totals for a single month.
 type MonthlySummaryItem struct {
 	Month    string `json:"month"`    // "2026-02" format
-	Income   int64  `json:"income"`   // cents
-	Expenses int64  `json:"expenses"` // cents
+	Income   int64  `json:"income"`   // cents, in Currency
+	Expenses int64  `json:"expenses"` // cents, in Currency
+	// Currency is the user's base currency; FXMissing is true when some of the
+	// month's amounts had no exchange rate and are excluded.
+	Currency  string `json:"currency"`
+	FXMissing bool   `json:"fx_missing"`
 }
 
 // DailySummaryItem represents income and expense totals for a single day.
 type DailySummaryItem struct {
 	Date     string `json:"date"`     // "2026-02-01" format
-	Income   int64  `json:"income"`   // cents
-	Expenses int64  `json:"expenses"` // cents
+	Income   int64  `json:"income"`   // cents, in Currency
+	Expenses int64  `json:"expenses"` // cents, in Currency
+	// Currency is the user's base currency; FXMissing is true when some of the
+	// day's amounts had no exchange rate and are excluded.
+	Currency  string `json:"currency"`
+	FXMissing bool   `json:"fx_missing"`
 }
 
 // TopExpenseItem represents a single high-value expense transaction.
@@ -266,6 +294,13 @@ type TopExpenseItem struct {
 	PersonalAmount *int64    `json:"personal_amount"` // cents, the user's own share; nil when not shared
 	Description    string    `json:"description"`
 	Date           time.Time `json:"date"`
+	// Currency is the account's currency, the unit of Amount and PersonalAmount.
+	Currency string `json:"currency"`
+	// AmountBase is the effective amount (personal share, else Amount) converted
+	// to the user's base currency at the expense's date; 0 when FXMissing.
+	AmountBase int64 `json:"amount_base"`
+	// FXMissing is true when no rate existed, so AmountBase could not be computed.
+	FXMissing bool `json:"fx_missing"`
 }
 
 // TopExpenses represents the top-N expense transactions for a date range.
@@ -276,6 +311,11 @@ type TopExpenses struct {
 	TotalCount int64     `json:"total_count"`
 	FromDate   time.Time `json:"from_date"`
 	ToDate     time.Time `json:"to_date"`
+	// Currency is the user's base currency (the unit of each AmountBase).
+	Currency string `json:"currency"`
+	// FXMissing is true when some matching expenses had no rate; they rank after
+	// every converted expense.
+	FXMissing bool `json:"fx_missing"`
 }
 
 // TransactionServicer defines the contract for transaction-related business logic.
@@ -385,14 +425,31 @@ type BudgetProgress struct {
 	Spent      int64   `json:"spent"`
 	Remaining  int64   `json:"remaining"`
 	Percentage float64 `json:"percentage"`
+	// Currency is the budget's currency (the unit of every amount above).
+	Currency string `json:"currency"`
+	// FXMissing is true when some spending had no exchange rate and is excluded from Spent.
+	FXMissing bool `json:"fx_missing"`
+}
+
+// BudgetOption sets an optional budget attribute on create or update.
+type BudgetOption func(*budgetOptions)
+
+type budgetOptions struct {
+	currency string
+}
+
+// WithBudgetCurrency sets the budget's ISO 4217 currency. On create the default
+// is the user's base currency; on update an empty value leaves it unchanged.
+func WithBudgetCurrency(code string) BudgetOption {
+	return func(o *budgetOptions) { o.currency = code }
 }
 
 // BudgetServicer defines the contract for budget-related business logic.
 type BudgetServicer interface {
-	CreateBudget(userID, categoryID string, name string, amount int64, period models.BudgetPeriod) (*models.Budget, error)
+	CreateBudget(userID, categoryID string, name string, amount int64, period models.BudgetPeriod, opts ...BudgetOption) (*models.Budget, error)
 	GetUserBudgets(userID string, page pagination.PageRequest, isActive *bool, period *models.BudgetPeriod) (*pagination.PageResponse[models.Budget], error)
 	GetBudgetByID(userID, budgetID string) (*models.Budget, error)
-	UpdateBudget(userID, budgetID string, name string, amount *int64, period *models.BudgetPeriod, isActive *bool) (*models.Budget, error)
+	UpdateBudget(userID, budgetID string, name string, amount *int64, period *models.BudgetPeriod, isActive *bool, opts ...BudgetOption) (*models.Budget, error)
 	DeleteBudget(userID, budgetID string) error
 	GetBudgetProgress(userID, budgetID string) (*BudgetProgress, error)
 	GetActiveBudgetsProgress(userID string) ([]BudgetProgress, error)
@@ -563,6 +620,11 @@ type FXServicer interface {
 	// Rates resolves many pairs in a bounded number of queries. Pairs with no
 	// rate are absent from the map (no error).
 	Rates(pairs []CurrencyPair, at time.Time) (map[CurrencyPair]*FXQuote, error)
+	// RatesByDay resolves many pairs for every UTC day in [start, end]
+	// (inclusive) in a bounded number of queries. Each day's quote is the one
+	// Rate(pair, end of that day) would return. Days with no rate are absent
+	// from the inner map; keys are "YYYY-MM-DD".
+	RatesByDay(pairs []CurrencyPair, start, end time.Time) (map[CurrencyPair]map[string]*FXQuote, error)
 	// RecordRates upserts rates on (base, quote, recorded_at) and returns the count written.
 	RecordRates(rates []FXRateInput) (int, error)
 	// ListRates returns the stored observations of the direct pair in [from, to], oldest first.
@@ -739,6 +801,10 @@ type SettleInput struct {
 	Date              time.Time // zero means now
 	Description       string    // empty means the default "Repayment from {name}: {expense}"
 	WriteOffRemainder bool
+	// AccountAmount is the amount credited to the account, in the account's
+	// currency. Required when it differs from the receivable's currency; must
+	// be nil or equal to Amount otherwise (plan 024, phase 4).
+	AccountAmount *int64
 }
 
 // ReceivableFilter holds the optional filters for listing receivables. Status
@@ -773,9 +839,19 @@ type ReceivableCounterpartyTotal struct {
 
 // ReceivableSummary aggregates the user's open receivables.
 type ReceivableSummary struct {
-	TotalOutstanding int64                         `json:"total_outstanding"` // cents
+	TotalOutstanding int64                         `json:"total_outstanding"` // cents, in Currency (the user's base)
+	Currency         string                        `json:"currency"`          // currency of the converted totals (base)
+	FXMissing        bool                          `json:"fx_missing"`        // some outstanding amounts had no rate and are left out
+	ByCurrency       []ReceivableCurrencyTotal     `json:"by_currency"`       // native outstanding per receivable currency
 	ByKind           []ReceivableKindTotal         `json:"by_kind"`
 	ByCounterparty   []ReceivableCounterpartyTotal `json:"by_counterparty"`
+}
+
+// ReceivableCurrencyTotal is the open outstanding total in one receivable
+// currency, in that currency (not converted).
+type ReceivableCurrencyTotal struct {
+	Currency    string `json:"currency"`
+	Outstanding int64  `json:"outstanding"` // cents of Currency
 }
 
 // CounterpartySuggestion is an autocomplete entry: a normalized key and the

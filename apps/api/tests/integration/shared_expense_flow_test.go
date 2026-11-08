@@ -75,7 +75,7 @@ func num(m map[string]interface{}, key string) float64 {
 // repayment, reversal, write-off, edit and delete over HTTP.
 func TestSharedExpenseFlow_FullLifecycle(t *testing.T) {
 	app := setupApp(t)
-	token, _, _ := app.registerUser(t, "shared@test.com", "password123")
+	token, _, _ := app.registerUserUSD(t, "shared@test.com", "password123")
 	f := &sharedFlow{t: t, app: app, token: token}
 
 	acct := f.account("Wallet", 100000)
@@ -277,7 +277,7 @@ func TestSharedExpenseFlow_FullLifecycle(t *testing.T) {
 // returned in part can be closed by writing off the remainder in one call.
 func TestSharedExpenseFlow_FullModeLoanAndWriteOffOnSettle(t *testing.T) {
 	app := setupApp(t)
-	token, _, _ := app.registerUser(t, "loan@test.com", "password123")
+	token, _, _ := app.registerUserUSD(t, "loan@test.com", "password123")
 	f := &sharedFlow{t: t, app: app, token: token}
 	acct := f.account("Wallet", 500000)
 
@@ -315,7 +315,7 @@ func TestSharedExpenseFlow_FullModeLoanAndWriteOffOnSettle(t *testing.T) {
 
 func TestSharedExpenseFlow_Validation(t *testing.T) {
 	app := setupApp(t)
-	token, _, _ := app.registerUser(t, "valid@test.com", "password123")
+	token, _, _ := app.registerUserUSD(t, "valid@test.com", "password123")
 	f := &sharedFlow{t: t, app: app, token: token}
 	acct := f.account("Wallet", 100000)
 	post := func(body string, status int, code string) {
@@ -336,8 +336,8 @@ func TestSharedExpenseFlow_Validation(t *testing.T) {
 // are invisible and immutable to another, and that every route needs a token.
 func TestSharedExpenseFlow_UserIsolationAndAuth(t *testing.T) {
 	app := setupApp(t)
-	tokenA, _, _ := app.registerUser(t, "owner@test.com", "password123")
-	tokenB, _, _ := app.registerUser(t, "intruder@test.com", "password123")
+	tokenA, _, _ := app.registerUserUSD(t, "owner@test.com", "password123")
+	tokenB, _, _ := app.registerUserUSD(t, "intruder@test.com", "password123")
 	a := &sharedFlow{t: t, app: app, token: tokenA}
 	b := &sharedFlow{t: t, app: app, token: tokenB}
 

@@ -756,6 +756,46 @@ func TestReceivableWriteTools(t *testing.T) {
 	}
 }
 
+func TestRecordRepaymentTool_RejectsCrossCurrency(t *testing.T) {
+	const scope = "write:transactions"
+	e := setupWriteEnv(t, scope)
+	usd := testutil.CreateTestCashAccountWithBalance(t, e.db, e.user.ID, 10_000)
+	myr := testutil.CreateTestCashAccountWithBalance(t, e.db, e.user.ID, 0)
+	if err := e.db.Model(&models.Account{}).Where("id = ?", usd.ID).Update("currency", "USD").Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := e.db.Model(&models.Account{}).Where("id = ?", myr.ID).Update("currency", "MYR").Error; err != nil {
+		t.Fatal(err)
+	}
+	expense, err := e.s.services.Receivables.CreateSharedExpense(e.user.ID, services.CreateSharedExpenseInput{
+		AccountID: usd.ID, Amount: 6_000, Description: "Dinner",
+		Kind: models.ReceivableKindSplit, Mode: services.ShareModeFull,
+		Counterparties: []services.SharedCounterpartyInput{{Name: "Alex"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var rec models.Receivable
+	e.db.Where("transaction_id = ?", expense.ID).First(&rec)
+
+	wantError(t, e.call(t, e.ctx(scope), "record_repayment", map[string]any{
+		"date":          today(),
+		"receivable_id": rec.ID, "account_id": myr.ID, "amount": 10.0,
+	}), "cross-currency repayments aren't supported over MCP yet")
+	if got := e.balance(t, myr.ID); got != 0 {
+		t.Errorf("MYR balance = %d after a rejected repayment, want 0", got)
+	}
+	if e.auditCount(t, "MCP_RECORD_REPAYMENT") != 0 {
+		t.Error("a rejected repayment must not be audited")
+	}
+
+	// Same-currency repayment still works.
+	wantOK(t, e.call(t, e.ctx(scope), "record_repayment", map[string]any{
+		"date":          today(),
+		"receivable_id": rec.ID, "account_id": usd.ID, "amount": 10.0,
+	}))
+}
+
 // Every scope a write tool requires must be one the config can grant;
 // otherwise capScopes silently drops it and the tool is forbidden forever.
 func TestWriteToolScopesAreGrantable(t *testing.T) {

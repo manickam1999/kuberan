@@ -58,6 +58,10 @@ func (m *mockFXService) NeededPairs() ([]services.CurrencyPair, []string, error)
 	return nil, nil, nil
 }
 
+func (m *mockFXService) RatesByDay(_ []services.CurrencyPair, _, _ time.Time) (map[services.CurrencyPair]map[string]*services.FXQuote, error) {
+	return map[services.CurrencyPair]map[string]*services.FXQuote{}, nil
+}
+
 func (m *mockFXService) IsSupportedCurrency(_ string, _ time.Time) bool { return true }
 
 func setupFXRouter(h *FXHandler) *gin.Engine {

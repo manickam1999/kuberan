@@ -1140,6 +1140,7 @@ func TestGetSpendingByCategory(t *testing.T) {
 		acctSvc := NewAccountService(db)
 		txSvc := NewTransactionService(db, acctSvc, nil)
 		user := testutil.CreateTestUser(t, db)
+		setBaseUSD(t, db, user.ID)
 		account := testutil.CreateTestCashAccountWithBalance(t, db, user.ID, 100000)
 
 		catA := testutil.CreateTestCategory(t, db, user.ID, models.CategoryTypeExpense)
@@ -1179,6 +1180,7 @@ func TestGetSpendingByCategory(t *testing.T) {
 		acctSvc := NewAccountService(db)
 		txSvc := NewTransactionService(db, acctSvc, nil)
 		user := testutil.CreateTestUser(t, db)
+		setBaseUSD(t, db, user.ID)
 		account := testutil.CreateTestCashAccountWithBalance(t, db, user.ID, 100000)
 
 		_, err := txSvc.CreateTransaction(user.ID, account.ID, nil, models.TransactionTypeExpense, 2500, "", from.Add(time.Hour))
@@ -1207,6 +1209,7 @@ func TestGetSpendingByCategory(t *testing.T) {
 		acctSvc := NewAccountService(db)
 		txSvc := NewTransactionService(db, acctSvc, nil)
 		user := testutil.CreateTestUser(t, db)
+		setBaseUSD(t, db, user.ID)
 		account := testutil.CreateTestCashAccountWithBalance(t, db, user.ID, 100000)
 
 		cat := testutil.CreateTestCategory(t, db, user.ID, models.CategoryTypeExpense)
@@ -1237,6 +1240,7 @@ func TestGetSpendingByCategory(t *testing.T) {
 		acctSvc := NewAccountService(db)
 		txSvc := NewTransactionService(db, acctSvc, nil)
 		user := testutil.CreateTestUser(t, db)
+		setBaseUSD(t, db, user.ID)
 		account := testutil.CreateTestCashAccountWithBalance(t, db, user.ID, 100000)
 		account2 := testutil.CreateTestCashAccount(t, db, user.ID)
 
@@ -1265,6 +1269,7 @@ func TestGetSpendingByCategory(t *testing.T) {
 		acctSvc := NewAccountService(db)
 		txSvc := NewTransactionService(db, acctSvc, nil)
 		user := testutil.CreateTestUser(t, db)
+		setBaseUSD(t, db, user.ID)
 
 		result, err := txSvc.GetSpendingByCategory(user.ID, from, to)
 		testutil.AssertNoError(t, err)
@@ -1283,7 +1288,9 @@ func TestGetSpendingByCategory(t *testing.T) {
 		acctSvc := NewAccountService(db)
 		txSvc := NewTransactionService(db, acctSvc, nil)
 		userA := testutil.CreateTestUser(t, db)
+		setBaseUSD(t, db, userA.ID)
 		userB := testutil.CreateTestUser(t, db)
+		setBaseUSD(t, db, userB.ID)
 		accountA := testutil.CreateTestCashAccountWithBalance(t, db, userA.ID, 100000)
 		accountB := testutil.CreateTestCashAccountWithBalance(t, db, userB.ID, 100000)
 
@@ -1306,6 +1313,7 @@ func TestGetSpendingByCategory(t *testing.T) {
 		acctSvc := NewAccountService(db)
 		txSvc := NewTransactionService(db, acctSvc, nil)
 		user := testutil.CreateTestUser(t, db)
+		setBaseUSD(t, db, user.ID)
 		account := testutil.CreateTestCashAccountWithBalance(t, db, user.ID, 100000)
 
 		// CreateTestCategory creates categories without a color set
@@ -1337,6 +1345,7 @@ func TestGetSpendingByCategory(t *testing.T) {
 		acctSvc := NewAccountService(db)
 		txSvc := NewTransactionService(db, acctSvc, nil)
 		user := testutil.CreateTestUser(t, db)
+		setBaseUSD(t, db, user.ID)
 		account := testutil.CreateTestCashAccountWithBalance(t, db, user.ID, 100000)
 
 		// Create a category with an explicit color
@@ -1370,6 +1379,7 @@ func TestGetSpendingByCategory(t *testing.T) {
 		acctSvc := NewAccountService(db)
 		txSvc := NewTransactionService(db, acctSvc, nil)
 		user := testutil.CreateTestUser(t, db)
+		setBaseUSD(t, db, user.ID)
 		account := testutil.CreateTestCashAccountWithBalance(t, db, user.ID, 100000)
 
 		catSmall := testutil.CreateTestCategory(t, db, user.ID, models.CategoryTypeExpense)
@@ -1412,6 +1422,7 @@ func TestGetCashflow(t *testing.T) {
 		acctSvc := NewAccountService(db)
 		txSvc := NewTransactionService(db, acctSvc, nil)
 		user := testutil.CreateTestUser(t, db)
+		setBaseUSD(t, db, user.ID)
 		account := testutil.CreateTestCashAccountWithBalance(t, db, user.ID, 100000)
 
 		salary := testutil.CreateTestCategory(t, db, user.ID, models.CategoryTypeIncome)
@@ -1455,6 +1466,7 @@ func TestGetCashflow(t *testing.T) {
 		acctSvc := NewAccountService(db)
 		txSvc := NewTransactionService(db, acctSvc, nil)
 		user := testutil.CreateTestUser(t, db)
+		setBaseUSD(t, db, user.ID)
 		account := testutil.CreateTestCashAccountWithBalance(t, db, user.ID, 100000)
 		account2 := testutil.CreateTestCashAccount(t, db, user.ID)
 
@@ -1480,6 +1492,7 @@ func TestGetCashflow(t *testing.T) {
 		acctSvc := NewAccountService(db)
 		txSvc := NewTransactionService(db, acctSvc, nil)
 		user := testutil.CreateTestUser(t, db)
+		setBaseUSD(t, db, user.ID)
 
 		result, err := txSvc.GetCashflow(user.ID, from, to)
 		testutil.AssertNoError(t, err)
@@ -1498,7 +1511,9 @@ func TestGetCashflow(t *testing.T) {
 		acctSvc := NewAccountService(db)
 		txSvc := NewTransactionService(db, acctSvc, nil)
 		userA := testutil.CreateTestUser(t, db)
+		setBaseUSD(t, db, userA.ID)
 		userB := testutil.CreateTestUser(t, db)
+		setBaseUSD(t, db, userB.ID)
 		accountA := testutil.CreateTestCashAccountWithBalance(t, db, userA.ID, 100000)
 		accountB := testutil.CreateTestCashAccountWithBalance(t, db, userB.ID, 100000)
 
@@ -1525,6 +1540,7 @@ func TestGetMonthlySummary(t *testing.T) {
 		acctSvc := NewAccountService(db)
 		txSvc := NewTransactionService(db, acctSvc, nil)
 		user := testutil.CreateTestUser(t, db)
+		setBaseUSD(t, db, user.ID)
 		account := testutil.CreateTestCashAccountWithBalance(t, db, user.ID, 100000)
 
 		// Current month: income 10000, expense 5000
@@ -1569,6 +1585,7 @@ func TestGetMonthlySummary(t *testing.T) {
 		acctSvc := NewAccountService(db)
 		txSvc := NewTransactionService(db, acctSvc, nil)
 		user := testutil.CreateTestUser(t, db)
+		setBaseUSD(t, db, user.ID)
 
 		result, err := txSvc.GetMonthlySummary(user.ID, 3)
 		testutil.AssertNoError(t, err)
@@ -1592,6 +1609,7 @@ func TestGetMonthlySummary(t *testing.T) {
 		acctSvc := NewAccountService(db)
 		txSvc := NewTransactionService(db, acctSvc, nil)
 		user := testutil.CreateTestUser(t, db)
+		setBaseUSD(t, db, user.ID)
 		account := testutil.CreateTestCashAccountWithBalance(t, db, user.ID, 100000)
 		account2 := testutil.CreateTestCashAccount(t, db, user.ID)
 
@@ -1621,6 +1639,7 @@ func TestGetMonthlySummary(t *testing.T) {
 		acctSvc := NewAccountService(db)
 		txSvc := NewTransactionService(db, acctSvc, nil)
 		user := testutil.CreateTestUser(t, db)
+		setBaseUSD(t, db, user.ID)
 
 		// CreateCashAccount with an initial balance writes an opening_balance transaction
 		account, err := acctSvc.CreateCashAccount(user.ID, "Savings", "", "USD", 50000)
@@ -1649,7 +1668,9 @@ func TestGetMonthlySummary(t *testing.T) {
 		acctSvc := NewAccountService(db)
 		txSvc := NewTransactionService(db, acctSvc, nil)
 		userA := testutil.CreateTestUser(t, db)
+		setBaseUSD(t, db, userA.ID)
 		userB := testutil.CreateTestUser(t, db)
+		setBaseUSD(t, db, userB.ID)
 		accountA := testutil.CreateTestCashAccountWithBalance(t, db, userA.ID, 100000)
 		accountB := testutil.CreateTestCashAccountWithBalance(t, db, userB.ID, 100000)
 
@@ -1682,6 +1703,7 @@ func TestGetDailySpending(t *testing.T) {
 		acctSvc := NewAccountService(db)
 		txSvc := NewTransactionService(db, acctSvc, nil)
 		user := testutil.CreateTestUser(t, db)
+		setBaseUSD(t, db, user.ID)
 		account := testutil.CreateTestCashAccountWithBalance(t, db, user.ID, 100000)
 
 		// Day 1: two expenses (3000 + 2000 = 5000)
@@ -1717,6 +1739,7 @@ func TestGetDailySpending(t *testing.T) {
 		acctSvc := NewAccountService(db)
 		txSvc := NewTransactionService(db, acctSvc, nil)
 		user := testutil.CreateTestUser(t, db)
+		setBaseUSD(t, db, user.ID)
 		account := testutil.CreateTestCashAccountWithBalance(t, db, user.ID, 100000)
 
 		fiveDay := time.Date(2026, 2, 5, 23, 59, 59, 0, time.UTC)
@@ -1743,6 +1766,7 @@ func TestGetDailySpending(t *testing.T) {
 		acctSvc := NewAccountService(db)
 		txSvc := NewTransactionService(db, acctSvc, nil)
 		user := testutil.CreateTestUser(t, db)
+		setBaseUSD(t, db, user.ID)
 		account := testutil.CreateTestCashAccountWithBalance(t, db, user.ID, 100000)
 		account2 := testutil.CreateTestCashAccount(t, db, user.ID)
 
@@ -1772,6 +1796,7 @@ func TestGetDailySpending(t *testing.T) {
 		acctSvc := NewAccountService(db)
 		txSvc := NewTransactionService(db, acctSvc, nil)
 		user := testutil.CreateTestUser(t, db)
+		setBaseUSD(t, db, user.ID)
 		account := testutil.CreateTestCashAccountWithBalance(t, db, user.ID, 100000)
 
 		// Expense before range
@@ -1798,7 +1823,9 @@ func TestGetDailySpending(t *testing.T) {
 		acctSvc := NewAccountService(db)
 		txSvc := NewTransactionService(db, acctSvc, nil)
 		userA := testutil.CreateTestUser(t, db)
+		setBaseUSD(t, db, userA.ID)
 		userB := testutil.CreateTestUser(t, db)
+		setBaseUSD(t, db, userB.ID)
 		accountA := testutil.CreateTestCashAccountWithBalance(t, db, userA.ID, 100000)
 		accountB := testutil.CreateTestCashAccountWithBalance(t, db, userB.ID, 100000)
 
@@ -1828,6 +1855,7 @@ func TestGetDailySummary(t *testing.T) {
 		acctSvc := NewAccountService(db)
 		txSvc := NewTransactionService(db, acctSvc, nil)
 		user := testutil.CreateTestUser(t, db)
+		setBaseUSD(t, db, user.ID)
 		account := testutil.CreateTestCashAccountWithBalance(t, db, user.ID, 100000)
 
 		// Day 1: income 10000, expense 3000
@@ -1863,6 +1891,7 @@ func TestGetDailySummary(t *testing.T) {
 		acctSvc := NewAccountService(db)
 		txSvc := NewTransactionService(db, acctSvc, nil)
 		user := testutil.CreateTestUser(t, db)
+		setBaseUSD(t, db, user.ID)
 		account := testutil.CreateTestCashAccountWithBalance(t, db, user.ID, 100000)
 
 		opening := &models.Transaction{
@@ -1885,7 +1914,9 @@ func TestGetDailySummary(t *testing.T) {
 		acctSvc := NewAccountService(db)
 		txSvc := NewTransactionService(db, acctSvc, nil)
 		userA := testutil.CreateTestUser(t, db)
+		setBaseUSD(t, db, userA.ID)
 		userB := testutil.CreateTestUser(t, db)
+		setBaseUSD(t, db, userB.ID)
 		accountA := testutil.CreateTestCashAccountWithBalance(t, db, userA.ID, 100000)
 		accountB := testutil.CreateTestCashAccountWithBalance(t, db, userB.ID, 100000)
 
@@ -2152,6 +2183,7 @@ func TestGetSpendingByCategory_ExcludesZeroEffectiveTotals(t *testing.T) {
 	defer testutil.TeardownTestDB(t, db)
 	txSvc := NewTransactionService(db, NewAccountService(db), nil)
 	user := testutil.CreateTestUser(t, db)
+	setBaseUSD(t, db, user.ID)
 	account := testutil.CreateTestCashAccountWithBalance(t, db, user.ID, 100000)
 	travel := testutil.CreateTestCategory(t, db, user.ID, models.CategoryTypeExpense)
 	food := testutil.CreateTestCategory(t, db, user.ID, models.CategoryTypeExpense)

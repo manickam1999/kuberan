@@ -53,6 +53,13 @@ type Account struct {
 	// For fixed deposit accounts (also reuses InterestRate for the annual rate)
 	FixedDeposit *FixedDepositDetails `gorm:"foreignKey:AccountID" json:"fixed_deposit,omitempty"`
 
+	// Response-only base-currency view (plan 024, phase 4), populated by the
+	// account list/get endpoints. BalanceBase is omitted when no FX rate exists.
+	BalanceBase *int64 `gorm:"-" json:"balance_base,omitempty"` // Balance converted to the user's base currency now
+	FXRate      string `gorm:"-" json:"fx_rate,omitempty"`      // account currency -> base, decimal string; empty when same currency
+	FXStale     bool   `gorm:"-" json:"fx_stale,omitempty"`     // the FX quote used was stale
+	FXMissing   bool   `gorm:"-" json:"fx_missing,omitempty"`   // no FX rate; BalanceBase is omitted
+
 	// Relationships
 	Transactions []Transaction `gorm:"foreignKey:AccountID" json:"transactions,omitempty"`
 }

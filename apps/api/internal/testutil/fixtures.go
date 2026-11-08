@@ -168,6 +168,7 @@ func CreateTestBudget(t *testing.T, db *gorm.DB, userID, categoryID string) *mod
 		Amount:     10000, // $100.00
 		Period:     models.BudgetPeriodMonthly,
 		IsActive:   true,
+		Currency:   "USD", // matches the USD fixture accounts
 	}
 	if err := db.Create(budget).Error; err != nil {
 		t.Fatalf("failed to create test budget: %v", err)

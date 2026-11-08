@@ -23,6 +23,7 @@ func TestComputeSnapshot_FixedDeposit(t *testing.T) {
 		svc := NewPortfolioSnapshotService(db, nil)
 
 		user := testutil.CreateTestUser(t, db)
+		p4SetBase(t, db, user, "USD") // the fixture accounts are USD
 		// Need at least one active account for the user to appear in snapshot
 		testutil.CreateTestCashAccountWithBalance(t, db, user.ID, 0)
 
@@ -57,6 +58,7 @@ func TestComputeSnapshot_FixedDeposit(t *testing.T) {
 		svc := NewPortfolioSnapshotService(db, nil)
 
 		user := testutil.CreateTestUser(t, db)
+		p4SetBase(t, db, user, "USD") // the fixture accounts are USD
 		testutil.CreateTestCashAccountWithBalance(t, db, user.ID, 0)
 
 		fdAcct, _ := testutil.CreateTestFixedDepositAccount(t, db, user.ID, testutil.FixedDepositParams{
@@ -88,6 +90,7 @@ func TestComputeSnapshot_FixedDeposit(t *testing.T) {
 		svc := NewPortfolioSnapshotService(db, nil)
 
 		user := testutil.CreateTestUser(t, db)
+		p4SetBase(t, db, user, "USD") // the fixture accounts are USD
 
 		// Cash: $1500.00
 		testutil.CreateTestCashAccountWithBalance(t, db, user.ID, 100000) // $1000
@@ -135,6 +138,7 @@ func TestComputeSnapshot_FixedDeposit(t *testing.T) {
 		svc := NewPortfolioSnapshotService(db, nil)
 
 		user := testutil.CreateTestUser(t, db)
+		p4SetBase(t, db, user, "USD") // the fixture accounts are USD
 		testutil.CreateTestCashAccountWithBalance(t, db, user.ID, 0)
 
 		// Two active FDs
@@ -175,6 +179,7 @@ func TestComputeSnapshot_FixedDeposit(t *testing.T) {
 		svc := NewPortfolioSnapshotService(db, nil)
 
 		user := testutil.CreateTestUser(t, db)
+		p4SetBase(t, db, user, "USD") // the fixture accounts are USD
 		testutil.CreateTestCashAccountWithBalance(t, db, user.ID, 0)
 
 		testutil.CreateTestFixedDepositAccount(t, db, user.ID, testutil.FixedDepositParams{

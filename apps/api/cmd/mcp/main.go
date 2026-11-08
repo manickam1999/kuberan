@@ -45,10 +45,10 @@ func run() error {
 	categoryService := services.NewCategoryService(db)
 	ruleService := services.NewRuleService(db, categoryService)
 	transactionService := services.NewTransactionService(db, accountService, ruleService, services.WithTransactionFXService(fxService))
-	budgetService := services.NewBudgetService(db)
+	budgetService := services.NewBudgetService(db, services.WithBudgetFXService(fxService))
 	investmentService := services.NewInvestmentService(db, accountService, fxService)
 	snapshotService := services.NewPortfolioSnapshotService(db, fxService)
-	receivableService := services.NewReceivableService(db, accountService, ruleService)
+	receivableService := services.NewReceivableService(db, accountService, ruleService, services.WithReceivableFXService(fxService))
 	auditService := services.NewAuditService(db)
 	grantService := services.NewOAuthGrantService(db)
 

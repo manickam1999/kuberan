@@ -398,6 +398,9 @@ type SettleReceivableRequest struct {
 	Date              *string `json:"date"`
 	Description       string  `json:"description" binding:"max=500"`
 	WriteOffRemainder bool    `json:"write_off_remainder"`
+	// AccountAmount is the amount credited to the account, in the account's
+	// currency. Required when it differs from the receivable's currency.
+	AccountAmount *int64 `json:"account_amount"`
 }
 
 // SettleReceivable records a repayment against a receivable.
@@ -410,7 +413,7 @@ type SettleReceivableRequest struct {
 // @Param       id      path string                  true "Receivable ID"
 // @Param       request body SettleReceivableRequest true "Repayment details"
 // @Success     201 {object} SettleResponse "Repayment recorded"
-// @Failure     400 {object} ErrorResponse "Invalid input, amount over outstanding or invalid account type"
+// @Failure     400 {object} ErrorResponse "Invalid input, amount over outstanding, invalid account type or FX_AMOUNT_REQUIRED (account_amount needed for a cross-currency repayment)"
 // @Failure     401 {object} ErrorResponse "Unauthorized"
 // @Failure     404 {object} ErrorResponse "Receivable or account not found"
 // @Failure     500 {object} ErrorResponse "Server error"
@@ -448,6 +451,7 @@ func (h *ReceivableHandler) SettleReceivable(c *gin.Context) {
 		Date:              date,
 		Description:       req.Description,
 		WriteOffRemainder: req.WriteOffRemainder,
+		AccountAmount:     req.AccountAmount,
 	})
 	if err != nil {
 		respondWithError(c, err)
@@ -460,6 +464,7 @@ func (h *ReceivableHandler) SettleReceivable(c *gin.Context) {
 			"account_id":          req.AccountID,
 			"amount":              *req.Amount,
 			"write_off_remainder": req.WriteOffRemainder,
+			"account_amount":      req.AccountAmount,
 		})
 
 	c.JSON(http.StatusCreated, gin.H{"receivable": receivable, "settlement": settlement})
