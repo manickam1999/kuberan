@@ -8,6 +8,7 @@ import {
   TrendingDown,
   Wallet,
   Coins,
+  Landmark,
   ChevronLeft,
   ChevronRight,
   List,
@@ -41,7 +42,17 @@ import {
   usePrefetchInvestment,
   type InvestmentStatus,
 } from "@/hooks/use-investments";
-import { formatCurrency, formatPercentage } from "@/lib/format";
+import { useAuth } from "@/hooks/use-auth";
+import { useBaseCurrency } from "@/hooks/use-profile";
+import { formatMoney, formatPercentage } from "@/lib/format";
+import { Money } from "@/components/ui/money";
+import { FxNotice } from "@/components/ui/fx-notice";
+import {
+  UnrealizedPnl,
+  formatSigned,
+  holdingFigures,
+} from "@/components/investments/holding-figures";
+import { CurrencyExposureChart } from "@/components/investments/currency-exposure-chart";
 import type { AssetType, Investment } from "@/types/models";
 import { AssetAllocationChart } from "@/components/investments/asset-allocation-chart";
 import { InvestmentValueChart } from "@/components/investments/investment-value-chart";
@@ -75,6 +86,16 @@ type SortColumn =
   | "return_pct";
 type SortDirection = "asc" | "desc" | null;
 
+/**
+ * Approximate base-currency size of a native amount at the holding's current
+ * rate. Used for sorting only, never displayed.
+ */
+function approxBase(investment: Investment, native: number): number {
+  if (investment.fx_missing) return 0;
+  const rate = investment.fx_rate ? Number(investment.fx_rate) : 1;
+  return native * (Number.isFinite(rate) && rate > 0 ? rate : 1);
+}
+
 function returnPct(investment: Investment) {
   if (investment.total_invested === 0) return 0;
   return (investment.realized_gain_loss / investment.total_invested) * 100;
@@ -89,9 +110,7 @@ function HoldingCard({
   onClick: () => void;
   onPrefetch: () => void;
 }) {
-  const marketValue = Math.round(investment.quantity * investment.current_price);
-  const unrealizedGL = marketValue - investment.cost_basis;
-  const isUnrealizedPositive = unrealizedGL >= 0;
+  const f = holdingFigures(investment);
   const isRealizedPositive = investment.realized_gain_loss >= 0;
 
   return (
@@ -116,8 +135,17 @@ function HoldingCard({
             </p>
           </div>
           <div className="text-right flex-shrink-0 min-w-0 overflow-hidden">
-            <p className="text-sm sm:text-base font-semibold font-mono tabular-nums truncate">
-              {formatCurrency(marketValue)}
+            <p className="text-sm sm:text-base font-semibold font-mono">
+              <Money
+                amount={f.nativeValue}
+                currency={f.currency}
+                baseAmount={f.baseValue}
+                fxRate={investment.fx_rate}
+                fxStale={investment.fx_stale}
+                fxMissing={investment.fx_missing}
+                layout="stacked"
+                className="items-end"
+              />
             </p>
           </div>
         </div>
@@ -132,31 +160,38 @@ function HoldingCard({
           </div>
           <div className="text-right min-w-0">
             <p className="text-muted-foreground text-xs">Price</p>
-            <p className="font-medium font-mono tabular-nums truncate">
-              {formatCurrency(investment.current_price)}
+            <p className="font-medium font-mono">
+              <Money
+                amount={investment.current_price_native}
+                currency={f.currency}
+                fxRate={investment.fx_rate}
+                fxStale={investment.fx_stale}
+                fxMissing={investment.fx_missing}
+              />
             </p>
           </div>
         </div>
         <div className="flex items-center justify-between gap-2 text-sm min-w-0">
           <span className="text-muted-foreground shrink-0">Unrealized G/L</span>
-          <span
-            className={`font-medium font-mono tabular-nums truncate ${
-              isUnrealizedPositive ? "text-positive" : "text-negative"
-            }`}
-          >
-            {isUnrealizedPositive ? "+" : ""}
-            {formatCurrency(unrealizedGL)}
-          </span>
+          <UnrealizedPnl
+            investment={investment}
+            className="font-medium font-mono"
+          />
         </div>
         <div className="flex items-center justify-between gap-2 text-sm min-w-0">
           <span className="text-muted-foreground shrink-0">Realized G/L</span>
           <span
-            className={`font-medium font-mono tabular-nums truncate ${
+            className={`font-medium font-mono ${
               isRealizedPositive ? "text-positive" : "text-negative"
             }`}
           >
             {isRealizedPositive ? "+" : ""}
-            {formatCurrency(investment.realized_gain_loss)}
+            <Money
+              amount={investment.realized_gain_loss}
+              currency={investment.currency}
+              baseAmount={investment.realized_gain_loss_base}
+              fxMissing={investment.fx_missing}
+            />
           </span>
         </div>
         <div className="pt-1 min-w-0">
@@ -182,6 +217,7 @@ function ClosedHoldingCard({
   onClick: () => void;
   onPrefetch: () => void;
 }) {
+  const { hideBalances } = useAuth();
   const isRealizedPositive = investment.realized_gain_loss >= 0;
   const pct = returnPct(investment);
 
@@ -208,12 +244,18 @@ function ClosedHoldingCard({
           </div>
           <div className="text-right flex-shrink-0 min-w-0 overflow-hidden">
             <p
-              className={`text-sm sm:text-base font-semibold font-mono tabular-nums truncate ${
+              className={`text-sm sm:text-base font-semibold font-mono ${
                 isRealizedPositive ? "text-positive" : "text-negative"
               }`}
             >
               {isRealizedPositive ? "+" : ""}
-              {formatCurrency(investment.realized_gain_loss)}
+              <Money
+                amount={investment.realized_gain_loss}
+                currency={investment.currency}
+                baseAmount={investment.realized_gain_loss_base}
+                layout="stacked"
+                className="items-end"
+              />
             </p>
           </div>
         </div>
@@ -222,7 +264,11 @@ function ClosedHoldingCard({
         <div className="flex items-center justify-between gap-2 text-sm min-w-0">
           <span className="text-muted-foreground shrink-0">Invested</span>
           <span className="font-medium font-mono tabular-nums truncate">
-            {formatCurrency(investment.total_invested)}
+            {formatMoney(
+              investment.total_invested,
+              investment.currency,
+              hideBalances
+            )}
           </span>
         </div>
         <div className="flex items-center justify-between gap-2 text-sm min-w-0">
@@ -252,6 +298,7 @@ function ClosedHoldingCard({
 
 function AllHoldingsTable() {
   const router = useRouter();
+  const { hideBalances } = useAuth();
   const prefetchInvestment = usePrefetchInvestment();
   const [page, setPage] = useState(1);
   const [status, setStatus] = useState<InvestmentStatus>("open");
@@ -309,6 +356,7 @@ function AllHoldingsTable() {
           bVal = b.quantity;
           break;
         case "price":
+          // Base price keeps holdings in different currencies comparable.
           aVal = a.current_price;
           bVal = b.current_price;
           break;
@@ -317,18 +365,16 @@ function AllHoldingsTable() {
           bVal = Math.round(b.quantity * b.current_price);
           break;
         case "unrealized_gl":
-          aVal =
-            Math.round(a.quantity * a.current_price) - a.cost_basis;
-          bVal =
-            Math.round(b.quantity * b.current_price) - b.cost_basis;
+          aVal = holdingFigures(a).basePnl ?? 0;
+          bVal = holdingFigures(b).basePnl ?? 0;
           break;
         case "realized_gl":
-          aVal = a.realized_gain_loss;
-          bVal = b.realized_gain_loss;
+          aVal = a.realized_gain_loss_base;
+          bVal = b.realized_gain_loss_base;
           break;
         case "total_invested":
-          aVal = a.total_invested;
-          bVal = b.total_invested;
+          aVal = approxBase(a, a.total_invested);
+          bVal = approxBase(b, b.total_invested);
           break;
         case "return_pct":
           aVal = returnPct(a);
@@ -542,7 +588,11 @@ function AllHoldingsTable() {
                             </Link>
                           </TableCell>
                           <TableCell className="text-right font-mono tabular-nums">
-                            {formatCurrency(inv.total_invested)}
+                            {formatMoney(
+                              inv.total_invested,
+                              inv.currency,
+                              hideBalances
+                            )}
                           </TableCell>
                           <TableCell
                             className={`text-right font-medium font-mono tabular-nums ${
@@ -550,7 +600,11 @@ function AllHoldingsTable() {
                             }`}
                           >
                             {realizedPositive ? "+" : ""}
-                            {formatCurrency(inv.realized_gain_loss)}
+                            <Money
+                              amount={inv.realized_gain_loss}
+                              currency={inv.currency}
+                              baseAmount={inv.realized_gain_loss_base}
+                            />
                           </TableCell>
                           <TableCell
                             className={`text-right font-medium font-mono tabular-nums ${
@@ -563,11 +617,7 @@ function AllHoldingsTable() {
                         </TableRow>
                       );
                     }
-                    const marketValue = Math.round(
-                      inv.quantity * inv.current_price
-                    );
-                    const gainLoss = marketValue - inv.cost_basis;
-                    const isPositive = gainLoss >= 0;
+                    const f = holdingFigures(inv);
                     return (
                       <TableRow
                         key={inv.id}
@@ -599,18 +649,27 @@ function AllHoldingsTable() {
                           )}
                         </TableCell>
                         <TableCell className="text-right font-mono tabular-nums">
-                          {formatCurrency(inv.current_price)}
+                          <Money
+                            amount={inv.current_price_native}
+                            currency={f.currency}
+                            fxRate={inv.fx_rate}
+                            fxStale={inv.fx_stale}
+                            fxMissing={inv.fx_missing}
+                          />
                         </TableCell>
-                        <TableCell className="text-right font-medium font-mono tabular-nums">
-                          {formatCurrency(marketValue)}
+                        <TableCell className="text-right font-medium font-mono">
+                          <Money
+                            amount={f.nativeValue}
+                            currency={f.currency}
+                            baseAmount={f.baseValue}
+                            fxRate={inv.fx_rate}
+                            fxStale={inv.fx_stale}
+                            fxMissing={inv.fx_missing}
+                            className="justify-end"
+                          />
                         </TableCell>
-                        <TableCell
-                          className={`text-right font-medium font-mono tabular-nums ${
-                            isPositive ? "text-positive" : "text-negative"
-                          }`}
-                        >
-                          {isPositive ? "+" : ""}
-                          {formatCurrency(gainLoss)}
+                        <TableCell className="text-right font-medium font-mono">
+                          <UnrealizedPnl investment={inv} />
                         </TableCell>
                         <TableCell
                           className={`text-right font-medium font-mono tabular-nums ${
@@ -618,7 +677,12 @@ function AllHoldingsTable() {
                           }`}
                         >
                           {realizedPositive ? "+" : ""}
-                          {formatCurrency(inv.realized_gain_loss)}
+                          <Money
+                            amount={inv.realized_gain_loss}
+                            currency={inv.currency}
+                            baseAmount={inv.realized_gain_loss_base}
+                            className="justify-end"
+                          />
                         </TableCell>
                       </TableRow>
                     );
@@ -663,6 +727,8 @@ function AllHoldingsTable() {
 
 export default function InvestmentsPage() {
   const { data: portfolio, isLoading } = usePortfolio();
+  const { hideBalances } = useAuth();
+  const baseCurrency = useBaseCurrency();
 
   if (isLoading) {
     return <InvestmentsSkeleton />;
@@ -694,6 +760,11 @@ export default function InvestmentsPage() {
     );
   }
 
+  const portfolioCurrency = portfolio.currency || baseCurrency;
+  const money = (cents: number) =>
+    formatMoney(cents, portfolioCurrency, hideBalances);
+  const signed = (cents: number) =>
+    formatSigned(cents, portfolioCurrency, hideBalances).replace("-", "−");
   const gainUp = portfolio.total_gain_loss >= 0;
   const realizedUp = portfolio.total_realized_gain_loss >= 0;
 
@@ -717,11 +788,11 @@ export default function InvestmentsPage() {
         </p>
       </div>
 
-      {/* Summary Cards */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      {/* Summary Cards (base currency) */}
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <StatCard
           label="Total value"
-          value={formatCurrency(portfolio.total_value)}
+          value={money(portfolio.total_value)}
           icon={Wallet}
           tone="primary"
           delta={{
@@ -732,35 +803,58 @@ export default function InvestmentsPage() {
         />
         <StatCard
           label="Cost basis"
-          value={formatCurrency(portfolio.total_cost_basis)}
+          value={money(portfolio.total_cost_basis)}
           icon={Coins}
           sub="Total invested"
         />
         <StatCard
           label="Unrealized G/L"
-          value={`${gainUp ? "+" : "−"}${formatCurrency(Math.abs(portfolio.total_gain_loss))}`}
+          value={signed(portfolio.total_gain_loss)}
           icon={gainUp ? TrendingUp : TrendingDown}
           tone={gainUp ? "positive" : "negative"}
           sub="open positions"
         />
         <StatCard
+          label="Price return"
+          value={signed(portfolio.total_price_return)}
+          icon={portfolio.total_price_return >= 0 ? TrendingUp : TrendingDown}
+          tone={portfolio.total_price_return >= 0 ? "positive" : "negative"}
+          sub="from price movement"
+        />
+        <StatCard
+          label="FX return"
+          value={signed(portfolio.total_fx_return)}
+          icon={Landmark}
+          tone={portfolio.total_fx_return >= 0 ? "positive" : "negative"}
+          sub="from currency movement"
+        />
+        <StatCard
           label="Realized G/L"
-          value={`${realizedUp ? "+" : "−"}${formatCurrency(Math.abs(portfolio.total_realized_gain_loss))}`}
+          value={signed(portfolio.total_realized_gain_loss)}
           icon={realizedUp ? TrendingUp : TrendingDown}
           tone={realizedUp ? "positive" : "negative"}
           sub="closed positions"
         />
       </div>
 
-      {/* Value trend + allocation — equal-height row */}
+      <FxNotice
+        unconverted={portfolio.unconverted}
+        fxStale={portfolio.fx_stale}
+      />
+
+      {/* Value trend + allocation / currency exposure */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         <div className="min-w-0 lg:col-span-2">
           <InvestmentValueChart />
         </div>
-        <AssetAllocationChart
-          holdingsByType={portfolio.holdings_by_type}
-          totalValue={portfolio.total_value}
-        />
+        <div className="flex min-w-0 flex-col gap-4">
+          <AssetAllocationChart
+            holdingsByType={portfolio.holdings_by_type}
+            totalValue={portfolio.total_value}
+            currency={portfolioCurrency}
+          />
+          <CurrencyExposureChart />
+        </div>
       </div>
 
       {/* All Holdings Table */}

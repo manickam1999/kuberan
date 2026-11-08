@@ -4,7 +4,7 @@ import Link from "next/link";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { DialogFooter } from "@/components/ui/dialog";
-import { formatCurrency, formatDate } from "@/lib/format";
+import { formatMoney, formatDate } from "@/lib/format";
 import type { Transaction } from "@/types/models";
 
 /**
@@ -19,7 +19,7 @@ export function ReimbursementView({
 }: {
   transaction: Transaction;
   accountName: string;
-  currency?: string;
+  currency: string;
   /** Called when the user follows the link to Owed to me (closes the dialog). */
   onNavigate: () => void;
 }) {
@@ -32,7 +32,7 @@ export function ReimbursementView({
       <div className="flex items-center justify-between">
         <Label>Amount</Label>
         <span className="money text-sm font-medium">
-          {formatCurrency(transaction.amount, currency)}
+          {formatMoney(transaction.amount, currency)}
         </span>
       </div>
       <div className="flex items-center justify-between">

@@ -22,7 +22,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { formatCurrency, formatDate, formatPayoutType } from "@/lib/format";
+import { formatMoney, formatDate, formatPayoutType } from "@/lib/format";
 import type { Account } from "@/types/models";
 
 interface CloseFixedDepositDialogProps {
@@ -168,7 +168,7 @@ export function CloseFixedDepositDialog({
             <div className="flex justify-between">
               <span className="text-muted-foreground">Principal</span>
               <span className="font-medium">
-                {formatCurrency(principal, account.currency)}
+                {formatMoney(principal, account.currency)}
               </span>
             </div>
             <div className="flex justify-between">
@@ -180,18 +180,18 @@ export function CloseFixedDepositDialog({
                     : "Estimated accrued interest"}
               </span>
               <span className="font-medium">
-                {formatCurrency(displayInterest, account.currency)}
+                {formatMoney(displayInterest, account.currency)}
               </span>
             </div>
             {isEarlyClose && penalty > 0 && (
               <div className="flex justify-between text-destructive">
                 <span>Penalty</span>
-                <span>-{formatCurrency(penalty, account.currency)}</span>
+                <span>-{formatMoney(penalty, account.currency)}</span>
               </div>
             )}
             <div className="flex justify-between border-t border-border/60 pt-2 font-semibold">
               <span>Amount received</span>
-              <span>{formatCurrency(amountReceived, account.currency)}</span>
+              <span>{formatMoney(amountReceived, account.currency)}</span>
             </div>
           </div>
 
@@ -221,6 +221,7 @@ export function CloseFixedDepositDialog({
               onChange={(v) =>
                 setInterestOverride(v !== estimatedInterest ? v : null)
               }
+              symbol={account.currency}
               placeholder={String(estimatedInterest / 100)}
               disabled={closeFD.isPending}
             />
@@ -239,6 +240,7 @@ export function CloseFixedDepositDialog({
                 id="close-fd-penalty"
                 value={penalty}
                 onChange={setPenalty}
+                symbol={account.currency}
                 placeholder="0.00"
                 disabled={closeFD.isPending}
               />

@@ -7,7 +7,10 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useAccounts, accountKeys } from "@/hooks/use-accounts";
 import { useAuth } from "@/hooks/use-auth";
 import { apiClient } from "@/lib/api-client";
-import { formatCurrency, formatDate, formatPercentage } from "@/lib/format";
+import { formatMoney, formatDate, formatPercentage } from "@/lib/format";
+import { useBaseCurrency } from "@/hooks/use-profile";
+import { Money } from "@/components/ui/money";
+import { FxNotice, type FxNoticeItem } from "@/components/ui/fx-notice";
 import { accountVisual } from "@/lib/domain-visuals";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -85,7 +88,15 @@ function AccountTile({
             isLiability ? "text-warning" : ""
           }`}
         >
-          {formatCurrency(account.balance, account.currency, hideBalances)}
+          <Money
+            amount={account.balance}
+            currency={account.currency}
+            baseAmount={account.balance_base}
+            fxRate={account.fx_rate}
+            fxStale={account.fx_stale}
+            fxMissing={account.fx_missing}
+            layout="stacked"
+          />
         </p>
 
         {account.type === "fixed_deposit" && account.fixed_deposit && (
@@ -105,7 +116,7 @@ function AccountTile({
                 </div>
                 <p className="text-xs text-muted-foreground">
                   Matures {formatDate(account.fixed_deposit.maturity_date)} ·{" "}
-                  {formatCurrency(account.fixed_deposit.maturity_value, account.currency, hideBalances)} projected
+                  {formatMoney(account.fixed_deposit.maturity_value, account.currency, hideBalances)} projected
                 </p>
               </div>
             )}
@@ -141,7 +152,7 @@ function AccountTile({
             </div>
             <p className="text-xs text-muted-foreground">
               {formatPercentage(utilization)} of{" "}
-              {formatCurrency(account.credit_limit, account.currency, hideBalances)} limit
+              {formatMoney(account.credit_limit, account.currency, hideBalances)} limit
             </p>
           </div>
         ) : account.type !== "fixed_deposit" ? (
@@ -188,10 +199,31 @@ export default function AccountsPage() {
     queryClient.invalidateQueries({ queryKey: accountKeys.lists() });
   };
 
+  const baseCurrency = useBaseCurrency();
+
+  // Totals add base-currency balances only. An account without a base value
+  // (no exchange rate) is skipped and reported through <FxNotice>.
+  const baseOf = (a: Account): number | null =>
+    a.balance_base ?? (a.currency === baseCurrency ? a.balance : null);
+  const sumBase = (list: Account[]) =>
+    list.reduce((s, a) => s + (baseOf(a) ?? 0), 0);
   const sumTypes = (types: AccountType[]) =>
-    accounts
-      .filter((a) => types.includes(a.type))
-      .reduce((s, a) => s + a.balance, 0);
+    sumBase(accounts.filter((a) => types.includes(a.type)));
+
+  const unconvertedByCurrency = new Map<string, number>();
+  for (const a of accounts) {
+    if (baseOf(a) === null) {
+      unconvertedByCurrency.set(
+        a.currency,
+        (unconvertedByCurrency.get(a.currency) ?? 0) + a.balance
+      );
+    }
+  }
+  const unconverted: FxNoticeItem[] = Array.from(
+    unconvertedByCurrency,
+    ([currency, amount]) => ({ currency, amount })
+  );
+  const anyStale = accounts.some((a) => a.fx_stale);
   const assets = sumTypes(["cash", "investment", "fixed_deposit"]);
   const fixedDeposits = sumTypes(["fixed_deposit"]);
   const liabilities = sumTypes(["credit_card", "debt"]);
@@ -202,7 +234,7 @@ export default function AccountsPage() {
     label: accountVisual(type).label,
     accounts: accounts
       .filter((a) => a.type === type)
-      .sort((a, b) => Number(b.is_pinned) - Number(a.is_pinned) || Math.abs(b.balance) - Math.abs(a.balance)),
+      .sort((a, b) => Number(b.is_pinned) - Number(a.is_pinned) || Math.abs(baseOf(b) ?? 0) - Math.abs(baseOf(a) ?? 0)),
   })).filter((g) => g.accounts.length > 0);
 
   return (
@@ -236,31 +268,32 @@ export default function AccountsPage() {
         </div>
       ) : (
         <>
+          <FxNotice unconverted={unconverted} fxStale={anyStale} />
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <StatCard
               label="Total assets"
-              value={formatCurrency(assets, undefined, hideBalances)}
+              value={formatMoney(assets, baseCurrency, hideBalances)}
               icon={Coins}
               tone="primary"
               sub="Cash + investments + FDs"
             />
             <StatCard
               label="Fixed deposits"
-              value={formatCurrency(fixedDeposits, undefined, hideBalances)}
+              value={formatMoney(fixedDeposits, baseCurrency, hideBalances)}
               icon={Vault}
               tone="info"
               sub="Locked term deposits"
             />
             <StatCard
               label="Liabilities"
-              value={formatCurrency(liabilities, undefined, hideBalances)}
+              value={formatMoney(liabilities, baseCurrency, hideBalances)}
               icon={Scale}
               tone="warning"
               sub="Credit cards + debt"
             />
             <StatCard
               label="Net worth"
-              value={formatCurrency(netWorth, undefined, hideBalances)}
+              value={formatMoney(netWorth, baseCurrency, hideBalances)}
               icon={Wallet}
               tone="default"
               sub="Assets − liabilities"
@@ -269,10 +302,7 @@ export default function AccountsPage() {
 
           <div className="space-y-8">
             {groups.map((group) => {
-              const subtotal = group.accounts.reduce(
-                (s, a) => s + a.balance,
-                0
-              );
+              const subtotal = sumBase(group.accounts);
               return (
                 <section key={group.type} className="space-y-3">
                   <div className="flex items-baseline justify-between border-b border-border/60 pb-2">
@@ -283,7 +313,7 @@ export default function AccountsPage() {
                       </span>
                     </h2>
                     <span className="money text-sm text-muted-foreground">
-                      {formatCurrency(subtotal, undefined, hideBalances)}
+                      {formatMoney(subtotal, baseCurrency, hideBalances)}
                     </span>
                   </div>
                   <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">

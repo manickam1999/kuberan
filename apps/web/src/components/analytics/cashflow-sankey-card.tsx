@@ -18,7 +18,9 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useCashflow } from "@/hooks/use-transactions";
 import { useActiveMonth } from "@/hooks/use-active-month";
 import { useAuth } from "@/hooks/use-auth";
-import { formatCurrency } from "@/lib/format";
+import { formatMoney } from "@/lib/format";
+import { useBaseCurrency } from "@/hooks/use-profile";
+import { FxNotice } from "@/components/ui/fx-notice";
 import type { SpendingByCategoryItem } from "@/types/api";
 
 const INCOME_TOP_N = 6;
@@ -89,6 +91,9 @@ export function CashflowSankeyCard(props: CashflowSankeyCardProps) {
       : !active.isCurrentMonth;
   const { data, isLoading } = useCashflow(fromDate, toDate);
   const { hideBalances } = useAuth();
+  const baseCurrency = useBaseCurrency();
+  // The response's currency is the base: the unit of every amount here.
+  const currency = data?.currency ?? baseCurrency;
 
   const graph = useMemo(() => {
     if (!data) return null;
@@ -160,8 +165,7 @@ export function CashflowSankeyCard(props: CashflowSankeyCardProps) {
     return { nodes, links, height };
   }, [data]);
 
-  const money = (value: number) =>
-    formatCurrency(value, undefined, hideBalances);
+  const money = (value: number) => formatMoney(value, currency, hideBalances);
 
   if (isLoading) {
     return (
@@ -189,6 +193,12 @@ export function CashflowSankeyCard(props: CashflowSankeyCardProps) {
               Income sources → spending · {monthLabel}
               {showLatestActivityHint && " · latest activity"}
             </CardDescription>
+            <FxNotice
+              fxMissing={data?.fx_missing}
+              unconverted={data?.unconverted}
+              variant="inline"
+              className="mt-1"
+            />
           </div>
           {data && (data.total_income > 0 || data.total_expenses > 0) && (
             <div className="flex gap-5 text-right">

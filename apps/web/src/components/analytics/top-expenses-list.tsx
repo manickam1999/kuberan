@@ -28,26 +28,52 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { formatCurrency, formatDate } from "@/lib/format";
+import { formatMoney, formatDate } from "@/lib/format";
+import { useBaseCurrency } from "@/hooks/use-profile";
+import { FxNotice } from "@/components/ui/fx-notice";
+import type { TopExpenseItem } from "@/types/api";
 
 const LIMIT_OPTIONS = [10, 20, 50];
 
-/** Effective amount (what counts as spending) plus an "of <total>" line when shared. */
+/**
+ * The effective amount (personal share, else full) in the response currency,
+ * ranked by `amount_base`. Beneath it: the native amount when the expense's
+ * currency differs, and the full amount when the expense is shared.
+ */
 function ExpenseAmount({
-  amount,
-  personalAmount,
+  item,
+  currency,
   hideBalances,
 }: {
-  amount: number;
-  personalAmount: number | null;
+  item: TopExpenseItem;
+  /** The response currency (the user's base) that `amount_base` is in. */
+  currency: string;
   hideBalances: boolean;
 }) {
+  const effective = item.personal_amount ?? item.amount;
+  const muted =
+    "block whitespace-nowrap text-xs font-normal text-muted-foreground";
+
+  if (item.fx_missing) {
+    return (
+      <>
+        {formatMoney(effective, item.currency, hideBalances)}
+        <span className={muted}>No exchange rate</span>
+      </>
+    );
+  }
+
   return (
     <>
-      {formatCurrency(personalAmount ?? amount, undefined, hideBalances)}
-      {personalAmount !== null && personalAmount !== amount && (
-        <span className="block whitespace-nowrap text-xs font-normal text-muted-foreground">
-          of {formatCurrency(amount, undefined, hideBalances)}
+      {formatMoney(item.amount_base, currency, hideBalances)}
+      {item.currency !== currency && (
+        <span className={muted}>
+          {formatMoney(effective, item.currency, hideBalances)}
+        </span>
+      )}
+      {item.personal_amount !== null && item.personal_amount !== item.amount && (
+        <span className={muted}>
+          of {formatMoney(item.amount, item.currency, hideBalances)}
         </span>
       )}
     </>
@@ -65,6 +91,7 @@ export function TopExpensesList({
 }) {
   const [limit, setLimit] = useState(10);
   const [categoryId, setCategoryId] = useState("all");
+  const baseCurrency = useBaseCurrency();
   const { data: categoriesData } = useCategories({
     type: "expense",
     page_size: 100,
@@ -90,6 +117,7 @@ export function TopExpensesList({
   }, [selectedTransaction, selectedId]);
 
   const items = data?.items ?? [];
+  const currency = data?.currency ?? baseCurrency;
 
   return (
     <Card>
@@ -99,6 +127,11 @@ export function TopExpensesList({
           <CardDescription>
             Largest individual transactions this month
           </CardDescription>
+          <FxNotice
+            fxMissing={data?.fx_missing}
+            variant="inline"
+            className="mt-1"
+          />
         </div>
         <div className="flex shrink-0 items-center gap-2">
           <Select value={categoryId} onValueChange={setCategoryId}>
@@ -167,8 +200,8 @@ export function TopExpensesList({
                   </span>
                   <span className="money shrink-0 text-right text-sm font-semibold">
                     <ExpenseAmount
-                      amount={item.amount}
-                      personalAmount={item.personal_amount}
+                      item={item}
+                      currency={currency}
                       hideBalances={hideBalances}
                     />
                   </span>
@@ -228,8 +261,8 @@ export function TopExpensesList({
                   </TableCell>
                   <TableCell className="money text-right font-semibold">
                     <ExpenseAmount
-                      amount={item.amount}
-                      personalAmount={item.personal_amount}
+                      item={item}
+                      currency={currency}
                       hideBalances={hideBalances}
                     />
                   </TableCell>

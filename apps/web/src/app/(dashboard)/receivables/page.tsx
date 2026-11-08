@@ -4,7 +4,9 @@ import { useState } from "react";
 import { ChevronDown, ChevronRight, HandCoins, Handshake, Pencil } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { useAllReceivables, useReceivablesSummary } from "@/hooks/use-receivables";
-import { formatCurrency } from "@/lib/format";
+import { formatMoney } from "@/lib/format";
+import { useBaseCurrency } from "@/hooks/use-profile";
+import { FxNotice } from "@/components/ui/fx-notice";
 import {
   RECEIVABLE_KIND_ICONS,
   RECEIVABLE_KIND_LABELS,
@@ -44,7 +46,9 @@ function plural(n: number, word: string): string {
 interface CounterpartyGroup {
   key: string;
   name: string;
-  outstanding: number;
+  /** Outstanding per currency: one base-currency entry in the default view, else one per receivable currency. */
+  outstanding: [currency: string, cents: number][];
+  hasOutstanding: boolean;
   count: number;
   openCount: number;
   settledCount: number;
@@ -74,7 +78,11 @@ export default function ReceivablesPage() {
     !defaultView
   );
 
-  const money = (cents: number) => formatCurrency(cents, undefined, hideBalances);
+  const baseCurrency = useBaseCurrency();
+  const summaryCurrency = summary?.currency || baseCurrency;
+  // Summary totals are already converted to the base currency.
+  const money = (cents: number) =>
+    formatMoney(cents, summaryCurrency, hideBalances);
 
   // Default view (Open + All kinds): the summary is complete and authoritative.
   // Otherwise group the full filtered list, so counts and amounts agree.
@@ -83,14 +91,18 @@ export default function ReceivablesPage() {
     counterpartyRows = (summary?.by_counterparty ?? []).map((c) => ({
       key: c.counterparty_key,
       name: c.counterparty_name,
-      outstanding: c.outstanding,
+      outstanding: [[summaryCurrency, c.outstanding]],
+      hasOutstanding: c.outstanding > 0,
       count: c.open_count,
       openCount: c.open_count,
       settledCount: 0,
       writtenOffCount: 0,
     }));
   } else {
+    // Receivables in different currencies are never added together: each
+    // counterparty carries one outstanding total per currency.
     const groups = new Map<string, CounterpartyGroup>();
+    const perCurrency = new Map<string, Map<string, number>>();
     // The list is ordered newest expense first, so the first name seen per key
     // is the one to show unless a later (older) item was created more recently.
     const latestCreated = new Map<string, string>();
@@ -98,7 +110,8 @@ export default function ReceivablesPage() {
       const g = groups.get(r.counterparty_key) ?? {
         key: r.counterparty_key,
         name: r.counterparty_name,
-        outstanding: 0,
+        outstanding: [],
+        hasOutstanding: false,
         count: 0,
         openCount: 0,
         settledCount: 0,
@@ -109,20 +122,34 @@ export default function ReceivablesPage() {
         latestCreated.set(r.counterparty_key, r.created_at);
         g.name = r.counterparty_name;
       }
-      g.outstanding += r.outstanding;
+      const totals = perCurrency.get(r.counterparty_key) ?? new Map<string, number>();
+      totals.set(r.currency, (totals.get(r.currency) ?? 0) + r.outstanding);
+      perCurrency.set(r.counterparty_key, totals);
       g.count += 1;
       if (r.outstanding > 0) g.openCount += 1;
       else if (r.status === "written_off") g.writtenOffCount += 1;
       else g.settledCount += 1;
       groups.set(r.counterparty_key, g);
     }
+    for (const g of groups.values()) {
+      g.outstanding = Array.from(perCurrency.get(g.key) ?? []).filter(
+        ([, cents]) => cents > 0
+      );
+      g.hasOutstanding = g.outstanding.length > 0;
+    }
     counterpartyRows = Array.from(groups.values()).sort(
-      (a, b) => b.outstanding - a.outstanding || a.name.localeCompare(b.name)
+      (a, b) =>
+        Number(b.hasOutstanding) - Number(a.hasOutstanding) ||
+        a.name.localeCompare(b.name)
     );
   }
   const rowsLoading = defaultView ? summaryLoading : listLoading;
 
   const totalOutstanding = summary?.total_outstanding ?? 0;
+  const byCurrency = (summary?.by_currency ?? []).filter(
+    (c) => c.outstanding > 0
+  );
+  const foreignTotals = byCurrency.filter((c) => c.currency !== summaryCurrency);
   const byKind = (summary?.by_kind ?? []).filter((k) => k.outstanding > 0);
 
   return (
@@ -141,6 +168,8 @@ export default function ReceivablesPage() {
         </Button>
       </div>
 
+      {summary && <FxNotice fxMissing={summary.fx_missing} />}
+
       {summaryLoading ? (
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-4 lg:gap-4">
           <Skeleton className="col-span-2 h-28 w-full rounded-xl lg:col-span-1" />
@@ -156,12 +185,23 @@ export default function ReceivablesPage() {
             icon={HandCoins}
             tone="primary"
             sub={
-              summary
-                ? plural(
+              summary ? (
+                <>
+                  {plural(
                     summary.by_counterparty.reduce((s, c) => s + c.open_count, 0),
                     "open item"
-                  )
-                : undefined
+                  )}
+                  {foreignTotals.length > 0 && (
+                    <span className="block">
+                      {byCurrency
+                        .map((c) =>
+                          formatMoney(c.outstanding, c.currency, hideBalances)
+                        )
+                        .join(" + ")}
+                    </span>
+                  )}
+                </>
+              ) : undefined
             }
             className="col-span-2 lg:col-span-1"
           />
@@ -280,7 +320,7 @@ export default function ReceivablesPage() {
                           {g.name}
                         </span>
                         <div className="text-xs text-muted-foreground">
-                          {g.outstanding > 0
+                          {g.hasOutstanding
                             ? plural(g.openCount, "open item")
                             : `${plural(g.count, "item")} · ${
                                 g.writtenOffCount === 0
@@ -294,10 +334,16 @@ export default function ReceivablesPage() {
                       <span
                         className={cn(
                           "money shrink-0 text-right text-sm font-semibold",
-                          g.outstanding === 0 && "text-muted-foreground"
+                          !g.hasOutstanding && "text-muted-foreground"
                         )}
                       >
-                        {g.outstanding > 0 ? money(g.outstanding) : "Nothing owed"}
+                        {g.hasOutstanding
+                          ? g.outstanding.map(([ccy, cents]) => (
+                              <span key={ccy} className="block">
+                                {formatMoney(cents, ccy, hideBalances)}
+                              </span>
+                            ))
+                          : "Nothing owed"}
                       </span>
                     </button>
                     <Button

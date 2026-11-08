@@ -14,7 +14,8 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useBudgets, useBudgetsProgress } from "@/hooks/use-budgets";
 import { useAuth } from "@/hooks/use-auth";
-import { formatCurrency, formatPercentage } from "@/lib/format";
+import { formatMoney, formatPercentage } from "@/lib/format";
+import { FxNotice } from "@/components/ui/fx-notice";
 import {
   BudgetProgressBar,
   BudgetCategoryChip,
@@ -47,6 +48,8 @@ export function BudgetsCard() {
       )
       .slice(0, TOP_N);
   }, [budgetsData, progressList]);
+
+  const anyFxMissing = rows.some((r) => r.progress?.fx_missing ?? false);
 
   if (isLoading) {
     return (
@@ -117,8 +120,8 @@ export function BudgetsCard() {
                 <div className="flex items-center justify-between gap-3 text-sm">
                   <span className="truncate font-medium">{budget.name}</span>
                   <span className="money shrink-0 text-xs text-muted-foreground">
-                    {formatCurrency(spent, undefined, hideBalances)} /{" "}
-                    {formatCurrency(budget.amount, undefined, hideBalances)}
+                    {formatMoney(spent, budget.currency, hideBalances)} /{" "}
+                    {formatMoney(budget.amount, budget.currency, hideBalances)}
                   </span>
                 </div>
                 <BudgetProgressBar percentage={percentage} size="sm" />
@@ -129,6 +132,7 @@ export function BudgetsCard() {
             </div>
           );
         })}
+        <FxNotice fxMissing={anyFxMissing} variant="inline" />
       </CardContent>
     </Card>
   );

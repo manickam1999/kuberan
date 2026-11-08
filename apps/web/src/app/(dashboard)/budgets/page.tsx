@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import {
   Pencil,
   Plus,
@@ -18,7 +18,10 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card } from "@/components/ui/card";
 import { StatCard } from "@/components/ui/stat-card";
-import { formatCurrency, formatPercentage } from "@/lib/format";
+import { formatMoney, formatPercentage } from "@/lib/format";
+import { useAuth } from "@/hooks/use-auth";
+import { useBaseCurrency } from "@/hooks/use-profile";
+import { FxNotice } from "@/components/ui/fx-notice";
 import {
   BudgetProgressBar,
   BudgetCategoryChip,
@@ -46,6 +49,9 @@ function BudgetCard({
   onToggleActive: () => void;
   toggling: boolean;
 }) {
+  const { hideBalances } = useAuth();
+  // Budget amounts and progress are both in the budget's own currency.
+  const currency = budget.currency;
   const spent = progress?.spent ?? 0;
   const remaining = progress?.remaining ?? budget.amount;
   const percentage = progress?.percentage ?? 0;
@@ -72,7 +78,7 @@ function BudgetCard({
       <div className="space-y-2">
         <div className="flex items-baseline justify-between">
           <span className="money text-lg font-semibold">
-            {formatCurrency(budget.amount)}
+            {formatMoney(budget.amount, currency, hideBalances)}
           </span>
           <span className="text-xs text-muted-foreground">
             {formatPercentage(percentage, 0)}
@@ -81,14 +87,16 @@ function BudgetCard({
         <BudgetProgressBar percentage={percentage} />
         <div className="flex items-center justify-between text-xs">
           <span className="text-muted-foreground">
-            {formatCurrency(spent)} of {formatCurrency(budget.amount)}
+            {formatMoney(spent, currency, hideBalances)} of{" "}
+            {formatMoney(budget.amount, currency, hideBalances)}
           </span>
           <span className={overBudget ? "text-negative" : "text-positive"}>
             {overBudget
-              ? `Over by ${formatCurrency(-remaining)}`
-              : `${formatCurrency(remaining)} left`}
+              ? `Over by ${formatMoney(-remaining, currency, hideBalances)}`
+              : `${formatMoney(remaining, currency, hideBalances)} left`}
           </span>
         </div>
+        <FxNotice fxMissing={progress?.fx_missing} variant="inline" />
       </div>
 
       <div className="flex items-center justify-end gap-0.5 border-t pt-2">
@@ -160,15 +168,46 @@ export default function BudgetsPage() {
 
   const { data, isLoading } = useBudgets({ page, is_active: isActiveFilter });
   const { data: progressList } = useBudgetsProgress();
+  const { hideBalances } = useAuth();
+  const baseCurrency = useBaseCurrency();
 
   const budgets = data?.data ?? [];
   const totalPages = data?.total_pages ?? 1;
   const currentPage = data?.page ?? 1;
 
-  // Batch progress covers active budgets only; totals reflect what's tracked.
-  const totalBudgeted = (progressList ?? []).reduce((s, p) => s + p.budgeted, 0);
-  const totalSpent = (progressList ?? []).reduce((s, p) => s + p.spent, 0);
-  const totalRemaining = totalBudgeted - totalSpent;
+  // Batch progress covers active budgets only. Totals are kept per currency:
+  // amounts in different currencies are never added together.
+  const totals = useMemo(() => {
+    const byCurrency = new Map<
+      string,
+      { currency: string; budgeted: number; spent: number }
+    >();
+    for (const p of progressList ?? []) {
+      const t = byCurrency.get(p.currency) ?? {
+        currency: p.currency,
+        budgeted: 0,
+        spent: 0,
+      };
+      t.budgeted += p.budgeted;
+      t.spent += p.spent;
+      byCurrency.set(p.currency, t);
+    }
+    return [...byCurrency.values()].map((t) => ({
+      ...t,
+      remaining: t.budgeted - t.spent,
+    }));
+  }, [progressList]);
+
+  // One figure per currency; a single currency is the common case.
+  const totalText = (pick: "budgeted" | "spent" | "remaining") =>
+    totals.length === 0
+      ? formatMoney(0, baseCurrency, hideBalances)
+      : totals
+          .map((t) => formatMoney(t[pick], t.currency, hideBalances))
+          .join(" + ");
+  const mixedNote =
+    totals.length > 1 ? "Mixed currencies, not converted" : undefined;
+  const anyOver = totals.some((t) => t.remaining < 0);
 
   const handleTabChange = (value: string) => {
     setTab(value as TabValue);
@@ -193,21 +232,24 @@ export default function BudgetsPage() {
       <div className="grid gap-4 sm:grid-cols-3">
         <StatCard
           label="Total budgeted"
-          value={formatCurrency(totalBudgeted)}
+          value={totalText("budgeted")}
+          sub={mixedNote}
           icon={PiggyBank}
           tone="primary"
         />
         <StatCard
           label="Spent this period"
-          value={formatCurrency(totalSpent)}
+          value={totalText("spent")}
+          sub={mixedNote}
           icon={TrendingDown}
           tone="warning"
         />
         <StatCard
           label="Remaining"
-          value={formatCurrency(totalRemaining)}
+          value={totalText("remaining")}
+          sub={mixedNote}
           icon={Wallet}
-          tone={totalRemaining < 0 ? "negative" : "positive"}
+          tone={anyOver ? "negative" : "positive"}
         />
       </div>
 

@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { ArrowUpRight, ArrowDownRight } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
+import { useBaseCurrency } from "@/hooks/use-profile";
 import { LazyThemedAreaChart as ThemedAreaChart } from "@/components/charts/lazy";
 import {
   Card,
@@ -17,8 +18,9 @@ import {
   usePortfolioSnapshots,
   useGroupedPortfolioSnapshots,
 } from "@/hooks/use-portfolio-snapshots";
+import { FxNotice } from "@/components/ui/fx-notice";
 import {
-  formatCurrency,
+  formatMoney,
   formatDate,
   formatTime,
   formatShortDateTime,
@@ -142,6 +144,7 @@ const MIN_AUTO_POINTS = 8;
 
 export function NetWorthChart() {
   const { hideBalances } = useAuth();
+  const baseCurrency = useBaseCurrency();
   // null until the user picks a period; until then AUTO_PERIODS decides.
   const [chosenPeriod, setChosenPeriod] = useState<string | null>(null);
   const [autoStep, setAutoStep] = useState(0);
@@ -177,23 +180,39 @@ export function NetWorthChart() {
   const activeQuery = isGrouped ? groupedQuery : rawQuery;
   const { isLoading, error } = activeQuery;
 
-  const chartData = useMemo(() => {
-    if (isGrouped) {
-      // Grouped response: { data: [...] } sorted chronologically (oldest first)
-      const data = groupedQuery.data?.data;
-      if (!data) return [];
-      return toChartData(data, selectedOpt.formatLabel);
+  // Snapshots oldest first, whichever query served them.
+  const snapshots = useMemo<PortfolioSnapshot[]>(() => {
+    if (isGrouped) return groupedQuery.data?.data ?? [];
+    // Raw paginated response is newest first.
+    return [...(rawQuery.data?.data ?? [])].reverse();
+  }, [isGrouped, groupedQuery.data, rawQuery.data]);
+
+  // The reporting currency can change, so snapshots may span currencies. The
+  // chart plots the newest run of one currency. Earlier snapshots in another
+  // currency are not charted, so the line never joins two currencies.
+  const run = useMemo(() => {
+    const last = snapshots[snapshots.length - 1];
+    if (!last) return null;
+    let start = snapshots.length - 1;
+    while (start > 0 && snapshots[start - 1].currency === last.currency) {
+      start--;
     }
-    // Raw paginated response: { data: [...], page, ... } sorted DESC (newest first)
-    const data = rawQuery.data?.data;
-    if (!data) return [];
-    return toChartData(data, selectedOpt.formatLabel).reverse();
-  }, [
-    isGrouped,
-    groupedQuery.data,
-    rawQuery.data,
-    selectedOpt.formatLabel,
-  ]);
+    const before = start > 0 ? snapshots[start - 1] : null;
+    return {
+      currency: last.currency,
+      points: snapshots.slice(start),
+      changedAt: before ? snapshots[start].recorded_at : null,
+      previousCurrency: before ? before.currency : null,
+    };
+  }, [snapshots]);
+
+  const currency = run?.currency ?? baseCurrency;
+  const anyFxMissing = run?.points.some((s) => s.fx_missing) ?? false;
+
+  const chartData = useMemo(() => {
+    if (!run) return [];
+    return toChartData(run.points, selectedOpt.formatLabel);
+  }, [run, selectedOpt.formatLabel]);
 
   useEffect(() => {
     if (chosenPeriod !== null || isLoading || error) return;
@@ -202,16 +221,8 @@ export function NetWorthChart() {
     }
   }, [chosenPeriod, isLoading, error, chartData.length, autoStep]);
 
-  const latestNetWorth = useMemo(() => {
-    if (isGrouped) {
-      const data = groupedQuery.data?.data;
-      if (!data || data.length === 0) return null;
-      return data[data.length - 1].total_net_worth; // last = newest (ASC order)
-    }
-    const data = rawQuery.data?.data;
-    if (!data || data.length === 0) return null;
-    return data[0].total_net_worth; // first = newest (DESC order)
-  }, [isGrouped, groupedQuery.data, rawQuery.data]);
+  const latestPoint = run?.points[run.points.length - 1];
+  const latestNetWorth = latestPoint ? latestPoint.total_net_worth : null;
 
   // Change over the selected window (first vs last point), in cents.
   const periodChange = useMemo(() => {
@@ -249,7 +260,7 @@ export function NetWorthChart() {
             <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
               <CardTitle className="money text-3xl font-semibold sm:text-4xl">
                 {latestNetWorth !== null
-                  ? formatCurrency(latestNetWorth, undefined, hideBalances)
+                  ? formatMoney(latestNetWorth, currency, hideBalances)
                   : "—"}
               </CardTitle>
               {periodChange && (
@@ -266,7 +277,7 @@ export function NetWorthChart() {
                     <ArrowDownRight className="size-3.5" />
                   )}
                   {changeUp ? "+" : ""}
-                  {formatCurrency(periodChange.deltaCents, undefined, hideBalances)} (
+                  {formatMoney(periodChange.deltaCents, currency, hideBalances)} (
                   {changeUp ? "+" : ""}
                   {periodChange.pct.toFixed(1)}%)
                 </span>
@@ -311,9 +322,18 @@ export function NetWorthChart() {
             className="h-[190px] md:h-[230px] w-full"
             ditherColor="green"
             cleanColor="var(--chart-1)"
-            valueFormatter={(v) => formatCurrency(v * 100, undefined, hideBalances)}
+            valueFormatter={(v) => formatMoney(v * 100, currency, hideBalances)}
           />
         )}
+        {run?.changedAt && run.previousCurrency && (
+          <p className="mt-2 text-xs text-muted-foreground">
+            Base currency changed to {run.currency} on{" "}
+            {formatDate(run.changedAt)}. Earlier snapshots in{" "}
+            {run.previousCurrency} are not charted, so the line does not join
+            the two.
+          </p>
+        )}
+        <FxNotice fxMissing={anyFxMissing} variant="inline" className="mt-2" />
       </CardContent>
     </Card>
   );

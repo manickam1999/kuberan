@@ -15,10 +15,13 @@ import { DailySpendingCalendar } from "@/components/analytics/daily-spending-cal
 import { CashflowSankeyCard } from "@/components/analytics/cashflow-sankey-card";
 import { PeriodSelector } from "@/components/analytics/period-selector";
 import { Skeleton } from "@/components/ui/skeleton";
-import { formatCurrency } from "@/lib/format";
+import { formatMoney } from "@/lib/format";
+import { useBaseCurrency } from "@/hooks/use-profile";
+import { FxNotice } from "@/components/ui/fx-notice";
 
 export default function AnalyticsPage() {
   const { hideBalances } = useAuth();
+  const baseCurrency = useBaseCurrency();
   const period = useAnalyticsPeriod();
   const { fromDate, toDate, label, isActiveMonthDefault } = period;
 
@@ -32,14 +35,20 @@ export default function AnalyticsPage() {
     1
   );
 
+  // Both totals are in the response's currency (the user's base).
+  const spendCurrency = spending?.currency ?? baseCurrency;
+  const topCurrency = topExpense?.currency ?? baseCurrency;
   const totalSpent = spending?.total_spent ?? 0;
   // Count only expenses with a non-zero effective amount (personal share).
   const totalItems = topExpense?.total_count ?? 0;
   const avgAmount = totalItems > 0 ? Math.round(totalSpent / totalItems) : 0;
-  const largestAmount = (() => {
-    const top = topExpense?.items[0];
-    return top ? (top.personal_amount ?? top.amount) : 0;
-  })();
+  const topItem = topExpense?.items[0];
+  // amount_base is 0 when the expense had no rate, so show a dash instead.
+  const largestText = !topItem
+    ? formatMoney(0, topCurrency, hideBalances)
+    : topItem.fx_missing
+      ? "—"
+      : formatMoney(topItem.amount_base, topCurrency, hideBalances);
 
   const statsLoading = spendingLoading || topExpenseLoading;
 
@@ -62,7 +71,7 @@ export default function AnalyticsPage() {
         <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
           <StatCard
             label="Total spent"
-            value={formatCurrency(totalSpent, undefined, hideBalances)}
+            value={formatMoney(totalSpent, spendCurrency, hideBalances)}
             icon={DollarSign}
             tone="negative"
           />
@@ -73,17 +82,23 @@ export default function AnalyticsPage() {
           />
           <StatCard
             label="Average expense"
-            value={formatCurrency(avgAmount, undefined, hideBalances)}
+            value={formatMoney(avgAmount, spendCurrency, hideBalances)}
             icon={Calculator}
           />
           <StatCard
             label="Largest expense"
-            value={formatCurrency(largestAmount, undefined, hideBalances)}
+            value={largestText}
             icon={TrendingDown}
             tone="negative"
           />
         </div>
       )}
+
+      <FxNotice
+        fxMissing={spending?.fx_missing}
+        unconverted={spending?.unconverted}
+        variant="inline"
+      />
 
       <CashflowSankeyCard
         fromDate={fromDate}

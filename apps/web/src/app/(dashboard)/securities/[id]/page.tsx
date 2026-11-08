@@ -6,7 +6,7 @@ import Link from "next/link";
 import { ArrowLeft, ChevronLeft, ChevronRight } from "lucide-react";
 
 import { useSecurity, useSecurityPriceHistory } from "@/hooks/use-securities";
-import { formatCurrency, formatDate } from "@/lib/format";
+import { formatMoney, formatDate } from "@/lib/format";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -270,7 +270,7 @@ export default function SecurityDetailPage() {
                     <TableRow key={price.id}>
                       <TableCell>{formatDate(price.recorded_at)}</TableCell>
                       <TableCell className="text-right font-mono">
-                        {formatCurrency(price.price, security.currency)}
+                        {formatMoney(price.price, security.currency)}
                       </TableCell>
                     </TableRow>
                   ))}

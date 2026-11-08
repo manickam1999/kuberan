@@ -2,9 +2,10 @@
 
 import { useState } from "react";
 import { toast } from "sonner";
+import { useBaseCurrency } from "@/hooks/use-profile";
 import { useAccounts } from "@/hooks/use-accounts";
 import { useCreateSharedExpense } from "@/hooks/use-receivables";
-import { formatCurrency, toLocalDateString, toRFC3339 } from "@/lib/format";
+import { formatMoney, toLocalDateString, toRFC3339 } from "@/lib/format";
 import {
   isSettlementAccountType,
   receivableApiErrorMessage,
@@ -77,6 +78,7 @@ function LendForm({
   const [note, setNote] = useState("");
   const [error, setError] = useState("");
 
+  const baseCurrency = useBaseCurrency();
   const { data: accountData } = useAccounts({ page_size: 100 });
   const createShared = useCreateSharedExpense();
 
@@ -92,10 +94,12 @@ function LendForm({
     "";
   const effectiveAccountId = accountId || defaultId;
 
+  const currency =
+    accounts.find((a) => a.id === effectiveAccountId)?.currency ?? baseCurrency;
   const cleanName = normalizeCounterpartyName(name);
   const summary =
     amount > 0 && cleanName
-      ? `Lend ${formatCurrency(amount)} to ${cleanName}`
+      ? `Lend ${formatMoney(amount, currency)} to ${cleanName}`
       : null;
 
   function handleSubmit(e: React.FormEvent) {
@@ -107,6 +111,7 @@ function LendForm({
     }
     const built = buildSharedCounterparties({
       amount,
+      currency,
       mode: "full",
       rows: [{ name, amount: 0 }],
     });
@@ -126,7 +131,7 @@ function LendForm({
       },
       {
         onSuccess: () => {
-          toast.success(`Lent ${formatCurrency(amount)} to ${cleanName}`);
+          toast.success(`Lent ${formatMoney(amount, currency)} to ${cleanName}`);
           onDone();
         },
         onError: (err) => setError(receivableApiErrorMessage(err)),
@@ -157,7 +162,7 @@ function LendForm({
           <SelectContent>
             {accounts.map((a) => (
               <SelectItem key={a.id} value={a.id}>
-                {a.name}
+                {a.name} ({a.currency})
               </SelectItem>
             ))}
           </SelectContent>
@@ -182,6 +187,7 @@ function LendForm({
             id="lend-amount"
             value={amount}
             onChange={setAmount}
+            symbol={currency}
             placeholder="0.00"
             disabled={createShared.isPending}
           />

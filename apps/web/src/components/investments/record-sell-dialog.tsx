@@ -2,10 +2,19 @@
 
 import { useState } from "react";
 import { toast } from "sonner";
-import { ApiClientError } from "@/lib/api-client";
+import { ApiClientError, getFxAmountRequired } from "@/lib/api-client";
 import { useRecordSell } from "@/hooks/use-investments";
 import { useAccounts } from "@/hooks/use-accounts";
-import { toRFC3339, formatCurrency } from "@/lib/format";
+import { useInvestment } from "@/hooks/use-investments";
+import { toRFC3339, formatMoney } from "@/lib/format";
+import { useAuth } from "@/hooks/use-auth";
+import { useBaseCurrency } from "@/hooks/use-profile";
+import {
+  CrossCurrencyAmountField,
+  FxRateField,
+  isValidFxRate,
+  useCrossCurrencyAmount,
+} from "@/components/investments/cross-currency-field";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -56,16 +65,33 @@ export function RecordSellDialog({
   const [fee, setFee] = useState(0);
   const [notes, setNotes] = useState("");
   const [depositAccountId, setDepositAccountId] = useState("");
+  const [fxRate, setFxRate] = useState("");
   const [error, setError] = useState("");
 
   const recordSell = useRecordSell(investmentId);
   const isSubmitting = recordSell.isPending;
 
   const { data: accountsData } = useAccounts({ page: 1, page_size: 100 });
+  const { hideBalances } = useAuth();
+  const baseCurrency = useBaseCurrency();
+  const { data: investment } = useInvestment(investmentId);
+  const securityCurrency = investment?.currency || baseCurrency;
   const cashAccounts =
     accountsData?.data?.filter(
       (a) => a.type === "cash" && a.is_active
     ) ?? [];
+
+  const selectedAccount = cashAccounts.find((a) => a.id === depositAccountId);
+  const qtyNum = parseFloat(quantity);
+  const nativeTotal =
+    qtyNum > 0 && pricePerUnit > 0
+      ? Math.round(qtyNum * pricePerUnit) - fee
+      : 0;
+  const cross = useCrossCurrencyAmount({
+    securityCurrency,
+    account: selectedAccount,
+    nativeTotal,
+  });
 
   function resetForm() {
     setDate("");
@@ -74,6 +100,8 @@ export function RecordSellDialog({
     setFee(0);
     setNotes("");
     setDepositAccountId("");
+    setFxRate("");
+    cross.reset();
     setError("");
   }
 
@@ -111,6 +139,16 @@ export function RecordSellDialog({
       return;
     }
 
+    if (!isValidFxRate(fxRate)) {
+      setError("Exchange rate must be a positive number");
+      return;
+    }
+
+    if (cross.needed && cross.value <= 0) {
+      setError(`Enter the amount in ${cross.currency}`);
+      return;
+    }
+
     recordSell.mutate(
       {
         date: toRFC3339(date),
@@ -119,13 +157,19 @@ export function RecordSellDialog({
         fee: fee > 0 ? fee : undefined,
         notes: notes.trim() || undefined,
         deposit_account_id: depositAccountId && depositAccountId !== "none" ? depositAccountId : undefined,
+        deposit_amount: cross.needed ? cross.value : undefined,
+        fx_rate: fxRate.trim() || undefined,
       },
       {
         onSuccess: () => {
           toast.success("Sell recorded");
           handleOpenChange(false);
         },
-        onError: (err) => setError(getErrorMessage(err)),
+        onError: (err) => {
+          const required = getFxAmountRequired(err);
+          if (required) cross.applyHint(required);
+          setError(getErrorMessage(err));
+        },
       }
     );
   }
@@ -182,6 +226,7 @@ export function RecordSellDialog({
               id="sell-price"
               value={pricePerUnit}
               onChange={setPricePerUnit}
+              symbol={securityCurrency}
               placeholder="0.00"
               disabled={isSubmitting}
             />
@@ -193,6 +238,7 @@ export function RecordSellDialog({
               id="sell-fee"
               value={fee}
               onChange={setFee}
+              symbol={securityCurrency}
               placeholder="0.00"
               disabled={isSubmitting}
             />
@@ -224,20 +270,33 @@ export function RecordSellDialog({
                   <SelectItem value="none">None</SelectItem>
                   {cashAccounts.map((account) => (
                     <SelectItem key={account.id} value={account.id}>
-                      {account.name} ({formatCurrency(account.balance)})
+                      {account.name} ({formatMoney(account.balance, account.currency, hideBalances)})
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
-              {depositAccountId && depositAccountId !== "none" && pricePerUnit > 0 && quantity && (
+              {nativeTotal > 0 && (
                 <p className="text-muted-foreground text-sm">
-                  Net proceeds: {formatCurrency(
-                    Math.round(parseFloat(quantity) * pricePerUnit) - fee
-                  )}
+                  Net proceeds: {formatMoney(nativeTotal, securityCurrency, hideBalances)}
                 </p>
               )}
             </div>
           )}
+
+          <CrossCurrencyAmountField
+            id="sell-account-amount"
+            label={`Amount received in ${selectedAccount?.name ?? "account"} (${cross.currency})`}
+            state={cross}
+            disabled={isSubmitting}
+          />
+
+          <FxRateField
+            id="sell-fx-rate"
+            securityCurrency={securityCurrency}
+            value={fxRate}
+            onChange={setFxRate}
+            disabled={isSubmitting}
+          />
 
           <DialogFooter>
             <Button type="submit" disabled={isSubmitting}>

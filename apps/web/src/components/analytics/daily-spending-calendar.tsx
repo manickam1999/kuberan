@@ -11,6 +11,8 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { useDailySummary } from "@/hooks/use-transactions";
 import { formatCompactAmount } from "@/lib/format";
+import { useBaseCurrency } from "@/hooks/use-profile";
+import { FxNotice } from "@/components/ui/fx-notice";
 import { cn } from "@/lib/utils";
 
 const WEEKDAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -106,6 +108,11 @@ export function DailySpendingCalendar({
   hideBalances: boolean;
 }) {
   const { data, isLoading } = useDailySummary(fromDate, toDate);
+  const baseCurrency = useBaseCurrency();
+  // Cell amounts are compact figures without a symbol, so the card names the
+  // currency (the response's, i.e. the user's base) in its description.
+  const currency = data?.[0]?.currency ?? baseCurrency;
+  const anyFxMissing = (data ?? []).some((d) => d.fx_missing);
 
   const byDate = useMemo(() => {
     const map = new Map<string, { income: number; expenses: number }>();
@@ -164,7 +171,9 @@ export function DailySpendingCalendar({
           {isMultiMonth
             ? "Income and expenses by day"
             : "Income and expenses by day this month"}
+          {` · ${currency}`}
         </CardDescription>
+        <FxNotice fxMissing={anyFxMissing} variant="inline" className="mt-1" />
       </CardHeader>
       <CardContent className={cn(isMultiMonth && "space-y-6")}>
         {monthGrids.map(({ year, month, cells }) => {
