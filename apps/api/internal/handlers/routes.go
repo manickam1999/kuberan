@@ -29,6 +29,7 @@ type Routes struct {
 	FixedDepositPipeline *FixedDepositPipelineHandler
 	Telegram             *TelegramHandler
 	FX                   *FXHandler
+	Import               *ImportHandler
 
 	// Limits rate-limits the public auth endpoints. The zero value applies no
 	// limits (used by tests that don't exercise them).
@@ -138,6 +139,10 @@ func RegisterRoutes(router *gin.Engine, h Routes, secrets RouteSecrets) {
 	// Exchange rates (plan 024). Static /latest is registered beside the list route.
 	protected.GET("/fx-rates", h.FX.ListRates)
 	protected.GET("/fx-rates/latest", h.FX.LatestRate)
+
+	// Statement imports (plan 024, phase 3b). The upload enforces its own size cap
+	// (see ImportIBKRRoute).
+	protected.POST("/imports/ibkr", h.Import.ImportIBKR)
 
 	// Telegram routes
 	// Connected apps: the user's OAuth client grants (plan 022).

@@ -17,7 +17,7 @@ Monorepo with five applications:
 │   ├── oracle/       # Go price-ingestion + snapshot worker (own Go module, uses the pipeline API)
 │   └── backup/       # Cron-based pg_dump backup service (shell + supercronic)
 ├── deploy/           # Deployment scripts (deploy.sh)
-├── docs/             # Documentation (mcp-oauth.md, database-setup.md, receipts.md)
+├── docs/             # Documentation (mcp-oauth.md, database-setup.md, receipts.md, ibkr-import.md)
 ├── ory/              # Ory Hydra (OAuth 2.1 authorization server) config
 ├── plans/            # Architecture and upgrade plans
 ├── scripts/          # Shared scripts (check-go.sh, etc.)
@@ -353,6 +353,9 @@ GET    /api/v1/securities/:id/prices
 # FX rates (rates are always JSON decimal strings; plan 024)
 GET    /api/v1/fx-rates?base=&quote=&from=&to=   # direct-pair history (default last 30 days, max 3700)
 GET    /api/v1/fx-rates/latest?base=&quote=      # direct, inverse or USD-pivot quote; 503 FX_RATE_UNAVAILABLE
+
+# Imports (multipart; plan 024 phase 3b; see docs/ibkr-import.md)
+POST   /api/v1/imports/ibkr    # IBKR Activity Statement CSVs (files x1-10, investment_account_id, cash_account_id, cash_start_date, legacy_cash_account_id?, deactivate_legacy_cash_account?, apply?). Dry run unless apply=true; apply is one DB transaction, refused with 400 IMPORT_INVALID (report in error.details) on report errors or a failed quantity checkpoint; idempotent via transactions.import_ref; in memory only, counts-only logs
 
 # Connected apps (OAuth client grants)
 GET    /api/v1/oauth/clients

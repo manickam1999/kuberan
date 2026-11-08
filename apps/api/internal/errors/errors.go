@@ -242,3 +242,13 @@ var (
 	// ErrUnsupportedCurrency is returned when a currency cannot be used (unknown, not 2-decimal, or without a USD rate).
 	ErrUnsupportedCurrency = &AppError{Code: "UNSUPPORTED_CURRENCY", Message: "Currency is not supported", StatusCode: http.StatusBadRequest}
 )
+
+// Import errors (plan 024, phase 3b).
+var (
+	// ErrImportInvalid is returned when an import is applied while its report has
+	// errors or a failed quantity checkpoint. The report is in the error details.
+	ErrImportInvalid = &AppError{Code: "IMPORT_INVALID", Message: "The import has errors; fix them and run a dry run again", StatusCode: http.StatusBadRequest}
+
+	// ErrImportInProgress is returned when the user already has an import being applied.
+	ErrImportInProgress = &AppError{Code: "IMPORT_IN_PROGRESS", Message: "Another import is already being applied", StatusCode: http.StatusConflict}
+)

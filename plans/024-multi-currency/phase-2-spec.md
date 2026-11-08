@@ -179,3 +179,19 @@ Common Commands) showing how to run them in production:
 4. `oracle backfill --since 2025-01-01`.
 5. Re-enable the schedule. Check the portfolio total against the previous day's snapshot (it should move only by the
    difference between the old fetch-time rates and the backfilled rates).
+
+### Phase 3b steps (after Phase 3a and 3b are deployed: migrations 43 and 44; see `docs/ibkr-import.md`)
+6. Back up the database again. Make sure FX history covers the statements' dates (step 4 did `oracle backfill --since
+   2025-01-01`; re-run `oracle backfill --fx --since 2025-01-01` if the import reports `fx_rate_missing`).
+7. Create the `IBKR Cash (USD)` cash account (currency USD, opening balance 0; the import writes its own opening
+   balance). Note its id, the IBKR investment account's id and the old MYR `IBKR Cash` account's id.
+8. Download the 2025 and 2026 Activity Statements as CSV (Performance & Reports > Statements > Activity > Custom
+   Date Range, format CSV).
+9. Dry run with both files and `cash_start_date=2026-01-01` and `legacy_cash_account_id=<old IBKR Cash>`. Review the
+   report: no `errors`, every checkpoint `quantity_ok: true`, the 2026-06-04 deposit (USD 7,461.52) under
+   `deposits_matched`, the final cash checkpoint within a few cents of 120.55, and read the `warnings` (cost-basis
+   differences are expected: Kuberan uses average cost, IBKR lots).
+10. Apply (`apply=true`, add `deactivate_legacy_cash_account=true` if the old account should be retired). Re-running the
+    same command is safe: it replaces its own rows and changes nothing.
+11. Check the IBKR holdings against the 2026-11-02 statement positions and the portfolio total; record any
+    `unmatched_deposits` by hand.

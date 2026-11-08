@@ -58,6 +58,11 @@ type Transaction struct {
 	// 10 dp, half-even), set for cross-currency transfers.
 	ImpliedRate string `gorm:"-" json:"implied_rate,omitempty"`
 
+	// ImportRef marks a row written by an importer ("ibkr:<account>:<event key>")
+	// so that re-running the import replaces rather than duplicates it. NULL for
+	// every row that was entered by hand.
+	ImportRef *string `gorm:"size:128;index:idx_transactions_import_ref" json:"import_ref,omitempty"`
+
 	// Relationships
 	Account   Account   `gorm:"foreignKey:AccountID" json:"account"`
 	ToAccount *Account  `gorm:"foreignKey:ToAccountID" json:"to_account,omitempty"`

@@ -103,6 +103,7 @@ func setupApp(t *testing.T) *testApp {
 	receivableService := services.NewReceivableService(db, accountService, ruleService)
 	budgetService := services.NewBudgetService(db)
 	investmentService := services.NewInvestmentService(db, accountService, fxService)
+	importService := services.NewImportService(db, accountService, fxService)
 	securityService := services.NewSecurityService(db)
 	snapshotService := services.NewPortfolioSnapshotService(db, fxService)
 	auditService := services.NewAuditService(db)
@@ -130,7 +131,7 @@ func setupApp(t *testing.T) *testApp {
 	router.Use(middleware.SecurityHeaders(false))
 	router.Use(middleware.CORS([]string{"http://localhost:3000"}))
 	router.Use(middleware.Gzip())
-	router.Use(middleware.BodySizeLimit(middleware.DefaultMaxBodyBytes, "POST "+handlers.AttachmentUploadRoute))
+	router.Use(middleware.BodySizeLimit(middleware.DefaultMaxBodyBytes, "POST "+handlers.AttachmentUploadRoute, "POST "+handlers.ImportIBKRRoute))
 	router.Use(middleware.ErrorHandler())
 
 	handlers.RegisterRoutes(router, handlers.Routes{
@@ -150,6 +151,7 @@ func setupApp(t *testing.T) *testApp {
 		FixedDepositPipeline: handlers.NewFixedDepositPipelineHandler(fdService, auditService),
 		Telegram:             handlers.NewTelegramHandler(telegramService, auditService),
 		FX:                   handlers.NewFXHandler(fxService, auditService),
+		Import:               handlers.NewImportHandler(importService, auditService, testMaxUploadBytes),
 	}, handlers.RouteSecrets{
 		BotInternalSecret: "test-bot-secret",
 		PipelineAPIKey:    "test-pipeline-key",

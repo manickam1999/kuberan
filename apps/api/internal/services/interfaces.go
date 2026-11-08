@@ -642,6 +642,16 @@ type PortfolioSnapshotServicer interface {
 	GetGroupedSnapshots(userID string, from, to time.Time, groupBy string) ([]models.PortfolioSnapshot, error)
 }
 
+// ImportServicer defines the contract for statement imports (plan 024, phase 3b).
+type ImportServicer interface {
+	// ImportIBKR turns Interactive Brokers Activity Statement CSVs into the
+	// IBKR holdings and the USD cash ledger. A dry run (p.Apply false) returns
+	// the report without writing; p.Apply writes everything in one DB
+	// transaction, and is refused with IMPORT_INVALID when the report has
+	// errors or a failed quantity checkpoint. The files are only read in memory.
+	ImportIBKR(userID string, p IBKRImportParams, files []io.Reader) (*IBKRImportReport, error)
+}
+
 // AuditServicer defines the contract for audit logging.
 type AuditServicer interface {
 	Log(userID, action, resourceType, resourceID, ipAddress string, changes map[string]interface{})

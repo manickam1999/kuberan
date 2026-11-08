@@ -92,6 +92,7 @@ func run() error {
 	receivableService := services.NewReceivableService(db, accountService, ruleService)
 	budgetService := services.NewBudgetService(db)
 	investmentService := services.NewInvestmentService(db, accountService, fxService)
+	importService := services.NewImportService(db, accountService, fxService)
 	securityService := services.NewSecurityService(db)
 	snapshotService := services.NewPortfolioSnapshotService(db, fxService)
 	fdService := services.NewFixedDepositService(db, categoryService)
@@ -158,6 +159,7 @@ func run() error {
 	fdPipelineHandler := handlers.NewFixedDepositPipelineHandler(fdService, auditService)
 	telegramHandler := handlers.NewTelegramHandler(telegramService, auditService)
 	fxHandler := handlers.NewFXHandler(fxService, auditService)
+	importHandler := handlers.NewImportHandler(importService, auditService, appConfig.MaxUploadBytes)
 
 	// Register custom validators before routes
 	validator.Register()
@@ -180,7 +182,7 @@ func run() error {
 	router.Use(middleware.CORS(appConfig.CORSOrigins))
 	router.Use(middleware.Gzip())
 	// The attachment upload enforces its own (larger) MAX_UPLOAD_BYTES cap.
-	router.Use(middleware.BodySizeLimit(appConfig.MaxBodyBytes, "POST "+handlers.AttachmentUploadRoute))
+	router.Use(middleware.BodySizeLimit(appConfig.MaxBodyBytes, "POST "+handlers.AttachmentUploadRoute, "POST "+handlers.ImportIBKRRoute))
 	router.Use(middleware.ErrorHandler())
 
 	// Swagger documentation (not served in production).
@@ -216,6 +218,7 @@ func run() error {
 		FixedDepositPipeline: fdPipelineHandler,
 		Telegram:             telegramHandler,
 		FX:                   fxHandler,
+		Import:               importHandler,
 		Limits:               handlers.NewRouteLimits(appConfig.RateLimits),
 	}, handlers.RouteSecrets{
 		BotInternalSecret: appConfig.BotInternalSecret,
