@@ -1,8 +1,63 @@
 # Plan 024 — Multi-Currency (native amounts, convert on read)
 
-**Status: proposed.** Nothing implemented yet. Decisions **Q1–Q8** were all settled on the
-recommended option (see the table at the end). The production data inventory that shapes the
-migration is in **D10.0**.
+**Status: implemented** (all phases; operator guide and deploy runbook in `docs/multi-currency.md`).
+Decisions **Q1–Q8** were all settled on the recommended option (see the table at the end). The
+production data inventory that shaped the migration is in **D10.0**. The body below is the plan as
+written; where the code differs from it:
+
+- **Phases were re-cut** (see `phase-3-spec.md`): 3 split into **3a** (native trades, funding, transfers
+  with `to_amount`, security currency lock; D6 moved here from phase 4) and **3b** (the IBKR import and its
+  data steps). **Phase 4** is cross-currency aggregates only (analytics, budgets, receivables, account
+  `balance_base`, snapshots). Phases 5 and 6 are as listed. Migrations 38–46 cover the whole plan.
+- **`Investment.current_price` stays in the user's base currency** (not native, as D4 said). The native price
+  is added beside it: `current_price_native`, `price_currency`, `fx_rate`, `fx_stale`, `fx_missing`. There is
+  no `current_price_base` / `value_base`. Valuation lives in `holding_valuation.go` (`latestNativePrices` +
+  `valuer`, the line value converted once).
+- **Transfers are one `transactions` row** (`account_id` = source, `to_account_id` = destination, nullable
+  `to_amount` in the destination currency, `COALESCE(to_amount, amount)` via `EffectiveToAmount()`), not two
+  legs with `counter_amount` / `counter_currency`. Responses add `implied_rate`. Transfers can't be edited,
+  only deleted. MCP `create_transfer` takes `to_amount`.
+- **Holdings are in the security currency (Q2)**, with `_base` twins frozen per trade (`cost_basis_base`,
+  `realized_gain_loss_base`, and per transaction `fx_rate_to_base`, `base_amount`,
+  `realized_gain_loss_base`; NULL rate on legacy rows). Trade rate precedence: explicit `fx_rate` > the rate
+  implied by a base-currency funding/deposit account > 1 for a base-currency security > market rate >
+  `FX_RATE_UNAVAILABLE`. Cross-currency funding needs `funding_amount` / `deposit_amount`; dividends take a
+  `fee` (withholding; the net is deposited). All holding math is `holdingState.apply`, shared with the replay
+  `rebuildInvestment`. `GetPortfolio` totals add `total_price_return` / `total_fx_return`.
+- **Quantity epsilon is 1e-9** (`quantityEpsilon`): a sell within it of the position closes it, so float dust
+  never leaves a phantom share or an `insufficient_shares`. Import checkpoints compare against IBKR with a
+  separate 1e-4 tolerance (IBKR prints 4 decimals), not "exactly".
+- **The IBKR import is an API endpoint** (`POST /api/v1/imports/ibkr`, multipart, dry run unless
+  `apply=true`, one DB transaction, in memory only), not a script or CLI. It is idempotent through
+  `transactions.import_ref` (`ibkr:<account>:<event key>:dr|cr`, the balance direction a re-import reverses
+  by), and a re-run reverses and rewrites its own rows. See `docs/ibkr-import.md`.
+- **Deposit matching is by implied-rate plausibility**: a legacy MYR transfer is matched to a USD deposit
+  within 5 days, one to one, only if its implied rate is within 3% of the market rate (closest wins, then
+  nearest date). Unmatched deposits are listed with their rejected candidates, not paired by date alone.
+- **Trades dated after the last statement refuse the apply** (`trades_after_statement` is an error): they are
+  never deleted or mixed in, so the last statement must run through today.
+- **Money format is `en-MY`** in the web app (`RM 1,234.50`, `US$1,234.50`); `formatMoney(cents, currency)`
+  has a required currency. The reporting-currency list is `REPORTING_CURRENCIES` (2-decimal currencies only).
+- **`TARGET_CURRENCY` is removed** from the oracle (a warning if still set). **`FX_BACKFILL_DAYS` was not
+  added**: `oracle backfill --since YYYY-MM-DD [--until] [--prices] [--fx] [--symbols] [--dry-run]` takes
+  explicit dates, using Yahoo `period1`/`period2` rather than `range=max`. `oracle reconcile [--apply]` was
+  added (not in the plan) to correct security currencies against Yahoo.
+- **Price rejections are per entry, not an error code**: `POST /pipeline/securities/prices` returns
+  `{"recorded": n, "rejected": [...]}` with reasons `unknown_security` / `currency_mismatch`; there is no
+  `PRICE_CURRENCY_MISMATCH` error. `PATCH /pipeline/securities/:id` corrects currency / exchange /
+  provider_symbol / name; changing the currency of a security with prices needs `reset_prices`
+  (409 `SECURITY_CURRENCY_LOCKED`), and it is locked outright once native-era trades exist.
+  `ACCOUNT_CURRENCY_LOCKED` was not needed: the account update API cannot change a currency.
+- **The MCP write ceiling is in the base currency**: `MCP_MAX_WRITE_AMOUNT` is compared after converting at
+  the current rate, and a write with no rate is rejected. MCP output prints ISO codes (`MYR 1,234.56`).
+  `record_repayment` takes `account_amount` (stored on the settlement, migration 46, so deleting it reverses
+  the account exactly).
+- **Aggregates (D7/Q5)**: analytics group by (UTC day, account currency[, category]) in SQL, convert per day via
+  `datedValuer` (`FXService.RatesByDay`, a constant number of queries per range) and roll up in Go;
+  `unconverted: [{currency, amount}]` lists what was left out. Budgets gained a `currency` (migration 45) and
+  convert spending to it per transaction day. The receivables summary converts at the current rate.
+- **Not built**: `POST /pipeline/snapshots/recompute` (Q6 offered it "for later"). Existing snapshots stay
+  as recorded in MYR.
 
 ## Context
 
