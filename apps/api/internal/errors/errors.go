@@ -241,6 +241,12 @@ var (
 
 	// ErrUnsupportedCurrency is returned when a currency cannot be used (unknown, not 2-decimal, or without a USD rate).
 	ErrUnsupportedCurrency = &AppError{Code: "UNSUPPORTED_CURRENCY", Message: "Currency is not supported", StatusCode: http.StatusBadRequest}
+
+	// ErrAccountCurrencyMismatch is returned when an operation would reinterpret cents in another currency.
+	ErrAccountCurrencyMismatch = &AppError{Code: "ACCOUNT_CURRENCY_MISMATCH", Message: "A transaction can't move to an account in a different currency", StatusCode: http.StatusBadRequest}
+
+	// ErrImportedTransactionLocked is returned when an imported row's type, amount or account is edited.
+	ErrImportedTransactionLocked = &AppError{Code: "IMPORTED_TRANSACTION_LOCKED", Message: "Imported transactions can't be changed; re-run the import instead", StatusCode: http.StatusConflict}
 )
 
 // Import errors (plan 024, phase 3b).
@@ -252,3 +258,7 @@ var (
 	// ErrImportInProgress is returned when the user already has an import being applied.
 	ErrImportInProgress = &AppError{Code: "IMPORT_IN_PROGRESS", Message: "Another import is already being applied", StatusCode: http.StatusConflict}
 )
+
+// ErrBaseCurrencyLocked is returned when the user tries to change the reporting
+// currency while having investment history (plan 024).
+var ErrBaseCurrencyLocked = &AppError{Code: "BASE_CURRENCY_LOCKED", Message: "Reporting currency can't change while you have investment history, because cost basis is recorded in your current reporting currency", StatusCode: http.StatusConflict}

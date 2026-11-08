@@ -470,6 +470,15 @@ func (s *transactionService) UpdateTransaction(userID, transactionID string, upd
 			}
 		}
 
+		// Imported rows are derived from the statement: only description,
+		// category, date and notes may change (a re-import reverses them by type).
+		if transaction.ImportRef != nil &&
+			((updates.Type != nil && *updates.Type != transaction.Type) ||
+				(updates.Amount != nil && *updates.Amount != transaction.Amount) ||
+				(updates.AccountID != nil && *updates.AccountID != transaction.AccountID)) {
+			return apperrors.ErrImportedTransactionLocked
+		}
+
 		// An opening balance belongs to its account and is never categorised;
 		// only its amount, date and description can change.
 		if transaction.Type == models.TransactionTypeOpeningBalance {
@@ -531,6 +540,9 @@ func (s *transactionService) UpdateTransaction(userID, transactionID string, upd
 			return err
 		}
 		oldAccount, targetAccount := accounts[oldAccountID], accounts[newAccountID]
+		if oldAccountID != newAccountID && !strings.EqualFold(oldAccount.Currency, targetAccount.Currency) {
+			return apperrors.ErrAccountCurrencyMismatch
+		}
 
 		// Reverse old impact on old account
 		if txErr := s.accountService.ApplyBalanceDelta(tx, oldAccount.ID, oldAccount.Type, reversal, oldAmount); txErr != nil {

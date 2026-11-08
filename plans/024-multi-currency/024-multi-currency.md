@@ -5,6 +5,12 @@ Decisions **Q1–Q8** were all settled on the recommended option (see the table 
 production data inventory that shaped the migration is in **D10.0**. The body below is the plan as
 written; where the code differs from it:
 
+- **The reporting currency is locked once there is investment history.** `users.base_currency` can't change to a
+  different value while the user has any non-deleted `investment_transactions` (409 `BASE_CURRENCY_LOCKED`),
+  because the `_base` cost basis and realized figures are frozen in the base currency at trade time and would be
+  mislabelled. A "re-denominate" step that rewrites those figures at historical rates is a future option that
+  would lift the lock. Migration 47 adds compatibility defaults (`'MYR'`) on `security_prices.currency` and
+  `budgets.currency` so older API images can still insert.
 - **Phases were re-cut** (see `phase-3-spec.md`): 3 split into **3a** (native trades, funding, transfers
   with `to_amount`, security currency lock; D6 moved here from phase 4) and **3b** (the IBKR import and its
   data steps). **Phase 4** is cross-currency aggregates only (analytics, budgets, receivables, account

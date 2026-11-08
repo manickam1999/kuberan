@@ -640,7 +640,7 @@ type SecurityPriceInput struct {
 	SecurityID string    `json:"security_id"`
 	Price      int64     `json:"price"`
 	RecordedAt time.Time `json:"recorded_at"`
-	// Currency is optional; empty means the security's own currency.
+	// Currency is required; an entry without one is rejected (currency_required).
 	Currency string `json:"currency,omitempty"`
 }
 
@@ -659,6 +659,8 @@ const (
 	PriceRejectedUnknownSecurity = "unknown_security"
 	// PriceRejectedCurrencyMismatch means the entry's currency differs from the security's.
 	PriceRejectedCurrencyMismatch = "currency_mismatch"
+	// PriceRejectedCurrencyRequired means the entry carries no currency.
+	PriceRejectedCurrencyRequired = "currency_required"
 )
 
 // RecordPricesResult is the outcome of RecordPrices.

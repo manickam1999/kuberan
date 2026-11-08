@@ -156,9 +156,9 @@ func TestRecordPrices_BatchedSkipsDuplicates(t *testing.T) {
 	testutil.CreateTestSecurityPrice(t, db, sec.ID, 100, t1)
 
 	res, err := svc.RecordPrices([]SecurityPriceInput{
-		{SecurityID: sec.ID, Price: 101, RecordedAt: t1}, // already stored
-		{SecurityID: sec.ID, Price: 102, RecordedAt: t2},
-		{SecurityID: sec.ID, Price: 103, RecordedAt: t2}, // duplicate within the batch
+		{SecurityID: sec.ID, Price: 101, Currency: "MYR", RecordedAt: t1}, // already stored
+		{SecurityID: sec.ID, Price: 102, Currency: "MYR", RecordedAt: t2},
+		{SecurityID: sec.ID, Price: 103, Currency: "MYR", RecordedAt: t2}, // duplicate within the batch
 	})
 	testutil.AssertNoError(t, err)
 	if res.Recorded != 1 {

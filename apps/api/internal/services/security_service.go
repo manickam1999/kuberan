@@ -41,6 +41,9 @@ func (s *securityService) CreateSecurity(
 	if currency == "" {
 		currency = "USD"
 	}
+	if err := validateCreatableCurrency(currency); err != nil {
+		return nil, err
+	}
 
 	security := &models.Security{
 		Symbol:    symbol,
@@ -140,7 +143,6 @@ func (s *securityService) RecordPrices(prices []SecurityPriceInput) (*RecordPric
 
 	result := &RecordPricesResult{Rejected: []RejectedPrice{}}
 	rows := make([]models.SecurityPrice, 0, len(prices))
-	missingCurrency := 0
 	for i, p := range prices {
 		expected, known := currencyByID[p.SecurityID]
 		if !known {
@@ -153,7 +155,11 @@ func (s *securityService) RecordPrices(prices []SecurityPriceInput) (*RecordPric
 		given := normalizeCode(p.Currency)
 		switch {
 		case given == "":
-			missingCurrency++
+			result.Rejected = append(result.Rejected, RejectedPrice{
+				Index: i, SecurityID: p.SecurityID, ExpectedCurrency: expected,
+				Reason: PriceRejectedCurrencyRequired,
+			})
+			continue
 		case given != expected:
 			result.Rejected = append(result.Rejected, RejectedPrice{
 				Index: i, SecurityID: p.SecurityID, Currency: given, ExpectedCurrency: expected,
@@ -167,10 +173,6 @@ func (s *securityService) RecordPrices(prices []SecurityPriceInput) (*RecordPric
 			Currency:   expected,
 			RecordedAt: p.RecordedAt,
 		})
-	}
-	if missingCurrency > 0 {
-		logger.Get().Warnw("price entries without currency stored in the security currency",
-			"entries_without_currency", missingCurrency, "entries", len(prices))
 	}
 	if len(rows) == 0 {
 		return result, nil
@@ -229,6 +231,9 @@ func (s *securityService) UpdateSecurity(id string, update SecurityUpdate) (*Sec
 		if update.Currency != nil {
 			newCur := normalizeCode(*update.Currency)
 			if newCur != normalizeCode(sec.Currency) {
+				if err := validateCreatableCurrency(newCur); err != nil {
+					return err
+				}
 				currencyChanged = true
 				changes["currency"] = newCur
 				logFields["currency"] = sec.Currency + "->" + newCur

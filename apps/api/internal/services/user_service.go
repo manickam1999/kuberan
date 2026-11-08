@@ -369,7 +369,9 @@ type ProfileSettingsUpdate struct {
 // account (cash, credit card or debt).
 //
 // The base currency is upper-cased and must be supported (see
-// FXServicer.IsSupportedCurrency) unless it equals the user's current one.
+// FXServicer.IsSupportedCurrency) unless it equals the user's current one. A
+// different base is refused with BASE_CURRENCY_LOCKED once the user has any
+// investment transaction (cost basis is frozen in the base currency).
 func (s *userService) UpdateProfileSettings(userID string, update ProfileSettingsUpdate) error {
 	changes := map[string]interface{}{}
 	if update.HideBalances != nil {
@@ -414,8 +416,24 @@ func (s *userService) validateBaseCurrency(userID, code string) (string, error) 
 	if !isCurrencyCode(code) {
 		return "", apperrors.ErrUnsupportedCurrency
 	}
-	if code != user.BaseCurrency && !s.fx.IsSupportedCurrency(code, time.Now()) {
+	if code == user.BaseCurrency {
+		return code, nil
+	}
+	if !s.fx.IsSupportedCurrency(code, time.Now()) {
 		return "", apperrors.ErrUnsupportedCurrency
+	}
+	// Investment cost basis and realized gains are frozen in the base currency
+	// at trade time, so they cannot be re-labelled by changing it.
+	var history int64
+	if err := s.db.Table("investment_transactions").
+		Joins("JOIN investments ON investments.id = investment_transactions.investment_id AND investments.deleted_at IS NULL").
+		Joins("JOIN accounts ON accounts.id = investments.account_id").
+		Where("accounts.user_id = ? AND investment_transactions.deleted_at IS NULL", userID).
+		Limit(1).Count(&history).Error; err != nil {
+		return "", apperrors.Wrap(apperrors.ErrInternalServer, err)
+	}
+	if history > 0 {
+		return "", apperrors.ErrBaseCurrencyLocked
 	}
 	return code, nil
 }

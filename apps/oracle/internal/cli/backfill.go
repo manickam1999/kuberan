@@ -198,10 +198,11 @@ func backfillFX(ctx context.Context, d *Deps, o backfillOpts, seen map[string]st
 				continue
 			}
 			entries = append(entries, client.FXRateEntry{
-				Base:       p.Base,
-				Quote:      p.Quote,
-				Rate:       strconv.FormatFloat(b.Close, 'f', 10, 64),
-				RecordedAt: b.Time.Format(time.RFC3339),
+				Base:  p.Base,
+				Quote: p.Quote,
+				Rate:  strconv.FormatFloat(b.Close, 'f', 10, 64),
+				// One row per pair per UTC day, merging with the live run.
+				RecordedAt: b.Time.UTC().Truncate(24 * time.Hour).Format(time.RFC3339),
 				Source:     "yahoo",
 			})
 		}

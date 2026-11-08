@@ -48,8 +48,9 @@ type RecordPriceEntry struct {
 	SecurityID string    `json:"security_id" binding:"required"`
 	Price      int64     `json:"price" binding:"required,gt=0"`
 	RecordedAt time.Time `json:"recorded_at" binding:"required"`
-	// Currency is optional; empty means the security's own currency. A value
-	// that differs from the security's currency is rejected.
+	// Currency is required per entry. It is validated by the service so a missing
+	// one rejects only that entry (reason currency_required), as does a value that
+	// differs from the security's currency (currency_mismatch).
 	Currency string `json:"currency" binding:"omitempty,iso4217"`
 }
 
@@ -256,7 +257,7 @@ func (h *SecurityHandler) GetSecurity(c *gin.Context) {
 // @Produce     json
 // @Security    ApiKeyAuth
 // @Param       request body RecordPricesRequest true "Price entries"
-// @Description Entries for an unknown security, or whose currency differs from the security's, are skipped and listed in `rejected` (the request still returns 200).
+// @Description Entries for an unknown security, without a currency, or whose currency differs from the security's, are skipped and listed in `rejected` (the request still returns 200).
 // @Success     200 {object} RecordPricesResponse "Recorded count and rejected entries"
 // @Failure     400 {object} ErrorResponse "Invalid input"
 // @Failure     401 {object} ErrorResponse "Invalid API key"

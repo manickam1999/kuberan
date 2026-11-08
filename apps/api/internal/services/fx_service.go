@@ -136,10 +136,11 @@ func (s *fxService) Rates(pairs []CurrencyPair, at time.Time) (map[CurrencyPair]
 	return out, nil
 }
 
-// loadLegs fetches the latest row <= at for every directed pair in need. It
-// uses a correlated MAX(recorded_at) subquery (portable to SQLite), which the
-// (base, quote, recorded_at DESC) index answers with one probe per leg, in
-// chunks so the parameter count stays bounded.
+// loadLegs fetches the latest row <= at for every directed pair in need, with
+// one index probe per leg on (base, quote, recorded_at DESC), in chunks so the
+// parameter count stays bounded. Postgres uses a LATERAL ... ORDER BY
+// recorded_at DESC LIMIT 1 per leg; SQLite (tests) a UNION ALL of the same
+// per-leg subselects.
 func (s *fxService) loadLegs(need map[CurrencyPair]struct{}, at time.Time) (map[CurrencyPair]fxLeg, error) {
 	keys := make([]CurrencyPair, 0, len(need))
 	for k := range need {
@@ -153,25 +154,13 @@ func (s *fxService) loadLegs(need map[CurrencyPair]struct{}, at time.Time) (map[
 	})
 
 	legs := make(map[CurrencyPair]fxLeg, len(keys))
+	postgres := s.db.Name() == "postgres"
 	for start := 0; start < len(keys); start += fxLegChunkSize {
 		chunk := keys[start:min(start+fxLegChunkSize, len(keys))]
-		holders := make([]string, len(chunk))
-		args := make([]interface{}, 0, len(chunk)*2+1)
-		for i, k := range chunk {
-			holders[i] = "(?, ?)"
-			args = append(args, k.Base, k.Quote)
-		}
-		args = append(args, at)
+		query, args := latestLegsQuery(chunk, at, postgres)
 
 		var rows []models.FXRate
-		err := s.db.Raw(
-			"SELECT f.id, f.base, f.quote, f.rate, f.recorded_at, f.source FROM fx_rates f "+
-				"WHERE (f.base, f.quote) IN ("+strings.Join(holders, ", ")+") "+
-				"AND f.recorded_at = (SELECT MAX(x.recorded_at) FROM fx_rates x "+
-				"WHERE x.base = f.base AND x.quote = f.quote AND x.recorded_at <= ?)",
-			args...,
-		).Scan(&rows).Error
-		if err != nil {
+		if err := s.db.Raw(query, args...).Scan(&rows).Error; err != nil {
 			return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)
 		}
 		for _, r := range rows {
@@ -179,6 +168,31 @@ func (s *fxService) loadLegs(need map[CurrencyPair]struct{}, at time.Time) (map[
 		}
 	}
 	return legs, nil
+}
+
+// latestLegsQuery builds the "latest row <= at per leg" query for one chunk.
+func latestLegsQuery(chunk []CurrencyPair, at time.Time, postgres bool) (query string, args []interface{}) {
+	args = make([]interface{}, 0, len(chunk)*3)
+	if postgres {
+		holders := make([]string, len(chunk))
+		for i, k := range chunk {
+			holders[i] = "(?::varchar, ?::varchar)"
+			args = append(args, k.Base, k.Quote)
+		}
+		args = append(args, at)
+		return "SELECT f.id, f.base, f.quote, f.rate, f.recorded_at, f.source " +
+			"FROM (VALUES " + strings.Join(holders, ", ") + ") AS k(base, quote) " +
+			"CROSS JOIN LATERAL (SELECT x.id, x.base, x.quote, x.rate, x.recorded_at, x.source FROM fx_rates x " +
+			"WHERE x.base = k.base AND x.quote = k.quote AND x.recorded_at <= ? " +
+			"ORDER BY x.recorded_at DESC LIMIT 1) f", args
+	}
+	parts := make([]string, len(chunk))
+	for i, k := range chunk {
+		parts[i] = "SELECT * FROM (SELECT id, base, quote, rate, recorded_at, source FROM fx_rates " +
+			"WHERE base = ? AND quote = ? AND recorded_at <= ? ORDER BY recorded_at DESC LIMIT 1)"
+		args = append(args, k.Base, k.Quote, at)
+	}
+	return strings.Join(parts, " UNION ALL "), args
 }
 
 // resolve applies the lookup order: direct, inverse, then the USD pivot. A
@@ -392,7 +406,7 @@ func (s *fxService) IsSupportedCurrency(code string, at time.Time) bool {
 	if !isCurrencyCode(code) {
 		return false
 	}
-	if _, bad := fxNonTwoDecimalCurrencies[code]; bad {
+	if !isTwoDecimalCurrency(code) {
 		return false
 	}
 	if code == fxPivotCurrency {

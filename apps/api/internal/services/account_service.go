@@ -2,6 +2,7 @@ package services
 
 import (
 	"errors"
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
@@ -58,6 +59,9 @@ func (s *accountService) CreateCashAccount(userID, name, description, currency s
 	if currency == "" {
 		currency = "USD" // Default currency
 	}
+	if err := validateCreatableCurrency(currency); err != nil {
+		return nil, err
+	}
 
 	// Create account
 	account := &models.Account{
@@ -107,6 +111,9 @@ func (s *accountService) CreateInvestmentAccount(userID, name, description, curr
 	if currency == "" {
 		currency = "USD"
 	}
+	if err := validateCreatableCurrency(currency); err != nil {
+		return nil, err
+	}
 
 	account := &models.Account{
 		UserID:        userID,
@@ -134,6 +141,9 @@ func (s *accountService) CreateCreditCardAccount(userID, name, description, curr
 
 	if currency == "" {
 		currency = "USD"
+	}
+	if err := validateCreatableCurrency(currency); err != nil {
+		return nil, err
 	}
 
 	account := &models.Account{
@@ -557,6 +567,9 @@ func (s *accountService) CreateFixedDepositAccount(userID string, params CreateF
 	if params.Currency == "" {
 		params.Currency = "USD"
 	}
+	if err := validateCreatableCurrency(params.Currency); err != nil {
+		return nil, err
+	}
 
 	// --- validate source account ---
 	sourceAccount, err := s.GetAccountByID(userID, params.SourceAccountID)
@@ -744,6 +757,10 @@ func (s *accountService) CloseFixedDeposit(userID, accountID string, params Clos
 	}
 	if destAccount.Type != models.AccountTypeCash {
 		return nil, apperrors.WithMessage(apperrors.ErrInvalidAccountType, "destination account must be a cash account")
+	}
+	if !strings.EqualFold(destAccount.Currency, fdAccount.Currency) {
+		return nil, apperrors.WithMessage(apperrors.ErrAccountCurrencyMismatch,
+			"destination account currency must match the fixed deposit currency")
 	}
 
 	// --- compute interest ---
@@ -943,11 +960,13 @@ func (s *accountService) enrichInvestmentBalances(accounts []models.Account) err
 
 	// Accumulate market value per account, converting each line value once.
 	balances := make(map[string]int64)
+	missing := make(map[string]bool)
 	for _, h := range holdings {
 		p := prices[h.SecurityID]
 		target := accountCurrency[h.AccountID]
 		value, _, ok := valuers[target].Convert(valueCents(h.Quantity, p.Price), p.Currency)
 		if !ok {
+			missing[h.AccountID] = true
 			logger.Get().Warnw("investment holding skipped: no FX rate",
 				"account_id", h.AccountID, "account_currency", target, "price_currency", p.Currency,
 				"security_id", h.SecurityID)
@@ -960,6 +979,9 @@ func (s *accountService) enrichInvestmentBalances(accounts []models.Account) err
 	for i := range accounts {
 		if accounts[i].Type == models.AccountTypeInvestment {
 			accounts[i].Balance = balances[accounts[i].ID]
+			if missing[accounts[i].ID] {
+				accounts[i].FXMissing = true
+			}
 		}
 	}
 

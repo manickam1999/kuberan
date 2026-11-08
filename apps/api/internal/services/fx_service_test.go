@@ -518,3 +518,46 @@ func TestFXQuoteErrorIsAppError(t *testing.T) {
 		t.Errorf("unexpected error: %v", err)
 	}
 }
+
+// Many rows per leg: the latest row <= at wins, an older-than-at row is not
+// preferred over it, and rows after at are ignored (the per-leg LIMIT 1 shape).
+func TestFXRate_ManyRowsPerLegPicksLatestNotAfterAt(t *testing.T) {
+	svc, db := newFXTest(t, testFXStaleness)
+	start := time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)
+	rows := make([]models.FXRate, 0, 600)
+	for i := 0; i < 600; i++ {
+		rows = append(rows, models.FXRate{
+			Base: "USD", Quote: "MYR", Rate: fx.Rate(40_000_000_000 + int64(i)),
+			RecordedAt: start.Add(time.Duration(i) * 30 * time.Minute), Source: "test",
+		}, models.FXRate{
+			Base: "EUR", Quote: "MYR", Rate: fx.Rate(50_000_000_000 + int64(i)),
+			RecordedAt: start.Add(time.Duration(i) * 30 * time.Minute), Source: "test",
+		})
+	}
+	testutil.AssertNoError(t, db.CreateInBatches(&rows, 100).Error)
+
+	at := start.Add(100*30*time.Minute + 7*time.Minute) // between row 100 and 101
+	got, err := svc.Rates([]CurrencyPair{{"USD", "MYR"}, {"EUR", "MYR"}}, at)
+	testutil.AssertNoError(t, err)
+	if q := got[CurrencyPair{"USD", "MYR"}]; q == nil || q.Rate != fx.Rate(40_000_000_000+100) || !q.RecordedAt.Equal(start.Add(100*30*time.Minute)) {
+		t.Errorf("USD/MYR = %+v, want row 100", q)
+	}
+	if q := got[CurrencyPair{"EUR", "MYR"}]; q == nil || q.Rate != fx.Rate(50_000_000_000+100) {
+		t.Errorf("EUR/MYR = %+v, want row 100", q)
+	}
+
+	// Exactly at a row's time, that row is included.
+	exact := start.Add(250 * 30 * time.Minute)
+	got, err = svc.Rates([]CurrencyPair{{"USD", "MYR"}}, exact)
+	testutil.AssertNoError(t, err)
+	if q := got[CurrencyPair{"USD", "MYR"}]; q == nil || q.Rate != fx.Rate(40_000_000_000+250) {
+		t.Errorf("USD/MYR at exact = %+v, want row 250", q)
+	}
+
+	// Before the first row there is no rate.
+	got, err = svc.Rates([]CurrencyPair{{"USD", "MYR"}}, start.Add(-time.Minute))
+	testutil.AssertNoError(t, err)
+	if got[CurrencyPair{"USD", "MYR"}] != nil {
+		t.Errorf("rate before first row = %+v, want none", got[CurrencyPair{"USD", "MYR"}])
+	}
+}

@@ -508,11 +508,11 @@ func TestBackfill_FXBeforePricesAndPayloads(t *testing.T) {
 		t.Errorf("VOD[0] = %v, want 525 GBP cents (525.495 GBp rounded once)", v0)
 	}
 
-	// FX payload: decimal string rate, bar timestamp, source yahoo.
+	// FX payload: decimal string rate, bar date normalised to 00:00:00Z, source yahoo.
 	for _, w := range writes {
 		if strings.HasSuffix(w.Path, "/fx-rates") {
 			r := w.Body["rates"].([]any)[0].(map[string]any)
-			if r["base"] == "USD" && (r["rate"] != "4.4712000000" || r["source"] != "yahoo" || r["recorded_at"] != "2025-01-02T14:30:00Z") {
+			if r["base"] == "USD" && (r["rate"] != "4.4712000000" || r["source"] != "yahoo" || r["recorded_at"] != "2025-01-02T00:00:00Z") {
 				t.Errorf("USD/MYR rate entry = %v", r)
 			}
 		}

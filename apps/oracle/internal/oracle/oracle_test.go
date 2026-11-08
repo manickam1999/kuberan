@@ -321,8 +321,7 @@ func TestOracle_Run_NoSecurities(t *testing.T) {
 			return 0, nil
 		},
 		computeSnapshotsFn: func(_ context.Context) (int, error) {
-			t.Error("ComputeSnapshots should not be called")
-			return 0, nil
+			return 3, nil
 		},
 	}
 
@@ -349,6 +348,52 @@ func TestOracle_Run_NoSecurities(t *testing.T) {
 	}
 	if providerCalled {
 		t.Error("provider should not be called when no securities")
+	}
+	if result.SnapshotsRecorded != 3 {
+		t.Errorf("SnapshotsRecorded = %d, want 3 (snapshots still run without securities)", result.SnapshotsRecorded)
+	}
+}
+
+// A cash-only multi-currency user has no securities; FX rates must still be
+// published (from the pipeline's pair list) and snapshots computed.
+func TestOracle_Run_NoSecurities_StillPublishesFXAndSnapshots(t *testing.T) {
+	var fxEntries []client.FXRateEntry
+	mc := &mockClient{
+		getSecuritiesFn: func(_ context.Context) ([]client.Security, error) { return []client.Security{}, nil },
+		getFXPairsFn: func(_ context.Context) (client.FXPairs, error) {
+			return client.FXPairs{
+				Pairs:          []client.CurrencyPair{{Base: "USD", Quote: "MYR"}},
+				BaseCurrencies: []string{"MYR"},
+			}, nil
+		},
+		recordFXRatesFn: func(_ context.Context, rates []client.FXRateEntry) (int, error) {
+			fxEntries = rates
+			return len(rates), nil
+		},
+		recordPricesFn: func(_ context.Context, _ []client.RecordPriceEntry) (int, error) {
+			t.Error("RecordPrices must not be called")
+			return 0, nil
+		},
+		computeSnapshotsFn: func(_ context.Context) (int, error) { return 2, nil },
+	}
+
+	transport := newFakeYahooTransport(map[string]float64{"USDMYR=X": 4.47})
+	cfg := defaultConfig(true)
+	cfg.PublishFX = true
+
+	orc := NewOracle(mc, nil, newFXTestConverter(transport), cfg, newTestLogger())
+	result, err := orc.Run(context.Background())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.FXRatesRecorded != 1 || len(fxEntries) != 1 || fxEntries[0].Base != "USD" || fxEntries[0].Quote != "MYR" {
+		t.Errorf("FXRatesRecorded = %d, entries = %+v, want USD/MYR published", result.FXRatesRecorded, fxEntries)
+	}
+	if result.SnapshotsRecorded != 2 {
+		t.Errorf("SnapshotsRecorded = %d, want 2", result.SnapshotsRecorded)
+	}
+	if callIndex(mc.calls, "RecordFXRates") < 0 || callIndex(mc.calls, "ComputeSnapshots") < 0 {
+		t.Errorf("calls = %v, want RecordFXRates and ComputeSnapshots", mc.calls)
 	}
 }
 
@@ -458,7 +503,7 @@ func TestOracle_Run_UnsupportedAssetType(t *testing.T) {
 			return 0, nil
 		},
 		computeSnapshotsFn: func(_ context.Context) (int, error) {
-			t.Error("ComputeSnapshots should not be called when no prices fetched")
+			// Snapshots still run without prices (cash balances and FX move).
 			return 0, nil
 		},
 	}
@@ -974,11 +1019,11 @@ func TestOracle_Run_PublishesFXBeforePricesAndSnapshots(t *testing.T) {
 		if err != nil {
 			t.Fatalf("recorded_at %q is not RFC3339: %v", e.RecordedAt, err)
 		}
-		if recordedAt.Second() != 0 || recordedAt.Nanosecond() != 0 || recordedAt.Location() != time.UTC {
-			t.Errorf("recorded_at = %v, want a UTC time truncated to the minute", recordedAt)
+		if want := time.Now().UTC().Truncate(24 * time.Hour); !recordedAt.Equal(want) && !recordedAt.Equal(want.Add(-24*time.Hour)) {
+			t.Errorf("recorded_at = %v, want 00:00:00Z of the current UTC day (%v)", recordedAt, want)
 		}
-		if time.Since(recordedAt) > 2*time.Minute {
-			t.Errorf("recorded_at = %v is not this run's start time", recordedAt)
+		if recordedAt.Location() != time.UTC || recordedAt.Hour() != 0 || recordedAt.Minute() != 0 || recordedAt.Second() != 0 {
+			t.Errorf("recorded_at = %v, want midnight UTC", recordedAt)
 		}
 	}
 

@@ -31,7 +31,9 @@ export function ReportingCurrencySettings() {
   const errorMessage = error
     ? error instanceof ApiClientError && error.code === "UNSUPPORTED_CURRENCY"
       ? "That currency isn't supported: there is no exchange rate to convert it."
-      : error instanceof ApiClientError
+      : error instanceof ApiClientError && error.code === "BASE_CURRENCY_LOCKED"
+        ? error.message
+        : error instanceof ApiClientError
         ? error.message
         : "Failed to update reporting currency"
     : null;
@@ -69,6 +71,9 @@ export function ReportingCurrencySettings() {
             ))}
           </SelectContent>
         </Select>
+        <p className="text-xs text-muted-foreground">
+          The reporting currency is locked once you have investment history.
+        </p>
         {errorMessage && (
           <p role="alert" className="text-sm text-destructive">
             {errorMessage}

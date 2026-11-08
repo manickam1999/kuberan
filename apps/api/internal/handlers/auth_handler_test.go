@@ -890,6 +890,24 @@ func TestAuthHandler_UpdateProfileSettings(t *testing.T) {
 		audit.assertNone(t)
 	})
 
+	t.Run("locked base_currency returns 409", func(t *testing.T) {
+		userSvc := &mockUserService{
+			updateProfileSettingsFn: func(_ string, _ services.ProfileSettingsUpdate) error {
+				return apperrors.ErrBaseCurrencyLocked
+			},
+		}
+		audit := &recordingAudit{}
+		r := setupAuthRouter(NewAuthHandler(userSvc, audit))
+
+		rec := doRequest(r, "PATCH", "/profile", `{"base_currency":"USD"}`)
+
+		if rec.Code != http.StatusConflict {
+			t.Fatalf("expected 409, got %d: %s", rec.Code, rec.Body.String())
+		}
+		assertErrorCode(t, parseJSON(t, rec), "BASE_CURRENCY_LOCKED")
+		audit.assertNone(t)
+	})
+
 	for name, body := range map[string]string{
 		"not an ISO code":          `{"base_currency":"ZZZ"}`,
 		"lower-case code":          `{"base_currency":"myr"}`,

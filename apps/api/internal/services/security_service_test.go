@@ -397,9 +397,9 @@ func TestRecordPrices(t *testing.T) {
 		now := time.Now().Truncate(time.Second)
 
 		prices := []SecurityPriceInput{
-			{SecurityID: sec1.ID, Price: 15000, RecordedAt: now},
-			{SecurityID: sec1.ID, Price: 15100, RecordedAt: now.Add(time.Hour)},
-			{SecurityID: sec2.ID, Price: 4200, RecordedAt: now},
+			{SecurityID: sec1.ID, Price: 15000, Currency: "MYR", RecordedAt: now},
+			{SecurityID: sec1.ID, Price: 15100, Currency: "MYR", RecordedAt: now.Add(time.Hour)},
+			{SecurityID: sec2.ID, Price: 4200, Currency: "MYR", RecordedAt: now},
 		}
 
 		res, err := svc.RecordPrices(prices)
@@ -426,7 +426,7 @@ func TestRecordPrices(t *testing.T) {
 		now := time.Now().Truncate(time.Second)
 
 		prices := []SecurityPriceInput{
-			{SecurityID: sec.ID, Price: 15000, RecordedAt: now},
+			{SecurityID: sec.ID, Price: 15000, Currency: "MYR", RecordedAt: now},
 		}
 
 		res1, err := svc.RecordPrices(prices)
@@ -474,6 +474,7 @@ func TestGetPriceHistory(t *testing.T) {
 			prices = append(prices, SecurityPriceInput{
 				SecurityID: sec.ID,
 				Price:      int64(15000 + i*100),
+				Currency:   "MYR",
 				RecordedAt: base.Add(time.Duration(i) * time.Hour),
 			})
 		}
@@ -507,10 +508,10 @@ func TestGetPriceHistory(t *testing.T) {
 		base := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
 
 		prices := []SecurityPriceInput{
-			{SecurityID: sec.ID, Price: 15000, RecordedAt: base},
-			{SecurityID: sec.ID, Price: 15100, RecordedAt: base.Add(24 * time.Hour)},
-			{SecurityID: sec.ID, Price: 15200, RecordedAt: base.Add(48 * time.Hour)},
-			{SecurityID: sec.ID, Price: 15300, RecordedAt: base.Add(72 * time.Hour)},
+			{SecurityID: sec.ID, Price: 15000, Currency: "MYR", RecordedAt: base},
+			{SecurityID: sec.ID, Price: 15100, Currency: "MYR", RecordedAt: base.Add(24 * time.Hour)},
+			{SecurityID: sec.ID, Price: 15200, Currency: "MYR", RecordedAt: base.Add(48 * time.Hour)},
+			{SecurityID: sec.ID, Price: 15300, Currency: "MYR", RecordedAt: base.Add(72 * time.Hour)},
 		}
 		_, err := svc.RecordPrices(prices)
 		testutil.AssertNoError(t, err)
@@ -538,9 +539,9 @@ func TestGetPriceHistory(t *testing.T) {
 		now := time.Now().Truncate(time.Second)
 
 		prices := []SecurityPriceInput{
-			{SecurityID: sec1.ID, Price: 15000, RecordedAt: now},
-			{SecurityID: sec1.ID, Price: 15100, RecordedAt: now.Add(time.Hour)},
-			{SecurityID: sec2.ID, Price: 4200, RecordedAt: now},
+			{SecurityID: sec1.ID, Price: 15000, Currency: "MYR", RecordedAt: now},
+			{SecurityID: sec1.ID, Price: 15100, Currency: "MYR", RecordedAt: now.Add(time.Hour)},
+			{SecurityID: sec2.ID, Price: 4200, Currency: "MYR", RecordedAt: now},
 		}
 		_, err := svc.RecordPrices(prices)
 		testutil.AssertNoError(t, err)
@@ -566,9 +567,9 @@ func TestGetPriceHistory(t *testing.T) {
 		base := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
 
 		prices := []SecurityPriceInput{
-			{SecurityID: sec.ID, Price: 15000, RecordedAt: base},
-			{SecurityID: sec.ID, Price: 15100, RecordedAt: base.Add(time.Hour)},
-			{SecurityID: sec.ID, Price: 15200, RecordedAt: base.Add(2 * time.Hour)},
+			{SecurityID: sec.ID, Price: 15000, Currency: "MYR", RecordedAt: base},
+			{SecurityID: sec.ID, Price: 15100, Currency: "MYR", RecordedAt: base.Add(time.Hour)},
+			{SecurityID: sec.ID, Price: 15200, Currency: "MYR", RecordedAt: base.Add(2 * time.Hour)},
 		}
 		_, err := svc.RecordPrices(prices)
 		testutil.AssertNoError(t, err)
@@ -602,19 +603,20 @@ func TestRecordPrices_Currency(t *testing.T) {
 		return sec
 	}
 
-	t.Run("empty_currency_is_stored_as_security_currency", func(t *testing.T) {
+	t.Run("empty_currency_is_rejected_as_currency_required", func(t *testing.T) {
 		db := testutil.SetupTestDB(t)
 		defer testutil.TeardownTestDB(t, db)
-		sec := newSec(t, db, "usd") // legacy lower-case labels still resolve
+		sec := newSec(t, db, "usd")
 		res, err := NewSecurityService(db).RecordPrices([]SecurityPriceInput{{SecurityID: sec.ID, Price: 100, RecordedAt: at}})
 		testutil.AssertNoError(t, err)
-		if res.Recorded != 1 || res.Rejected == nil || len(res.Rejected) != 0 {
+		if res.Recorded != 0 || len(res.Rejected) != 1 || res.Rejected[0].Reason != PriceRejectedCurrencyRequired ||
+			res.Rejected[0].Index != 0 || res.Rejected[0].ExpectedCurrency != "USD" {
 			t.Fatalf("result = %+v", res)
 		}
-		var row models.SecurityPrice
-		testutil.AssertNoError(t, db.Where("security_id = ?", sec.ID).First(&row).Error)
-		if row.Currency != "USD" {
-			t.Errorf("stored currency = %q, want USD", row.Currency)
+		var n int64
+		db.Model(&models.SecurityPrice{}).Where("security_id = ?", sec.ID).Count(&n)
+		if n != 0 {
+			t.Errorf("rows = %d, want 0", n)
 		}
 	})
 
@@ -635,10 +637,10 @@ func TestRecordPrices_Currency(t *testing.T) {
 		myr := newSec(t, db, "MYR")
 		usd := newSec(t, db, "USD")
 		res, err := NewSecurityService(db).RecordPrices([]SecurityPriceInput{
-			{SecurityID: myr.ID, Price: 1, RecordedAt: at},
+			{SecurityID: myr.ID, Price: 1, Currency: "MYR", RecordedAt: at},
 			{SecurityID: usd.ID, Price: 2, Currency: "MYR", RecordedAt: at},
-			{SecurityID: "00000000-0000-0000-0000-0000000000ff", Price: 3, RecordedAt: at},
-			{SecurityID: "not-a-uuid", Price: 4, RecordedAt: at},
+			{SecurityID: "00000000-0000-0000-0000-0000000000ff", Price: 3, Currency: "MYR", RecordedAt: at},
+			{SecurityID: "not-a-uuid", Price: 4, Currency: "MYR", RecordedAt: at},
 			{SecurityID: usd.ID, Price: 5, Currency: "USD", RecordedAt: at},
 		})
 		testutil.AssertNoError(t, err)

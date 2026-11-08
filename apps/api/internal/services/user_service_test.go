@@ -653,6 +653,48 @@ func TestUpdateProfileSettings(t *testing.T) {
 		testutil.AssertNoError(t, svc.UpdateProfileSettings(user.ID, ProfileSettingsUpdate{BaseCurrency: strPtr("MYR")}))
 	})
 
+	t.Run("base_currency_locked_with_investment_history", func(t *testing.T) {
+		db := testutil.SetupTestDB(t)
+		defer testutil.TeardownTestDB(t, db)
+		svc := NewUserService(db, NewFXService(db, testFXStaleness))
+		user := testutil.CreateTestUser(t, db)
+		account := testutil.CreateTestInvestmentAccount(t, db, user.ID)
+		sec := testutil.CreateTestSecurity(t, db)
+		inv := testutil.CreateTestInvestment(t, db, account.ID, sec.ID)
+		testutil.AssertNoError(t, db.Create(&models.InvestmentTransaction{
+			InvestmentID: inv.ID, Type: models.InvestmentTransactionBuy, Date: time.Now(),
+			Quantity: 10, PricePerUnit: 10000, TotalAmount: 100000,
+		}).Error)
+
+		err := svc.UpdateProfileSettings(user.ID, ProfileSettingsUpdate{BaseCurrency: strPtr("USD")})
+		testutil.AssertAppError(t, err, "BASE_CURRENCY_LOCKED")
+		if got := getUser(t, svc, user.ID).BaseCurrency; got != "MYR" {
+			t.Errorf("a locked change must not apply, got %q", got)
+		}
+
+		// Setting the same value stays allowed.
+		testutil.AssertNoError(t, svc.UpdateProfileSettings(user.ID, ProfileSettingsUpdate{BaseCurrency: strPtr("myr")}))
+
+		// Another user without history is unaffected.
+		other := testutil.CreateTestUserWithEmail(t, db, "other-base@example.com")
+		testutil.AssertNoError(t, svc.UpdateProfileSettings(other.ID, ProfileSettingsUpdate{BaseCurrency: strPtr("USD")}))
+	})
+
+	t.Run("base_currency_changes_without_investment_history", func(t *testing.T) {
+		db := testutil.SetupTestDB(t)
+		defer testutil.TeardownTestDB(t, db)
+		svc := NewUserService(db, NewFXService(db, testFXStaleness))
+		user := testutil.CreateTestUser(t, db)
+		// Holdings without any transaction do not lock the currency.
+		account := testutil.CreateTestInvestmentAccount(t, db, user.ID)
+		testutil.CreateTestInvestment(t, db, account.ID, testutil.CreateTestSecurity(t, db).ID)
+
+		testutil.AssertNoError(t, svc.UpdateProfileSettings(user.ID, ProfileSettingsUpdate{BaseCurrency: strPtr("USD")}))
+		if got := getUser(t, svc, user.ID).BaseCurrency; got != "USD" {
+			t.Errorf("expected USD, got %q", got)
+		}
+	})
+
 	for name, code := range map[string]string{
 		"rejects_non_two_decimal_base_currency": "JPY",
 		"rejects_malformed_base_currency":       "US",

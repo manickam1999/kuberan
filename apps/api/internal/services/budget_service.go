@@ -46,6 +46,9 @@ func (s *budgetService) resolveBudgetCurrency(userID, requested string) (string,
 	if !isCurrencyCode(code) {
 		return "", apperrors.WithMessage(apperrors.ErrInvalidInput, "currency must be a 3-letter ISO 4217 code")
 	}
+	if !isTwoDecimalCurrency(code) {
+		return "", apperrors.ErrUnsupportedCurrency
+	}
 	return code, nil
 }
 

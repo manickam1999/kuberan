@@ -705,7 +705,7 @@ func (s *investmentService) RecordSell(userID, investmentID string, p SellParams
 	}
 	secCcy := normalizeCode(investment.Security.Currency)
 
-	if p.Quantity > investment.Quantity {
+	if p.Quantity > investment.Quantity+quantityEpsilon {
 		return nil, apperrors.ErrInsufficientShares
 	}
 

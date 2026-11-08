@@ -775,6 +775,22 @@ func TestWriteCeilingCoversImplicitAmounts(t *testing.T) {
 		}
 	})
 
+	t.Run("editing a huge amount down to a cent is refused", func(t *testing.T) {
+		e := setupWriteEnv(t, scope)
+		acct := testutil.CreateTestCashAccountWithBalance(t, e.db, e.user.ID, 10_000_000)
+		big := testutil.CreateTestTransaction(t, e.db, e.user.ID, acct.ID, models.TransactionTypeExpense, 5_000_000)
+
+		wantError(t, e.call(t, e.ctx(scope), "update_transaction", map[string]any{
+			"transaction_id": big.ID, "amount": 0.01,
+		}), "per-change limit")
+
+		var got models.Transaction
+		e.db.First(&got, "id = ?", big.ID)
+		if got.Amount != 5_000_000 {
+			t.Errorf("amount = %d, want unchanged", got.Amount)
+		}
+	})
+
 	t.Run("type flip within the ceiling is allowed", func(t *testing.T) {
 		e := setupWriteEnv(t, scope)
 		acct := testutil.CreateTestCashAccountWithBalance(t, e.db, e.user.ID, 10_000)

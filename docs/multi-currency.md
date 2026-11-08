@@ -29,12 +29,16 @@ Contents:
   (`to_amount`); buying or selling a security with cash in another currency needs `funding_amount` / `deposit_amount`.
   Account lists, analytics, budgets, receivables and snapshots add up in your reporting currency
   (`users.base_currency`, default MYR; change it under Settings).
+- **The reporting currency locks once you have investment history.** Cost basis and realized gains are stored in the
+  reporting currency of the day of each trade, so changing it afterwards would mislabel them. `PATCH /profile` with a
+  different `base_currency` returns 409 `BASE_CURRENCY_LOCKED` as soon as you have any investment transaction (the same
+  value is always accepted; users without investment history can still change it). Keep MYR for this deploy.
 - **IBKR import.** `POST /api/v1/imports/ibkr` rebuilds your Interactive Brokers holdings and the USD cash ledger from
   Activity Statement CSVs so they match the statements exactly. See [ibkr-import.md](ibkr-import.md) for the details.
 - **Web, MCP and Telegram bot** show amounts with their currency (`RM 1,234.50`, `US$1,234.50`) and total in your
   reporting currency.
 
-Database migrations 38 to 46 are applied by the deploy:
+Database migrations 38 to 47 are applied by the deploy:
 
 | Migration | What it does |
 |---|---|
@@ -47,6 +51,7 @@ Database migrations 38 to 46 are applied by the deploy:
 | 000044 | `transactions.import_ref` (importer idempotency) |
 | 000045 | `budgets.currency` (existing budgets take the owner's base currency) |
 | 000046 | `receivable_settlements.account_amount` |
+| 000047 | compatibility defaults (`'MYR'`) on `security_prices.currency` and `budgets.currency`, so older API images can still insert (see [Rollback](#7-rollback)) |
 
 All of them are additive. None of them changes a stored amount.
 
@@ -73,7 +78,29 @@ after your last export) are reported as `trades_after_statement` and the apply i
 Statements contain your name and account number. Keep them out of the repository and delete them when you are done. The
 server handles them in memory only.
 
-### 2.2 Back up the database
+### 2.2 Check currency codes
+
+Migration 40 copies `securities.currency` (VARCHAR(10)) into a new VARCHAR(3) column. A longer value aborts the migration
+and with it the deploy. Every currency must be exactly three upper-case letters:
+
+```bash
+docker compose -f docker-compose.prod.yml --env-file .env.prod exec postgres \
+  psql -U "$DB_USER" -d "$DB_NAME" \
+  -c "SELECT currency, count(*) FROM securities GROUP BY 1 ORDER BY 1;" \
+  -c "SELECT currency, count(*) FROM accounts GROUP BY 1 ORDER BY 1;"
+```
+
+Expect only codes such as `MYR` and `USD`. Anything else (`usd`, `MYR `, `US`, `USDT`, a longer string) must be fixed
+before you deploy, for example:
+
+```sql
+UPDATE securities SET currency = 'MYR' WHERE currency = '<bad value>';
+```
+
+Use the code the security is really priced in (a crypto asset priced in MYR is `MYR`). For an account with a bad code,
+`UPDATE accounts SET currency = '<code>' WHERE currency = '<bad value>';`. Re-run the query to confirm.
+
+### 2.3 Back up the database
 
 The deploy script takes a `predeploy` backup if the `backup` compose profile is enabled, but take an explicit one first
 and confirm it exists:
@@ -90,7 +117,7 @@ ls -l backups/ | tail -5
 Expect a new `kuberan_manual-multicurrency_<timestamp>.dump` (about the size of the previous dumps). If the `backup`
 profile is not enabled, use your provider's backup (for example Supabase point-in-time recovery) and note the time.
 
-### 2.3 Pause the oracle schedule
+### 2.4 Pause the oracle schedule
 
 The oracle runs from the root crontab (`setup-vps.sh` installs `*/30 * * * * ... run --rm oracle`). Save the crontab, then
 comment out the oracle line:
@@ -130,7 +157,7 @@ Expect the stages build, database start, pre-migration backup, migrations, start
 docker compose -f docker-compose.prod.yml --env-file .env.prod run --rm --no-deps -e DB_PORT=5432 --entrypoint /migrate api version
 ```
 
-Expect `46`. If the deploy fails, it prints the failing stage and the rollback commands; see [Rollback](#7-rollback).
+Expect `47`. If the deploy fails, it prints the failing stage and the rollback commands; see [Rollback](#7-rollback).
 If you still have `TARGET_CURRENCY` in `.env.prod`, delete it (it is ignored).
 
 ### 3.1 Set up shell variables for the rest of the runbook
@@ -256,14 +283,16 @@ docker compose -f docker-compose.prod.yml --profile oracle run --rm oracle backf
 docker compose -f docker-compose.prod.yml --profile oracle run --rm oracle backfill --since 2025-01-01
 ```
 
-Expect an `FX PAIR` table (at least `USDMYR`, status `ok`, with `FETCHED` and `RECORDED` roughly 500 or more daily
+Expect an `FX PAIR` table (at least `USD/MYR`, status `ok`, with `FETCHED` and `RECORDED` roughly 500 or more daily
 bars), then a `SYMBOL CURRENCY FETCHED RECORDED REJECTED STATUS` table with the nine USD securities and RBOT, then totals
 lines. `REJECTED` must be 0 for every row. Exit code 0.
 
 - **`rejected` greater than 0 or `currency_mismatch`**: the security's stored currency still differs from Yahoo's; re-run
   `reconcile`.
 - **`fetch failed` rows**: Yahoo hiccups; re-run just those with `--symbols CCJ,NVDA` (add `--prices`).
-- Re-running is safe: rates and prices are upserted.
+- Re-running is safe. Rates are upserted (a re-run overwrites the stored rate for the same day). Prices are inserted
+  with `ON CONFLICT DO NOTHING`, so a re-run records 0 for days that already have a price (`RECORDED` is lower than
+  `FETCHED`, `REJECTED` stays 0) and never overwrites an existing price.
 - Options: `--fx` or `--prices` alone, `--until YYYY-MM-DD` (default today UTC), `--symbols A,B`.
 
 Crypto and Bursa securities are not touched: their stored prices are already in MYR.
@@ -280,7 +309,7 @@ docker compose -f docker-compose.prod.yml --env-file .env.prod run --rm --no-dep
   -e BACKUP_LABEL=pre-ibkr-import -e BACKUP_SKIP_RECEIPTS=true --entrypoint /backup.sh backup
 ```
 
-List your accounts and note three ids: the IBKR **investment** account, and the old **IBKR Cash** account (currently
+List your accounts and note two ids: the IBKR **investment** account, and the old **IBKR Cash** account (currently
 labelled MYR):
 
 ```bash
@@ -339,7 +368,16 @@ jq -r '.securities[] | .symbol as $s | .checkpoints[] | [$s, .date, .ibkr_quanti
 ```
 
 ```bash
-jq '.cash | {opening_balance, deposits_matched, unmatched_deposits, checkpoints}' import-report.json
+jq '.cash | {opening_balance, deposits_matched, unmatched_deposits, checkpoints, legacy_account_balance_after}' import-report.json
+```
+
+Then list what would remain in the old account after the re-pointing (this lists its current transactions; the matched
+transfers move to the new account when you apply, so everything else shown is what stays behind):
+
+```bash
+curl -sS "$API_URL/api/v1/accounts/$OLD_IBKR_CASH_ACCOUNT_ID/transactions?page_size=100" \
+  -H "Authorization: Bearer $TOKEN" \
+  | jq -r '.data[] | [.id,.date,.type,.amount,.description] | @tsv'
 ```
 
 What you should see:
@@ -353,6 +391,9 @@ What you should see:
   of the deposit and when its implied MYR/USD rate is within 3% of the market rate for that day.
 - `cash.checkpoints`: `ledger` equals `ibkr` at each statement end, within one cent per row. The final one is the cash
   balance you should see after the import (IBKR's Ending Cash on the last statement).
+- `cash.legacy_account_balance_after`: what is left on the old account once the matched transfers are re-pointed.
+  Expect 0 only if it held nothing but IBKR deposits. A non-zero value means other rows stay behind (unmatched
+  top-ups, the old trade cash legs, manual "FX Spread Management" rows). Review the transaction list above before 5.4.
 
 If the report is not clean:
 
@@ -365,10 +406,16 @@ If the report is not clean:
 | `insufficient_shares` | The replay sold more than it held. A statement in the middle is missing (periods not contiguous) or a trade is on the wrong security. Check `periods`. |
 | `opening_balance_missing` | No statement ends the day before `cash_start_date`. Include the 2025 statement (ending 2025-12-31) or change `cash_start_date`. |
 | a `quantity_ok: false` checkpoint | The replayed quantity differs from IBKR's Open Positions (tolerance 1e-4). Usually a missing statement period or a trade booked on the wrong security. Do not apply. |
-| `unmatched_deposits` | Deposits or withdrawals with no matching Kuberan transfer (each lists rejected candidates and their rate deviation). Applying is allowed; record them by hand afterwards. The cash ledger leaves them out, so the final cash checkpoint shows them as `diff`. |
+| `unmatched_deposits` | Deposits or withdrawals with no matching Kuberan transfer (each lists rejected candidates and their rate deviation). Withdrawals are never matched, so they always appear here. Applying is allowed; record them by hand afterwards (see 5.5). The cash ledger leaves them out, so the final cash checkpoint shows them as `diff`. |
 | non-empty `errors` of any kind | The apply is refused with HTTP 400 `IMPORT_INVALID` (report in `error.details.report`). Fix and re-run the dry run. |
 
 ### 5.4 Apply
+
+> **Before you apply with `deactivate_legacy_cash_account=true`:** deactivating the legacy account takes everything
+> still in it out of your net worth, because account lists and snapshots only count active accounts. That includes
+> unmatched top-ups, the old trade cash legs and any manual "FX Spread Management" rows. Review the remaining
+> transactions and `legacy_account_balance_after` from 5.3 first. If anything there still matters, apply without the
+> flag and deactivate later (5.5) once it is dealt with.
 
 Repeat exactly the same command with `-F apply=true` (and `-F deactivate_legacy_cash_account=true` to retire the old
 MYR IBKR Cash account in the same step). It runs in one database transaction; any error rolls everything back.
@@ -399,7 +446,8 @@ apply is safe: it replaces its own rows (found by `import_ref`) and changes noth
 ### 5.5 Deactivate the legacy cash account
 
 If you did not pass `deactivate_legacy_cash_account=true`, deactivate the old MYR `IBKR Cash` account now so it stops
-showing up in totals (check first that its balance is 0 or only contains what you want to keep):
+showing up in totals. This removes whatever is left in it (unmatched top-ups, legacy cash legs, manual "FX Spread
+Management" rows) from net worth, so check first that its balance is 0 or only contains what you want to drop:
 
 ```bash
 curl -sS -X PUT "$API_URL/api/v1/accounts/$OLD_IBKR_CASH_ACCOUNT_ID" \
@@ -407,8 +455,16 @@ curl -sS -X PUT "$API_URL/api/v1/accounts/$OLD_IBKR_CASH_ACCOUNT_ID" \
   -d '{"is_active":false}' | jq '.account | {name, is_active, balance}'
 ```
 
-Record any `unmatched_deposits` by hand as transfers from the right MYR bank account to `IBKR Cash (USD)` with the USD
-amount in `to_amount` (web app: Transactions > New transfer, which asks for the second amount).
+Record any `unmatched_deposits` by hand (web app: Transactions > New transfer, which asks for the second amount):
+
+- **The report lists `candidates`** (an existing transfer within 5 days whose implied rate was rejected). The bank
+  was already debited by that transfer, so do not record a second one. Transfers can't be edited, only deleted:
+  delete the existing wrong transfer, then recreate it as a cross-currency transfer from the same MYR bank account into
+  `IBKR Cash (USD)` with the MYR `amount` and the USD `to_amount`.
+- **No candidate listed.** Create a new transfer from the MYR bank account to `IBKR Cash (USD)` with the MYR `amount`
+  and the USD `to_amount`.
+- **Withdrawals** are never matched. Record each as a transfer out of `IBKR Cash (USD)` into the receiving account
+  (USD `amount`, and `to_amount` in the receiving currency if it differs).
 
 ## 6. Resume the oracle and check the result
 
@@ -451,8 +507,10 @@ Expect the oracle line back without the `#PAUSED` prefix.
 
    Quantities must equal IBKR's. `currency` is `MYR`, `unconverted` is empty, and `total_price_return + total_fx_return`
    equals `total_gain_loss` within a cent per holding.
-2. **USD cash vs IBKR cash.** The `IBKR Cash (USD)` balance must equal the Ending Cash of the last statement, less any
-   `unmatched_deposits` you have not recorded yet:
+2. **USD cash vs IBKR cash.** The `IBKR Cash (USD)` balance must equal the Ending Cash of the last statement,
+   adjusted for the `unmatched_deposits` you have not recorded yet: add unrecorded deposits to the balance and subtract
+   unrecorded withdrawals (the ledger leaves them out, so each one is the `diff` on the final cash checkpoint).
+   Withdrawals are never matched, so expect them here until you record them (5.5):
 
    ```bash
    curl -sS "$API_URL/api/v1/accounts/$IBKR_USD_CASH_ACCOUNT_ID" -H "Authorization: Bearer $TOKEN" \
@@ -462,11 +520,11 @@ Expect the oracle line back without the `#PAUSED` prefix.
    rates and the backfilled daily rates, plus the 2026 cash figures the import corrected:
 
    ```bash
-   curl -sS "$API_URL/api/v1/investments/snapshots?from_date=$(date -u -d '3 days ago' +%F)&page_size=5" \
+   curl -sS "$API_URL/api/v1/investments/snapshots?from_date=$(date -u -d '3 days ago' +%F)&to_date=$(date -u +%F)&page_size=5" \
      -H "Authorization: Bearer $TOKEN" | jq '.data[] | {recorded_at, total_net_worth, currency, fx_missing}'
    ```
 
-   Snapshots come newest first. Compare the newest ones (`currency: "MYR"`, `fx_missing: false`) with the last pre-deploy snapshot (widen `from_date` to reach it). Old snapshots
+   Snapshots come newest first. Compare the newest ones (`currency: "MYR"`, `fx_missing: false`) with the last pre-deploy snapshot (widen `from_date` to reach it; `from_date` and `to_date` are both required, `YYYY-MM-DD` or RFC3339, and `page_size` is optional). Old snapshots
    stay as recorded.
 4. **`fx_missing` flags.** None of these should be true: the portfolio above, the accounts list
    (`jq '.data[] | select(.fx_missing==true) | .name'` on `/accounts?page_size=100`), and the latest snapshot. If one
@@ -486,26 +544,33 @@ Delete the statement files and `import-*.json` reports from the server when you 
 
 ## 7. Rollback
 
-The migrations only add columns and tables, so the previous images still work against the new schema until you run the
-data steps. Choose the smallest rollback that fits:
+Migration 47 gives `security_prices.currency` and `budgets.currency` a default (`'MYR'`), so the previous API images
+can insert into the new schema (they do not know those columns). That covers the window between the migration and the
+new image, and `deploy.sh`'s automatic image rollback. The other columns added by 38 to 46 are nullable or have defaults.
 
-1. **Before step 4 (nothing but the deploy ran).** Roll the images back as described in
+But old code only works on old data. Once native-currency data exists (securities relabelled to USD in step 4, USD prices
+and rates, the import in step 5), the previous images would misread native amounts as MYR. So choose by how far you got:
+
+1. **Before step 4 (nothing but the deploy ran).** Rolling the images back is safe: roll them back as described in
    [backup-and-dr.md](backup-and-dr.md#rollback), or `git checkout <previous-sha> && ./deploy/deploy.sh`. The new
-   columns stay and are harmless. To drop them as well, step the migrations back (nine of them, 46 down to 38):
+   columns stay and are harmless. To drop them as well, step the migrations back (ten of them, 47 down to 38):
 
    ```bash
    docker compose -f docker-compose.prod.yml --env-file .env.prod \
-     run --rm --no-deps -e DB_PORT=5432 --entrypoint /migrate api down 9
+     run --rm --no-deps -e DB_PORT=5432 --entrypoint /migrate api down 10
    ```
 
-   Use `down 1` to undo only the newest one. Down files exist for all nine, but they drop the columns and any data in
+   Use `down 1` to undo only the newest one. Down files exist for all ten, but they drop the columns and any data in
    them.
-2. **After the data steps (4.1 onward).** These are not reversible by a down migration: the security relabelling and price
-   deletion, the backfilled rates and prices, and the import (it replaces the IBKR investment transactions and rewrites the
-   cash ledger and re-points transfers). Restore the backup you took in 2.2 (or 5.1 to keep the migration and the
-   backfill): stop `api`, `mcp` and `bot`, restore into a fresh database as in
+2. **After the data steps (4.1 onward).** Do not roll the images back on their own: the only correct rollback is
+   restoring the pre-deploy backup. The relabelling and price deletion, the backfilled rates and prices, and the import (it
+   replaces the IBKR investment transactions, rewrites the cash ledger and re-points transfers) are not reversible by a
+   down migration, and old code would show native amounts as if they were MYR. Restore the backup you took in 2.3 (or
+   the `pre-ibkr-import` one from 5.1 to keep the migration and the backfill): stop `api`, `mcp` and `bot`, restore
+   into a fresh database as in
    [backup-and-dr.md section 4](backup-and-dr.md#4--restore-drill-do-this-once-before-relying-on-it), point `DB_NAME` at it,
-   and start the services. Old images against a restored pre-migration dump need no migration step.
+   and start the services. Old images against a restored pre-migration dump need no migration step. Anything you
+   recorded after the backup is lost.
 3. **Only the import went wrong.** Restore the `pre-ibkr-import` backup from 5.1, fix the cause from the table in 5.3 and
    run the import again. The import is idempotent, so you can also simply fix the input and re-run it with `apply=true`.
 
@@ -520,6 +585,6 @@ Keep the oracle paused during any rollback, and resume it (6.1) once the system 
 | Pipeline FX | `GET /api/v1/pipeline/fx-pairs`, `POST /api/v1/pipeline/fx-rates` |
 | FX read | `GET /api/v1/fx-rates?base=&quote=&from=&to=`, `GET /api/v1/fx-rates/latest?base=&quote=` |
 | Import | `POST /api/v1/imports/ibkr` (multipart: `files` x1-10, `investment_account_id`, `cash_account_id`, `cash_start_date`, `legacy_cash_account_id`, `deactivate_legacy_cash_account`, `apply`) |
-| Reporting currency | `GET/PATCH /api/v1/profile` (`base_currency`) |
+| Reporting currency | `GET/PATCH /api/v1/profile` (`base_currency`; a different value is refused with 409 `BASE_CURRENCY_LOCKED` once you have investment transactions) |
 | Env vars | `FX_MAX_STALENESS` (api, default 168h), `PUBLISH_FX_RATES` (oracle), `MAX_UPLOAD_BYTES` (api, default 10 MiB), `MCP_MAX_WRITE_AMOUNT` (now compared in the base currency); `TARGET_CURRENCY` removed |
-| Error codes | `FX_RATE_UNAVAILABLE` (503), `FX_AMOUNT_REQUIRED` (400, with a suggested amount), `SECURITY_CURRENCY_LOCKED` (409), `IMPORT_INVALID` (400), `IMPORT_IN_PROGRESS` (409) |
+| Error codes | `FX_RATE_UNAVAILABLE` (503), `FX_AMOUNT_REQUIRED` (400, with a suggested amount), `SECURITY_CURRENCY_LOCKED` (409), `BASE_CURRENCY_LOCKED` (409), `IMPORT_INVALID` (400), `IMPORT_IN_PROGRESS` (409) |

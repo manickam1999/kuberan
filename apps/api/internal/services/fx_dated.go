@@ -91,8 +91,9 @@ func (s *fxService) RatesByDay(pairs []CurrencyPair, start, end time.Time) (map[
 	return out, nil
 }
 
-// loadLegRows fetches every stored row of the given directed pairs with
-// from <= recorded_at <= to, oldest first, in chunks of fxLegChunkSize legs.
+// loadLegRows fetches the stored rows of the given directed pairs with
+// from <= recorded_at <= to, oldest first (on Postgres only the last row of each
+// UTC day per leg; SQLite returns every row, which resolves identically), in chunks of fxLegChunkSize legs.
 func (s *fxService) loadLegRows(need map[CurrencyPair]struct{}, from, to time.Time) ([]models.FXRate, error) {
 	keys := make([]CurrencyPair, 0, len(need))
 	for k := range need {
@@ -116,10 +117,19 @@ func (s *fxService) loadLegRows(need map[CurrencyPair]struct{}, from, to time.Ti
 		}
 		args = append(args, from.UTC(), to.UTC())
 		var rows []models.FXRate
+		// Only the last row per (leg, UTC day) matters to RatesByDay (it takes
+		// the latest row <= end of day), so Postgres collapses intraday rows.
+		selectCols := "SELECT id, base, quote, rate, recorded_at, source FROM fx_rates "
+		orderBy := ""
+		if s.db.Name() == "postgres" {
+			selectCols = "SELECT DISTINCT ON (base, quote, (recorded_at AT TIME ZONE 'UTC')::date) " +
+				"id, base, quote, rate, recorded_at, source FROM fx_rates "
+			orderBy = " ORDER BY base, quote, (recorded_at AT TIME ZONE 'UTC')::date, recorded_at DESC"
+		}
 		err := s.db.Raw(
-			"SELECT id, base, quote, rate, recorded_at, source FROM fx_rates "+
+			selectCols+
 				"WHERE (base, quote) IN ("+strings.Join(holders, ", ")+") "+
-				"AND recorded_at >= ? AND recorded_at <= ?",
+				"AND recorded_at >= ? AND recorded_at <= ?"+orderBy,
 			args...,
 		).Scan(&rows).Error
 		if err != nil {

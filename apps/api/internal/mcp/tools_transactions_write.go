@@ -330,6 +330,15 @@ func (s *Server) prepareUpdateTransaction(c caller, args map[string]interface{})
 		if res := s.checkCeiling(c.UserID, "amount", amount, currency); res != nil {
 			return nil, res
 		}
+		// The balance moves by the difference, which a huge-to-tiny edit makes
+		// large even though the new amount is small.
+		delta := amount - before.Amount
+		if delta < 0 {
+			delta = -delta
+		}
+		if res := s.checkCeiling(c.UserID, "the amount change", delta, currency); res != nil {
+			return nil, res
+		}
 		updates.Amount = &amount
 		effectiveAmount = amount
 		changes["amount"] = change(before.Amount, amount)

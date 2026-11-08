@@ -177,6 +177,8 @@ MCP (plan 024, phase 6): tool output tags every amount with its ISO currency cod
 
 Bot (plan 024, phase 6): `format_currency` requires a currency argument (no default). Totals use the profile's `base_currency` and the API's `balance_base` / `*_base` fields, never a sum of raw balances; accounts without a rate are left out and listed. `telegram_links.default_currency` is only the default for new accounts. The operator guide and deploy runbook is `docs/multi-currency.md`.
 
+The reporting currency (`users.base_currency`) is locked once the user has any non-deleted investment transaction: a change to a different value is refused with 409 `BASE_CURRENCY_LOCKED`, because `cost_basis_base` and the other `_base` figures are frozen in the base currency at trade time (setting the same value is allowed).
+
 Non-monetary floats that remain as float64: `Investment.Quantity`, `SplitRatio`, `InterestRate`, `YieldToMaturity`, `CouponRate`. `CreditLimit` is int64 cents (not a float).
 
 ### Database Migrations

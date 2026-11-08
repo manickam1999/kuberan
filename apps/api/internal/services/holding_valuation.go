@@ -21,14 +21,15 @@ type nativePrice struct {
 // no price are absent) together with the security's currency
 // (UPPER(securities.currency)).
 //
-// It selects the row whose recorded_at equals the security's MAX(recorded_at).
-// The unique (security_id, recorded_at) index answers both the IN lookup and
-// the correlated MAX with one index probe per id instead of scanning every
-// price row. The query is portable (it also runs on the SQLite used in tests).
+// Both dialects read one row per security with one backward probe of the unique
+// (security_id, recorded_at) index: Postgres through a LATERAL ... ORDER BY
+// recorded_at DESC LIMIT 1 per security (DISTINCT ON sorts every price row of
+// the ids instead), SQLite (tests) through a per-security subselect.
 func latestNativePrices(db *gorm.DB, securityIDs []string) (map[string]nativePrice, error) {
 	if len(securityIDs) == 0 {
 		return map[string]nativePrice{}, nil
 	}
+	ids := uniqueStrings(securityIDs)
 
 	type priceRow struct {
 		SecurityID string
@@ -38,12 +39,23 @@ func latestNativePrices(db *gorm.DB, securityIDs []string) (map[string]nativePri
 	}
 	var rows []priceRow
 
-	if err := db.Table("security_prices sp").
-		Select("sp.security_id AS security_id, sp.price AS price, sp.recorded_at AS recorded_at, UPPER(s.currency) AS currency").
-		Joins("JOIN securities s ON s.id = sp.security_id").
-		Where("sp.security_id IN ?", uniqueStrings(securityIDs)).
-		Where("sp.recorded_at = (SELECT MAX(x.recorded_at) FROM security_prices x WHERE x.security_id = sp.security_id)").
-		Scan(&rows).Error; err != nil {
+	var err error
+	if db.Name() == "postgres" {
+		err = db.Raw(
+			"SELECT s.id AS security_id, p.price AS price, p.recorded_at AS recorded_at, UPPER(s.currency) AS currency "+
+				"FROM securities s CROSS JOIN LATERAL ("+
+				"SELECT sp.price, sp.recorded_at FROM security_prices sp WHERE sp.security_id = s.id "+
+				"ORDER BY sp.recorded_at DESC LIMIT 1) p WHERE s.id IN ?", ids,
+		).Scan(&rows).Error
+	} else {
+		err = db.Table("security_prices sp").
+			Select("sp.security_id AS security_id, sp.price AS price, sp.recorded_at AS recorded_at, UPPER(s.currency) AS currency").
+			Joins("JOIN securities s ON s.id = sp.security_id").
+			Where("sp.security_id IN ?", ids).
+			Where("sp.id = (SELECT x.id FROM security_prices x WHERE x.security_id = sp.security_id ORDER BY x.recorded_at DESC LIMIT 1)").
+			Scan(&rows).Error
+	}
+	if err != nil {
 		return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)
 	}
 

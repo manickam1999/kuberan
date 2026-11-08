@@ -164,8 +164,11 @@ func (o *Oracle) publishFXRates(ctx context.Context, start time.Time, results []
 	}
 	pairs := unionFXPairs(fxPairs.Pairs, fxPairs.BaseCurrencies, reported)
 
-	// One timestamp per run, truncated to the minute, so runs are comparable.
-	recordedAt := start.UTC().Truncate(time.Minute).Format(time.RFC3339)
+	// One row per pair per UTC day: stamp the start of the day so every run
+	// today upserts the same (base, quote, recorded_at) row with the latest
+	// rate. Valuation takes the latest row <= the lookup time, and the
+	// staleness window (FX_MAX_STALENESS, default 168h) is far above 24h.
+	recordedAt := start.UTC().Truncate(24 * time.Hour).Format(time.RFC3339)
 
 	entries := make([]client.FXRateEntry, 0, len(pairs))
 	for _, p := range pairs {
@@ -217,10 +220,10 @@ func (o *Oracle) Run(ctx context.Context) (*RunResult, error) {
 	}
 	result.SecuritiesFetched = len(securities)
 
+	// With no securities there are no prices to fetch, but FX rates (cash-only
+	// multi-currency users), snapshots and fixed deposits still run below.
 	if len(securities) == 0 {
-		o.logger.Info("no securities found, nothing to do")
-		result.Duration = time.Since(start)
-		return result, nil
+		o.logger.Info("no securities found, skipping price fetch")
 	}
 
 	// 2. Convert to provider types.
@@ -302,43 +305,12 @@ func (o *Oracle) Run(ctx context.Context) (*RunResult, error) {
 		priced = append(priced, r)
 	}
 
-	// If no prices fetched, return early.
+	// 6. Record prices, if any. With no prices, snapshots and fixed deposits
+	// still run.
 	if len(priced) == 0 {
 		o.logger.Info("no prices fetched")
-		result.Duration = time.Since(start)
-		return result, nil
-	}
-
-	// 6. Convert to client price entries and record. Rejected entries become
-	// fetch errors so the run summary counts them.
-	entries := make([]client.RecordPriceEntry, len(priced))
-	for i, r := range priced {
-		entries[i] = client.RecordPriceEntry{
-			SecurityID: r.SecurityID,
-			Price:      r.Price,
-			RecordedAt: r.RecordedAt.Format(time.RFC3339),
-			Currency:   r.Currency,
-		}
-	}
-
-	recorded, err := o.client.RecordPrices(ctx, entries)
-	if err != nil {
+	} else if err := o.recordPrices(ctx, priced, symbols, result); err != nil {
 		return nil, err
-	}
-	result.PricesRecorded = recorded.Recorded
-	for _, rej := range recorded.Rejected {
-		o.logger.Warn("price rejected by pipeline",
-			"security_id", rej.SecurityID,
-			"currency", rej.Currency,
-			"expected_currency", rej.ExpectedCurrency,
-			"reason", rej.Reason,
-		)
-		result.Errors = append(result.Errors, provider.FetchError{
-			SecurityID: rej.SecurityID,
-			Symbol:     symbolFor(symbols, rej.SecurityID),
-			Err: fmt.Errorf("price rejected: %s (posted %s, security is %s)",
-				rej.Reason, rej.Currency, rej.ExpectedCurrency),
-		})
 	}
 
 	// 7. Trigger snapshots if configured.
@@ -364,4 +336,39 @@ func (o *Oracle) Run(ctx context.Context) (*RunResult, error) {
 
 	result.Duration = time.Since(start)
 	return result, nil
+}
+
+// recordPrices posts the priced results to the pipeline. Rejected entries
+// become fetch errors so the run summary counts them.
+func (o *Oracle) recordPrices(ctx context.Context, priced []provider.PriceResult, symbols map[string]string, result *RunResult) error {
+	entries := make([]client.RecordPriceEntry, len(priced))
+	for i, r := range priced {
+		entries[i] = client.RecordPriceEntry{
+			SecurityID: r.SecurityID,
+			Price:      r.Price,
+			RecordedAt: r.RecordedAt.Format(time.RFC3339),
+			Currency:   r.Currency,
+		}
+	}
+
+	recorded, err := o.client.RecordPrices(ctx, entries)
+	if err != nil {
+		return err
+	}
+	result.PricesRecorded = recorded.Recorded
+	for _, rej := range recorded.Rejected {
+		o.logger.Warn("price rejected by pipeline",
+			"security_id", rej.SecurityID,
+			"currency", rej.Currency,
+			"expected_currency", rej.ExpectedCurrency,
+			"reason", rej.Reason,
+		)
+		result.Errors = append(result.Errors, provider.FetchError{
+			SecurityID: rej.SecurityID,
+			Symbol:     symbolFor(symbols, rej.SecurityID),
+			Err: fmt.Errorf("price rejected: %s (posted %s, security is %s)",
+				rej.Reason, rej.Currency, rej.ExpectedCurrency),
+		})
+	}
+	return nil
 }

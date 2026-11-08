@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	"kuberan/internal/models"
 	"kuberan/internal/testutil"
 )
 
@@ -119,5 +120,36 @@ func TestValuer_ConvertOverflowIsNotOK(t *testing.T) {
 	testutil.AssertNoError(t, err)
 	if _, _, ok := v.Convert(int64(1)<<62, "USD"); ok {
 		t.Error("overflow must report ok=false")
+	}
+}
+
+func TestLatestNativePrices_PicksLatestRowAmongMany(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	t.Cleanup(func() { testutil.TeardownTestDB(t, db) })
+	secA := testutil.CreateTestSecurity(t, db)
+	secB := testutil.CreateTestSecurity(t, db)
+	secNone := testutil.CreateTestSecurity(t, db)
+
+	start := time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)
+	var rows []models.SecurityPrice
+	for i := 0; i < 300; i++ {
+		at := start.Add(time.Duration(i) * 30 * time.Minute)
+		rows = append(rows,
+			models.SecurityPrice{SecurityID: secA.ID, Price: int64(1000 + i), Currency: "MYR", RecordedAt: at},
+			models.SecurityPrice{SecurityID: secB.ID, Price: int64(5000 + i), Currency: "MYR", RecordedAt: at.Add(time.Hour)},
+		)
+	}
+	testutil.AssertNoError(t, db.CreateInBatches(&rows, 100).Error)
+
+	got, err := latestNativePrices(db, []string{secA.ID, secB.ID, secNone.ID, secA.ID})
+	testutil.AssertNoError(t, err)
+	if len(got) != 2 {
+		t.Fatalf("got %d securities, want 2 (the one without prices is absent): %+v", len(got), got)
+	}
+	if p := got[secA.ID]; p.Price != 1299 || p.Currency != "MYR" || !p.RecordedAt.Equal(start.Add(299*30*time.Minute)) {
+		t.Errorf("secA = %+v, want the latest row (price 1299)", p)
+	}
+	if p := got[secB.ID]; p.Price != 5299 || !p.RecordedAt.Equal(start.Add(299*30*time.Minute+time.Hour)) {
+		t.Errorf("secB = %+v, want the latest row (price 5299)", p)
 	}
 }

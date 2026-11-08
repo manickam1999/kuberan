@@ -85,8 +85,10 @@ func (s *importService) writeHoldings(tx *gorm.DB, pl *importPlan) error {
 	return nil
 }
 
-// reversalFor returns the balance effect that undoes a row. An import row's
-// direction comes only from its import_ref (never the editable description). A
+// reversalFor returns the balance effect that undoes a row. For expense and
+// income rows the current type decides (it is what the balance reflects); the
+// import_ref direction is used only for investment rows, whose type does not
+// encode it (never the editable description). A
 // hand-entered opening balance (no import_ref) is reversed by its type.
 func reversalFor(t *models.Transaction) (models.TransactionType, bool) {
 	if t.ImportRef == nil {
@@ -101,6 +103,12 @@ func reversalFor(t *models.Transaction) (models.TransactionType, bool) {
 		return "", false
 	case t.Type == models.TransactionTypeOpeningBalance:
 		return openingBalanceReversal, true
+	case t.Type == models.TransactionTypeExpense:
+		// The row's current type is authoritative; the ref direction only
+		// applies where the type does not encode it.
+		return models.TransactionTypeIncome, true
+	case t.Type == models.TransactionTypeIncome:
+		return models.TransactionTypeExpense, true
 	case credit:
 		return models.TransactionTypeExpense, true
 	default:

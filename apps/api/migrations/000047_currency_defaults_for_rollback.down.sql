@@ -1,0 +1,2 @@
+ALTER TABLE security_prices ALTER COLUMN currency DROP DEFAULT;
+ALTER TABLE budgets ALTER COLUMN currency DROP DEFAULT;

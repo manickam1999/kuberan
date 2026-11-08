@@ -38,7 +38,7 @@ func TestPortfolioSnapshotFlow_ComputeAndQuery(t *testing.T) {
 	// Step 4: Record live price via pipeline ($150/share)
 	priceTime := time.Now().UTC().Format(time.RFC3339)
 	rec = app.pipelineRequest("POST", "/api/v1/pipeline/securities/prices",
-		fmt.Sprintf(`{"prices":[{"security_id":%q,"price":15000,"recorded_at":%q}]}`, securityID, priceTime))
+		fmt.Sprintf(`{"prices":[{"security_id":%q,"price":15000,"currency":"MYR","recorded_at":%q}]}`, securityID, priceTime))
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200 for pipeline price, got %d: %s", rec.Code, rec.Body.String())
 	}
