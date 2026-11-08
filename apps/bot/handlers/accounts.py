@@ -2,7 +2,7 @@ from telegram import Update
 from telegram.constants import ParseMode
 from telegram.ext import ContextTypes
 from api_client import KuberanAPIClient
-from handlers.common import describe_error, resolve_linked_user
+from handlers.common import FALLBACK_BASE_CURRENCY, describe_error, resolve_linked_user
 from utils.formatting import esc, format_currency, format_account_type
 import logging
 
@@ -17,7 +17,7 @@ def format_accounts_message(accounts: list) -> str:
         status = "✅" if acc.get('is_active', True) else "🔒"
         account_type = format_account_type(acc.get('type', 'cash'))
         name = acc.get('name', 'Unnamed Account')
-        currency = acc.get('currency', 'USD')
+        currency = acc.get('currency') or FALLBACK_BASE_CURRENCY
         balance_str = format_currency(acc.get('balance', 0), currency)
 
         message += f"{status} {account_type}\n"

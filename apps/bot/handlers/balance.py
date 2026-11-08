@@ -2,7 +2,7 @@ from telegram import Update
 from telegram.constants import ParseMode
 from telegram.ext import ContextTypes
 from api_client import KuberanAPIClient
-from handlers.common import describe_error, resolve_linked_user
+from handlers.common import describe_error, get_base_currency, resolve_linked_user
 from utils.formatting import esc, format_currency, format_account_type
 import logging
 
@@ -15,28 +15,46 @@ NOT_LINKED = (
 )
 
 
-def format_balance_message(accounts: list, currency: str) -> str:
-    """Build the /balance message (HTML) from the user's accounts."""
+def format_balance_message(accounts: list, base_currency: str) -> str:
+    """Build the /balance message (HTML) from the user's accounts.
+
+    Each account is shown in its own currency. The total sums ``balance_base``
+    (already converted to the base currency by the API) and never raw balances.
+    Accounts without ``balance_base`` (no exchange rate) are left out of the
+    total and listed underneath.
+    """
     message = "💰 <b>Your Accounts</b>\n\n"
     total = 0
+    not_in_total = []
 
     for acc in accounts:
         if not acc.get('is_active', True):
             continue
 
         balance = acc.get('balance', 0)
-        acc_currency = acc.get('currency', currency)
+        acc_currency = acc.get('currency') or base_currency
         account_type = acc.get('type', 'cash')
 
         message += f"{format_account_type(account_type)}\n"
         message += f"<b>{esc(acc.get('name', 'Unnamed Account'))}</b>\n"
         message += f"Balance: {esc(format_currency(balance, acc_currency))}\n\n"
 
-        total += balance
+        balance_base = acc.get('balance_base')
+        if balance_base is None:
+            not_in_total.append((acc, acc_currency))
+        else:
+            total += balance_base
 
     message += "━━━━━━━━━━━━━━━━\n"
-    # Note: mixed-currency totals are summed naively without conversion
-    message += f"<b>Total:</b> {esc(format_currency(total, currency))}"
+    message += f"<b>Total ({esc(base_currency)}):</b> {esc(format_currency(total, base_currency))}"
+
+    if not_in_total:
+        message += "\n\n<b>Not included in total (no exchange rate)</b>\n"
+        for acc, acc_currency in not_in_total:
+            name = esc(acc.get('name', 'Unnamed Account'))
+            amount = esc(format_currency(acc.get('balance', 0), acc_currency))
+            message += f"• {name}: {amount}\n"
+        message = message.rstrip("\n")
     return message
 
 
@@ -57,9 +75,9 @@ def handle(api_client: KuberanAPIClient):
                 )
                 return
 
-            currency = user_data.get('default_currency', 'MYR')
+            base_currency = await get_base_currency(user_client)
             await update.message.reply_text(
-                format_balance_message(accounts, currency), parse_mode=ParseMode.HTML
+                format_balance_message(accounts, base_currency), parse_mode=ParseMode.HTML
             )
 
         except Exception as e:

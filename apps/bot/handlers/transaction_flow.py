@@ -16,7 +16,7 @@ from utils.formatting import display_icon, esc, format_currency, is_emoji_icon
 logger = logging.getLogger(__name__)
 
 AMOUNT, CATEGORY, CONFIRM, ACCOUNT, NEW_CATEGORY, NEW_ACCOUNT, \
-    NEW_CAT_PARENT, NEW_CAT_ICON, CURRENCY, NEW_CURRENCY = range(10)
+    NEW_CAT_PARENT, NEW_CAT_ICON = range(8)
 
 TXN_KEY = 'txn'
 
@@ -178,12 +178,21 @@ def _build_category_keyboard(categories: list, page: int = 0):
 
 
 def _build_account_keyboard(accounts: list):
-    """Build inline keyboard for account selection."""
+    """Build inline keyboard for account selection.
+
+    A transaction is recorded in its account's currency, so when the eligible
+    accounts use more than one currency each button shows its currency.
+    """
     eligible = [a for a in accounts if a.get('type') in SPENDING_ACCOUNT_TYPES]
+    multi_currency = len({a.get('currency') for a in eligible}) > 1
     buttons = []
     for i in range(0, len(eligible), 2):
         row = [
-            InlineKeyboardButton(acc['name'], callback_data=f"acc:{acc['id']}")
+            InlineKeyboardButton(
+                f"{acc['name']} ({acc['currency']})" if multi_currency and acc.get('currency')
+                else acc['name'],
+                callback_data=f"acc:{acc['id']}",
+            )
             for acc in eligible[i:i + 2]
         ]
         buttons.append(row)
@@ -201,20 +210,8 @@ def _build_confirm_keyboard():
             InlineKeyboardButton("Change Category", callback_data="txn:chg_cat"),
             InlineKeyboardButton("Change Account", callback_data="txn:chg_acc"),
         ],
-        [InlineKeyboardButton("Change Currency", callback_data="txn:chg_ccy")],
         [InlineKeyboardButton("Confirm", callback_data="txn:confirm")],
         [InlineKeyboardButton("Cancel", callback_data="txn:cancel")],
-    ])
-
-
-def _build_currency_keyboard():
-    """Build inline keyboard for currency selection."""
-    return InlineKeyboardMarkup([
-        [
-            InlineKeyboardButton("🇲🇾 MYR (Default)", callback_data="ccy:MYR"),
-            InlineKeyboardButton("Other", callback_data="ccy:other"),
-        ],
-        [InlineKeyboardButton("Back", callback_data="ccy:back")],
     ])
 
 
@@ -314,7 +311,8 @@ async def _resolve_user_and_setup(api_client: KuberanAPIClient, telegram_user_id
         'category_id': None,
         'category_name': None,
         'category_icon': '',
-        'currency': user_data.get('default_currency', 'MYR'),
+        # The account decides the currency; default_currency only seeds new accounts.
+        'currency': default_account.get('currency') or user_data.get('default_currency', 'MYR'),
         'user_client': user_client,
     }
 
@@ -623,13 +621,6 @@ def create_transaction_conversation(api_client: KuberanAPIClient, txn_type: str)
             )
             return ACCOUNT
 
-        if data == "txn:chg_ccy":
-            await query.edit_message_text(
-                "Select a currency:",
-                reply_markup=_build_currency_keyboard(),
-            )
-            return CURRENCY
-
         if data == "txn:confirm":
             user_client = txn['user_client']
             transaction_data = {
@@ -688,6 +679,9 @@ def create_transaction_conversation(api_client: KuberanAPIClient, txn_type: str)
         acc = next((a for a in txn['accounts'] if str(a['id']) == acc_id), None)
         txn['account_id'] = acc_id
         txn['account_name'] = acc['name'] if acc else "Unknown"
+        # Amounts are recorded in the chosen account's currency.
+        if acc and acc.get('currency'):
+            txn['currency'] = acc['currency']
 
         await query.edit_message_text(
             _format_confirm_message(txn),
@@ -711,66 +705,10 @@ def create_transaction_conversation(api_client: KuberanAPIClient, txn_type: str)
         account = await user_client.create_cash_account(name, currency=txn.get('currency', ''))
         txn['account_id'] = account['id']
         txn['account_name'] = account['name']
+        if account.get('currency'):
+            txn['currency'] = account['currency']
         # Add to cached list so it appears if user goes back to account picker
         txn['accounts'].append(account)
-
-        msg = await update.message.reply_text(
-            _format_confirm_message(txn),
-            reply_markup=_build_confirm_keyboard(),
-            parse_mode=ParseMode.HTML
-        )
-        txn['message_id'] = msg.message_id
-        return CONFIRM
-
-    async def handle_currency_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-        query = update.callback_query
-        await query.answer()
-
-        txn = context.user_data.get(TXN_KEY)
-        if not txn:
-            await query.edit_message_text("Session expired. Please start over with /" + txn_type)
-            return ConversationHandler.END
-
-        data = query.data
-
-        if data == "ccy:back":
-            await query.edit_message_text(
-                _format_confirm_message(txn),
-                reply_markup=_build_confirm_keyboard(),
-                parse_mode=ParseMode.HTML
-            )
-            return CONFIRM
-
-        if data == "ccy:other":
-            await query.edit_message_text(
-                "Type your currency code (3 letters, e.g. JPY, CAD, AUD):"
-            )
-            return NEW_CURRENCY
-
-        currency = data.split(":")[1]
-        txn['currency'] = currency
-
-        await query.edit_message_text(
-            _format_confirm_message(txn),
-            reply_markup=_build_confirm_keyboard(),
-            parse_mode=ParseMode.HTML
-        )
-        return CONFIRM
-
-    async def receive_new_currency(update: Update, context: ContextTypes.DEFAULT_TYPE):
-        txn = context.user_data.get(TXN_KEY)
-        if not txn:
-            await update.message.reply_text("Something went wrong. Please start over with /" + txn_type)
-            return ConversationHandler.END
-
-        currency = update.message.text.strip().upper()
-        if len(currency) != 3 or not currency.isalpha():
-            await update.message.reply_text(
-                "Please enter a valid 3-letter currency code (e.g. JPY, CAD, AUD):"
-            )
-            return NEW_CURRENCY
-
-        txn['currency'] = currency
 
         msg = await update.message.reply_text(
             _format_confirm_message(txn),
@@ -802,8 +740,6 @@ def create_transaction_conversation(api_client: KuberanAPIClient, txn_type: str)
                 CallbackQueryHandler(handle_new_cat_icon_skip, pattern=r'^nci:'),
                 MessageHandler(PRIVATE_TEXT, receive_new_cat_icon),
             ],
-            CURRENCY: [CallbackQueryHandler(handle_currency_callback, pattern=r'^ccy:')],
-            NEW_CURRENCY: [MessageHandler(PRIVATE_TEXT, receive_new_currency)],
             ConversationHandler.TIMEOUT: [MessageHandler(filters.ALL, timeout)],
         },
         fallbacks=[CommandHandler('cancel', cancel, filters=filters.ChatType.PRIVATE)],
