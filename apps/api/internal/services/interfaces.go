@@ -406,6 +406,21 @@ type PortfolioSummary struct {
 	GainLossPct           float64                          `json:"gain_loss_pct"`
 	TotalRealizedGainLoss int64                            `json:"total_realized_gain_loss"`
 	HoldingsByType        map[models.AssetType]TypeSummary `json:"holdings_by_type"`
+	// Currency is the user's base currency, which every value above is in
+	// (cost basis and realized gain/loss are as stored).
+	Currency string `json:"currency"`
+	// FXStale is true when any FX quote used was stale.
+	FXStale bool `json:"fx_stale"`
+	// Unconverted lists holdings that could not be valued for lack of an FX
+	// rate, as native value summed per currency. They are left out of the totals.
+	Unconverted []UnconvertedValue `json:"unconverted"`
+}
+
+// UnconvertedValue is the native market value of holdings that have no FX rate
+// to the base currency.
+type UnconvertedValue struct {
+	Currency string `json:"currency"`
+	Value    int64  `json:"value"`
 }
 
 // TypeSummary contains summary data for a single asset type.
@@ -488,6 +503,50 @@ type SecurityPriceInput struct {
 	SecurityID string    `json:"security_id"`
 	Price      int64     `json:"price"`
 	RecordedAt time.Time `json:"recorded_at"`
+	// Currency is optional; empty means the security's own currency.
+	Currency string `json:"currency,omitempty"`
+}
+
+// RejectedPrice describes a price entry that RecordPrices skipped.
+type RejectedPrice struct {
+	Index            int    `json:"index"`
+	SecurityID       string `json:"security_id"`
+	Currency         string `json:"currency,omitempty"`
+	ExpectedCurrency string `json:"expected_currency,omitempty"`
+	Reason           string `json:"reason"`
+}
+
+// Reasons a price entry can be rejected.
+const (
+	// PriceRejectedUnknownSecurity means the security does not exist.
+	PriceRejectedUnknownSecurity = "unknown_security"
+	// PriceRejectedCurrencyMismatch means the entry's currency differs from the security's.
+	PriceRejectedCurrencyMismatch = "currency_mismatch"
+)
+
+// RecordPricesResult is the outcome of RecordPrices.
+type RecordPricesResult struct {
+	// Recorded is the number of rows actually inserted.
+	Recorded int `json:"recorded"`
+	// Rejected lists skipped entries; never nil.
+	Rejected []RejectedPrice `json:"rejected"`
+}
+
+// SecurityUpdate holds the optional fields of a security correction; nil
+// fields are left unchanged.
+type SecurityUpdate struct {
+	Currency       *string
+	Exchange       *string
+	ProviderSymbol *string
+	Name           *string
+	// ResetPrices deletes the security's prices; it requires a currency change.
+	ResetPrices bool
+}
+
+// SecurityUpdateResult is the outcome of UpdateSecurity.
+type SecurityUpdateResult struct {
+	Security      *models.Security `json:"security"`
+	PricesDeleted int64            `json:"prices_deleted"`
 }
 
 // SecurityServicer defines the interface for security-related operations.
@@ -496,7 +555,8 @@ type SecurityServicer interface {
 	GetSecurityByID(id string) (*models.Security, error)
 	ListSecurities(search string, page pagination.PageRequest) (*pagination.PageResponse[models.Security], error)
 	ListAllSecurities() ([]models.Security, error)
-	RecordPrices(prices []SecurityPriceInput) (int, error)
+	RecordPrices(prices []SecurityPriceInput) (*RecordPricesResult, error)
+	UpdateSecurity(id string, update SecurityUpdate) (*SecurityUpdateResult, error)
 	GetPriceHistory(securityID string, from, to time.Time, page pagination.PageRequest) (*pagination.PageResponse[models.SecurityPrice], error)
 }
 

@@ -161,6 +161,8 @@ Four account types are supported: `cash`, `investment`, `credit_card`, and `debt
 ### Monetary Values
 All monetary values are stored and transmitted as **int64 cents** (not float64). `$10.50` = `1050`. This eliminates floating-point rounding errors. The frontend is responsible for display formatting.
 
+Security prices are stored in each security's own currency (`security_prices.currency`); valuation converts at read time via `internal/services/holding_valuation.go` (`latestNativePrices` + `valuer`, the line value is converted once). `Investment.current_price` stays in the user's base currency; `current_price_native`, `price_currency`, `fx_rate`, `fx_stale` and `fx_missing` are added alongside it.
+
 Non-monetary floats that remain as float64: `Investment.Quantity`, `SplitRatio`, `InterestRate`, `YieldToMaturity`, `CouponRate`. `CreditLimit` is int64 cents (not a float).
 
 ### Database Migrations
@@ -229,7 +231,15 @@ cd apps/api && swag init -g cmd/api/main.go -d . --output internal/docs --parseD
 
 # Lint
 cd apps/api && golangci-lint run ./...
+
+# Oracle subcommands (one-off migration tools; plain `oracle` is the scheduled run).
+# Production: reconcile is a dry run unless --apply; backfill --dry-run posts nothing.
+docker compose -f docker-compose.prod.yml --profile oracle run --rm oracle reconcile
+docker compose -f docker-compose.prod.yml --profile oracle run --rm oracle reconcile --apply
+docker compose -f docker-compose.prod.yml --profile oracle run --rm oracle backfill --since 2025-01-01
 ```
+
+`oracle reconcile [--apply]` compares each Yahoo-priced security's stored currency with Yahoo's and, with `--apply`, corrects mismatches via `PATCH /pipeline/securities/:id` (deleting that security's prices). `oracle backfill --since YYYY-MM-DD [--until D] [--prices] [--fx] [--symbols A,B] [--dry-run]` backfills daily history (FX first, then prices). Run `oracle help` for usage.
 
 ## Verification & Feedback Loop
 
@@ -361,7 +371,8 @@ POST   /api/v1/internal/telegram/activity/:telegram_user_id
 ```
 GET    /api/v1/pipeline/securities          # List all securities
 POST   /api/v1/pipeline/securities          # Create security
-POST   /api/v1/pipeline/securities/prices   # Record security prices
+PATCH  /api/v1/pipeline/securities/:id      # Correct currency/exchange/provider_symbol/name; a currency change on a security with prices needs reset_prices (409 SECURITY_CURRENCY_LOCKED), which deletes them in one transaction
+POST   /api/v1/pipeline/securities/prices   # Record security prices in the security's own currency (optional per-entry `currency`); 200 {"recorded": n, "rejected": [...]} - unknown_security / currency_mismatch entries are skipped, never fail the request
 POST   /api/v1/pipeline/snapshots           # Compute portfolio snapshots for all users
 POST   /api/v1/pipeline/fx-rates            # Upsert exchange rates (decimal-string rates, <= 5000 per call)
 GET    /api/v1/pipeline/fx-pairs            # Pairs to publish + users' base currencies

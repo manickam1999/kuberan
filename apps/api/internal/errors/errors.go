@@ -121,8 +121,9 @@ var (
 
 // Security errors.
 var (
-	ErrSecurityNotFound  = &AppError{Code: "SECURITY_NOT_FOUND", Message: "Security not found", StatusCode: http.StatusNotFound}
-	ErrDuplicateSecurity = &AppError{Code: "DUPLICATE_SECURITY", Message: "A security with this symbol and exchange already exists", StatusCode: http.StatusConflict}
+	ErrSecurityNotFound       = &AppError{Code: "SECURITY_NOT_FOUND", Message: "Security not found", StatusCode: http.StatusNotFound}
+	ErrDuplicateSecurity      = &AppError{Code: "DUPLICATE_SECURITY", Message: "A security with this symbol and exchange already exists", StatusCode: http.StatusConflict}
+	ErrSecurityCurrencyLocked = &AppError{Code: "SECURITY_CURRENCY_LOCKED", Message: "Security currency cannot change while it has prices; pass reset_prices to delete them", StatusCode: http.StatusConflict}
 )
 
 // Telegram errors.

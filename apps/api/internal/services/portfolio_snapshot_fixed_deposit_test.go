@@ -20,7 +20,7 @@ func TestComputeSnapshot_FixedDeposit(t *testing.T) {
 	t.Run("active_fd_included_in_fixed_deposit_balance", func(t *testing.T) {
 		db := testutil.SetupTestDB(t)
 		defer testutil.TeardownTestDB(t, db)
-		svc := NewPortfolioSnapshotService(db)
+		svc := NewPortfolioSnapshotService(db, nil)
 
 		user := testutil.CreateTestUser(t, db)
 		// Need at least one active account for the user to appear in snapshot
@@ -54,7 +54,7 @@ func TestComputeSnapshot_FixedDeposit(t *testing.T) {
 	t.Run("closed_fd_excluded_from_snapshot", func(t *testing.T) {
 		db := testutil.SetupTestDB(t)
 		defer testutil.TeardownTestDB(t, db)
-		svc := NewPortfolioSnapshotService(db)
+		svc := NewPortfolioSnapshotService(db, nil)
 
 		user := testutil.CreateTestUser(t, db)
 		testutil.CreateTestCashAccountWithBalance(t, db, user.ID, 0)
@@ -85,7 +85,7 @@ func TestComputeSnapshot_FixedDeposit(t *testing.T) {
 	t.Run("net_worth_includes_fixed_deposit", func(t *testing.T) {
 		db := testutil.SetupTestDB(t)
 		defer testutil.TeardownTestDB(t, db)
-		svc := NewPortfolioSnapshotService(db)
+		svc := NewPortfolioSnapshotService(db, nil)
 
 		user := testutil.CreateTestUser(t, db)
 
@@ -132,7 +132,7 @@ func TestComputeSnapshot_FixedDeposit(t *testing.T) {
 	t.Run("multiple_fd_accounts_summed", func(t *testing.T) {
 		db := testutil.SetupTestDB(t)
 		defer testutil.TeardownTestDB(t, db)
-		svc := NewPortfolioSnapshotService(db)
+		svc := NewPortfolioSnapshotService(db, nil)
 
 		user := testutil.CreateTestUser(t, db)
 		testutil.CreateTestCashAccountWithBalance(t, db, user.ID, 0)
@@ -172,7 +172,7 @@ func TestComputeSnapshot_FixedDeposit(t *testing.T) {
 		// It should still count in the fixed_deposit_balance.
 		db := testutil.SetupTestDB(t)
 		defer testutil.TeardownTestDB(t, db)
-		svc := NewPortfolioSnapshotService(db)
+		svc := NewPortfolioSnapshotService(db, nil)
 
 		user := testutil.CreateTestUser(t, db)
 		testutil.CreateTestCashAccountWithBalance(t, db, user.ID, 0)

@@ -19,6 +19,8 @@ type PortfolioSnapshot struct {
 	InvestmentValue     int64     `gorm:"type:bigint;not null" json:"investment_value"`
 	DebtBalance         int64     `gorm:"type:bigint;not null" json:"debt_balance"`
 	FixedDepositBalance int64     `gorm:"type:bigint;not null;default:0" json:"fixed_deposit_balance"`
+	Currency            string    `gorm:"size:3;not null;default:'MYR'" json:"currency"`
+	FXMissing           bool      `gorm:"column:fx_missing;not null;default:false" json:"fx_missing"`
 }
 
 // BeforeCreate hook generates a UUIDv7 for new records

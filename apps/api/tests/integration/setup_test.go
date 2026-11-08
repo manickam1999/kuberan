@@ -97,14 +97,14 @@ func setupApp(t *testing.T) *testApp {
 	fxService := services.NewFXService(db, 168*time.Hour)
 	userService := services.NewUserService(db, fxService)
 	categoryService := services.NewCategoryService(db)
-	accountService := services.NewAccountService(db, categoryService)
+	accountService := services.NewAccountService(db, services.WithCategoryService(categoryService), services.WithFXService(fxService))
 	ruleService := services.NewRuleService(db, categoryService)
 	transactionService := services.NewTransactionService(db, accountService, ruleService)
 	receivableService := services.NewReceivableService(db, accountService, ruleService)
 	budgetService := services.NewBudgetService(db)
-	investmentService := services.NewInvestmentService(db, accountService)
+	investmentService := services.NewInvestmentService(db, accountService, fxService)
 	securityService := services.NewSecurityService(db)
-	snapshotService := services.NewPortfolioSnapshotService(db)
+	snapshotService := services.NewPortfolioSnapshotService(db, fxService)
 	auditService := services.NewAuditService(db)
 	attachmentService := services.NewAttachmentService(db, storage.NewMemBlobStore(), services.AttachmentLimits{
 		MaxUploadBytes:      testMaxUploadBytes,
@@ -212,7 +212,7 @@ func (app *testApp) pipelineRequest(method, path, body string) *httptest.Respons
 // createSecurity creates a security via the pipeline API and returns the security ID.
 func (app *testApp) createSecurity(t *testing.T, symbol, name, assetType string) string {
 	t.Helper()
-	body := fmt.Sprintf(`{"symbol":%q,"name":%q,"asset_type":%q}`, symbol, name, assetType)
+	body := fmt.Sprintf(`{"symbol":%q,"name":%q,"asset_type":%q,"currency":"MYR"}`, symbol, name, assetType)
 	rec := app.pipelineRequest("POST", "/api/v1/pipeline/securities", body)
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("create security failed: %d %s", rec.Code, rec.Body.String())

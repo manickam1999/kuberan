@@ -36,43 +36,6 @@ func applyStatusFilter(db *gorm.DB, status InvestmentStatus) *gorm.DB {
 	}
 }
 
-// getLatestPrices fetches the most recent price for each security ID from security_prices.
-// Returns a map of security_id -> price (int64 cents). Securities with no price entries
-// are not included in the map.
-//
-// It uses a correlated "ORDER BY recorded_at DESC LIMIT 1" subquery per
-// security, which Postgres answers from the (security_id, recorded_at) unique
-// index with one index probe per id instead of scanning every price row. The
-// query is portable (it also runs on the SQLite used in tests).
-func getLatestPrices(db *gorm.DB, securityIDs []string) (map[string]int64, error) {
-	if len(securityIDs) == 0 {
-		return map[string]int64{}, nil
-	}
-
-	type priceRow struct {
-		SecurityID string
-		Price      *int64
-	}
-	var rows []priceRow
-
-	if err := db.Table("securities s").
-		Select("s.id AS security_id, "+
-			"(SELECT sp.price FROM security_prices sp WHERE sp.security_id = s.id "+
-			"ORDER BY sp.recorded_at DESC LIMIT 1) AS price").
-		Where("s.id IN ?", uniqueStrings(securityIDs)).
-		Scan(&rows).Error; err != nil {
-		return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)
-	}
-
-	result := make(map[string]int64, len(rows))
-	for _, r := range rows {
-		if r.Price != nil {
-			result[r.SecurityID] = *r.Price
-		}
-	}
-	return result, nil
-}
-
 // uniqueStrings returns ids without duplicates, preserving first-seen order.
 func uniqueStrings(ids []string) []string {
 	seen := make(map[string]struct{}, len(ids))
@@ -123,11 +86,71 @@ const investmentListOrder = "created_at ASC, id ASC"
 type investmentService struct {
 	db             *gorm.DB
 	accountService AccountServicer
+	fxService      FXServicer
 }
 
-// NewInvestmentService creates a new InvestmentServicer.
-func NewInvestmentService(db *gorm.DB, accountService AccountServicer) InvestmentServicer {
-	return &investmentService{db: db, accountService: accountService}
+// NewInvestmentService creates a new InvestmentServicer. fxs converts native
+// security prices into the user's base currency; production wiring always
+// passes the FX service. A nil fxs is allowed in tests only: then only
+// same-currency conversion succeeds.
+func NewInvestmentService(db *gorm.DB, accountService AccountServicer, fxs FXServicer) InvestmentServicer {
+	return &investmentService{db: db, accountService: accountService, fxService: fxs}
+}
+
+// populatePrices fills the price fields of the given investments: the latest
+// native price, and CurrentPrice converted to the user's base currency (a unit
+// price conversion, which is fine here because it is display only). With no
+// FX rate CurrentPrice is 0 and FXMissing is set. Security must be loaded.
+func (s *investmentService) populatePrices(userID string, investments []*models.Investment) error {
+	if len(investments) == 0 {
+		return nil
+	}
+	base, err := userBaseCurrency(s.db, userID)
+	if err != nil {
+		return err
+	}
+	secIDs := make([]string, len(investments))
+	for i, inv := range investments {
+		secIDs[i] = inv.SecurityID
+	}
+	prices, err := latestNativePrices(s.db, secIDs)
+	if err != nil {
+		return err
+	}
+	v, err := newValuer(s.fxService, base, time.Now(), distinctPriceCurrencies(prices))
+	if err != nil {
+		return err
+	}
+	for _, inv := range investments {
+		p, ok := prices[inv.SecurityID]
+		if !ok {
+			inv.PriceCurrency = normalizeCode(inv.Security.Currency)
+			continue
+		}
+		inv.CurrentPriceNative = p.Price
+		inv.PriceCurrency = p.Currency
+		converted, quote, ok := v.Convert(p.Price, p.Currency)
+		if !ok {
+			inv.CurrentPrice = 0
+			inv.FXMissing = true
+			continue
+		}
+		inv.CurrentPrice = converted
+		if quote != nil {
+			inv.FXRate = quote.Rate.String()
+			inv.FXStale = quote.Stale
+		}
+	}
+	return nil
+}
+
+// investmentPtrs returns pointers to the elements of investments.
+func investmentPtrs(investments []models.Investment) []*models.Investment {
+	out := make([]*models.Investment, len(investments))
+	for i := range investments {
+		out[i] = &investments[i]
+	}
+	return out
 }
 
 // AddInvestment adds a new investment holding to an investment account.
@@ -209,13 +232,10 @@ func (s *investmentService) AddInvestment(
 	}
 
 	// Populate current price from security_prices for the response
-	prices, err := getLatestPrices(s.db, []string{securityID})
-	if err != nil {
+	investment.Security = security
+	if err := s.populatePrices(userID, []*models.Investment{investment}); err != nil {
 		return nil, err
 	}
-	investment.CurrentPrice = prices[securityID]
-
-	investment.Security = security
 	return investment, nil
 }
 
@@ -242,14 +262,11 @@ func (s *investmentService) GetAccountInvestments(userID, accountID string, page
 	}
 
 	// Batch populate current prices from security_prices
-	secIDs := make([]string, 0, len(investments))
 	invIDs := make([]string, 0, len(investments))
 	for i := range investments {
-		secIDs = append(secIDs, investments[i].SecurityID)
 		invIDs = append(invIDs, investments[i].ID)
 	}
-	prices, err := getLatestPrices(s.db, secIDs)
-	if err != nil {
+	if err := s.populatePrices(userID, investmentPtrs(investments)); err != nil {
 		return nil, err
 	}
 	invested, err := getTotalInvestedByID(s.db, invIDs)
@@ -257,7 +274,6 @@ func (s *investmentService) GetAccountInvestments(userID, accountID string, page
 		return nil, err
 	}
 	for i := range investments {
-		investments[i].CurrentPrice = prices[investments[i].SecurityID]
 		investments[i].TotalInvested = invested[investments[i].ID]
 	}
 
@@ -302,14 +318,11 @@ func (s *investmentService) GetAllInvestments(userID string, status InvestmentSt
 	}
 
 	// Batch populate current prices from security_prices
-	secIDs := make([]string, 0, len(investments))
 	invIDs := make([]string, 0, len(investments))
 	for i := range investments {
-		secIDs = append(secIDs, investments[i].SecurityID)
 		invIDs = append(invIDs, investments[i].ID)
 	}
-	prices, err := getLatestPrices(s.db, secIDs)
-	if err != nil {
+	if err := s.populatePrices(userID, investmentPtrs(investments)); err != nil {
 		return nil, err
 	}
 	invested, err := getTotalInvestedByID(s.db, invIDs)
@@ -317,7 +330,6 @@ func (s *investmentService) GetAllInvestments(userID string, status InvestmentSt
 		return nil, err
 	}
 	for i := range investments {
-		investments[i].CurrentPrice = prices[investments[i].SecurityID]
 		investments[i].TotalInvested = invested[investments[i].ID]
 	}
 
@@ -341,11 +353,9 @@ func (s *investmentService) GetInvestmentByID(userID, investmentID string) (*mod
 	}
 
 	// Populate current price from security_prices
-	prices, err := getLatestPrices(s.db, []string{investment.SecurityID})
-	if err != nil {
+	if err := s.populatePrices(userID, []*models.Investment{&investment}); err != nil {
 		return nil, err
 	}
-	investment.CurrentPrice = prices[investment.SecurityID]
 
 	invested, err := getTotalInvestedByID(s.db, []string{investment.ID})
 	if err != nil {
@@ -356,8 +366,16 @@ func (s *investmentService) GetInvestmentByID(userID, investmentID string) (*mod
 	return &investment, nil
 }
 
-// GetPortfolio returns an aggregated portfolio summary across all investment accounts.
+// GetPortfolio returns an aggregated portfolio summary across all investment accounts,
+// valued in the user's base currency. Each holding is valued in its native currency
+// first (quantity × price) and the line value is converted once. Holdings with no
+// FX rate are left out of the totals and listed in Unconverted.
 func (s *investmentService) GetPortfolio(userID string) (*PortfolioSummary, error) {
+	base, err := userBaseCurrency(s.db, userID)
+	if err != nil {
+		return nil, err
+	}
+
 	// Get all investment accounts for the user
 	var accounts []models.Account
 	if err := s.db.Where("user_id = ? AND type = ? AND is_active = ?", userID, models.AccountTypeInvestment, true).
@@ -372,6 +390,8 @@ func (s *investmentService) GetPortfolio(userID string) (*PortfolioSummary, erro
 
 	summary := &PortfolioSummary{
 		HoldingsByType: make(map[models.AssetType]TypeSummary),
+		Currency:       base,
+		Unconverted:    []UnconvertedValue{},
 	}
 
 	if len(accountIDs) == 0 {
@@ -389,11 +409,16 @@ func (s *investmentService) GetPortfolio(userID string) (*PortfolioSummary, erro
 	for i := range investments {
 		secIDs = append(secIDs, investments[i].SecurityID)
 	}
-	prices, err := getLatestPrices(s.db, secIDs)
+	prices, err := latestNativePrices(s.db, secIDs)
+	if err != nil {
+		return nil, err
+	}
+	v, err := newValuer(s.fxService, base, time.Now(), distinctPriceCurrencies(prices))
 	if err != nil {
 		return nil, err
 	}
 
+	unconverted := map[string]int64{}
 	for i := range investments {
 		inv := &investments[i]
 
@@ -402,7 +427,16 @@ func (s *investmentService) GetPortfolio(userID string) (*PortfolioSummary, erro
 
 		// Only include open positions in holdings counts, values, and cost basis
 		if inv.Quantity > 0 {
-			value := valueCents(inv.Quantity, prices[inv.SecurityID])
+			p := prices[inv.SecurityID]
+			native := valueCents(inv.Quantity, p.Price)
+			value, quote, ok := v.Convert(native, p.Currency)
+			if !ok {
+				unconverted[p.Currency] += native
+				continue
+			}
+			if quote != nil && quote.Stale {
+				summary.FXStale = true
+			}
 			summary.TotalValue += value
 			summary.TotalCostBasis += inv.CostBasis
 
@@ -413,12 +447,25 @@ func (s *investmentService) GetPortfolio(userID string) (*PortfolioSummary, erro
 		}
 	}
 
+	for _, c := range sortedUnique(mapKeys(unconverted)) {
+		summary.Unconverted = append(summary.Unconverted, UnconvertedValue{Currency: c, Value: unconverted[c]})
+	}
+
 	summary.TotalGainLoss = summary.TotalValue - summary.TotalCostBasis
 	if summary.TotalCostBasis > 0 {
 		summary.GainLossPct = float64(summary.TotalGainLoss) / float64(summary.TotalCostBasis) * 100
 	}
 
 	return summary, nil
+}
+
+// mapKeys returns the keys of m.
+func mapKeys[V any](m map[string]V) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	return out
 }
 
 // RecordBuy records a buy transaction and updates the investment holding.

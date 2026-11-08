@@ -78,7 +78,7 @@ func CreateTestInvestmentAccount(t *testing.T, db *gorm.DB, userID string) *mode
 		UserID:   userID,
 		Name:     fmt.Sprintf("Test Investment Account %d", nextID()),
 		Type:     models.AccountTypeInvestment,
-		Currency: "USD",
+		Currency: "MYR", // matches the default user base currency and the security fixtures
 		IsActive: true,
 	}
 	if err := db.Create(account).Error; err != nil {
@@ -189,7 +189,7 @@ func CreateTestSecurityWithParams(t *testing.T, db *gorm.DB, symbol, name string
 		Symbol:    symbol,
 		Name:      name,
 		AssetType: assetType,
-		Currency:  "USD",
+		Currency:  "MYR", // the users' default base currency, so valuation needs no FX rate
 		Exchange:  exchange,
 	}
 	if err := db.Create(sec).Error; err != nil {
@@ -221,6 +221,7 @@ func CreateTestSecurityPrice(t *testing.T, db *gorm.DB, securityID string, price
 	sp := &models.SecurityPrice{
 		SecurityID: securityID,
 		Price:      price,
+		Currency:   "MYR",
 		RecordedAt: recordedAt,
 	}
 	if err := db.Create(sp).Error; err != nil {

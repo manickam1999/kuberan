@@ -48,6 +48,34 @@ type RecordPriceEntry struct {
 	SecurityID string    `json:"security_id" binding:"required"`
 	Price      int64     `json:"price" binding:"required,gt=0"`
 	RecordedAt time.Time `json:"recorded_at" binding:"required"`
+	// Currency is optional; empty means the security's own currency. A value
+	// that differs from the security's currency is rejected.
+	Currency string `json:"currency" binding:"omitempty,iso4217"`
+}
+
+// UpdateSecurityRequest is the payload for correcting a security. All fields
+// are optional but at least one is required.
+type UpdateSecurityRequest struct {
+	Currency       *string `json:"currency" binding:"omitempty,iso4217"`
+	Exchange       *string `json:"exchange"`
+	ProviderSymbol *string `json:"provider_symbol"`
+	Name           *string `json:"name" binding:"omitempty,max=200"`
+	// ResetPrices deletes the security's prices; required to change the
+	// currency of a security that has prices.
+	ResetPrices bool `json:"reset_prices"`
+}
+
+// RecordPricesResponse is the response of the price recording endpoint.
+type RecordPricesResponse struct {
+	Recorded       int                      `json:"recorded"`
+	PricesRecorded int                      `json:"prices_recorded"`
+	Rejected       []services.RejectedPrice `json:"rejected"`
+}
+
+// UpdateSecurityResponse is the response of the security correction endpoint.
+type UpdateSecurityResponse struct {
+	Security      models.Security `json:"security"`
+	PricesDeleted int64           `json:"prices_deleted"`
 }
 
 // CreateSecurity handles creating a new security.
@@ -85,6 +113,57 @@ func (h *SecurityHandler) CreateSecurity(c *gin.Context) {
 		map[string]interface{}{"symbol": req.Symbol, "asset_type": string(req.AssetType)})
 
 	c.JSON(http.StatusCreated, gin.H{"security": security})
+}
+
+// UpdateSecurity handles correcting a security (pipeline endpoint).
+// @Summary     Update security
+// @Description Correct a security's currency, exchange, provider symbol or name (pipeline endpoint). Changing the currency of a security that has prices requires reset_prices, which deletes them in the same transaction.
+// @Tags        pipeline
+// @Accept      json
+// @Produce     json
+// @Security    ApiKeyAuth
+// @Param       id      path string                true "Security ID"
+// @Param       request body UpdateSecurityRequest true "Fields to change"
+// @Success     200 {object} UpdateSecurityResponse "Updated security and number of prices deleted"
+// @Failure     400 {object} ErrorResponse "Invalid input"
+// @Failure     401 {object} ErrorResponse "Invalid API key"
+// @Failure     404 {object} ErrorResponse "Security not found"
+// @Failure     409 {object} ErrorResponse "Currency locked by existing prices, or duplicate symbol and exchange"
+// @Failure     503 {object} ErrorResponse "Pipeline not configured"
+// @Router      /pipeline/securities/{id} [patch]
+func (h *SecurityHandler) UpdateSecurity(c *gin.Context) {
+	id, err := parsePathID(c, "id")
+	if err != nil {
+		respondWithError(c, err)
+		return
+	}
+
+	var req UpdateSecurityRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		respondWithError(c, apperrors.WithMessage(apperrors.ErrInvalidInput, err.Error()))
+		return
+	}
+	if req.Currency == nil && req.Exchange == nil && req.ProviderSymbol == nil && req.Name == nil {
+		respondWithError(c, apperrors.WithMessage(apperrors.ErrInvalidInput, "At least one field is required"))
+		return
+	}
+
+	result, err := h.securityService.UpdateSecurity(id, services.SecurityUpdate{
+		Currency:       req.Currency,
+		Exchange:       req.Exchange,
+		ProviderSymbol: req.ProviderSymbol,
+		Name:           req.Name,
+		ResetPrices:    req.ResetPrices,
+	})
+	if err != nil {
+		respondWithError(c, err)
+		return
+	}
+
+	h.auditService.Log("", "PIPELINE_UPDATE_SECURITY", "security", id, c.ClientIP(),
+		map[string]interface{}{"prices_deleted": result.PricesDeleted, "reset_prices": req.ResetPrices})
+
+	c.JSON(http.StatusOK, gin.H{"security": result.Security, "prices_deleted": result.PricesDeleted})
 }
 
 // ListAllSecurities handles listing all securities for the pipeline.
@@ -177,7 +256,8 @@ func (h *SecurityHandler) GetSecurity(c *gin.Context) {
 // @Produce     json
 // @Security    ApiKeyAuth
 // @Param       request body RecordPricesRequest true "Price entries"
-// @Success     200 {object} map[string]int "Prices recorded count"
+// @Description Entries for an unknown security, or whose currency differs from the security's, are skipped and listed in `rejected` (the request still returns 200).
+// @Success     200 {object} RecordPricesResponse "Recorded count and rejected entries"
 // @Failure     400 {object} ErrorResponse "Invalid input"
 // @Failure     401 {object} ErrorResponse "Invalid API key"
 // @Failure     503 {object} ErrorResponse "Pipeline not configured"
@@ -195,19 +275,25 @@ func (h *SecurityHandler) RecordPrices(c *gin.Context) {
 			SecurityID: p.SecurityID,
 			Price:      p.Price,
 			RecordedAt: p.RecordedAt,
+			Currency:   p.Currency,
 		}
 	}
 
-	count, err := h.securityService.RecordPrices(inputs)
+	result, err := h.securityService.RecordPrices(inputs)
 	if err != nil {
 		respondWithError(c, err)
 		return
 	}
 
 	h.auditService.Log("", "PIPELINE_RECORD_PRICES", "security_price", "", c.ClientIP(),
-		map[string]interface{}{"prices_recorded": count})
+		map[string]interface{}{"prices_recorded": result.Recorded, "prices_rejected": len(result.Rejected)})
 
-	c.JSON(http.StatusOK, gin.H{"prices_recorded": count})
+	// prices_recorded is kept alongside recorded for clients that predate plan 024.
+	c.JSON(http.StatusOK, gin.H{
+		"recorded":        result.Recorded,
+		"prices_recorded": result.Recorded,
+		"rejected":        result.Rejected,
+	})
 }
 
 // GetPriceHistory handles retrieving price history for a security.

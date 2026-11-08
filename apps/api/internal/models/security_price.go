@@ -14,6 +14,7 @@ type SecurityPrice struct {
 	ID         string    `gorm:"type:uuid;primaryKey" json:"id"`
 	SecurityID string    `gorm:"type:uuid;not null;uniqueIndex:uq_security_prices_security_recorded,priority:1" json:"security_id"`
 	Price      int64     `gorm:"type:bigint;not null" json:"price"`
+	Currency   string    `gorm:"size:3;not null" json:"currency"` // ISO 4217; the security's own currency
 	RecordedAt time.Time `gorm:"not null;uniqueIndex:uq_security_prices_security_recorded,priority:2" json:"recorded_at"`
 	Security   Security  `gorm:"foreignKey:SecurityID" json:"security,omitempty"`
 }

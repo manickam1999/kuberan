@@ -7,6 +7,7 @@ import (
 	"gorm.io/gorm"
 
 	apperrors "kuberan/internal/errors"
+	"kuberan/internal/logger"
 	"kuberan/internal/models"
 	"kuberan/internal/pagination"
 	"kuberan/internal/services/fdmath"
@@ -16,19 +17,35 @@ import (
 type accountService struct {
 	db              *gorm.DB
 	categoryService CategoryServicer
+	fxService       FXServicer
+}
+
+// AccountServiceOption configures optional dependencies of NewAccountService.
+type AccountServiceOption func(*accountService)
+
+// WithCategoryService sets the category service used by the fixed-deposit close
+// path (plan 020, B5) to provision the "Interest Income" category.
+func WithCategoryService(cs CategoryServicer) AccountServiceOption {
+	return func(s *accountService) { s.categoryService = cs }
+}
+
+// WithFXService sets the FX service used to value investment holdings in the
+// account's currency. Without it only same-currency holdings are valued.
+func WithFXService(fxs FXServicer) AccountServiceOption {
+	return func(s *accountService) { s.fxService = fxs }
 }
 
 // NewAccountService creates a new AccountServicer.
 //
-// The optional categoryService argument is used by the fixed-deposit close path
-// to provision the "Interest Income" category (plan 020, B5). Pass it in
-// production wiring; it may be omitted in tests that do not exercise that path.
-func NewAccountService(db *gorm.DB, categoryService ...CategoryServicer) AccountServicer {
-	var cs CategoryServicer
-	if len(categoryService) > 0 {
-		cs = categoryService[0]
+// Production wiring passes WithCategoryService (fixed-deposit close path) and
+// WithFXService (investment-account balances); both may be omitted in tests
+// that do not exercise those paths.
+func NewAccountService(db *gorm.DB, opts ...AccountServiceOption) AccountServicer {
+	s := &accountService{db: db}
+	for _, opt := range opts {
+		opt(s)
 	}
-	return &accountService{db: db, categoryService: cs}
+	return s
 }
 
 // CreateCashAccount creates a new cash account for a user
@@ -851,16 +868,45 @@ func (s *accountService) enrichInvestmentBalances(accounts []models.Account) err
 		secIDs = append(secIDs, id)
 	}
 
-	// Batch-fetch latest prices
-	prices, err := getLatestPrices(s.db, secIDs)
+	// Batch-fetch latest native prices
+	prices, err := latestNativePrices(s.db, secIDs)
 	if err != nil {
 		return err
 	}
 
-	// Accumulate market value per account
+	// Each investment account's balance is in its own currency.
+	accountCurrency := make(map[string]string, len(accounts))
+	currencies := map[string]struct{}{}
+	for i := range accounts {
+		if accounts[i].Type == models.AccountTypeInvestment {
+			c := normalizeCode(accounts[i].Currency)
+			accountCurrency[accounts[i].ID] = c
+			currencies[c] = struct{}{}
+		}
+	}
+	priceCurrencies := distinctPriceCurrencies(prices)
+	valuers := make(map[string]*valuer, len(currencies))
+	for target := range currencies {
+		v, vErr := newValuer(s.fxService, target, time.Now(), priceCurrencies)
+		if vErr != nil {
+			return vErr
+		}
+		valuers[target] = v
+	}
+
+	// Accumulate market value per account, converting each line value once.
 	balances := make(map[string]int64)
 	for _, h := range holdings {
-		balances[h.AccountID] += valueCents(h.Quantity, prices[h.SecurityID])
+		p := prices[h.SecurityID]
+		target := accountCurrency[h.AccountID]
+		value, _, ok := valuers[target].Convert(valueCents(h.Quantity, p.Price), p.Currency)
+		if !ok {
+			logger.Get().Warnw("investment holding skipped: no FX rate",
+				"account_id", h.AccountID, "account_currency", target, "price_currency", p.Currency,
+				"security_id", h.SecurityID)
+			continue
+		}
+		balances[h.AccountID] += value
 	}
 
 	// Set balances on the account slice

@@ -245,7 +245,7 @@ func TestBalanceWritersKeepConcurrentChanges(t *testing.T) {
 		db := testutil.SetupTestDB(t)
 		defer testutil.TeardownTestDB(t, db)
 		acctSvc := NewAccountService(db)
-		svc := NewInvestmentService(db, acctSvc)
+		svc := NewInvestmentService(db, acctSvc, nil)
 		user := testutil.CreateTestUser(t, db)
 		invAcct := testutil.CreateTestInvestmentAccount(t, db, user.ID)
 		cash := testutil.CreateTestCashAccountWithBalance(t, db, user.ID, 1000000)
@@ -264,7 +264,7 @@ func TestBalanceWritersKeepConcurrentChanges(t *testing.T) {
 		db := testutil.SetupTestDB(t)
 		defer testutil.TeardownTestDB(t, db)
 		acctSvc := NewAccountService(db)
-		svc := NewInvestmentService(db, acctSvc)
+		svc := NewInvestmentService(db, acctSvc, nil)
 		user := testutil.CreateTestUser(t, db)
 		invAcct := testutil.CreateTestInvestmentAccount(t, db, user.ID)
 		cash := testutil.CreateTestCashAccountWithBalance(t, db, user.ID, 1000)
@@ -322,7 +322,7 @@ func TestBalanceWritersKeepConcurrentChanges(t *testing.T) {
 	t.Run("CloseFixedDeposit destination", func(t *testing.T) {
 		db := testutil.SetupTestDB(t)
 		defer testutil.TeardownTestDB(t, db)
-		svc := NewAccountService(db, NewCategoryService(db))
+		svc := NewAccountService(db, WithCategoryService(NewCategoryService(db)))
 		user := testutil.CreateTestUser(t, db)
 		dest := testutil.CreateTestCashAccountWithBalance(t, db, user.ID, 0)
 		fd, details := testutil.CreateTestFixedDepositAccount(t, db, user.ID, testutil.FixedDepositParams{
@@ -342,7 +342,7 @@ func TestBalanceWritersKeepConcurrentChanges(t *testing.T) {
 	t.Run("CloseFixedDeposit cannot pay out twice", func(t *testing.T) {
 		db := testutil.SetupTestDB(t)
 		defer testutil.TeardownTestDB(t, db)
-		svc := NewAccountService(db, NewCategoryService(db))
+		svc := NewAccountService(db, WithCategoryService(NewCategoryService(db)))
 		user := testutil.CreateTestUser(t, db)
 		dest := testutil.CreateTestCashAccountWithBalance(t, db, user.ID, 0)
 		fd, _ := testutil.CreateTestFixedDepositAccount(t, db, user.ID, testutil.FixedDepositParams{

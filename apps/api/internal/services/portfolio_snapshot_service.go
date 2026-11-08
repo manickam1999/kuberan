@@ -16,12 +16,16 @@ import (
 
 // portfolioSnapshotService handles portfolio snapshot operations.
 type portfolioSnapshotService struct {
-	db *gorm.DB
+	db        *gorm.DB
+	fxService FXServicer
 }
 
-// NewPortfolioSnapshotService creates a new PortfolioSnapshotServicer.
-func NewPortfolioSnapshotService(db *gorm.DB) PortfolioSnapshotServicer {
-	return &portfolioSnapshotService{db: db}
+// NewPortfolioSnapshotService creates a new PortfolioSnapshotServicer. fxs
+// converts holdings into each user's base currency; production wiring always
+// passes the FX service. A nil fxs is allowed in tests only: then only
+// same-currency holdings are valued.
+func NewPortfolioSnapshotService(db *gorm.DB, fxs FXServicer) PortfolioSnapshotServicer {
+	return &portfolioSnapshotService{db: db, fxService: fxs}
 }
 
 // snapshotUpsertBatchSize bounds the rows per multi-row snapshot upsert.
@@ -62,6 +66,7 @@ func (s *portfolioSnapshotService) upsertSnapshots(snapshots []models.PortfolioS
 		Columns: []clause.Column{{Name: "user_id"}, {Name: "recorded_at"}},
 		DoUpdates: clause.AssignmentColumns([]string{
 			"total_net_worth", "cash_balance", "investment_value", "debt_balance", "fixed_deposit_balance",
+			"currency", "fx_missing",
 		}),
 	}
 
@@ -146,14 +151,52 @@ func (s *portfolioSnapshotService) computeAllSnapshots(recordedAt time.Time) ([]
 	}
 	secIDs := make([]string, 0, len(holdings))
 	for i := range holdings {
+		snapshotFor(holdings[i].UserID)
 		secIDs = append(secIDs, holdings[i].SecurityID)
 	}
-	prices, err := getLatestPrices(s.db, secIDs)
+	prices, err := latestNativePrices(s.db, secIDs)
 	if err != nil {
 		return nil, err
 	}
+
+	// Each snapshot is reported in its user's base currency; holdings are
+	// converted at recordedAt with one Rates call per distinct base currency.
+	userIDs := make([]string, 0, len(byUser))
+	for id := range byUser {
+		userIDs = append(userIDs, id)
+	}
+	baseOf, err := s.baseCurrencies(userIDs)
+	if err != nil {
+		return nil, err
+	}
+	priceCurrencies := distinctPriceCurrencies(prices)
+	valuers := map[string]*valuer{}
+	for _, id := range userIDs {
+		base := baseOf[id]
+		if _, ok := valuers[base]; ok {
+			continue
+		}
+		v, vErr := newValuer(s.fxService, base, recordedAt, priceCurrencies)
+		if vErr != nil {
+			return nil, vErr
+		}
+		valuers[base] = v
+	}
+	for _, id := range userIDs {
+		byUser[id].Currency = baseOf[id]
+	}
 	for _, h := range holdings {
-		snapshotFor(h.UserID).InvestmentValue += valueCents(h.Quantity, prices[h.SecurityID])
+		snap := snapshotFor(h.UserID)
+		p := prices[h.SecurityID]
+		value, _, ok := valuers[snap.Currency].Convert(valueCents(h.Quantity, p.Price), p.Currency)
+		if !ok {
+			snap.FXMissing = true
+			logger.Get().Warnw("snapshot holding skipped: no FX rate",
+				"user_id", h.UserID, "base_currency", snap.Currency, "price_currency", p.Currency,
+				"security_id", h.SecurityID)
+			continue
+		}
+		snap.InvestmentValue += value
 	}
 
 	out := make([]models.PortfolioSnapshot, 0, len(byUser))
@@ -162,6 +205,32 @@ func (s *portfolioSnapshotService) computeAllSnapshots(recordedAt time.Time) ([]
 		out = append(out, *snap)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].UserID < out[j].UserID })
+	return out, nil
+}
+
+// baseCurrencies returns each user's base currency (upper-case), defaulting to
+// the column default for users that cannot be read.
+func (s *portfolioSnapshotService) baseCurrencies(userIDs []string) (map[string]string, error) {
+	out := make(map[string]string, len(userIDs))
+	for _, id := range userIDs {
+		out[id] = defaultBaseCurrency
+	}
+	const chunk = 500
+	for start := 0; start < len(userIDs); start += chunk {
+		ids := userIDs[start:min(start+chunk, len(userIDs))]
+		var rows []struct {
+			ID           string
+			BaseCurrency string
+		}
+		if err := s.db.Table("users").Select("id, base_currency").Where("id IN ?", ids).Scan(&rows).Error; err != nil {
+			return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)
+		}
+		for _, r := range rows {
+			if c := normalizeCode(r.BaseCurrency); c != "" {
+				out[r.ID] = c
+			}
+		}
+	}
 	return out, nil
 }
 

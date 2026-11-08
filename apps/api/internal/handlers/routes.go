@@ -162,6 +162,7 @@ func RegisterRoutes(router *gin.Engine, h Routes, secrets RouteSecrets) {
 	pipeline.GET("/securities", h.Security.ListAllSecurities)
 	pipeline.POST("/securities", h.Security.CreateSecurity)
 	pipeline.POST("/securities/prices", h.Security.RecordPrices)
+	pipeline.PATCH("/securities/:id", h.Security.UpdateSecurity)
 	pipeline.POST("/snapshots", h.Snapshot.ComputeSnapshots)
 	pipeline.POST("/fixed-deposits/process", h.FixedDepositPipeline.ProcessFixedDeposits)
 	pipeline.POST("/fx-rates", h.FX.RecordRates)

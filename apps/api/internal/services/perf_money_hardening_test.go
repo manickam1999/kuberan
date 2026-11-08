@@ -122,7 +122,7 @@ func TestInvestmentRoundingAndOverflowGuard(t *testing.T) {
 	db := testutil.SetupTestDB(t)
 	defer testutil.TeardownTestDB(t, db)
 	acctSvc := NewAccountService(db)
-	svc := NewInvestmentService(db, acctSvc)
+	svc := NewInvestmentService(db, acctSvc, nil)
 	user := testutil.CreateTestUser(t, db)
 	account := testutil.CreateTestInvestmentAccount(t, db, user.ID)
 	sec := testutil.CreateTestSecurity(t, db)
@@ -149,7 +149,7 @@ func TestInvestmentRoundingAndOverflowGuard(t *testing.T) {
 func TestRecordSell_RevalidatesLockedQuantity(t *testing.T) {
 	db := testutil.SetupTestDB(t)
 	defer testutil.TeardownTestDB(t, db)
-	svc := NewInvestmentService(db, NewAccountService(db))
+	svc := NewInvestmentService(db, NewAccountService(db), nil)
 	user := testutil.CreateTestUser(t, db)
 	account := testutil.CreateTestInvestmentAccount(t, db, user.ID)
 	sec := testutil.CreateTestSecurity(t, db)
@@ -178,14 +178,14 @@ func TestRecordPrices_BatchedSkipsDuplicates(t *testing.T) {
 	t2 := t1.Add(time.Hour)
 	testutil.CreateTestSecurityPrice(t, db, sec.ID, 100, t1)
 
-	n, err := svc.RecordPrices([]SecurityPriceInput{
+	res, err := svc.RecordPrices([]SecurityPriceInput{
 		{SecurityID: sec.ID, Price: 101, RecordedAt: t1}, // already stored
 		{SecurityID: sec.ID, Price: 102, RecordedAt: t2},
 		{SecurityID: sec.ID, Price: 103, RecordedAt: t2}, // duplicate within the batch
 	})
 	testutil.AssertNoError(t, err)
-	if n != 1 {
-		t.Errorf("recorded = %d, want 1", n)
+	if res.Recorded != 1 {
+		t.Errorf("recorded = %d, want 1", res.Recorded)
 	}
 	var count int64
 	db.Model(&models.SecurityPrice{}).Where("security_id = ?", sec.ID).Count(&count)
@@ -206,9 +206,9 @@ func TestLatestPrices_PicksNewestPerSecurity(t *testing.T) {
 	testutil.CreateTestSecurityPrice(t, db, a.ID, 200, base.Add(time.Hour))
 	testutil.CreateTestSecurityPrice(t, db, b.ID, 50, base)
 
-	prices, err := getLatestPrices(db, []string{a.ID, b.ID, c.ID, a.ID})
+	prices, err := latestNativePrices(db, []string{a.ID, b.ID, c.ID, a.ID})
 	testutil.AssertNoError(t, err)
-	if prices[a.ID] != 300 || prices[b.ID] != 50 {
+	if prices[a.ID].Price != 300 || prices[b.ID].Price != 50 || prices[a.ID].Currency != "MYR" {
 		t.Errorf("prices = %v", prices)
 	}
 	if _, ok := prices[c.ID]; ok {
@@ -219,7 +219,7 @@ func TestLatestPrices_PicksNewestPerSecurity(t *testing.T) {
 func TestComputeAndRecordSnapshots_SetBasedUpsert(t *testing.T) {
 	db := testutil.SetupTestDB(t)
 	defer testutil.TeardownTestDB(t, db)
-	svc := NewPortfolioSnapshotService(db)
+	svc := NewPortfolioSnapshotService(db, nil)
 
 	u1 := testutil.CreateTestUser(t, db)
 	u2 := testutil.CreateTestUserWithEmail(t, db, "second@example.com")
@@ -276,7 +276,7 @@ func TestComputeAndRecordSnapshots_SetBasedUpsert(t *testing.T) {
 func TestGetGroupedSnapshots_RangeCap(t *testing.T) {
 	db := testutil.SetupTestDB(t)
 	defer testutil.TeardownTestDB(t, db)
-	svc := NewPortfolioSnapshotService(db)
+	svc := NewPortfolioSnapshotService(db, nil)
 	user := testutil.CreateTestUser(t, db)
 	from := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 

@@ -4,6 +4,9 @@ import (
 	"testing"
 	"time"
 
+	"gorm.io/gorm"
+
+	apperrors "kuberan/internal/errors"
 	"kuberan/internal/models"
 	"kuberan/internal/pagination"
 	"kuberan/internal/testutil"
@@ -399,10 +402,10 @@ func TestRecordPrices(t *testing.T) {
 			{SecurityID: sec2.ID, Price: 4200, RecordedAt: now},
 		}
 
-		count, err := svc.RecordPrices(prices)
+		res, err := svc.RecordPrices(prices)
 		testutil.AssertNoError(t, err)
 
-		if count != 3 {
+		if count := res.Recorded; count != 3 {
 			t.Errorf("expected 3 prices recorded, got %d", count)
 		}
 
@@ -426,16 +429,16 @@ func TestRecordPrices(t *testing.T) {
 			{SecurityID: sec.ID, Price: 15000, RecordedAt: now},
 		}
 
-		count1, err := svc.RecordPrices(prices)
+		res1, err := svc.RecordPrices(prices)
 		testutil.AssertNoError(t, err)
-		if count1 != 1 {
+		if count1 := res1.Recorded; count1 != 1 {
 			t.Errorf("expected 1 on first insert, got %d", count1)
 		}
 
 		// Insert same price again — should not create duplicate
-		count2, err := svc.RecordPrices(prices)
+		res2, err := svc.RecordPrices(prices)
 		testutil.AssertNoError(t, err)
-		if count2 != 0 {
+		if count2 := res2.Recorded; count2 != 0 {
 			t.Errorf("expected 0 on duplicate insert, got %d", count2)
 		}
 
@@ -587,5 +590,198 @@ func TestGetPriceHistory(t *testing.T) {
 		if result.Data[2].Price != 15000 {
 			t.Errorf("expected last price 15000 (oldest), got %d", result.Data[2].Price)
 		}
+	})
+}
+
+func TestRecordPrices_Currency(t *testing.T) {
+	at := time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC)
+	newSec := func(t *testing.T, db *gorm.DB, currency string) *models.Security {
+		t.Helper()
+		sec := testutil.CreateTestSecurity(t, db)
+		testutil.AssertNoError(t, db.Model(sec).Update("currency", currency).Error)
+		return sec
+	}
+
+	t.Run("empty_currency_is_stored_as_security_currency", func(t *testing.T) {
+		db := testutil.SetupTestDB(t)
+		defer testutil.TeardownTestDB(t, db)
+		sec := newSec(t, db, "usd") // legacy lower-case labels still resolve
+		res, err := NewSecurityService(db).RecordPrices([]SecurityPriceInput{{SecurityID: sec.ID, Price: 100, RecordedAt: at}})
+		testutil.AssertNoError(t, err)
+		if res.Recorded != 1 || res.Rejected == nil || len(res.Rejected) != 0 {
+			t.Fatalf("result = %+v", res)
+		}
+		var row models.SecurityPrice
+		testutil.AssertNoError(t, db.Where("security_id = ?", sec.ID).First(&row).Error)
+		if row.Currency != "USD" {
+			t.Errorf("stored currency = %q, want USD", row.Currency)
+		}
+	})
+
+	t.Run("matching_currency_is_case_insensitive", func(t *testing.T) {
+		db := testutil.SetupTestDB(t)
+		defer testutil.TeardownTestDB(t, db)
+		sec := newSec(t, db, "MYR")
+		res, err := NewSecurityService(db).RecordPrices([]SecurityPriceInput{{SecurityID: sec.ID, Price: 100, Currency: "myr", RecordedAt: at}})
+		testutil.AssertNoError(t, err)
+		if res.Recorded != 1 || len(res.Rejected) != 0 {
+			t.Fatalf("result = %+v", res)
+		}
+	})
+
+	t.Run("mismatch_and_unknown_are_rejected_and_the_rest_inserted", func(t *testing.T) {
+		db := testutil.SetupTestDB(t)
+		defer testutil.TeardownTestDB(t, db)
+		myr := newSec(t, db, "MYR")
+		usd := newSec(t, db, "USD")
+		res, err := NewSecurityService(db).RecordPrices([]SecurityPriceInput{
+			{SecurityID: myr.ID, Price: 1, RecordedAt: at},
+			{SecurityID: usd.ID, Price: 2, Currency: "MYR", RecordedAt: at},
+			{SecurityID: "00000000-0000-0000-0000-0000000000ff", Price: 3, RecordedAt: at},
+			{SecurityID: "not-a-uuid", Price: 4, RecordedAt: at},
+			{SecurityID: usd.ID, Price: 5, Currency: "USD", RecordedAt: at},
+		})
+		testutil.AssertNoError(t, err)
+		if res.Recorded != 2 || len(res.Rejected) != 3 {
+			t.Fatalf("result = %+v", res)
+		}
+		mm := res.Rejected[0]
+		if mm.Index != 1 || mm.Reason != PriceRejectedCurrencyMismatch || mm.Currency != "MYR" || mm.ExpectedCurrency != "USD" || mm.SecurityID != usd.ID {
+			t.Errorf("mismatch entry = %+v", mm)
+		}
+		if res.Rejected[1].Index != 2 || res.Rejected[1].Reason != PriceRejectedUnknownSecurity ||
+			res.Rejected[2].Index != 3 || res.Rejected[2].Reason != PriceRejectedUnknownSecurity {
+			t.Errorf("unknown entries = %+v", res.Rejected[1:])
+		}
+		var n int64
+		db.Model(&models.SecurityPrice{}).Count(&n)
+		if n != 2 {
+			t.Errorf("rows = %d, want 2", n)
+		}
+	})
+
+	t.Run("all_rejected_is_not_an_error", func(t *testing.T) {
+		db := testutil.SetupTestDB(t)
+		defer testutil.TeardownTestDB(t, db)
+		sec := newSec(t, db, "MYR")
+		res, err := NewSecurityService(db).RecordPrices([]SecurityPriceInput{{SecurityID: sec.ID, Price: 1, Currency: "USD", RecordedAt: at}})
+		testutil.AssertNoError(t, err)
+		if res.Recorded != 0 || len(res.Rejected) != 1 {
+			t.Fatalf("result = %+v", res)
+		}
+	})
+}
+
+func TestUpdateSecurity(t *testing.T) {
+	strPtr := func(s string) *string { return &s }
+	at := time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC)
+	setup := func(t *testing.T) (SecurityServicer, *gorm.DB, *models.Security) {
+		t.Helper()
+		db := testutil.SetupTestDB(t)
+		t.Cleanup(func() { testutil.TeardownTestDB(t, db) })
+		sec := testutil.CreateTestSecurity(t, db)
+		testutil.AssertNoError(t, db.Model(sec).Update("currency", "MYR").Error)
+		return NewSecurityService(db), db, sec
+	}
+	priceCount := func(db *gorm.DB, id string) int64 {
+		var n int64
+		db.Model(&models.SecurityPrice{}).Where("security_id = ?", id).Count(&n)
+		return n
+	}
+
+	t.Run("currency_locked_without_reset", func(t *testing.T) {
+		svc, db, sec := setup(t)
+		testutil.CreateTestSecurityPrice(t, db, sec.ID, 100, at)
+		_, err := svc.UpdateSecurity(sec.ID, SecurityUpdate{Currency: strPtr("USD")})
+		testutil.AssertAppError(t, err, apperrors.ErrSecurityCurrencyLocked.Code)
+		got, _ := svc.GetSecurityByID(sec.ID)
+		if got.Currency != "MYR" || priceCount(db, sec.ID) != 1 {
+			t.Errorf("nothing may change: currency=%s prices=%d", got.Currency, priceCount(db, sec.ID))
+		}
+	})
+
+	t.Run("reset_deletes_only_this_securitys_prices", func(t *testing.T) {
+		svc, db, sec := setup(t)
+		other := testutil.CreateTestSecurity(t, db)
+		testutil.CreateTestSecurityPrice(t, db, sec.ID, 100, at)
+		testutil.CreateTestSecurityPrice(t, db, sec.ID, 101, at.Add(time.Hour))
+		testutil.CreateTestSecurityPrice(t, db, other.ID, 7, at)
+
+		res, err := svc.UpdateSecurity(sec.ID, SecurityUpdate{Currency: strPtr("usd"), ResetPrices: true})
+		testutil.AssertNoError(t, err)
+		if res.PricesDeleted != 2 || res.Security.Currency != "USD" {
+			t.Fatalf("result = %+v %+v", res, res.Security)
+		}
+		if priceCount(db, sec.ID) != 0 || priceCount(db, other.ID) != 1 {
+			t.Errorf("prices: target=%d other=%d", priceCount(db, sec.ID), priceCount(db, other.ID))
+		}
+	})
+
+	t.Run("currency_change_without_prices_needs_no_reset", func(t *testing.T) {
+		svc, _, sec := setup(t)
+		res, err := svc.UpdateSecurity(sec.ID, SecurityUpdate{Currency: strPtr("USD")})
+		testutil.AssertNoError(t, err)
+		if res.Security.Currency != "USD" || res.PricesDeleted != 0 {
+			t.Errorf("result = %+v", res)
+		}
+	})
+
+	t.Run("same_currency_with_prices_is_not_locked", func(t *testing.T) {
+		svc, db, sec := setup(t)
+		testutil.CreateTestSecurityPrice(t, db, sec.ID, 100, at)
+		res, err := svc.UpdateSecurity(sec.ID, SecurityUpdate{Currency: strPtr("myr"), Name: strPtr("Renamed")})
+		testutil.AssertNoError(t, err)
+		if res.Security.Name != "Renamed" || priceCount(db, sec.ID) != 1 {
+			t.Errorf("result = %+v prices=%d", res.Security, priceCount(db, sec.ID))
+		}
+	})
+
+	t.Run("reset_without_currency_change_is_invalid", func(t *testing.T) {
+		svc, db, sec := setup(t)
+		testutil.CreateTestSecurityPrice(t, db, sec.ID, 100, at)
+		for _, u := range []SecurityUpdate{
+			{ResetPrices: true, Name: strPtr("x")},
+			{ResetPrices: true, Currency: strPtr("MYR")},
+		} {
+			_, err := svc.UpdateSecurity(sec.ID, u)
+			testutil.AssertAppError(t, err, apperrors.ErrInvalidInput.Code)
+		}
+		if priceCount(db, sec.ID) != 1 {
+			t.Error("prices must survive an invalid reset")
+		}
+	})
+
+	t.Run("exchange_and_provider_symbol", func(t *testing.T) {
+		svc, _, sec := setup(t)
+		res, err := svc.UpdateSecurity(sec.ID, SecurityUpdate{Exchange: strPtr("LSE"), ProviderSymbol: strPtr("RBOT.L")})
+		testutil.AssertNoError(t, err)
+		if res.Security.Exchange != "LSE" || res.Security.ProviderSymbol != "RBOT.L" {
+			t.Errorf("security = %+v", res.Security)
+		}
+	})
+
+	t.Run("exchange_conflict", func(t *testing.T) {
+		svc, db, sec := setup(t)
+		twin := testutil.CreateTestSecurityWithParams(t, db, sec.Symbol, "Twin", models.AssetTypeStock, "LSE")
+		_, err := svc.UpdateSecurity(sec.ID, SecurityUpdate{Exchange: strPtr("LSE")})
+		testutil.AssertAppError(t, err, apperrors.ErrDuplicateSecurity.Code)
+		got, _ := svc.GetSecurityByID(sec.ID)
+		if got.Exchange != sec.Exchange || twin.ID == sec.ID {
+			t.Errorf("exchange must be unchanged, got %q", got.Exchange)
+		}
+	})
+
+	t.Run("not_found", func(t *testing.T) {
+		svc, _, _ := setup(t)
+		_, err := svc.UpdateSecurity("00000000-0000-0000-0000-0000000000ff", SecurityUpdate{Name: strPtr("x")})
+		testutil.AssertAppError(t, err, apperrors.ErrSecurityNotFound.Code)
+	})
+
+	t.Run("requires_a_field_and_a_name", func(t *testing.T) {
+		svc, _, sec := setup(t)
+		_, err := svc.UpdateSecurity(sec.ID, SecurityUpdate{})
+		testutil.AssertAppError(t, err, apperrors.ErrInvalidInput.Code)
+		_, err = svc.UpdateSecurity(sec.ID, SecurityUpdate{Name: strPtr("  ")})
+		testutil.AssertAppError(t, err, apperrors.ErrInvalidInput.Code)
 	})
 }

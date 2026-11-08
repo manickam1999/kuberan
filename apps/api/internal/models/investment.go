@@ -10,9 +10,16 @@ type Investment struct {
 	Quantity         float64 `gorm:"not null" json:"quantity"`
 	CostBasis        int64   `gorm:"type:bigint;not null" json:"cost_basis"`
 	RealizedGainLoss int64   `gorm:"type:bigint;not null;default:0" json:"realized_gain_loss"`
-	CurrentPrice     int64   `gorm:"-" json:"current_price"`  // Populated at query time from security_prices
+	CurrentPrice     int64   `gorm:"-" json:"current_price"`  // Populated at query time: latest price in the user's base currency
 	TotalInvested    int64   `gorm:"-" json:"total_invested"` // Populated at query time: sum of buy transaction amounts
 	WalletAddress    string  `json:"wallet_address,omitempty"`
+
+	// Response-only price fields (plan 024, phase 2), populated at query time.
+	CurrentPriceNative int64  `gorm:"-" json:"current_price_native"` // latest price in the security's own currency
+	PriceCurrency      string `gorm:"-" json:"price_currency"`       // currency of CurrentPriceNative
+	FXRate             string `gorm:"-" json:"fx_rate"`              // price currency -> base, decimal string; "" when already base
+	FXStale            bool   `gorm:"-" json:"fx_stale"`             // the FX quote used was stale
+	FXMissing          bool   `gorm:"-" json:"fx_missing"`           // no FX rate; CurrentPrice is 0
 
 	// Relationships
 	Security     Security                `gorm:"foreignKey:SecurityID" json:"security"`

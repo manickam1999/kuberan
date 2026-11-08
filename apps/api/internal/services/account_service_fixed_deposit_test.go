@@ -335,7 +335,7 @@ func TestCloseFixedDeposit(t *testing.T) {
 	t.Run("cumulative_matured_principal_and_interest_to_destination", func(t *testing.T) {
 		db := testutil.SetupTestDB(t)
 		defer testutil.TeardownTestDB(t, db)
-		svc := NewAccountService(db, NewCategoryService(db))
+		svc := NewAccountService(db, WithCategoryService(NewCategoryService(db)))
 		user := testutil.CreateTestUser(t, db)
 		destAcct := testutil.CreateTestCashAccountWithBalance(t, db, user.ID, 0)
 
@@ -383,7 +383,7 @@ func TestCloseFixedDeposit(t *testing.T) {
 	t.Run("cumulative_matured_interest_transaction_categorized", func(t *testing.T) {
 		db := testutil.SetupTestDB(t)
 		defer testutil.TeardownTestDB(t, db)
-		svc := NewAccountService(db, NewCategoryService(db))
+		svc := NewAccountService(db, WithCategoryService(NewCategoryService(db)))
 		user := testutil.CreateTestUser(t, db)
 		destAcct := testutil.CreateTestCashAccountWithBalance(t, db, user.ID, 0)
 
@@ -420,7 +420,7 @@ func TestCloseFixedDeposit(t *testing.T) {
 	t.Run("cumulative_premature_interest_override", func(t *testing.T) {
 		db := testutil.SetupTestDB(t)
 		defer testutil.TeardownTestDB(t, db)
-		svc := NewAccountService(db, NewCategoryService(db))
+		svc := NewAccountService(db, WithCategoryService(NewCategoryService(db)))
 		user := testutil.CreateTestUser(t, db)
 		destAcct := testutil.CreateTestCashAccountWithBalance(t, db, user.ID, 0)
 
@@ -457,7 +457,7 @@ func TestCloseFixedDeposit(t *testing.T) {
 	t.Run("periodic_close_returns_principal_only", func(t *testing.T) {
 		db := testutil.SetupTestDB(t)
 		defer testutil.TeardownTestDB(t, db)
-		svc := NewAccountService(db, NewCategoryService(db))
+		svc := NewAccountService(db, WithCategoryService(NewCategoryService(db)))
 		user := testutil.CreateTestUser(t, db)
 		destAcct := testutil.CreateTestCashAccountWithBalance(t, db, user.ID, 0)
 
@@ -493,7 +493,7 @@ func TestCloseFixedDeposit(t *testing.T) {
 	t.Run("interest_override_used", func(t *testing.T) {
 		db := testutil.SetupTestDB(t)
 		defer testutil.TeardownTestDB(t, db)
-		svc := NewAccountService(db, NewCategoryService(db))
+		svc := NewAccountService(db, WithCategoryService(NewCategoryService(db)))
 		user := testutil.CreateTestUser(t, db)
 		destAcct := testutil.CreateTestCashAccountWithBalance(t, db, user.ID, 0)
 
@@ -526,7 +526,7 @@ func TestCloseFixedDeposit(t *testing.T) {
 	t.Run("penalty_reduces_net_interest", func(t *testing.T) {
 		db := testutil.SetupTestDB(t)
 		defer testutil.TeardownTestDB(t, db)
-		svc := NewAccountService(db, NewCategoryService(db))
+		svc := NewAccountService(db, WithCategoryService(NewCategoryService(db)))
 		user := testutil.CreateTestUser(t, db)
 		destAcct := testutil.CreateTestCashAccountWithBalance(t, db, user.ID, 0)
 
@@ -558,7 +558,7 @@ func TestCloseFixedDeposit(t *testing.T) {
 	t.Run("penalty_floors_net_interest_at_zero", func(t *testing.T) {
 		db := testutil.SetupTestDB(t)
 		defer testutil.TeardownTestDB(t, db)
-		svc := NewAccountService(db, NewCategoryService(db))
+		svc := NewAccountService(db, WithCategoryService(NewCategoryService(db)))
 		user := testutil.CreateTestUser(t, db)
 		destAcct := testutil.CreateTestCashAccountWithBalance(t, db, user.ID, 0)
 
@@ -597,7 +597,7 @@ func TestCloseFixedDeposit(t *testing.T) {
 	t.Run("rejects_already_closed", func(t *testing.T) {
 		db := testutil.SetupTestDB(t)
 		defer testutil.TeardownTestDB(t, db)
-		svc := NewAccountService(db, NewCategoryService(db))
+		svc := NewAccountService(db, WithCategoryService(NewCategoryService(db)))
 		user := testutil.CreateTestUser(t, db)
 		destAcct := testutil.CreateTestCashAccountWithBalance(t, db, user.ID, 0)
 
@@ -623,7 +623,7 @@ func TestCloseFixedDeposit(t *testing.T) {
 	t.Run("destination_defaults_to_linked_account", func(t *testing.T) {
 		db := testutil.SetupTestDB(t)
 		defer testutil.TeardownTestDB(t, db)
-		svc := NewAccountService(db, NewCategoryService(db))
+		svc := NewAccountService(db, WithCategoryService(NewCategoryService(db)))
 		user := testutil.CreateTestUser(t, db)
 		linkedAcct := testutil.CreateTestCashAccountWithBalance(t, db, user.ID, 0)
 
