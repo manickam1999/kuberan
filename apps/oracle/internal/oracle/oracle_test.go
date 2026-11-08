@@ -22,6 +22,7 @@ import (
 type mockClient struct {
 	getSecuritiesFn        func(ctx context.Context) ([]client.Security, error)
 	recordPricesFn         func(ctx context.Context, prices []client.RecordPriceEntry) (int, error)
+	recordPricesResultFn   func(ctx context.Context, prices []client.RecordPriceEntry) (client.RecordPricesResult, error)
 	computeSnapshotsFn     func(ctx context.Context) (int, error)
 	processFixedDepositsFn func(ctx context.Context) (client.ProcessFixedDepositsResult, error)
 	getFXPairsFn           func(ctx context.Context) (client.FXPairs, error)
@@ -34,9 +35,13 @@ func (m *mockClient) GetSecurities(ctx context.Context) ([]client.Security, erro
 	return m.getSecuritiesFn(ctx)
 }
 
-func (m *mockClient) RecordPrices(ctx context.Context, prices []client.RecordPriceEntry) (int, error) {
+func (m *mockClient) RecordPrices(ctx context.Context, prices []client.RecordPriceEntry) (client.RecordPricesResult, error) {
 	m.calls = append(m.calls, "RecordPrices")
-	return m.recordPricesFn(ctx, prices)
+	if m.recordPricesResultFn != nil {
+		return m.recordPricesResultFn(ctx, prices)
+	}
+	n, err := m.recordPricesFn(ctx, prices)
+	return client.RecordPricesResult{Recorded: n}, err
 }
 
 func (m *mockClient) ComputeSnapshots(ctx context.Context) (int, error) {
@@ -83,48 +88,16 @@ func (m *mockProvider) FetchPrices(ctx context.Context, securities []provider.Se
 	return m.fetchPrices(ctx, securities)
 }
 
-// mockConverter implements CurrencyConverter for testing.
-type mockConverter struct {
-	target          string
-	needsConversion func(fromCurrency string) bool
-	convertFn       func(ctx context.Context, priceCents int64, fromCurrency string) (int64, error)
-	fetchRateFn     func(ctx context.Context, base, quote string) (float64, error)
+// mockRateFetcher implements RateFetcher for testing.
+type mockRateFetcher struct {
+	fetchRateFn func(ctx context.Context, base, quote string) (float64, error)
 }
 
-func (m *mockConverter) FetchRate(ctx context.Context, base, quote string) (float64, error) {
+func (m *mockRateFetcher) FetchRate(ctx context.Context, base, quote string) (float64, error) {
 	if m.fetchRateFn == nil {
 		return 0, errors.New("fetchRateFn not set")
 	}
 	return m.fetchRateFn(ctx, base, quote)
-}
-
-func (m *mockConverter) NeedsConversion(fromCurrency string) bool {
-	return m.needsConversion(fromCurrency)
-}
-
-func (m *mockConverter) Convert(ctx context.Context, priceCents int64, fromCurrency string) (int64, error) {
-	return m.convertFn(ctx, priceCents, fromCurrency)
-}
-
-func (m *mockConverter) TargetCurrency() string {
-	return m.target
-}
-
-// newMYRConverter returns a mock converter that multiplies USD prices by 4.47
-// and leaves MYR prices as-is.
-func newMYRConverter() *mockConverter {
-	return &mockConverter{
-		target: "MYR",
-		needsConversion: func(fromCurrency string) bool {
-			return strings.ToUpper(fromCurrency) != "MYR"
-		},
-		convertFn: func(_ context.Context, priceCents int64, fromCurrency string) (int64, error) {
-			if strings.ToUpper(fromCurrency) == "USD" {
-				return int64(float64(priceCents) * 4.47), nil
-			}
-			return priceCents, nil
-		},
-	}
 }
 
 func newTestLogger() *slog.Logger {
@@ -138,7 +111,6 @@ func defaultConfig(snapshots bool) *config.Config {
 		RequestTimeout:       30 * time.Second,
 		ComputeSnapshots:     snapshots,
 		ProcessFixedDeposits: true,
-		TargetCurrency:       "MYR",
 	}
 }
 
@@ -212,8 +184,7 @@ func TestOracle_Run_FullFlow(t *testing.T) {
 		},
 	}
 
-	conv := newMYRConverter()
-	orc := NewOracle(mc, []provider.Provider{yahooProvider, geckoProvider}, conv, defaultConfig(true), newTestLogger())
+	orc := NewOracle(mc, []provider.Provider{yahooProvider, geckoProvider}, nil, defaultConfig(true), newTestLogger())
 	result, err := orc.Run(context.Background())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -244,28 +215,28 @@ func TestOracle_Run_FullFlow(t *testing.T) {
 		t.Error("Duration should be positive")
 	}
 
-	// Verify that USD prices were converted (multiplied by 4.47) and MYR prices were not.
+	// Every price is posted as reported, in its own currency: nothing is converted.
 	for _, p := range recordedPrices {
 		switch p.SecurityID {
-		case "sec-1": // AAPL (USD stock): original = 10000 + 1*100 = 10100 → 10100 * 4.47 = 45147
-			if p.Price != 45147 {
-				t.Errorf("AAPL price = %d, want 45147 (USD converted to MYR)", p.Price)
+		case "sec-1": // AAPL: USD from Yahoo
+			if p.Price != 10100 || p.Currency != "USD" {
+				t.Errorf("AAPL = %d %s, want 10100 USD", p.Price, p.Currency)
 			}
-		case "sec-2": // MSFT (USD stock): original = 10000 + 2*100 = 10200 → 10200 * 4.47 = 45594
-			if p.Price != 45594 {
-				t.Errorf("MSFT price = %d, want 45594 (USD converted to MYR)", p.Price)
+		case "sec-2": // MSFT: USD from Yahoo
+			if p.Price != 10200 || p.Currency != "USD" {
+				t.Errorf("MSFT = %d %s, want 10200 USD", p.Price, p.Currency)
 			}
-		case "sec-3": // CIMB (MYR stock): original = 10000 + 3*100 = 10300 → no conversion
-			if p.Price != 10300 {
-				t.Errorf("CIMB price = %d, want 10300 (MYR, no conversion)", p.Price)
+		case "sec-3": // CIMB: MYR from Yahoo (BURSA)
+			if p.Price != 10300 || p.Currency != "MYR" {
+				t.Errorf("CIMB = %d %s, want 10300 MYR", p.Price, p.Currency)
 			}
-		case "sec-4": // BTC (MYR from CoinGecko): original = 500000 + 4*1000 = 504000 → no conversion
-			if p.Price != 504000 {
-				t.Errorf("BTC price = %d, want 504000 (MYR from CoinGecko, no conversion)", p.Price)
+		case "sec-4": // BTC: MYR from CoinGecko
+			if p.Price != 504000 || p.Currency != "MYR" {
+				t.Errorf("BTC = %d %s, want 504000 MYR", p.Price, p.Currency)
 			}
-		case "sec-5": // ETH (MYR from CoinGecko): original = 500000 + 5*1000 = 505000 → no conversion
-			if p.Price != 505000 {
-				t.Errorf("ETH price = %d, want 505000 (MYR from CoinGecko, no conversion)", p.Price)
+		case "sec-5": // ETH: MYR from CoinGecko
+			if p.Price != 505000 || p.Currency != "MYR" {
+				t.Errorf("ETH = %d %s, want 505000 MYR", p.Price, p.Currency)
 			}
 		}
 	}
@@ -302,7 +273,7 @@ func TestOracle_Run_PartialProviderFailure(t *testing.T) {
 				if s.Symbol == "FAIL" {
 					errs = append(errs, provider.FetchError{SecurityID: s.ID, Symbol: s.Symbol, Err: errors.New("not found")})
 				} else {
-					results = append(results, provider.PriceResult{SecurityID: s.ID, Price: 10000, RecordedAt: now})
+					results = append(results, provider.PriceResult{SecurityID: s.ID, Price: 10000, Currency: "USD", RecordedAt: now})
 				}
 			}
 			return results, errs
@@ -315,7 +286,7 @@ func TestOracle_Run_PartialProviderFailure(t *testing.T) {
 		fetchPrices: func(_ context.Context, secs []provider.Security) ([]provider.PriceResult, []provider.FetchError) {
 			results := make([]provider.PriceResult, len(secs))
 			for i, s := range secs {
-				results[i] = provider.PriceResult{SecurityID: s.ID, Price: 500000, RecordedAt: now}
+				results[i] = provider.PriceResult{SecurityID: s.ID, Price: 500000, Currency: "USD", RecordedAt: now}
 			}
 			return results, nil
 		},
@@ -437,7 +408,7 @@ func TestOracle_Run_MixedCaseAssetTypes(t *testing.T) {
 		fetchPrices: func(_ context.Context, secs []provider.Security) ([]provider.PriceResult, []provider.FetchError) {
 			results := make([]provider.PriceResult, len(secs))
 			for i, s := range secs {
-				results[i] = provider.PriceResult{SecurityID: s.ID, Price: 10000, RecordedAt: now}
+				results[i] = provider.PriceResult{SecurityID: s.ID, Price: 10000, Currency: "USD", RecordedAt: now}
 			}
 			return results, nil
 		},
@@ -449,7 +420,7 @@ func TestOracle_Run_MixedCaseAssetTypes(t *testing.T) {
 		fetchPrices: func(_ context.Context, secs []provider.Security) ([]provider.PriceResult, []provider.FetchError) {
 			results := make([]provider.PriceResult, len(secs))
 			for i, s := range secs {
-				results[i] = provider.PriceResult{SecurityID: s.ID, Price: 500000, RecordedAt: now}
+				results[i] = provider.PriceResult{SecurityID: s.ID, Price: 500000, Currency: "USD", RecordedAt: now}
 			}
 			return results, nil
 		},
@@ -565,7 +536,7 @@ func TestOracle_Run_RecordPricesFails(t *testing.T) {
 		supports: func(at string) bool { return at == "stock" },
 		fetchPrices: func(_ context.Context, secs []provider.Security) ([]provider.PriceResult, []provider.FetchError) {
 			return []provider.PriceResult{
-				{SecurityID: secs[0].ID, Price: 17800, RecordedAt: now},
+				{SecurityID: secs[0].ID, Price: 17800, Currency: "USD", RecordedAt: now},
 			}, nil
 		},
 	}
@@ -605,7 +576,7 @@ func TestOracle_Run_SnapshotFailureNonFatal(t *testing.T) {
 		supports: func(at string) bool { return at == "stock" },
 		fetchPrices: func(_ context.Context, secs []provider.Security) ([]provider.PriceResult, []provider.FetchError) {
 			return []provider.PriceResult{
-				{SecurityID: secs[0].ID, Price: 17800, RecordedAt: now},
+				{SecurityID: secs[0].ID, Price: 17800, Currency: "USD", RecordedAt: now},
 			}, nil
 		},
 	}
@@ -648,7 +619,7 @@ func TestOracle_Run_SnapshotsDisabled(t *testing.T) {
 		supports: func(at string) bool { return at == "crypto" },
 		fetchPrices: func(_ context.Context, secs []provider.Security) ([]provider.PriceResult, []provider.FetchError) {
 			return []provider.PriceResult{
-				{SecurityID: secs[0].ID, Price: 6700000, RecordedAt: now},
+				{SecurityID: secs[0].ID, Price: 6700000, Currency: "USD", RecordedAt: now},
 			}, nil
 		},
 	}
@@ -697,7 +668,7 @@ func TestOracle_Run_ProcessFixedDeposits(t *testing.T) {
 		supports: func(at string) bool { return at == "crypto" },
 		fetchPrices: func(_ context.Context, secs []provider.Security) ([]provider.PriceResult, []provider.FetchError) {
 			return []provider.PriceResult{
-				{SecurityID: secs[0].ID, Price: 6700000, RecordedAt: now},
+				{SecurityID: secs[0].ID, Price: 6700000, Currency: "USD", RecordedAt: now},
 			}, nil
 		},
 	}
@@ -746,7 +717,7 @@ func TestOracle_Run_ProcessFixedDeposits_Disabled(t *testing.T) {
 		supports: func(at string) bool { return at == "crypto" },
 		fetchPrices: func(_ context.Context, secs []provider.Security) ([]provider.PriceResult, []provider.FetchError) {
 			return []provider.PriceResult{
-				{SecurityID: secs[0].ID, Price: 6700000, RecordedAt: now},
+				{SecurityID: secs[0].ID, Price: 6700000, Currency: "USD", RecordedAt: now},
 			}, nil
 		},
 	}
@@ -792,7 +763,7 @@ func TestOracle_Run_ProcessFixedDeposits_FailureNonFatal(t *testing.T) {
 		supports: func(at string) bool { return at == "crypto" },
 		fetchPrices: func(_ context.Context, secs []provider.Security) ([]provider.PriceResult, []provider.FetchError) {
 			return []provider.PriceResult{
-				{SecurityID: secs[0].ID, Price: 6700000, RecordedAt: now},
+				{SecurityID: secs[0].ID, Price: 6700000, Currency: "USD", RecordedAt: now},
 			}, nil
 		},
 	}
@@ -844,9 +815,9 @@ func (f *fakeYahooTransport) RoundTrip(r *http.Request) (*http.Response, error) 
 	}, nil
 }
 
-// newFXTestConverter returns a real ForexConverter (target MYR) backed by the fake transport.
+// newFXTestConverter returns a real ForexConverter backed by the fake transport.
 func newFXTestConverter(transport http.RoundTripper) *provider.ForexConverter {
-	return provider.NewForexConverter(&http.Client{Transport: transport}, "MYR")
+	return provider.NewForexConverter(&http.Client{Transport: transport})
 }
 
 // currencyStockProvider prices every stock at 10000 cents in the currency given
@@ -876,21 +847,18 @@ func TestUnionFXPairs(t *testing.T) {
 		configured []client.CurrencyPair
 		bases      []string
 		reported   []string
-		target     string
 		want       []client.CurrencyPair
 	}{
 		{
 			name:       "configured pairs only",
 			configured: []client.CurrencyPair{{Base: "USD", Quote: "MYR"}},
 			bases:      []string{"MYR"},
-			target:     "MYR",
 			want:       []client.CurrencyPair{{Base: "USD", Quote: "MYR"}},
 		},
 		{
-			name:     "reported currency pairs with every base and the target",
+			name:     "reported currency pairs with every base currency",
 			bases:    []string{"MYR", "SGD"},
 			reported: []string{"USD"},
-			target:   "MYR",
 			want:     []client.CurrencyPair{{Base: "USD", Quote: "MYR"}, {Base: "USD", Quote: "SGD"}},
 		},
 		{
@@ -898,29 +866,31 @@ func TestUnionFXPairs(t *testing.T) {
 			configured: []client.CurrencyPair{{Base: "usd", Quote: "myr"}},
 			bases:      []string{"myr"},
 			reported:   []string{"USD", "usd", ""},
-			target:     "myr",
 			want:       []client.CurrencyPair{{Base: "USD", Quote: "MYR"}},
 		},
 		{
 			name:     "identity pairs are dropped",
 			bases:    []string{"MYR"},
 			reported: []string{"MYR"},
-			target:   "MYR",
 			want:     nil,
 		},
 		{
 			name:     "reported target currency still pairs with other bases",
 			bases:    []string{"SGD"},
 			reported: []string{"MYR"},
-			target:   "MYR",
 			want:     []client.CurrencyPair{{Base: "MYR", Quote: "SGD"}},
+		},
+		{
+			name:     "no pair is added for a currency that is not a base or configured",
+			bases:    nil,
+			reported: []string{"USD"},
+			want:     nil,
 		},
 		{
 			name:       "output is sorted by base then quote",
 			configured: []client.CurrencyPair{{Base: "USD", Quote: "SGD"}, {Base: "GBP", Quote: "MYR"}},
 			bases:      []string{"MYR"},
 			reported:   []string{"EUR"},
-			target:     "MYR",
 			want: []client.CurrencyPair{
 				{Base: "EUR", Quote: "MYR"},
 				{Base: "GBP", Quote: "MYR"},
@@ -930,7 +900,7 @@ func TestUnionFXPairs(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := unionFXPairs(tt.configured, tt.bases, tt.reported, tt.target)
+			got := unionFXPairs(tt.configured, tt.bases, tt.reported)
 			if !slices.Equal(got, tt.want) {
 				t.Errorf("unionFXPairs() = %+v, want %+v", got, tt.want)
 			}
@@ -1067,16 +1037,16 @@ func TestOracle_Run_FXRatesFetchedOncePerPair(t *testing.T) {
 		t.Errorf("unexpected tickers requested: %v", transport.requests)
 	}
 
-	// Step 5b still converts with the same rates as before.
-	prices := map[string]int64{}
+	// Prices are posted as reported, so the rates do not change them.
+	prices := map[string]client.RecordPriceEntry{}
 	for _, p := range recordedPrices {
-		prices[p.SecurityID] = p.Price
+		prices[p.SecurityID] = p
 	}
-	if prices["sec-1"] != 44700 {
-		t.Errorf("USD price = %d, want 44700", prices["sec-1"])
+	if prices["sec-1"].Price != 10000 || prices["sec-1"].Currency != "USD" {
+		t.Errorf("USD price = %+v, want 10000 USD", prices["sec-1"])
 	}
-	if prices["sec-2"] != 33200 {
-		t.Errorf("SGD price = %d, want 33200", prices["sec-2"])
+	if prices["sec-2"].Price != 10000 || prices["sec-2"].Currency != "SGD" {
+		t.Errorf("SGD price = %+v, want 10000 SGD", prices["sec-2"])
 	}
 }
 
@@ -1238,9 +1208,9 @@ func TestOracle_Run_FXPairFetchFailureSkipsOnlyThatPair(t *testing.T) {
 		t.Errorf("expected fx:SGD/MYR in Errors, got %+v", result.Errors)
 	}
 
-	// The SGD price is skipped by the unchanged conversion step; the USD price is recorded.
-	if len(recordedPrices) != 1 || recordedPrices[0].SecurityID != "sec-1" {
-		t.Errorf("recorded prices = %+v, want only sec-1", recordedPrices)
+	// A failed rate never affects prices: both are posted in their own currency.
+	if len(recordedPrices) != 2 {
+		t.Errorf("recorded prices = %+v, want both sec-1 and sec-2", recordedPrices)
 	}
 }
 
@@ -1263,10 +1233,11 @@ func TestOracle_Run_PublishFXDisabled(t *testing.T) {
 		computeSnapshotsFn: func(_ context.Context) (int, error) { return 0, nil },
 	}
 
-	conv := newMYRConverter()
-	conv.fetchRateFn = func(_ context.Context, _, _ string) (float64, error) {
-		t.Error("FetchRate must not be called when PublishFX is false")
-		return 0, nil
+	conv := &mockRateFetcher{
+		fetchRateFn: func(_ context.Context, _, _ string) (float64, error) {
+			t.Error("FetchRate must not be called when PublishFX is false")
+			return 0, nil
+		},
 	}
 
 	cfg := defaultConfig(false)
@@ -1327,5 +1298,149 @@ func TestOracle_Run_FXPublishedWhenNoProvidersReturnPrices(t *testing.T) {
 	}
 	if callIndex(mc.calls, "RecordFXRates") < 0 {
 		t.Errorf("RecordFXRates not called, calls = %v", mc.calls)
+	}
+}
+
+func TestOracle_Run_MissingCurrencyIsReportedNotPosted(t *testing.T) {
+	now := time.Now().UTC()
+
+	var recordedPrices []client.RecordPriceEntry
+	mc := &mockClient{
+		getSecuritiesFn: func(_ context.Context) ([]client.Security, error) {
+			return []client.Security{
+				{ID: "sec-1", Symbol: "AAPL", AssetType: "stock", Currency: "USD"},
+				{ID: "sec-2", Symbol: "NOCUR", AssetType: "stock", Currency: "USD"},
+			}, nil
+		},
+		recordPricesFn: func(_ context.Context, prices []client.RecordPriceEntry) (int, error) {
+			recordedPrices = prices
+			return len(prices), nil
+		},
+		computeSnapshotsFn: func(_ context.Context) (int, error) { return 0, nil },
+	}
+
+	mp := &mockProvider{
+		name:     "Yahoo Finance",
+		supports: func(at string) bool { return at == "stock" },
+		fetchPrices: func(_ context.Context, secs []provider.Security) ([]provider.PriceResult, []provider.FetchError) {
+			results := make([]provider.PriceResult, 0, len(secs))
+			for _, s := range secs {
+				cur := "USD"
+				if s.Symbol == "NOCUR" {
+					cur = ""
+				}
+				results = append(results, provider.PriceResult{SecurityID: s.ID, Price: 10000, Currency: cur, RecordedAt: now})
+			}
+			return results, nil
+		},
+	}
+
+	orc := NewOracle(mc, []provider.Provider{mp}, nil, defaultConfig(false), newTestLogger())
+	result, err := orc.Run(context.Background())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(recordedPrices) != 1 || recordedPrices[0].SecurityID != "sec-1" {
+		t.Errorf("recorded prices = %+v, want only sec-1", recordedPrices)
+	}
+	if len(result.Errors) != 1 || result.Errors[0].Symbol != "NOCUR" {
+		t.Fatalf("Errors = %+v, want one error for NOCUR", result.Errors)
+	}
+	if !strings.Contains(result.Errors[0].Err.Error(), "no currency") {
+		t.Errorf("error = %v, want it to mention the missing currency", result.Errors[0].Err)
+	}
+}
+
+func TestOracle_Run_RejectedPricesBecomeFetchErrors(t *testing.T) {
+	now := time.Now().UTC()
+
+	mc := &mockClient{
+		getSecuritiesFn: func(_ context.Context) ([]client.Security, error) {
+			return []client.Security{
+				{ID: "sec-1", Symbol: "AAPL", AssetType: "stock", Currency: "USD"},
+				{ID: "sec-2", Symbol: "CIMB", AssetType: "stock", Currency: "MYR"},
+			}, nil
+		},
+		recordPricesResultFn: func(_ context.Context, prices []client.RecordPriceEntry) (client.RecordPricesResult, error) {
+			// CIMB was posted as USD by mistake and the pipeline rejects it.
+			if len(prices) != 2 || prices[1].Currency != "USD" {
+				t.Errorf("unexpected entries posted: %+v", prices)
+			}
+			return client.RecordPricesResult{
+				Recorded: 1,
+				Rejected: []client.RejectedPrice{{
+					Index: 1, SecurityID: "sec-2", Currency: "USD", ExpectedCurrency: "MYR", Reason: "currency_mismatch",
+				}},
+			}, nil
+		},
+		computeSnapshotsFn: func(_ context.Context) (int, error) { return 0, nil },
+	}
+
+	mp := &mockProvider{
+		name:     "Yahoo Finance",
+		supports: func(at string) bool { return at == "stock" },
+		fetchPrices: func(_ context.Context, secs []provider.Security) ([]provider.PriceResult, []provider.FetchError) {
+			results := make([]provider.PriceResult, 0, len(secs))
+			for _, s := range secs {
+				results = append(results, provider.PriceResult{SecurityID: s.ID, Price: 10000, Currency: "USD", RecordedAt: now})
+			}
+			return results, nil
+		},
+	}
+
+	orc := NewOracle(mc, []provider.Provider{mp}, nil, defaultConfig(false), newTestLogger())
+	result, err := orc.Run(context.Background())
+	if err != nil {
+		t.Fatalf("a rejected entry must not fail the run: %v", err)
+	}
+	if result.PricesRecorded != 1 {
+		t.Errorf("PricesRecorded = %d, want 1", result.PricesRecorded)
+	}
+	if len(result.Errors) != 1 {
+		t.Fatalf("Errors = %+v, want exactly one rejection", result.Errors)
+	}
+	e := result.Errors[0]
+	if e.Symbol != "CIMB" || e.SecurityID != "sec-2" {
+		t.Errorf("error identifies %s/%s, want CIMB/sec-2", e.Symbol, e.SecurityID)
+	}
+	for _, want := range []string{"currency_mismatch", "USD", "MYR"} {
+		if !strings.Contains(e.Err.Error(), want) {
+			t.Errorf("error %q does not contain %q", e.Err.Error(), want)
+		}
+	}
+}
+
+func TestOracle_Run_AllPricesRejectedStillCompletes(t *testing.T) {
+	now := time.Now().UTC()
+
+	mc := &mockClient{
+		getSecuritiesFn: func(_ context.Context) ([]client.Security, error) {
+			return []client.Security{{ID: "sec-1", Symbol: "AAPL", AssetType: "stock", Currency: "USD"}}, nil
+		},
+		recordPricesResultFn: func(_ context.Context, _ []client.RecordPriceEntry) (client.RecordPricesResult, error) {
+			return client.RecordPricesResult{
+				Recorded: 0,
+				Rejected: []client.RejectedPrice{{Index: 0, SecurityID: "sec-1", Currency: "USD", ExpectedCurrency: "MYR", Reason: "currency_mismatch"}},
+			}, nil
+		},
+		computeSnapshotsFn: func(_ context.Context) (int, error) { return 0, nil },
+	}
+
+	mp := &mockProvider{
+		name:     "Yahoo Finance",
+		supports: func(at string) bool { return at == "stock" },
+		fetchPrices: func(_ context.Context, secs []provider.Security) ([]provider.PriceResult, []provider.FetchError) {
+			return []provider.PriceResult{{SecurityID: secs[0].ID, Price: 10000, Currency: "USD", RecordedAt: now}}, nil
+		},
+	}
+
+	orc := NewOracle(mc, []provider.Provider{mp}, nil, defaultConfig(false), newTestLogger())
+	result, err := orc.Run(context.Background())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.PricesRecorded != 0 || len(result.Errors) != 1 {
+		t.Errorf("PricesRecorded = %d, Errors = %d; want 0 and 1", result.PricesRecorded, len(result.Errors))
 	}
 }

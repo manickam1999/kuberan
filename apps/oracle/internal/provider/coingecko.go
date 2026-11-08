@@ -16,19 +16,17 @@ var coinGeckoChunkSize = 250
 
 // CoinGeckoProvider fetches prices from CoinGecko for cryptocurrencies.
 type CoinGeckoProvider struct {
-	httpClient     *http.Client
-	baseURL        string // overridable for tests
-	targetCurrency string // currency code for vs_currencies (e.g. "myr")
+	httpClient *http.Client
+	baseURL    string // overridable for tests
 }
 
-// NewCoinGeckoProvider creates a new CoinGecko price provider.
-// targetCurrency sets the vs_currencies parameter (e.g. "MYR") so all
-// crypto prices are returned in the target currency directly.
-func NewCoinGeckoProvider(httpClient *http.Client, targetCurrency string) *CoinGeckoProvider {
+// NewCoinGeckoProvider creates a new CoinGecko price provider. Each security is
+// priced in its own currency (securities are grouped by currency), so no target
+// currency is configured here.
+func NewCoinGeckoProvider(httpClient *http.Client) *CoinGeckoProvider {
 	return &CoinGeckoProvider{
-		httpClient:     httpClient,
-		baseURL:        "https://api.coingecko.com/api/v3/simple/price",
-		targetCurrency: strings.ToLower(targetCurrency),
+		httpClient: httpClient,
+		baseURL:    "https://api.coingecko.com/api/v3/simple/price",
 	}
 }
 
@@ -40,12 +38,46 @@ func (p *CoinGeckoProvider) Supports(assetType string) bool {
 	return assetType == "crypto"
 }
 
-// FetchPrices fetches current prices from CoinGecko.
+// FetchPrices fetches current prices from CoinGecko. Securities are grouped by
+// their upper-cased currency; each group is priced in that currency with one
+// request per chunk of ids, and the reported currency of its prices is the group's.
 func (p *CoinGeckoProvider) FetchPrices(ctx context.Context, securities []Security) ([]PriceResult, []FetchError) {
 	if len(securities) == 0 {
 		return nil, nil
 	}
 
+	var fetchErrors []FetchError
+	byCurrency := make(map[string][]Security)
+	var currencies []string
+
+	for _, sec := range securities {
+		currency := strings.ToUpper(sec.Currency)
+		if currency == "" {
+			fetchErrors = append(fetchErrors, FetchError{
+				SecurityID: sec.ID,
+				Symbol:     sec.Symbol,
+				Err:        fmt.Errorf("security %s has no currency", sec.Symbol),
+			})
+			continue
+		}
+		if _, exists := byCurrency[currency]; !exists {
+			currencies = append(currencies, currency)
+		}
+		byCurrency[currency] = append(byCurrency[currency], sec)
+	}
+
+	var prices []PriceResult
+	for _, currency := range currencies {
+		curPrices, curErrors := p.fetchCurrency(ctx, currency, byCurrency[currency])
+		prices = append(prices, curPrices...)
+		fetchErrors = append(fetchErrors, curErrors...)
+	}
+
+	return prices, fetchErrors
+}
+
+// fetchCurrency prices the securities of one currency group.
+func (p *CoinGeckoProvider) fetchCurrency(ctx context.Context, currency string, securities []Security) ([]PriceResult, []FetchError) {
 	// Map securities to CoinGecko IDs.
 	var fetchErrors []FetchError
 	idToSecs := make(map[string][]Security) // CoinGecko ID -> securities (multiple tickers can map to same ID)
@@ -76,7 +108,7 @@ func (p *CoinGeckoProvider) FetchPrices(ctx context.Context, securities []Securi
 	var prices []PriceResult
 	for start := 0; start < len(ids); start += coinGeckoChunkSize {
 		chunk := ids[start:min(start+coinGeckoChunkSize, len(ids))]
-		chunkPrices, chunkErrors := p.fetchChunk(ctx, chunk, idToSecs)
+		chunkPrices, chunkErrors := p.fetchChunk(ctx, currency, chunk, idToSecs)
 		prices = append(prices, chunkPrices...)
 		fetchErrors = append(fetchErrors, chunkErrors...)
 	}
@@ -84,18 +116,19 @@ func (p *CoinGeckoProvider) FetchPrices(ctx context.Context, securities []Securi
 	return prices, fetchErrors
 }
 
-// fetchChunk fetches one batch of CoinGecko ids via the simple price API.
-func (p *CoinGeckoProvider) fetchChunk(ctx context.Context, ids []string, idToSecs map[string][]Security) ([]PriceResult, []FetchError) {
+// fetchChunk fetches one batch of CoinGecko ids, priced in currency, via the
+// simple price API.
+func (p *CoinGeckoProvider) fetchChunk(ctx context.Context, currency string, ids []string, idToSecs map[string][]Security) ([]PriceResult, []FetchError) {
 	chunkSecs := make(map[string][]Security, len(ids))
 	for _, id := range ids {
 		chunkSecs[id] = idToSecs[id]
 	}
 
-	// Use the configured target currency for all price requests.
-	currency := p.targetCurrency
+	// CoinGecko keys its price maps by lower-case vs_currency.
+	vsCurrency := strings.ToLower(currency)
 
 	// Call CoinGecko simple price API.
-	url := p.baseURL + "?ids=" + strings.Join(ids, ",") + "&vs_currencies=" + currency
+	url := p.baseURL + "?ids=" + strings.Join(ids, ",") + "&vs_currencies=" + vsCurrency
 
 	resp, err := doWithRetry(ctx, p.httpClient, func() (*http.Request, error) {
 		req, reqErr := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
@@ -136,7 +169,7 @@ func (p *CoinGeckoProvider) fetchChunk(ctx context.Context, ids []string, idToSe
 			}
 			continue
 		}
-		price, hasCurrency := priceMap[currency]
+		price, hasCurrency := priceMap[vsCurrency]
 		if !hasCurrency || price == 0 {
 			for _, sec := range secs {
 				fetchErrors = append(fetchErrors, FetchError{
@@ -152,7 +185,7 @@ func (p *CoinGeckoProvider) fetchChunk(ctx context.Context, ids []string, idToSe
 			prices = append(prices, PriceResult{
 				SecurityID: sec.ID,
 				Price:      cents,
-				Currency:   strings.ToUpper(currency),
+				Currency:   currency,
 				RecordedAt: now,
 			})
 		}

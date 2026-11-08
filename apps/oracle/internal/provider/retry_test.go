@@ -123,10 +123,10 @@ func TestCoinGeckoFetchPrices_ChunksIDs(t *testing.T) {
 	defer func() { coinGeckoChunkSize = orig }()
 
 	secs := []Security{
-		{ID: "a", Symbol: "BTC", AssetType: "crypto"},
-		{ID: "b", Symbol: "ETH", AssetType: "crypto"},
+		{ID: "a", Symbol: "BTC", AssetType: "crypto", Currency: "MYR"},
+		{ID: "b", Symbol: "ETH", AssetType: "crypto", Currency: "MYR"},
 	}
-	p := &CoinGeckoProvider{httpClient: server.Client(), baseURL: server.URL, targetCurrency: "myr"}
+	p := &CoinGeckoProvider{httpClient: server.Client(), baseURL: server.URL}
 	prices, errs := p.FetchPrices(context.Background(), secs)
 
 	if len(errs) != 0 {

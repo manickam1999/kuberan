@@ -10,7 +10,7 @@ import (
 )
 
 func TestCoinGeckoProvider_Supports(t *testing.T) {
-	p := NewCoinGeckoProvider(http.DefaultClient, "MYR")
+	p := NewCoinGeckoProvider(http.DefaultClient)
 
 	if !p.Supports("crypto") {
 		t.Error("expected Supports(crypto) = true")
@@ -39,10 +39,10 @@ func TestCoinGeckoProvider_FetchPrices_Success(t *testing.T) {
 	}))
 	defer server.Close()
 
-	p := &CoinGeckoProvider{httpClient: server.Client(), baseURL: server.URL, targetCurrency: "myr"}
+	p := &CoinGeckoProvider{httpClient: server.Client(), baseURL: server.URL}
 	securities := []Security{
-		{ID: "sec-1", Symbol: "BTC", AssetType: "crypto", Currency: "USD"},
-		{ID: "sec-2", Symbol: "ETH", AssetType: "crypto", Currency: "USD"},
+		{ID: "sec-1", Symbol: "BTC", AssetType: "crypto", Currency: "MYR"},
+		{ID: "sec-2", Symbol: "ETH", AssetType: "crypto", Currency: "MYR"},
 	}
 
 	results, fetchErrors := p.FetchPrices(context.Background(), securities)
@@ -78,7 +78,7 @@ func TestCoinGeckoProvider_FetchPrices_UnknownSymbol(t *testing.T) {
 	}))
 	defer server.Close()
 
-	p := &CoinGeckoProvider{httpClient: server.Client(), baseURL: server.URL, targetCurrency: "myr"}
+	p := &CoinGeckoProvider{httpClient: server.Client(), baseURL: server.URL}
 	securities := []Security{
 		{ID: "sec-1", Symbol: "OBSCURECOIN", AssetType: "crypto", Currency: "USD"},
 	}
@@ -109,10 +109,10 @@ func TestCoinGeckoProvider_FetchPrices_PartialResponse(t *testing.T) {
 	}))
 	defer server.Close()
 
-	p := &CoinGeckoProvider{httpClient: server.Client(), baseURL: server.URL, targetCurrency: "myr"}
+	p := &CoinGeckoProvider{httpClient: server.Client(), baseURL: server.URL}
 	securities := []Security{
-		{ID: "sec-1", Symbol: "BTC", AssetType: "crypto", Currency: "USD"},
-		{ID: "sec-2", Symbol: "ETH", AssetType: "crypto", Currency: "USD"},
+		{ID: "sec-1", Symbol: "BTC", AssetType: "crypto", Currency: "MYR"},
+		{ID: "sec-2", Symbol: "ETH", AssetType: "crypto", Currency: "MYR"},
 	}
 
 	results, fetchErrors := p.FetchPrices(context.Background(), securities)
@@ -139,10 +139,10 @@ func TestCoinGeckoProvider_FetchPrices_HTTPError(t *testing.T) {
 	}))
 	defer server.Close()
 
-	p := &CoinGeckoProvider{httpClient: server.Client(), baseURL: server.URL, targetCurrency: "myr"}
+	p := &CoinGeckoProvider{httpClient: server.Client(), baseURL: server.URL}
 	securities := []Security{
-		{ID: "sec-1", Symbol: "BTC", AssetType: "crypto", Currency: "USD"},
-		{ID: "sec-2", Symbol: "ETH", AssetType: "crypto", Currency: "USD"},
+		{ID: "sec-1", Symbol: "BTC", AssetType: "crypto", Currency: "MYR"},
+		{ID: "sec-2", Symbol: "ETH", AssetType: "crypto", Currency: "MYR"},
 	}
 
 	results, fetchErrors := p.FetchPrices(context.Background(), securities)
@@ -197,5 +197,82 @@ func TestLookupCoinGeckoID_NotFound(t *testing.T) {
 	}
 	if id != "" {
 		t.Errorf("expected empty string, got %q", id)
+	}
+}
+
+func TestCoinGeckoProvider_FetchPrices_GroupsByCurrency(t *testing.T) {
+	// Prices are available in both MYR and USD; each request asks for one currency.
+	table := map[string]map[string]float64{
+		"bitcoin":  {"myr": 300539.12, "usd": 67234.56},
+		"ethereum": {"myr": 15457.82, "usd": 3456.78},
+		"solana":   {"myr": 800.10, "usd": 180.25},
+	}
+	var queries []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		vs := r.URL.Query().Get("vs_currencies")
+		queries = append(queries, r.URL.RawQuery)
+		resp := map[string]map[string]float64{}
+		for _, id := range strings.Split(r.URL.Query().Get("ids"), ",") {
+			if p, ok := table[id][vs]; ok {
+				resp[id] = map[string]float64{vs: p}
+			}
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	p := &CoinGeckoProvider{httpClient: server.Client(), baseURL: server.URL}
+	securities := []Security{
+		{ID: "sec-1", Symbol: "BTC", AssetType: "crypto", Currency: "MYR"},
+		{ID: "sec-2", Symbol: "ETH", AssetType: "crypto", Currency: "usd"},
+		{ID: "sec-3", Symbol: "SOL", AssetType: "crypto", Currency: "USD"},
+	}
+
+	results, fetchErrors := p.FetchPrices(context.Background(), securities)
+	if len(fetchErrors) != 0 {
+		t.Fatalf("expected 0 errors, got %v", fetchErrors)
+	}
+	if len(queries) != 2 {
+		t.Fatalf("expected one request per currency group, got %d: %v", len(queries), queries)
+	}
+
+	want := map[string]struct {
+		price    int64
+		currency string
+	}{
+		"sec-1": {30053912, "MYR"},
+		"sec-2": {345678, "USD"},
+		"sec-3": {18025, "USD"},
+	}
+	if len(results) != len(want) {
+		t.Fatalf("expected %d results, got %d", len(want), len(results))
+	}
+	for _, r := range results {
+		w, ok := want[r.SecurityID]
+		if !ok {
+			t.Fatalf("unexpected result for %s", r.SecurityID)
+		}
+		if r.Price != w.price || r.Currency != w.currency {
+			t.Errorf("%s: got %d %s, want %d %s", r.SecurityID, r.Price, r.Currency, w.price, w.currency)
+		}
+	}
+}
+
+func TestCoinGeckoProvider_FetchPrices_MissingCurrencyIsAnError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		t.Error("should not make an HTTP request for a security without a currency")
+	}))
+	defer server.Close()
+
+	p := &CoinGeckoProvider{httpClient: server.Client(), baseURL: server.URL}
+	results, fetchErrors := p.FetchPrices(context.Background(), []Security{
+		{ID: "sec-1", Symbol: "BTC", AssetType: "crypto", Currency: ""},
+	})
+	if len(results) != 0 {
+		t.Errorf("expected 0 results, got %d", len(results))
+	}
+	if len(fetchErrors) != 1 || !strings.Contains(fetchErrors[0].Err.Error(), "no currency") {
+		t.Errorf("expected one no-currency error, got %v", fetchErrors)
 	}
 }

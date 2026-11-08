@@ -4,6 +4,7 @@ package oracle
 import (
 	"cmp"
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"slices"
@@ -20,23 +21,18 @@ import (
 // SecurityClient defines the Kuberan API operations needed by the oracle.
 type SecurityClient interface {
 	GetSecurities(ctx context.Context) ([]client.Security, error)
-	RecordPrices(ctx context.Context, prices []client.RecordPriceEntry) (int, error)
+	RecordPrices(ctx context.Context, prices []client.RecordPriceEntry) (client.RecordPricesResult, error)
 	ComputeSnapshots(ctx context.Context) (int, error)
 	ProcessFixedDeposits(ctx context.Context) (client.ProcessFixedDepositsResult, error)
 	GetFXPairs(ctx context.Context) (client.FXPairs, error)
 	RecordFXRates(ctx context.Context, rates []client.FXRateEntry) (int, error)
 }
 
-// CurrencyConverter converts prices from one currency to the target currency.
-type CurrencyConverter interface {
-	// NeedsConversion returns true if the given currency differs from the target.
-	NeedsConversion(fromCurrency string) bool
-	// Convert converts a price in cents from the given currency to the target currency cents.
-	Convert(ctx context.Context, priceCents int64, fromCurrency string) (int64, error)
-	// TargetCurrency returns the target currency code (e.g. "MYR").
-	TargetCurrency() string
-	// FetchRate returns the rate of one unit of base in quote. Rates are cached
-	// by the converter, so a pair fetched here is not requested again by Convert.
+// RateFetcher fetches FX rates for publishing to the pipeline. Prices are never
+// converted, so this is the only currency operation the oracle needs.
+type RateFetcher interface {
+	// FetchRate returns the rate of one unit of base in quote. Implementations
+	// should cache rates so that a pair is requested at most once per run.
 	FetchRate(ctx context.Context, base, quote string) (float64, error)
 }
 
@@ -56,20 +52,30 @@ type RunResult struct {
 type Oracle struct {
 	client    SecurityClient
 	providers []provider.Provider
-	converter CurrencyConverter
+	rates     RateFetcher
 	config    *config.Config
 	logger    *slog.Logger
 }
 
-// NewOracle creates a new Oracle instance.
-func NewOracle(client SecurityClient, providers []provider.Provider, converter CurrencyConverter, cfg *config.Config, logger *slog.Logger) *Oracle {
+// NewOracle creates a new Oracle instance. rates may be nil, which disables FX
+// rate publishing.
+func NewOracle(client SecurityClient, providers []provider.Provider, rates RateFetcher, cfg *config.Config, logger *slog.Logger) *Oracle {
 	return &Oracle{
 		client:    client,
 		providers: providers,
-		converter: converter,
+		rates:     rates,
 		config:    cfg,
 		logger:    logger,
 	}
+}
+
+// symbolFor returns the symbol of a security for error reports, falling back to
+// its ID when the security is not known to this run.
+func symbolFor(symbols map[string]string, securityID string) string {
+	if sym, ok := symbols[securityID]; ok {
+		return sym
+	}
+	return "id:" + securityID
 }
 
 // normalizeAssetType converts an asset type string to the canonical lowercase form
@@ -89,10 +95,9 @@ func fxSymbol(base, quote string) string {
 
 // unionFXPairs returns the deduplicated, sorted union of the pipeline's configured
 // pairs and, for every distinct provider-reported currency c: (c, b) for each base
-// currency b, and (c, target). Currencies are upper-cased, and identity pairs
-// (base == quote) and empty codes are dropped.
-func unionFXPairs(configured []client.CurrencyPair, baseCurrencies []string, reported []string, target string) []client.CurrencyPair {
-	target = strings.ToUpper(target)
+// currency b. Currencies are upper-cased, and identity pairs (base == quote) and
+// empty codes are dropped.
+func unionFXPairs(configured []client.CurrencyPair, baseCurrencies []string, reported []string) []client.CurrencyPair {
 	set := make(map[client.CurrencyPair]struct{})
 	add := func(base, quote string) {
 		b, q := strings.ToUpper(base), strings.ToUpper(quote)
@@ -116,7 +121,6 @@ func unionFXPairs(configured []client.CurrencyPair, baseCurrencies []string, rep
 		for _, b := range baseCurrencies {
 			add(c, b)
 		}
-		add(c, target)
 	}
 
 	pairs := make([]client.CurrencyPair, 0, len(set))
@@ -129,13 +133,18 @@ func unionFXPairs(configured []client.CurrencyPair, baseCurrencies []string, rep
 	return pairs
 }
 
-// publishFXRates fetches the rates for the union of needed pairs through the
-// converter (which caches them, so step 5b does not refetch) and posts them to the
-// pipeline. Every failure is logged and recorded in result.Errors; none of them
-// are returned, so the run continues.
+// UnionFXPairs is the exported form of unionFXPairs, used by the one-off
+// subcommands so they select pairs exactly as the run path does.
+func UnionFXPairs(configured []client.CurrencyPair, baseCurrencies []string, reported []string) []client.CurrencyPair {
+	return unionFXPairs(configured, baseCurrencies, reported)
+}
+
+// publishFXRates fetches the rates for the union of needed pairs and posts them to
+// the pipeline. Every failure is logged and recorded in result.Errors; none of them
+// are returned, so the run continues and prices are still recorded.
 func (o *Oracle) publishFXRates(ctx context.Context, start time.Time, results []provider.PriceResult, result *RunResult) {
-	if o.converter == nil {
-		o.logger.Warn("no currency converter configured, skipping fx rate publishing")
+	if o.rates == nil {
+		o.logger.Warn("no rate fetcher configured, skipping fx rate publishing")
 		return
 	}
 
@@ -153,14 +162,14 @@ func (o *Oracle) publishFXRates(ctx context.Context, start time.Time, results []
 	for _, r := range results {
 		reported = append(reported, r.Currency)
 	}
-	pairs := unionFXPairs(fxPairs.Pairs, fxPairs.BaseCurrencies, reported, o.converter.TargetCurrency())
+	pairs := unionFXPairs(fxPairs.Pairs, fxPairs.BaseCurrencies, reported)
 
 	// One timestamp per run, truncated to the minute, so runs are comparable.
 	recordedAt := start.UTC().Truncate(time.Minute).Format(time.RFC3339)
 
 	entries := make([]client.FXRateEntry, 0, len(pairs))
 	for _, p := range pairs {
-		rate, err := o.converter.FetchRate(ctx, p.Base, p.Quote)
+		rate, err := o.rates.FetchRate(ctx, p.Base, p.Quote)
 		if err != nil {
 			o.logger.Warn("fx rate fetch failed, skipping pair", "base", p.Base, "quote", p.Quote, "error", err)
 			result.Errors = append(result.Errors, provider.FetchError{
@@ -266,64 +275,49 @@ func (o *Oracle) Run(ctx context.Context) (*RunResult, error) {
 
 	result.Errors = allErrors
 
-	// 3. Publish FX rates for the pairs the pipeline needs and for every currency
+	// Publish FX rates for the pairs the pipeline needs and for every currency
 	// reported by the providers in this run. Failures are recorded in result.Errors
 	// but never stop the run, so prices are still recorded.
 	if o.config.PublishFX {
 		o.publishFXRates(ctx, start, allResults, result)
 	}
 
-	// 5. If no prices fetched, return early.
-	if len(allResults) == 0 {
+	// Prices are posted in the currency the provider reported; nothing is converted.
+	// A price without a currency cannot be stored safely (the API would fall back to
+	// the security's label), so it is reported and dropped.
+	symbols := make(map[string]string, len(securities))
+	for _, s := range securities {
+		symbols[s.ID] = s.Symbol
+	}
+	priced := make([]provider.PriceResult, 0, len(allResults))
+	for _, r := range allResults {
+		if r.Currency == "" {
+			result.Errors = append(result.Errors, provider.FetchError{
+				SecurityID: r.SecurityID,
+				Symbol:     symbolFor(symbols, r.SecurityID),
+				Err:        errors.New("provider reported no currency for price"),
+			})
+			continue
+		}
+		priced = append(priced, r)
+	}
+
+	// If no prices fetched, return early.
+	if len(priced) == 0 {
 		o.logger.Info("no prices fetched")
 		result.Duration = time.Since(start)
 		return result, nil
 	}
 
-	// 5b. Convert all prices to the target currency using the currency
-	// reported by each data source (e.g. Yahoo returns "USD" for NASDAQ stocks).
-	var convertedResults []provider.PriceResult
-	for _, r := range allResults {
-		if o.converter != nil && o.converter.NeedsConversion(r.Currency) {
-			converted, err := o.converter.Convert(ctx, r.Price, r.Currency)
-			if err != nil {
-				o.logger.Warn("currency conversion failed, skipping",
-					"security_id", r.SecurityID,
-					"currency", r.Currency,
-					"target", o.converter.TargetCurrency(),
-					"error", err,
-				)
-				result.Errors = append(result.Errors, provider.FetchError{
-					SecurityID: r.SecurityID,
-					Symbol:     fmt.Sprintf("id:%s", r.SecurityID),
-					Err:        fmt.Errorf("currency conversion from %s to %s: %w", r.Currency, o.converter.TargetCurrency(), err),
-				})
-				continue
-			}
-			o.logger.Debug("converted price",
-				"security_id", r.SecurityID,
-				"from_currency", r.Currency,
-				"original_cents", r.Price,
-				"converted_cents", converted,
-			)
-			r.Price = converted
-		}
-		convertedResults = append(convertedResults, r)
-	}
-
-	if len(convertedResults) == 0 {
-		o.logger.Info("no prices after conversion")
-		result.Duration = time.Since(start)
-		return result, nil
-	}
-
-	// 6. Convert to client price entries and record.
-	entries := make([]client.RecordPriceEntry, len(convertedResults))
-	for i, r := range convertedResults {
+	// 6. Convert to client price entries and record. Rejected entries become
+	// fetch errors so the run summary counts them.
+	entries := make([]client.RecordPriceEntry, len(priced))
+	for i, r := range priced {
 		entries[i] = client.RecordPriceEntry{
 			SecurityID: r.SecurityID,
 			Price:      r.Price,
 			RecordedAt: r.RecordedAt.Format(time.RFC3339),
+			Currency:   r.Currency,
 		}
 	}
 
@@ -331,7 +325,21 @@ func (o *Oracle) Run(ctx context.Context) (*RunResult, error) {
 	if err != nil {
 		return nil, err
 	}
-	result.PricesRecorded = recorded
+	result.PricesRecorded = recorded.Recorded
+	for _, rej := range recorded.Rejected {
+		o.logger.Warn("price rejected by pipeline",
+			"security_id", rej.SecurityID,
+			"currency", rej.Currency,
+			"expected_currency", rej.ExpectedCurrency,
+			"reason", rej.Reason,
+		)
+		result.Errors = append(result.Errors, provider.FetchError{
+			SecurityID: rej.SecurityID,
+			Symbol:     symbolFor(symbols, rej.SecurityID),
+			Err: fmt.Errorf("price rejected: %s (posted %s, security is %s)",
+				rej.Reason, rej.Currency, rej.ExpectedCurrency),
+		})
+	}
 
 	// 7. Trigger snapshots if configured.
 	if o.config.ComputeSnapshots {

@@ -18,8 +18,10 @@ type Config struct {
 	PipelineTimeout      time.Duration // timeout for long-running pipeline calls (snapshots, fixed deposits)
 	ComputeSnapshots     bool
 	ProcessFixedDeposits bool
-	PublishFX            bool   // publish FX rates to the pipeline before recording prices (default: true)
-	TargetCurrency       string // Target currency for all prices (default: "MYR")
+	PublishFX            bool // publish FX rates to the pipeline before recording prices (default: true)
+	// Warnings lists settings that are still present but have no effect. The
+	// caller should log them once at startup.
+	Warnings []string
 }
 
 // Load reads configuration from environment variables and validates required fields.
@@ -72,9 +74,10 @@ func Load() (*Config, error) {
 	}
 	cfg.PublishFX = publishFX
 
-	cfg.TargetCurrency = strings.ToUpper(os.Getenv("TARGET_CURRENCY"))
-	if cfg.TargetCurrency == "" {
-		cfg.TargetCurrency = "MYR"
+	// TARGET_CURRENCY was removed in plan 024 phase 2: prices are posted in the
+	// currency each provider reports, so a leftover value has no effect.
+	if os.Getenv("TARGET_CURRENCY") != "" {
+		cfg.Warnings = append(cfg.Warnings, "TARGET_CURRENCY is ignored since plan 024 phase 2")
 	}
 
 	return cfg, nil
