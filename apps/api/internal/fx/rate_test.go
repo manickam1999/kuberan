@@ -306,3 +306,32 @@ func TestJSON(t *testing.T) {
 		}
 	}
 }
+
+func TestRateFromAmounts(t *testing.T) {
+	cases := []struct {
+		from, to int64
+		want     string
+		wantErr  bool
+	}{
+		{10000, 44712, "4.4712", false},
+		{3, 10, "3.3333333333", false},
+		{3, 20, "6.6666666667", false}, // 6.66666... rounds up
+		{1, 1, "1", false},
+		{0, 5, "", true},
+		{5, 0, "", true},
+		{-1, 5, "", true},
+		{math.MaxInt64, 1, "", true}, // rounds to zero
+	}
+	for _, tc := range cases {
+		got, err := RateFromAmounts(tc.from, tc.to)
+		if tc.wantErr {
+			if err == nil {
+				t.Errorf("RateFromAmounts(%d, %d) = %s, want error", tc.from, tc.to, got)
+			}
+			continue
+		}
+		if err != nil || got.String() != tc.want {
+			t.Errorf("RateFromAmounts(%d, %d) = %s, %v; want %s", tc.from, tc.to, got, err, tc.want)
+		}
+	}
+}

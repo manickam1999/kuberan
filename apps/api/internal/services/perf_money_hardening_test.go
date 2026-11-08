@@ -94,30 +94,6 @@ func TestDailySummary_GroupedBucketsAndInitialBalance(t *testing.T) {
 	}
 }
 
-func TestCreateTransfer_RejectsCurrencyMismatch(t *testing.T) {
-	db := testutil.SetupTestDB(t)
-	defer testutil.TeardownTestDB(t, db)
-	svc := NewTransactionService(db, NewAccountService(db), nil)
-	user := testutil.CreateTestUser(t, db)
-	usd := testutil.CreateTestCashAccountWithBalance(t, db, user.ID, 10000)
-	eur := testutil.CreateTestCashAccountWithBalance(t, db, user.ID, 0)
-	if err := db.Model(&models.Account{}).Where("id = ?", eur.ID).Update("currency", "EUR").Error; err != nil {
-		t.Fatal(err)
-	}
-
-	_, err := svc.CreateTransfer(user.ID, usd.ID, eur.ID, 500, "fx", time.Now())
-	testutil.AssertAppError(t, err, apperrors.ErrTransferCurrencyMismatch.Code)
-
-	// Balances are untouched.
-	var got models.Account
-	if err := db.First(&got, "id = ?", usd.ID).Error; err != nil {
-		t.Fatal(err)
-	}
-	if got.Balance != 10000 {
-		t.Errorf("balance changed to %d", got.Balance)
-	}
-}
-
 func TestInvestmentRoundingAndOverflowGuard(t *testing.T) {
 	db := testutil.SetupTestDB(t)
 	defer testutil.TeardownTestDB(t, db)
@@ -128,21 +104,21 @@ func TestInvestmentRoundingAndOverflowGuard(t *testing.T) {
 	sec := testutil.CreateTestSecurity(t, db)
 
 	// 0.29 * 100 = 28.999999999999996 in float64; truncation would give 28.
-	inv, err := svc.AddInvestment(user.ID, account.ID, sec.ID, 0.29, 100, "", nil, 0, "")
+	inv, err := svc.AddInvestment(user.ID, AddInvestmentParams{AccountID: account.ID, SecurityID: sec.ID, Quantity: 0.29, PurchasePrice: 100})
 	testutil.AssertNoError(t, err)
 	if inv.CostBasis != 29 {
 		t.Errorf("cost basis = %d, want 29", inv.CostBasis)
 	}
 
-	buy, err := svc.RecordBuy(user.ID, inv.ID, time.Now(), 1.5, 3, 0, "", "")
+	buy, err := svc.RecordBuy(user.ID, inv.ID, BuyParams{Date: time.Now(), Quantity: 1.5, PricePerUnit: 3})
 	testutil.AssertNoError(t, err)
 	if buy.TotalAmount != 5 { // 4.5 rounds half away from zero
 		t.Errorf("buy total = %d, want 5", buy.TotalAmount)
 	}
 
-	_, err = svc.AddInvestment(user.ID, account.ID, sec.ID, 1e12, 1_000_000, "", nil, 0, "")
+	_, err = svc.AddInvestment(user.ID, AddInvestmentParams{AccountID: account.ID, SecurityID: sec.ID, Quantity: 1e12, PurchasePrice: 1_000_000})
 	testutil.AssertAppError(t, err, apperrors.ErrInvalidInput.Code)
-	_, err = svc.RecordBuy(user.ID, inv.ID, time.Now(), 1e12, 1_000_000, 0, "", "")
+	_, err = svc.RecordBuy(user.ID, inv.ID, BuyParams{Date: time.Now(), Quantity: 1e12, PricePerUnit: 1_000_000})
 	testutil.AssertAppError(t, err, apperrors.ErrInvalidInput.Code)
 }
 
@@ -155,9 +131,9 @@ func TestRecordSell_RevalidatesLockedQuantity(t *testing.T) {
 	sec := testutil.CreateTestSecurity(t, db)
 	inv := testutil.CreateTestInvestment(t, db, account.ID, sec.ID) // qty 10, cost 100000
 
-	_, err := svc.RecordSell(user.ID, inv.ID, time.Now(), 6, 20000, 0, "", "")
+	_, err := svc.RecordSell(user.ID, inv.ID, SellParams{Date: time.Now(), Quantity: 6, PricePerUnit: 20000})
 	testutil.AssertNoError(t, err)
-	_, err = svc.RecordSell(user.ID, inv.ID, time.Now(), 6, 20000, 0, "", "")
+	_, err = svc.RecordSell(user.ID, inv.ID, SellParams{Date: time.Now(), Quantity: 6, PricePerUnit: 20000})
 	testutil.AssertAppError(t, err, apperrors.ErrInsufficientShares.Code)
 
 	var got models.Investment

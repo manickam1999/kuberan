@@ -29,7 +29,7 @@ func TestMultiCurrencyFlow_NativePricesValuedInBase(t *testing.T) {
 	}
 	accountID := parseJSON(t, rec)["account"].(map[string]interface{})["id"].(string)
 	rec = app.request("POST", "/api/v1/investments",
-		fmt.Sprintf(`{"account_id":%q,"security_id":%q,"quantity":10,"purchase_price":10000}`, accountID, securityID), token)
+		fmt.Sprintf(`{"account_id":%q,"security_id":%q,"quantity":10,"purchase_price":10000,"fx_rate":"4.4712"}`, accountID, securityID), token)
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("add investment: %d %s", rec.Code, rec.Body.String())
 	}
@@ -95,7 +95,26 @@ func TestMultiCurrencyFlow_NativePricesValuedInBase(t *testing.T) {
 	if rec.Code != http.StatusConflict {
 		t.Errorf("expected 409 SECURITY_CURRENCY_LOCKED, got %d: %s", rec.Code, rec.Body.String())
 	}
+	// The investment above is a native-era trade (it has a frozen FX rate), so even
+	// reset_prices cannot relabel the security (phase 3a).
 	rec = app.pipelineRequest("PATCH", "/api/v1/pipeline/securities/"+securityID, `{"currency":"MYR","reset_prices":true}`)
+	if rec.Code != http.StatusConflict {
+		t.Errorf("expected 409 for a security with native-era trades, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	// A security with prices but no trades can still be reset.
+	rec = app.pipelineRequest("POST", "/api/v1/pipeline/securities",
+		`{"symbol":"AMD","name":"AMD","asset_type":"stock","currency":"USD","exchange":"NASDAQ"}`)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("create second security: %d %s", rec.Code, rec.Body.String())
+	}
+	otherID := parseJSON(t, rec)["security"].(map[string]interface{})["id"].(string)
+	rec = app.pipelineRequest("POST", "/api/v1/pipeline/securities/prices",
+		fmt.Sprintf(`{"prices":[{"security_id":%q,"price":10000,"currency":"USD","recorded_at":%q}]}`, otherID, now))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("post price: %d %s", rec.Code, rec.Body.String())
+	}
+	rec = app.pipelineRequest("PATCH", "/api/v1/pipeline/securities/"+otherID, `{"currency":"MYR","reset_prices":true}`)
 	if rec.Code != http.StatusOK || parseJSON(t, rec)["prices_deleted"].(float64) != 1 {
 		t.Errorf("reset: %d %s", rec.Code, rec.Body.String())
 	}

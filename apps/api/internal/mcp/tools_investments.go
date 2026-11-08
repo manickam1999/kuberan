@@ -66,7 +66,7 @@ func (s *Server) handleGetPortfolio(ctx context.Context, _ mcp.CallToolRequest) 
 			name := untrusted(cleanText(inv.Security.Name, 20))
 			currentValue := int64(math.Round(inv.Quantity * float64(inv.CurrentPrice)))
 			fmt.Fprintf(&sb, "    %-8s %-25s %10.2f %12s %12s\n",
-				symbol, name, inv.Quantity, formatCents(inv.CostBasis), formatCents(currentValue))
+				symbol, name, inv.Quantity, formatCents(inv.CostBasisBase), formatCents(currentValue))
 		}
 	}
 

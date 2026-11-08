@@ -488,6 +488,28 @@ func TestCreateTransferTool(t *testing.T) {
 	wantError(t, res, "Cannot transfer to the same account")
 }
 
+func TestCreateTransferTool_RejectsCrossCurrency(t *testing.T) {
+	const scope = "write:transactions"
+	e := setupWriteEnv(t, scope)
+	from := testutil.CreateTestCashAccountWithBalance(t, e.db, e.user.ID, 10_000)
+	to := testutil.CreateTestCashAccountWithBalance(t, e.db, e.user.ID, 0)
+	if err := e.db.Model(&models.Account{}).Where("id = ?", to.ID).Update("currency", "MYR").Error; err != nil {
+		t.Fatal(err)
+	}
+
+	res := e.call(t, e.ctx(scope), "create_transfer", map[string]any{
+		"date":            today(),
+		"from_account_id": from.ID, "to_account_id": to.ID, "amount": 25.0,
+	})
+	wantError(t, res, "cross-currency transfers aren't supported over MCP yet")
+	if e.balance(t, from.ID) != 10_000 || e.balance(t, to.ID) != 0 {
+		t.Errorf("balances moved: %d / %d", e.balance(t, from.ID), e.balance(t, to.ID))
+	}
+	if e.auditCount(t, "MCP_CREATE_TRANSFER") != 0 {
+		t.Error("a rejected transfer must not be audited")
+	}
+}
+
 func TestUpdateTransactionTool(t *testing.T) {
 	const scope = "write:transactions"
 

@@ -17,7 +17,7 @@ import (
 
 type mockTransactionService struct {
 	createTransactionFn      func(userID, accountID string, categoryID *string, transactionType models.TransactionType, amount int64, description string, date time.Time) (*models.Transaction, error)
-	createTransferFn         func(userID, fromAccountID, toAccountID string, amount int64, description string, date time.Time) (*models.Transaction, error)
+	createTransferFn         func(userID, fromAccountID, toAccountID string, amount int64, toAmount *int64, description string, date time.Time) (*models.Transaction, error)
 	getAccountTransactionsFn func(userID, accountID string, page pagination.PageRequest, filter services.TransactionFilter) (*pagination.PageResponse[models.Transaction], error)
 	getUserTransactionsFn    func(userID string, page pagination.PageRequest, filter services.TransactionFilter) (*pagination.PageResponse[models.Transaction], error)
 	getTransactionByIDFn     func(userID, transactionID string) (*models.Transaction, error)
@@ -40,9 +40,9 @@ func (m *mockTransactionService) CreateTransaction(userID, accountID string, cat
 	return &models.Transaction{}, nil
 }
 
-func (m *mockTransactionService) CreateTransfer(userID, fromAccountID, toAccountID string, amount int64, description string, date time.Time) (*models.Transaction, error) {
+func (m *mockTransactionService) CreateTransfer(userID, fromAccountID, toAccountID string, amount int64, toAmount *int64, description string, date time.Time) (*models.Transaction, error) {
 	if m.createTransferFn != nil {
-		return m.createTransferFn(userID, fromAccountID, toAccountID, amount, description, date)
+		return m.createTransferFn(userID, fromAccountID, toAccountID, amount, toAmount, description, date)
 	}
 	return &models.Transaction{}, nil
 }
@@ -284,7 +284,7 @@ func TestTransactionHandler_CreateTransaction(t *testing.T) {
 func TestTransactionHandler_CreateTransfer(t *testing.T) {
 	t.Run("returns 201 on success", func(t *testing.T) {
 		txSvc := &mockTransactionService{
-			createTransferFn: func(userID, from, to string, amount int64, _ string, _ time.Time) (*models.Transaction, error) {
+			createTransferFn: func(userID, from, to string, amount int64, _ *int64, _ string, _ time.Time) (*models.Transaction, error) {
 				toAcct := to
 				return &models.Transaction{
 					Base:        models.Base{ID: "1"},
@@ -307,9 +307,40 @@ func TestTransactionHandler_CreateTransfer(t *testing.T) {
 		}
 	})
 
+	t.Run("passes to_amount to the service", func(t *testing.T) {
+		var got *int64
+		txSvc := &mockTransactionService{
+			createTransferFn: func(_, _, _ string, _ int64, toAmount *int64, _ string, _ time.Time) (*models.Transaction, error) {
+				got = toAmount
+				return &models.Transaction{Base: models.Base{ID: "1"}, ToAmount: toAmount, ImpliedRate: "0.2"}, nil
+			},
+		}
+		r := setupTransactionRouter(NewTransactionHandler(txSvc, &mockAuditService{}))
+
+		rec := doRequest(r, "POST", "/transactions/transfer",
+			`{"from_account_id":"00000000-0000-0000-0000-000000000001","to_account_id":"00000000-0000-0000-0000-000000000002","amount":1000,"to_amount":200}`)
+
+		if rec.Code != http.StatusCreated {
+			t.Fatalf("expected 201, got %d: %s", rec.Code, rec.Body.String())
+		}
+		if got == nil || *got != 200 {
+			t.Errorf("to_amount = %v, want 200", got)
+		}
+		tx := parseJSON(t, rec)["transaction"].(map[string]interface{})
+		if tx["to_amount"].(float64) != 200 || tx["implied_rate"] != "0.2" {
+			t.Errorf("response = %v", tx)
+		}
+
+		rec = doRequest(r, "POST", "/transactions/transfer",
+			`{"from_account_id":"00000000-0000-0000-0000-000000000001","to_account_id":"00000000-0000-0000-0000-000000000002","amount":1000,"to_amount":0}`)
+		if rec.Code != http.StatusBadRequest {
+			t.Errorf("to_amount 0: expected 400, got %d", rec.Code)
+		}
+	})
+
 	t.Run("returns 400 on same account", func(t *testing.T) {
 		txSvc := &mockTransactionService{
-			createTransferFn: func(_, _, _ string, _ int64, _ string, _ time.Time) (*models.Transaction, error) {
+			createTransferFn: func(_, _, _ string, _ int64, _ *int64, _ string, _ time.Time) (*models.Transaction, error) {
 				return nil, apperrors.ErrSameAccountTransfer
 			},
 		}
@@ -327,7 +358,7 @@ func TestTransactionHandler_CreateTransfer(t *testing.T) {
 
 	t.Run("returns 400 on insufficient balance", func(t *testing.T) {
 		txSvc := &mockTransactionService{
-			createTransferFn: func(_, _, _ string, _ int64, _ string, _ time.Time) (*models.Transaction, error) {
+			createTransferFn: func(_, _, _ string, _ int64, _ *int64, _ string, _ time.Time) (*models.Transaction, error) {
 				return nil, apperrors.ErrInsufficientBalance
 			},
 		}

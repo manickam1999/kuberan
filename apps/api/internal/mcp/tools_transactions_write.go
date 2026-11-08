@@ -192,8 +192,24 @@ func (s *Server) prepareCreateTransfer(c caller, args map[string]interface{}) (*
 		return nil, res
 	}
 
+	// Cross-currency transfers need a destination amount; not supported over
+	// MCP until Phase 6, so refuse them before anything is written.
+	fromAcc, err := s.services.Accounts.GetAccountByID(c.UserID, fromID)
+	if err != nil {
+		return nil, serviceError("find source account", err)
+	}
+	toAcc, err := s.services.Accounts.GetAccountByID(c.UserID, toID)
+	if err != nil {
+		return nil, serviceError("find destination account", err)
+	}
+	if !strings.EqualFold(fromAcc.Currency, toAcc.Currency) {
+		return nil, mcp.NewToolResultError(fmt.Sprintf(
+			"cross-currency transfers aren't supported over MCP yet (%s to %s); make this transfer in the app",
+			strings.ToUpper(fromAcc.Currency), strings.ToUpper(toAcc.Currency)))
+	}
+
 	return &writeOp{Cost: 1, Run: func() (string, []auditEntry, *mcp.CallToolResult) {
-		txn, err := s.services.Transactions.CreateTransfer(c.UserID, fromID, toID, amount, description, date)
+		txn, err := s.services.Transactions.CreateTransfer(c.UserID, fromID, toID, amount, nil, description, date)
 		if err != nil {
 			return "", nil, serviceError("create transfer", err)
 		}

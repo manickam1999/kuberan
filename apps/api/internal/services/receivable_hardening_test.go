@@ -325,7 +325,7 @@ func TestControlCharactersAreRejected(t *testing.T) {
 		assertAppCode(t, err, "INVALID_INPUT", http.StatusBadRequest)
 
 		to := testutil.CreateTestCashAccountWithBalance(t, e.db, e.user.ID, 0)
-		_, err = e.txn.CreateTransfer(e.user.ID, e.cash.ID, to.ID, 100, bad, time.Now())
+		_, err = e.txn.CreateTransfer(e.user.ID, e.cash.ID, to.ID, 100, nil, bad, time.Now())
 		assertAppCode(t, err, "INVALID_INPUT", http.StatusBadRequest)
 
 		ok, err := e.txn.CreateTransaction(e.user.ID, e.cash.ID, nil, models.TransactionTypeExpense, 100, "line one\n\tline two", time.Now())

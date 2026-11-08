@@ -170,7 +170,7 @@ func TestBalanceWritersKeepConcurrentChanges(t *testing.T) {
 		e := newRecEnv(t)
 		to := e.track(testutil.CreateTestCashAccountWithBalance(t, e.db, e.user.ID, 1000))
 		defer bumpAfterFirstTxnInsert(t, e.db, e.cash.ID, concurrentBump)()
-		_, err := e.txn.CreateTransfer(e.user.ID, e.cash.ID, to.ID, 400, "move", time.Now())
+		_, err := e.txn.CreateTransfer(e.user.ID, e.cash.ID, to.ID, 400, nil, "move", time.Now())
 		testutil.AssertNoError(t, err)
 		e.wantBalance(e.cash.ID, recCashStart-400+concurrentBump)
 		e.wantBalance(to.ID, 1400)
@@ -180,7 +180,7 @@ func TestBalanceWritersKeepConcurrentChanges(t *testing.T) {
 		e := newRecEnv(t)
 		to := testutil.CreateTestCashAccountWithBalance(t, e.db, e.user.ID, 1000)
 		defer bumpAfterFirstTxnInsert(t, e.db, to.ID, concurrentBump)()
-		_, err := e.txn.CreateTransfer(e.user.ID, e.cash.ID, to.ID, 400, "move", time.Now())
+		_, err := e.txn.CreateTransfer(e.user.ID, e.cash.ID, to.ID, 400, nil, "move", time.Now())
 		testutil.AssertNoError(t, err)
 		e.wantBalance(to.ID, 1000+400+concurrentBump)
 	})
@@ -249,11 +249,12 @@ func TestBalanceWritersKeepConcurrentChanges(t *testing.T) {
 		user := testutil.CreateTestUser(t, db)
 		invAcct := testutil.CreateTestInvestmentAccount(t, db, user.ID)
 		cash := testutil.CreateTestCashAccountWithBalance(t, db, user.ID, 1000000)
+		testutil.AssertNoError(t, db.Model(cash).Update("currency", "MYR").Error) // same currency as the MYR security
 		sec := testutil.CreateTestSecurity(t, db)
 		inv := testutil.CreateTestInvestment(t, db, invAcct.ID, sec.ID)
 
 		defer bumpAfterFirstTxnInsert(t, db, cash.ID, concurrentBump)()
-		_, err := svc.RecordBuy(user.ID, inv.ID, time.Now(), 5.0, 10000, 500, "buy", cash.ID)
+		_, err := svc.RecordBuy(user.ID, inv.ID, BuyParams{Date: time.Now(), Quantity: 5.0, PricePerUnit: 10000, Fee: 500, Notes: "buy", FundingAccountID: cash.ID})
 		testutil.AssertNoError(t, err)
 		if got, want := accountBalance(t, db, cash.ID), int64(1000000-50500)+concurrentBump; got != want {
 			t.Errorf("balance = %d, want %d", got, want)
@@ -268,11 +269,12 @@ func TestBalanceWritersKeepConcurrentChanges(t *testing.T) {
 		user := testutil.CreateTestUser(t, db)
 		invAcct := testutil.CreateTestInvestmentAccount(t, db, user.ID)
 		cash := testutil.CreateTestCashAccountWithBalance(t, db, user.ID, 1000)
+		testutil.AssertNoError(t, db.Model(cash).Update("currency", "MYR").Error) // same currency as the MYR security
 		sec := testutil.CreateTestSecurity(t, db)
 		inv := testutil.CreateTestInvestment(t, db, invAcct.ID, sec.ID)
 
 		defer bumpAfterFirstTxnInsert(t, db, cash.ID, concurrentBump)()
-		_, err := svc.RecordSell(user.ID, inv.ID, time.Now(), 4.0, 12000, 300, "sell", cash.ID)
+		_, err := svc.RecordSell(user.ID, inv.ID, SellParams{Date: time.Now(), Quantity: 4.0, PricePerUnit: 12000, Fee: 300, Notes: "sell", DepositAccountID: cash.ID})
 		testutil.AssertNoError(t, err)
 		if got, want := accountBalance(t, db, cash.ID), int64(1000+4*12000-300)+concurrentBump; got != want {
 			t.Errorf("balance = %d, want %d", got, want)
@@ -365,7 +367,7 @@ func TestCreateTransferChecksBalanceOnLockedRow(t *testing.T) {
 
 	// Another writer drains the source after the request started but before the lock.
 	restore := drainBeforeFirstLock(t, e.db, e.cash.ID, 100)
-	_, err := e.txn.CreateTransfer(e.user.ID, e.cash.ID, to.ID, 5000, "raced", time.Now())
+	_, err := e.txn.CreateTransfer(e.user.ID, e.cash.ID, to.ID, 5000, nil, "raced", time.Now())
 	restore()
 	assertAppCode(t, err, "INSUFFICIENT_BALANCE", http.StatusBadRequest)
 	var transfers int64
@@ -375,14 +377,14 @@ func TestCreateTransferChecksBalanceOnLockedRow(t *testing.T) {
 	}
 	e.wantBalance(to.ID, 0)
 
-	_, err = e.txn.CreateTransfer(e.user.ID, e.cash.ID, to.ID, recCashStart+1, "too much", time.Now())
+	_, err = e.txn.CreateTransfer(e.user.ID, e.cash.ID, to.ID, recCashStart+1, nil, "too much", time.Now())
 	assertAppCode(t, err, "INSUFFICIENT_BALANCE", http.StatusBadRequest)
 	e.wantBalance(e.cash.ID, recCashStart)
 	e.wantBalance(to.ID, 0)
 
 	// Credit-card (liability) sources are exempt from the check.
 	card := testutil.CreateTestCreditCardAccount(t, e.db, e.user.ID, 0)
-	_, err = e.txn.CreateTransfer(e.user.ID, card.ID, to.ID, 5000, "cash advance", time.Now())
+	_, err = e.txn.CreateTransfer(e.user.ID, card.ID, to.ID, 5000, nil, "cash advance", time.Now())
 	testutil.AssertNoError(t, err)
 	e.wantBalance(card.ID, 5000)
 	e.wantBalance(to.ID, 5000)

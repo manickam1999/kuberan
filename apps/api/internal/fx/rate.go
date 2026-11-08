@@ -169,6 +169,25 @@ func Mul(a, b Rate) (Rate, error) {
 	return Rate(q.Int64()), nil
 }
 
+// RateFromAmounts returns the rate implied by exchanging from units of one
+// currency for to units of another, i.e. to/from rounded half to even to 10
+// decimal places. Both amounts must be positive; the result must be non-zero
+// and fit a Rate.
+func RateFromAmounts(from, to int64) (Rate, error) {
+	if from <= 0 || to <= 0 {
+		return 0, fmt.Errorf("%w: amounts must be positive (%d, %d)", ErrInvalidRate, from, to)
+	}
+	num := new(big.Int).Mul(big.NewInt(to), bigScale)
+	q := divRoundHalfEven(num, big.NewInt(from))
+	if !q.IsInt64() || q.Int64() > int64(MaxRate) {
+		return 0, fmt.Errorf("%w: %d/%d", ErrOverflow, to, from)
+	}
+	if q.Sign() == 0 {
+		return 0, fmt.Errorf("%w: %d/%d rounds to zero", ErrInvalidRate, to, from)
+	}
+	return Rate(q.Int64()), nil
+}
+
 // divRoundHalfEven returns num/den (den > 0) rounded to the nearest integer,
 // with exact ties going to the even neighbour.
 func divRoundHalfEven(num, den *big.Int) *big.Int {

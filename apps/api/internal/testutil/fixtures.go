@@ -207,6 +207,8 @@ func CreateTestInvestment(t *testing.T, db *gorm.DB, accountID, securityID strin
 		SecurityID: securityID,
 		Quantity:   10.0,
 		CostBasis:  100000, // $1000.00
+		// The default security and user are both MYR, so the base cost equals the cost.
+		CostBasisBase: 100000,
 	}
 	if err := db.Create(inv).Error; err != nil {
 		t.Fatalf("failed to create test investment: %v", err)

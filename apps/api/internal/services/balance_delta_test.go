@@ -139,7 +139,7 @@ func TestCreateTransfer_DebtSourceExemptFromInsufficientBalance(t *testing.T) {
 	cash := testutil.CreateTestCashAccount(t, db, user.ID)
 
 	// Borrowing from a debt account (balance 0) must not fail the balance check.
-	_, err := txSvc.CreateTransfer(user.ID, debt.ID, cash.ID, 4000, "Draw", time.Now())
+	_, err := txSvc.CreateTransfer(user.ID, debt.ID, cash.ID, 4000, nil, "Draw", time.Now())
 	testutil.AssertNoError(t, err)
 	assertBalance(t, acctSvc, user.ID, debt.ID, 4000)
 	assertBalance(t, acctSvc, user.ID, cash.ID, 4000)

@@ -88,7 +88,7 @@ func run() error {
 	categoryService := services.NewCategoryService(db)
 	accountService := services.NewAccountService(db, services.WithCategoryService(categoryService), services.WithFXService(fxService))
 	ruleService := services.NewRuleService(db, categoryService)
-	transactionService := services.NewTransactionService(db, accountService, ruleService)
+	transactionService := services.NewTransactionService(db, accountService, ruleService, services.WithTransactionFXService(fxService))
 	receivableService := services.NewReceivableService(db, accountService, ruleService)
 	budgetService := services.NewBudgetService(db)
 	investmentService := services.NewInvestmentService(db, accountService, fxService)

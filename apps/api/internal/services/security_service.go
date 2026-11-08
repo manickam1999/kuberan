@@ -258,6 +258,21 @@ func (s *securityService) UpdateSecurity(id string, update SecurityUpdate) (*Sec
 		}
 
 		if currencyChanged {
+			// Native-era trades (a frozen FX rate) are in the old currency; relabelling
+			// would silently reinterpret them, even with reset_prices. Legacy rows
+			// (NULL rate) do not block.
+			var tradeCount int64
+			if err := tx.Table("investment_transactions it").
+				Joins("JOIN investments i ON i.id = it.investment_id").
+				Where("i.security_id = ? AND it.deleted_at IS NULL AND it.fx_rate_to_base IS NOT NULL", id).
+				Count(&tradeCount).Error; err != nil {
+				return apperrors.Wrap(apperrors.ErrInternalServer, err)
+			}
+			if tradeCount > 0 {
+				return apperrors.WithMessage(apperrors.ErrSecurityCurrencyLocked,
+					"Security currency cannot change while trades are recorded in it")
+			}
+
 			var priceCount int64
 			if err := tx.Model(&models.SecurityPrice{}).Where("security_id = ?", id).Count(&priceCount).Error; err != nil {
 				return apperrors.Wrap(apperrors.ErrInternalServer, err)

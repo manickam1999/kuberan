@@ -91,12 +91,7 @@ func respondWithError(c *gin.Context, err error) {
 				"path", c.Request.URL.Path,
 			)
 		}
-		c.JSON(appErr.StatusCode, gin.H{
-			"error": gin.H{
-				"code":    appErr.Code,
-				"message": appErr.Message,
-			},
-		})
+		c.JSON(appErr.StatusCode, gin.H{"error": appErr.Body()})
 		return
 	}
 

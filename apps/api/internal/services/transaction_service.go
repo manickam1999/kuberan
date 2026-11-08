@@ -20,17 +20,32 @@ type transactionService struct {
 	db             *gorm.DB
 	accountService AccountServicer
 	ruleService    RuleServicer
+	fxService      FXServicer // optional; suggests a to_amount for cross-currency transfers
+}
+
+// TransactionServiceOption configures optional dependencies of the transaction service.
+type TransactionServiceOption func(*transactionService)
+
+// WithTransactionFXService sets the FX service used to suggest the destination
+// amount of a cross-currency transfer. Without it the FX_AMOUNT_REQUIRED error
+// carries no suggestion.
+func WithTransactionFXService(fxs FXServicer) TransactionServiceOption {
+	return func(s *transactionService) { s.fxService = fxs }
 }
 
 // NewTransactionService creates a new TransactionServicer. The ruleService is
 // used to auto-categorize new income/expense transactions and to run rule
 // backfills; the dependency is one-way (rules never depend on transactions).
-func NewTransactionService(db *gorm.DB, accountService AccountServicer, ruleService RuleServicer) TransactionServicer {
-	return &transactionService{
+func NewTransactionService(db *gorm.DB, accountService AccountServicer, ruleService RuleServicer, opts ...TransactionServiceOption) TransactionServicer {
+	s := &transactionService{
 		db:             db,
 		accountService: accountService,
 		ruleService:    ruleService,
 	}
+	for _, opt := range opts {
+		opt(s)
+	}
+	return s
 }
 
 // effectiveAmountSQL is the SQL expression for the amount that counts as the
@@ -97,9 +112,15 @@ func (s *transactionService) CreateTransaction(
 // CreateTransfer creates an account-to-account transfer within a single DB
 // transaction. Both accounts are row-locked (in id order) and the balances move
 // by relative updates; the insufficient-balance check runs on the locked row.
+//
+// The source moves by amount and the destination by the effective destination
+// amount. For accounts in the same currency toAmount must be nil or equal to
+// amount (nothing is stored). For different currencies toAmount is required
+// (FX_AMOUNT_REQUIRED with a suggestion otherwise) and is stored on the row.
 func (s *transactionService) CreateTransfer(
 	userID, fromAccountID, toAccountID string,
 	amount int64,
+	toAmount *int64,
 	description string,
 	date time.Time,
 ) (*models.Transaction, error) {
@@ -126,10 +147,9 @@ func (s *transactionService) CreateTransfer(
 		}
 		fromAccount, toAccount := accounts[fromAccountID], accounts[toAccountID]
 
-		// Balances move by the same amount on both legs, so the accounts must
-		// share a currency (no FX conversion is performed).
-		if !strings.EqualFold(fromAccount.Currency, toAccount.Currency) {
-			return apperrors.ErrTransferCurrencyMismatch
+		stored, txErr := s.resolveToAmount(fromAccount, toAccount, amount, toAmount, date)
+		if txErr != nil {
+			return txErr
 		}
 
 		if !isLiabilityAccount(fromAccount.Type) && fromAccount.Balance < amount {
@@ -142,17 +162,19 @@ func (s *transactionService) CreateTransfer(
 			ToAccountID: &toAccountID,
 			Type:        models.TransactionTypeTransfer,
 			Amount:      amount,
+			ToAmount:    stored,
 			Description: description,
 			Date:        date,
 		}
 		if txErr := tx.Create(transaction).Error; txErr != nil {
 			return apperrors.Wrap(apperrors.ErrInternalServer, txErr)
 		}
+		transaction.FillImpliedRate()
 
 		if txErr := s.accountService.ApplyBalanceDelta(tx, fromAccount.ID, fromAccount.Type, models.TransactionTypeExpense, amount); txErr != nil {
 			return txErr
 		}
-		if txErr := s.accountService.ApplyBalanceDelta(tx, toAccount.ID, toAccount.Type, models.TransactionTypeIncome, amount); txErr != nil {
+		if txErr := s.accountService.ApplyBalanceDelta(tx, toAccount.ID, toAccount.Type, models.TransactionTypeIncome, transaction.EffectiveToAmount()); txErr != nil {
 			return txErr
 		}
 
@@ -163,6 +185,27 @@ func (s *transactionService) CreateTransfer(
 		return nil, err
 	}
 	return result, nil
+}
+
+// resolveToAmount validates a transfer's destination amount against the two
+// accounts' currencies and returns the value to store in transactions.to_amount:
+// nil for a same-currency transfer, the given amount for a cross-currency one.
+func (s *transactionService) resolveToAmount(from, to *models.Account, amount int64, toAmount *int64, at time.Time) (*int64, error) {
+	if toAmount != nil && *toAmount <= 0 {
+		return nil, apperrors.WithMessage(apperrors.ErrInvalidInput, "to_amount must be greater than zero")
+	}
+	if strings.EqualFold(from.Currency, to.Currency) {
+		if toAmount != nil && *toAmount != amount {
+			return nil, apperrors.WithMessage(apperrors.ErrInvalidInput,
+				"to_amount must be omitted or equal amount when both accounts share a currency")
+		}
+		return nil, nil
+	}
+	if toAmount == nil {
+		return nil, fxAmountRequiredError(s.fxService, strings.ToUpper(from.Currency), strings.ToUpper(to.Currency), amount, at, "to_amount")
+	}
+	v := *toAmount
+	return &v, nil
 }
 
 // isCategorizableType reports whether a transaction type is eligible for
@@ -728,12 +771,13 @@ func (s *transactionService) DeleteTransaction(userID, transactionID string) err
 		}
 
 		if transaction.Type == models.TransactionTypeTransfer {
-			// Add back to the from-account, subtract from the to-account.
+			// Add back to the from-account, subtract the effective destination
+			// amount (to_amount for a cross-currency transfer) from the to-account.
 			toAccount := accounts[*transaction.ToAccountID]
 			if txErr := s.accountService.ApplyBalanceDelta(tx, account.ID, account.Type, models.TransactionTypeIncome, transaction.Amount); txErr != nil {
 				return txErr
 			}
-			return s.accountService.ApplyBalanceDelta(tx, toAccount.ID, toAccount.Type, models.TransactionTypeExpense, transaction.Amount)
+			return s.accountService.ApplyBalanceDelta(tx, toAccount.ID, toAccount.Type, models.TransactionTypeExpense, transaction.EffectiveToAmount())
 		}
 		reversal, err := reverseType(transaction.Type)
 		if err != nil {

@@ -533,8 +533,9 @@ func issueTokenPair(user *models.User) (accessToken, refreshToken string, err er
 
 // ErrorDetail represents the inner error object in an error response.
 type ErrorDetail struct {
-	Code    string `json:"code"`
-	Message string `json:"message"`
+	Code    string         `json:"code"`
+	Message string         `json:"message"`
+	Details map[string]any `json:"details,omitempty"` // machine-readable context, e.g. FX_AMOUNT_REQUIRED's suggested_amount
 }
 
 // ErrorResponse represents an error response.

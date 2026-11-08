@@ -163,6 +163,10 @@ All monetary values are stored and transmitted as **int64 cents** (not float64).
 
 Security prices are stored in each security's own currency (`security_prices.currency`); valuation converts at read time via `internal/services/holding_valuation.go` (`latestNativePrices` + `valuer`, the line value is converted once). `Investment.current_price` stays in the user's base currency; `current_price_native`, `price_currency`, `fx_rate`, `fx_stale` and `fx_missing` are added alongside it.
 
+Investment amounts are in the **security's currency**: `price_per_unit`, `total_amount`, `fee`, `cost_basis` and `realized_gain_loss` on both the holding and its `investment_transactions`. The `_base` twins (`cost_basis_base`, `realized_gain_loss_base`, and per transaction `fx_rate_to_base` + `base_amount` + `realized_gain_loss_base`) are in the user's base currency, frozen at each trade's rate. `fx_rate_to_base` is NULL on legacy rows. Trade rate precedence: explicit `fx_rate` > the rate implied by a base-currency funding/deposit account > 1 for a base-currency security > the market rate > `FX_RATE_UNAVAILABLE`. A cash account used to fund a buy or receive a sell/dividend in a different currency than the security needs `funding_amount` / `deposit_amount` (else 400 `FX_AMOUNT_REQUIRED` with `error.details.suggested_amount`). Dividends take `fee` (withholding; the NET is deposited). All per-transaction holding math lives in `holdingState.apply` (`internal/services/investment_math.go`), shared by the write paths and `rebuildInvestment` (replay). `GetPortfolio` totals are base currency: `total_cost_basis` = Σ `cost_basis_base`, plus `total_price_return` / `total_fx_return`. A security's currency can't change once native-era trades (`fx_rate_to_base IS NOT NULL`) exist.
+
+Transfers are one `transactions` row (`account_id` = source, `to_account_id` = destination). The source moves by `amount`, the destination by `COALESCE(to_amount, amount)` (`Transaction.EffectiveToAmount()`). `to_amount` (cents, destination currency) is required when the accounts' currencies differ (else 400 `FX_AMOUNT_REQUIRED`, `field: "to_amount"`, with a suggestion), must be omitted or equal `amount` otherwise, and is NULL for same-currency transfers. Responses add `implied_rate` (`to_amount/amount`, 10 dp). Transfers can't be edited, only deleted (which reverses both legs by the effective amounts). MCP `create_transfer` rejects cross-currency transfers for now.
+
 Non-monetary floats that remain as float64: `Investment.Quantity`, `SplitRatio`, `InterestRate`, `YieldToMaturity`, `CouponRate`. `CreditLimit` is int64 cents (not a float).
 
 ### Database Migrations
@@ -306,7 +310,7 @@ GET    /api/v1/accounts/:id/investments
 # Transactions
 GET    /api/v1/transactions
 POST   /api/v1/transactions
-POST   /api/v1/transactions/transfer
+POST   /api/v1/transactions/transfer     # + to_amount (required when the accounts' currencies differ)
 GET    /api/v1/transactions/spending-by-category
 GET    /api/v1/transactions/monthly-summary
 GET    /api/v1/transactions/daily-spending
@@ -335,9 +339,9 @@ GET    /api/v1/investments
 GET    /api/v1/investments/portfolio
 GET    /api/v1/investments/snapshots
 GET    /api/v1/investments/:id
-POST   /api/v1/investments/:id/buy
-POST   /api/v1/investments/:id/sell
-POST   /api/v1/investments/:id/dividend
+POST   /api/v1/investments/:id/buy         # + funding_amount (other-currency cash), fx_rate
+POST   /api/v1/investments/:id/sell        # + deposit_amount (other-currency cash), fx_rate
+POST   /api/v1/investments/:id/dividend    # + fee, deposit_account_id, deposit_amount, fx_rate
 POST   /api/v1/investments/:id/split
 GET    /api/v1/investments/:id/transactions
 

@@ -12,6 +12,20 @@ type AppError struct {
 	Message    string `json:"message"`
 	StatusCode int    `json:"-"`
 	Internal   error  `json:"-"`
+	// Details carries optional machine-readable context for the client (for
+	// example a suggested amount). It is rendered in the JSON error body when
+	// non-empty and must never hold internal information.
+	Details map[string]any `json:"details,omitempty"`
+}
+
+// Body returns the JSON error object clients receive: code, message and, when
+// present, details. The error middleware and handler helpers both render it.
+func (e *AppError) Body() map[string]any {
+	body := map[string]any{"code": e.Code, "message": e.Message}
+	if len(e.Details) > 0 {
+		body["details"] = e.Details
+	}
+	return body
 }
 
 // Error implements the error interface.
@@ -35,6 +49,7 @@ func Wrap(sentinel *AppError, internal error) *AppError {
 		Message:    sentinel.Message,
 		StatusCode: sentinel.StatusCode,
 		Internal:   internal,
+		Details:    sentinel.Details,
 	}
 }
 
@@ -45,7 +60,19 @@ func WithMessage(sentinel *AppError, message string) *AppError {
 		Message:    message,
 		StatusCode: sentinel.StatusCode,
 		Internal:   sentinel.Internal,
+		Details:    sentinel.Details,
 	}
+}
+
+// WithDetails returns a copy of err carrying details. The input is never
+// mutated, so shared sentinels stay clean. The map is copied too.
+func WithDetails(err *AppError, details map[string]any) *AppError {
+	cp := *err
+	cp.Details = make(map[string]any, len(details))
+	for k, v := range details {
+		cp.Details[k] = v
+	}
+	return &cp
 }
 
 // Authentication & authorization errors.
@@ -94,9 +121,11 @@ var (
 	ErrInvalidTypeChange      = &AppError{Code: "INVALID_TYPE_CHANGE", Message: "Cannot change transaction type to or from transfer/investment", StatusCode: http.StatusBadRequest}
 )
 
-// ErrTransferCurrencyMismatch rejects a transfer between accounts whose
-// currencies differ (no FX conversion is performed).
-var ErrTransferCurrencyMismatch = &AppError{Code: "TRANSFER_CURRENCY_MISMATCH", Message: "Cannot transfer between accounts with different currencies", StatusCode: http.StatusBadRequest}
+// ErrFXAmountRequired is returned when an operation moves money between two
+// currencies and the caller must state the amount in the other currency. The
+// error carries Details: currency, field and, when a market rate exists,
+// suggested_amount, rate and rate_recorded_at.
+var ErrFXAmountRequired = &AppError{Code: "FX_AMOUNT_REQUIRED", Message: "An amount in the other account's currency is required", StatusCode: http.StatusBadRequest}
 
 // Budget errors.
 var (

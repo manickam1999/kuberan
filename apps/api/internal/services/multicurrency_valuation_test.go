@@ -83,7 +83,7 @@ func TestInvestmentResponses_ConvertToBaseCurrency(t *testing.T) {
 		assertPricing(t, &page.Data[0], want, "4.4712", false, false)
 	})
 	t.Run("AddInvestment", func(t *testing.T) {
-		inv, err := svc.AddInvestment(f.user.ID, f.acct.ID, f.sec.ID, 1, 15000, "", nil, 0, "")
+		inv, err := svc.AddInvestment(f.user.ID, AddInvestmentParams{AccountID: f.acct.ID, SecurityID: f.sec.ID, Quantity: 1, PurchasePrice: 15000})
 		testutil.AssertNoError(t, err)
 		assertPricing(t, inv, want, "4.4712", false, false)
 	})
@@ -105,7 +105,7 @@ func TestInvestmentResponses_MissingRate(t *testing.T) {
 	testutil.AssertNoError(t, err)
 	assertPricing(t, &page.Data[0], 0, "", true, false)
 
-	added, err := svc.AddInvestment(f.user.ID, f.acct.ID, f.sec.ID, 1, 15000, "", nil, 0, "")
+	added, err := svc.AddInvestment(f.user.ID, AddInvestmentParams{AccountID: f.acct.ID, SecurityID: f.sec.ID, Quantity: 1, PurchasePrice: 15000, FXRate: "4.4712"})
 	testutil.AssertNoError(t, err)
 	assertPricing(t, added, 0, "", true, false)
 }
@@ -150,12 +150,12 @@ func TestGetPortfolio_ConvertsLineValueToBase(t *testing.T) {
 	sec2 := testutil.CreateTestSecurityWithParams(t, f.db, "LINE", "Line", models.AssetTypeStock, "NYSE")
 	testutil.AssertNoError(t, f.db.Model(sec2).Update("currency", "USD").Error)
 	inv2 := testutil.CreateTestInvestment(t, f.db, f.acct.ID, sec2.ID)
-	testutil.AssertNoError(t, f.db.Model(inv2).Updates(map[string]interface{}{"quantity": 3, "cost_basis": 40000}).Error)
+	testutil.AssertNoError(t, f.db.Model(inv2).Updates(map[string]interface{}{"quantity": 3, "cost_basis": 40000, "cost_basis_base": 40000}).Error)
 	testutil.CreateTestSecurityPrice(t, f.db, sec2.ID, 3333, time.Now().Add(-time.Hour))
 	// And a MYR holding that needs no rate.
 	sec3 := testutil.CreateTestSecurityWithParams(t, f.db, "MYRS", "Myr", models.AssetTypeStock, "KLSE")
 	inv3 := testutil.CreateTestInvestment(t, f.db, f.acct.ID, sec3.ID)
-	testutil.AssertNoError(t, f.db.Model(inv3).Updates(map[string]interface{}{"quantity": 2, "cost_basis": 900}).Error)
+	testutil.AssertNoError(t, f.db.Model(inv3).Updates(map[string]interface{}{"quantity": 2, "cost_basis": 900, "cost_basis_base": 900}).Error)
 	testutil.CreateTestSecurityPrice(t, f.db, sec3.ID, 500, time.Now().Add(-time.Hour))
 
 	p, err := f.investments(t).GetPortfolio(f.user.ID)
@@ -181,7 +181,7 @@ func TestGetPortfolio_MissingRateIsUnconverted(t *testing.T) {
 	f := newMCFixture(t) // no rate
 	sec3 := testutil.CreateTestSecurityWithParams(t, f.db, "MYRS", "Myr", models.AssetTypeStock, "KLSE")
 	inv3 := testutil.CreateTestInvestment(t, f.db, f.acct.ID, sec3.ID)
-	testutil.AssertNoError(t, f.db.Model(inv3).Updates(map[string]interface{}{"quantity": 2, "cost_basis": 900}).Error)
+	testutil.AssertNoError(t, f.db.Model(inv3).Updates(map[string]interface{}{"quantity": 2, "cost_basis": 900, "cost_basis_base": 900}).Error)
 	testutil.CreateTestSecurityPrice(t, f.db, sec3.ID, 500, time.Now())
 
 	p, err := f.investments(t).GetPortfolio(f.user.ID)

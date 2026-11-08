@@ -281,7 +281,7 @@ type TopExpenses struct {
 // TransactionServicer defines the contract for transaction-related business logic.
 type TransactionServicer interface {
 	CreateTransaction(userID, accountID string, categoryID *string, transactionType models.TransactionType, amount int64, description string, date time.Time) (*models.Transaction, error)
-	CreateTransfer(userID, fromAccountID, toAccountID string, amount int64, description string, date time.Time) (*models.Transaction, error)
+	CreateTransfer(userID, fromAccountID, toAccountID string, amount int64, toAmount *int64, description string, date time.Time) (*models.Transaction, error)
 	GetAccountTransactions(userID, accountID string, page pagination.PageRequest, filter TransactionFilter) (*pagination.PageResponse[models.Transaction], error)
 	GetUserTransactions(userID string, page pagination.PageRequest, filter TransactionFilter) (*pagination.PageResponse[models.Transaction], error)
 	GetTransactionByID(userID, transactionID string) (*models.Transaction, error)
@@ -406,8 +406,13 @@ type PortfolioSummary struct {
 	GainLossPct           float64                          `json:"gain_loss_pct"`
 	TotalRealizedGainLoss int64                            `json:"total_realized_gain_loss"`
 	HoldingsByType        map[models.AssetType]TypeSummary `json:"holdings_by_type"`
+	// TotalPriceReturn and TotalFXReturn split the unrealized gain
+	// (TotalValue - TotalCostBasis): the native gain at today's rate, and the
+	// currency effect on the cost. They sum to TotalGainLoss within a cent per holding.
+	TotalPriceReturn int64 `json:"total_price_return"`
+	TotalFXReturn    int64 `json:"total_fx_return"`
 	// Currency is the user's base currency, which every value above is in
-	// (cost basis and realized gain/loss are as stored).
+	// (cost basis and realized gain/loss are the frozen base-currency figures).
 	Currency string `json:"currency"`
 	// FXStale is true when any FX quote used was stale.
 	FXStale bool `json:"fx_stale"`
@@ -429,16 +434,86 @@ type TypeSummary struct {
 	Count int   `json:"count"`
 }
 
+// AddInvestmentParams are the inputs of InvestmentServicer.AddInvestment.
+// PurchasePrice and Fee are in the security's currency.
+type AddInvestmentParams struct {
+	AccountID     string
+	SecurityID    string
+	Quantity      float64
+	PurchasePrice int64
+	WalletAddress string
+	Date          *time.Time // optional, defaults to now
+	Fee           int64
+	Notes         string // optional, defaults to "Initial purchase"
+	// FXRate optionally overrides the security-currency to base rate of the
+	// trade, as a decimal string.
+	FXRate string
+}
+
+// BuyParams are the inputs of InvestmentServicer.RecordBuy. PricePerUnit and
+// Fee are in the security's currency.
+type BuyParams struct {
+	Date         time.Time
+	Quantity     float64
+	PricePerUnit int64
+	Fee          int64
+	Notes        string
+	// FundingAccountID optionally names the cash account the cost is paid from.
+	FundingAccountID string
+	// FundingAmount is the amount debited, in the funding account's currency.
+	// Required when that differs from the security's currency (0 = not given);
+	// otherwise it must be omitted or equal the trade total.
+	FundingAmount int64
+	// FXRate optionally overrides the trade's security-currency to base rate.
+	FXRate string
+}
+
+// SellParams are the inputs of InvestmentServicer.RecordSell. PricePerUnit and
+// Fee are in the security's currency.
+type SellParams struct {
+	Date         time.Time
+	Quantity     float64
+	PricePerUnit int64
+	Fee          int64
+	Notes        string
+	// DepositAccountID optionally names the cash account the net proceeds go to.
+	DepositAccountID string
+	// DepositAmount is the amount credited, in the deposit account's currency.
+	// Required when that differs from the security's currency (0 = not given).
+	DepositAmount int64
+	// FXRate optionally overrides the trade's security-currency to base rate.
+	FXRate string
+}
+
+// DividendParams are the inputs of InvestmentServicer.RecordDividend. Amount is
+// the gross dividend and Fee the withholding tax and fees, both in the
+// security's currency.
+type DividendParams struct {
+	Date         time.Time
+	Amount       int64
+	Fee          int64
+	DividendType string
+	Notes        string
+	// DepositAccountID optionally names the cash account the NET dividend
+	// (Amount - Fee) is credited to.
+	DepositAccountID string
+	// DepositAmount is the net amount credited, in the deposit account's
+	// currency. Required when that differs from the security's currency.
+	DepositAmount int64
+	// FXRate optionally overrides the security-currency to base rate.
+	FXRate string
+}
+
 // InvestmentServicer defines the contract for investment-related business logic.
 type InvestmentServicer interface {
-	AddInvestment(userID, accountID, securityID string, quantity float64, purchasePrice int64, walletAddress string, date *time.Time, fee int64, notes string) (*models.Investment, error)
+	AddInvestment(userID string, p AddInvestmentParams) (*models.Investment, error)
 	GetAllInvestments(userID string, status InvestmentStatus, page pagination.PageRequest) (*pagination.PageResponse[models.Investment], error)
 	GetAccountInvestments(userID, accountID string, page pagination.PageRequest) (*pagination.PageResponse[models.Investment], error)
 	GetInvestmentByID(userID, investmentID string) (*models.Investment, error)
 	GetPortfolio(userID string) (*PortfolioSummary, error)
-	RecordBuy(userID, investmentID string, date time.Time, quantity float64, pricePerUnit int64, fee int64, notes string, fundingAccountID string) (*models.InvestmentTransaction, error)
-	RecordSell(userID, investmentID string, date time.Time, quantity float64, pricePerUnit int64, fee int64, notes string, depositAccountID string) (*models.InvestmentTransaction, error)
-	RecordDividend(userID, investmentID string, date time.Time, amount int64, dividendType, notes string) (*models.InvestmentTransaction, error)
+	RecordBuy(userID, investmentID string, p BuyParams) (*models.InvestmentTransaction, error)
+	RecordSell(userID, investmentID string, p SellParams) (*models.InvestmentTransaction, error)
+	RecordDividend(userID, investmentID string, p DividendParams) (*models.InvestmentTransaction, error)
 	RecordSplit(userID, investmentID string, date time.Time, splitRatio float64, notes string) (*models.InvestmentTransaction, error)
 	GetInvestmentTransactions(userID, investmentID string, page pagination.PageRequest) (*pagination.PageResponse[models.InvestmentTransaction], error)
 }
