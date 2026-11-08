@@ -372,8 +372,9 @@ its own.
 |---|---|---|---|
 | 1 | **FX foundation** | `fx_rates` migration, `FXService` + `fx.Converter`, pipeline `fx-rates`/`fx-pairs`, read endpoint. Oracle posts rates (still converting prices too). `users.base_currency`. | No |
 | 2 | **Native prices** | `security_prices.currency`, mismatch guard, oracle stops converting, CoinGecko per-currency, `GBp` handling, backfill command, **data steps D10.2–3**. `GetPortfolio`, investments list and snapshots convert holdings on read. | Values unchanged (still MYR on screen) but now derived correctly |
-| 3 | **Native trades and funding** | Investment transaction FX columns, `cost_basis_base`, `rebuildInvestment`, cross-currency buy/sell/dividend funding, account/security currency locks, **data steps D10.4–7** (import + `migrate-fx`). | Holdings show USD natively |
-| 4 | **Cross-currency cash** | Transfer `to_amount`, counter-amount columns, analytics, budgets and receivables conversion, account `balance_base`. | Multi-currency cash accounts usable |
+| 3a | **Native trades, funding, FX transfers** (re-cut, see `phase-3-spec.md`) | Investment transaction FX columns, `cost_basis_base`, `rebuildInvestment`, cross-currency buy/sell/dividend funding, transfer `to_amount` (D6), security currency lock. | Holdings in native currency |
+| 3b | **IBKR import + data migration** | Activity Statement import (D10.0a), data steps D10.4–7. | Your IBKR history matches the statements |
+| 4 | **Cross-currency aggregates** | Analytics, budgets and receivables conversion, account `balance_base`, snapshots converting account balances. | Multi-currency cash accounts in every total |
 | 5 | **Frontend** | `formatCurrency` required arg, `<Money>`, dialogs, price/FX P&L split, exposure donut, reporting-currency setting, staleness hints. (Pieces can ship with phases 2–4. Listed separately for scope.) | Yes |
 | 6 | **MCP, bot, docs** | MCP formatting, base-currency write ceiling, bot totals, `CLAUDE.md` / `.env.prod.example` / `docs/` updates (remove `TARGET_CURRENCY`, document FX). | Yes |
 
