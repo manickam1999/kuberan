@@ -33,22 +33,31 @@ func setupWriteEnv(t *testing.T, approved ...string) *writeEnv {
 	db := testutil.SetupTestDB(t)
 	t.Cleanup(func() { testutil.TeardownTestDB(t, db) })
 
-	accounts := services.NewAccountService(db)
+	// Mirror production wiring (cmd/mcp/main.go): one FX service shared by all.
+	fxService := services.NewFXService(db, 168*time.Hour)
+	accounts := services.NewAccountService(db, services.WithFXService(fxService))
 	categories := services.NewCategoryService(db)
 	rules := services.NewRuleService(db, categories)
 	grants := services.NewOAuthGrantService(db)
 	s := newServer(Services{
-		Users:        services.NewUserService(db, services.NewFXService(db, 168*time.Hour)),
+		Users:        services.NewUserService(db, fxService),
 		Accounts:     accounts,
 		Categories:   categories,
-		Transactions: services.NewTransactionService(db, accounts, rules),
-		Budgets:      services.NewBudgetService(db),
-		Receivables:  services.NewReceivableService(db, accounts, rules),
+		Transactions: services.NewTransactionService(db, accounts, rules, services.WithTransactionFXService(fxService)),
+		Budgets:      services.NewBudgetService(db, services.WithBudgetFXService(fxService)),
+		Receivables:  services.NewReceivableService(db, accounts, rules, services.WithReceivableFXService(fxService)),
+		FX:           fxService,
 		Audit:        services.NewAuditService(db),
 		Grants:       grants,
 	}, WriteConfig{Enabled: true, MaxAmount: 1_000_000, RatePerMinute: 30, RatePerDay: 500})
 
 	user := testutil.CreateTestUser(t, db)
+	// The fixture accounts are USD, so make USD the user's base currency: the
+	// per-change ceiling is then compared directly, with no FX lookup. Tests of
+	// other currencies create their own accounts and rates.
+	if err := db.Model(user).Update("base_currency", "USD").Error; err != nil {
+		t.Fatal(err)
+	}
 	if len(approved) > 0 {
 		if _, err := grants.RecordConsent(services.RecordConsentInput{
 			UserID: user.ID, ClientID: testClientID, ClientName: "Claude",
@@ -349,7 +358,7 @@ func TestCreateTransactionTool(t *testing.T) {
 		if got := e.balance(t, acct.ID); got != 10_000-1_250 {
 			t.Errorf("balance = %d, want %d", got, 10_000-1_250)
 		}
-		if !strings.Contains(text, "$12.50") || !strings.Contains(text, "balance is now $87.50") {
+		if !strings.Contains(text, "USD 12.50") || !strings.Contains(text, "balance is now USD 87.50") {
 			t.Errorf("unexpected output: %s", text)
 		}
 		var log models.AuditLog
@@ -384,7 +393,7 @@ func TestCreateTransactionTool(t *testing.T) {
 			"date":       today(),
 			"account_id": acct.ID, "type": "expense", "amount": 5.0,
 		})
-		wantError(t, res, "failed to create transaction")
+		wantError(t, res, "Account not found")
 		if e.txnCount(t) != 0 || e.balance(t, acct.ID) != 10_000 {
 			t.Error("nothing may change for another user's account")
 		}
@@ -429,7 +438,7 @@ func TestCreateTransactionTool(t *testing.T) {
 		}{
 			{"zero amount", map[string]any{"type": "expense", "amount": 0.0}, "greater than zero"},
 			{"negative amount", map[string]any{"type": "expense", "amount": -3.0}, "greater than zero"},
-			{"over the ceiling", map[string]any{"type": "expense", "amount": 10_000.01}, "per-change limit of $10000.00"},
+			{"over the ceiling", map[string]any{"type": "expense", "amount": 10_000.01}, "per-change limit of USD 10,000.00"},
 			{"missing amount", map[string]any{"type": "expense"}, "amount is required"},
 			{"transfer type", map[string]any{"type": "transfer", "amount": 1.0}, "type must be 'income' or 'expense'"},
 			{"missing date", map[string]any{"type": "expense", "amount": 1.0}, "date is required"},
@@ -486,28 +495,6 @@ func TestCreateTransferTool(t *testing.T) {
 		"from_account_id": from.ID, "to_account_id": from.ID, "amount": 1.0,
 	})
 	wantError(t, res, "Cannot transfer to the same account")
-}
-
-func TestCreateTransferTool_RejectsCrossCurrency(t *testing.T) {
-	const scope = "write:transactions"
-	e := setupWriteEnv(t, scope)
-	from := testutil.CreateTestCashAccountWithBalance(t, e.db, e.user.ID, 10_000)
-	to := testutil.CreateTestCashAccountWithBalance(t, e.db, e.user.ID, 0)
-	if err := e.db.Model(&models.Account{}).Where("id = ?", to.ID).Update("currency", "MYR").Error; err != nil {
-		t.Fatal(err)
-	}
-
-	res := e.call(t, e.ctx(scope), "create_transfer", map[string]any{
-		"date":            today(),
-		"from_account_id": from.ID, "to_account_id": to.ID, "amount": 25.0,
-	})
-	wantError(t, res, "cross-currency transfers aren't supported over MCP yet")
-	if e.balance(t, from.ID) != 10_000 || e.balance(t, to.ID) != 0 {
-		t.Errorf("balances moved: %d / %d", e.balance(t, from.ID), e.balance(t, to.ID))
-	}
-	if e.auditCount(t, "MCP_CREATE_TRANSFER") != 0 {
-		t.Error("a rejected transfer must not be audited")
-	}
 }
 
 func TestUpdateTransactionTool(t *testing.T) {
@@ -756,48 +743,6 @@ func TestReceivableWriteTools(t *testing.T) {
 	}
 }
 
-func TestRecordRepaymentTool_RejectsCrossCurrency(t *testing.T) {
-	const scope = "write:transactions"
-	e := setupWriteEnv(t, scope)
-	usd := testutil.CreateTestCashAccountWithBalance(t, e.db, e.user.ID, 10_000)
-	myr := testutil.CreateTestCashAccountWithBalance(t, e.db, e.user.ID, 0)
-	if err := e.db.Model(&models.Account{}).Where("id = ?", usd.ID).Update("currency", "USD").Error; err != nil {
-		t.Fatal(err)
-	}
-	if err := e.db.Model(&models.Account{}).Where("id = ?", myr.ID).Update("currency", "MYR").Error; err != nil {
-		t.Fatal(err)
-	}
-	expense, err := e.s.services.Receivables.CreateSharedExpense(e.user.ID, services.CreateSharedExpenseInput{
-		AccountID: usd.ID, Amount: 6_000, Description: "Dinner",
-		Kind: models.ReceivableKindSplit, Mode: services.ShareModeFull,
-		Counterparties: []services.SharedCounterpartyInput{{Name: "Alex"}},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	var rec models.Receivable
-	e.db.Where("transaction_id = ?", expense.ID).First(&rec)
-
-	wantError(t, e.call(t, e.ctx(scope), "record_repayment", map[string]any{
-		"date":          today(),
-		"receivable_id": rec.ID, "account_id": myr.ID, "amount": 10.0,
-	}), "cross-currency repayments aren't supported over MCP yet")
-	if got := e.balance(t, myr.ID); got != 0 {
-		t.Errorf("MYR balance = %d after a rejected repayment, want 0", got)
-	}
-	if e.auditCount(t, "MCP_RECORD_REPAYMENT") != 0 {
-		t.Error("a rejected repayment must not be audited")
-	}
-
-	// Same-currency repayment still works.
-	wantOK(t, e.call(t, e.ctx(scope), "record_repayment", map[string]any{
-		"date":          today(),
-		"receivable_id": rec.ID, "account_id": usd.ID, "amount": 10.0,
-	}))
-}
-
-// Every scope a write tool requires must be one the config can grant;
-// otherwise capScopes silently drops it and the tool is forbidden forever.
 func TestWriteToolScopesAreGrantable(t *testing.T) {
 	s := newServer(Services{}, WriteConfig{Enabled: true})
 	grantable := strings.Fields(config.DefaultOAuthWriteScopes)
@@ -821,7 +766,7 @@ func TestWriteCeilingCoversImplicitAmounts(t *testing.T) {
 
 		wantError(t, e.call(t, e.ctx(scope), "update_transaction", map[string]any{
 			"transaction_id": big.ID, "type": "income",
-		}), "the existing amount of $40000.00 exceeds the per-change limit")
+		}), "the existing amount of USD 40,000.00 exceeds the per-change limit")
 
 		var got models.Transaction
 		e.db.First(&got, "id = ?", big.ID)
@@ -846,7 +791,7 @@ func TestWriteCeilingCoversImplicitAmounts(t *testing.T) {
 
 		wantError(t, e.call(t, e.ctx(scope), "write_off_receivable", map[string]any{
 			"receivable_id": rec.ID,
-		}), "the outstanding amount of $50000.00 exceeds the per-change limit")
+		}), "the outstanding amount of USD 50,000.00 exceeds the per-change limit")
 
 		var got models.Receivable
 		e.db.First(&got, "id = ?", rec.ID)

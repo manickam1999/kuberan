@@ -89,6 +89,7 @@ func run() error {
 		Investments:  investmentService,
 		Snapshots:    snapshotService,
 		Receivables:  receivableService,
+		FX:           fxService,
 		Audit:        auditService,
 		Grants:       grantService,
 	}, addr, mcpserver.OAuthConfig{

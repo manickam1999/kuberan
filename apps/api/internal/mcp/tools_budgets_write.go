@@ -16,11 +16,11 @@ func (s *Server) registerBudgetWriteTools() {
 	s.addWriteTool(
 		writeTool("create_budget",
 			"Create a monthly or yearly spending budget for an expense category. "+
-				"A category can have one active budget per period.",
+				"A category can have one active budget per period. The budget is in the user's base currency.",
 			false,
 			mcp.WithString("category_id", mcp.Required(), mcp.Description("Expense category ID")),
 			mcp.WithString("name", mcp.Required(), mcp.Description("Budget name (max 100 characters)")),
-			mcp.WithNumber("amount", mcp.Required(), mcp.Description("Budget limit in dollars, positive")),
+			mcp.WithNumber("amount", mcp.Required(), mcp.Description("Budget limit in the budget's currency (the user's base currency), as a positive decimal like 500.00")),
 			mcp.WithString("period", mcp.Required(), mcp.Enum("monthly", "yearly"), mcp.Description("'monthly' or 'yearly'")),
 		),
 		budgetsWriteScope, s.prepareCreateBudget,
@@ -32,7 +32,7 @@ func (s *Server) registerBudgetWriteTools() {
 			true,
 			mcp.WithString("budget_id", mcp.Required(), mcp.Description("Budget ID")),
 			mcp.WithString("name", mcp.Description("New name (max 100 characters)")),
-			mcp.WithNumber("amount", mcp.Description("New limit in dollars, positive")),
+			mcp.WithNumber("amount", mcp.Description("New limit in the budget's own currency (shown by list_budgets), as a positive decimal like 500.00")),
 			mcp.WithString("period", mcp.Enum("monthly", "yearly"), mcp.Description("New period: 'monthly' or 'yearly'")),
 			mcp.WithBoolean("is_active", mcp.Description("false pauses the budget, true resumes it")),
 		),
@@ -70,13 +70,22 @@ func (s *Server) prepareCreateBudget(c caller, args map[string]interface{}) (*wr
 	if res != nil {
 		return nil, res
 	}
+	// A new budget is created in the user's base currency, which is also the
+	// unit of the per-change limit, so no conversion is involved.
+	user, err := s.services.Users.GetUserByID(c.UserID)
+	if err != nil {
+		return nil, serviceError("find user", err)
+	}
+	if res := s.checkCeiling(c.UserID, "amount", amount, user.BaseCurrency); res != nil {
+		return nil, res
+	}
 
 	return &writeOp{Cost: 1, Run: func() (string, []auditEntry, *mcp.CallToolResult) {
 		budget, err := s.services.Budgets.CreateBudget(c.UserID, categoryID, name, amount, period)
 		if err != nil {
 			return "", nil, serviceError("create budget", err)
 		}
-		return fmt.Sprintf("Created %s budget %s of %s\n  ID: %s\n", budget.Period, untrusted(budget.Name), formatCents(budget.Amount), budget.ID),
+		return fmt.Sprintf("Created %s budget %s of %s\n  ID: %s\n", budget.Period, untrusted(budget.Name), formatMoney(budget.Amount, budget.Currency), budget.ID),
 			[]auditEntry{{
 				Action: "MCP_CREATE_BUDGET", ResourceType: "budget", ResourceID: budget.ID,
 				Changes: map[string]interface{}{"name": name, "amount": amount, "period": period, "category_id": categoryID},
@@ -117,6 +126,11 @@ func (s *Server) prepareUpdateBudget(c caller, args map[string]interface{}) (*wr
 	if err != nil {
 		return nil, serviceError("find budget", err)
 	}
+	if amountGiven {
+		if res := s.checkCeiling(c.UserID, "amount", amount, before.Currency); res != nil {
+			return nil, res
+		}
+	}
 	changes := map[string]interface{}{}
 	var newAmount *int64
 	if name != "" {
@@ -143,7 +157,7 @@ func (s *Server) prepareUpdateBudget(c caller, args map[string]interface{}) (*wr
 			state = "paused"
 		}
 		return fmt.Sprintf("Updated %s budget %s: %s (%s)\n  ID: %s\n",
-				budget.Period, untrusted(budget.Name), formatCents(budget.Amount), state, budget.ID),
+				budget.Period, untrusted(budget.Name), formatMoney(budget.Amount, budget.Currency), state, budget.ID),
 			[]auditEntry{{Action: "MCP_UPDATE_BUDGET", ResourceType: "budget", ResourceID: budget.ID, Changes: changes}}, nil
 	}}, nil
 }

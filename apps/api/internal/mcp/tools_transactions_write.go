@@ -9,6 +9,7 @@ import (
 	"github.com/mark3labs/mcp-go/mcp"
 
 	apperrors "kuberan/internal/errors"
+	"kuberan/internal/fx"
 	"kuberan/internal/models"
 	"kuberan/internal/services"
 )
@@ -28,12 +29,12 @@ func (s *Server) registerTransactionWriteTools() {
 	s.addWriteTool(
 		writeTool("create_transaction",
 			"Record an income or expense transaction in one of the user's accounts and update its balance. "+
-				"Get account and category IDs from list_accounts and list_categories. If no category is given, "+
-				"the user's categorization rules may assign one.",
+				"Get account and category IDs from list_accounts and list_categories. The amount is in the account's own currency "+
+				"(shown by list_accounts). If no category is given, the user's categorization rules may assign one.",
 			false,
 			mcp.WithString("account_id", mcp.Required(), mcp.Description("Account ID")),
 			mcp.WithString("type", mcp.Required(), mcp.Enum("income", "expense"), mcp.Description("'income' or 'expense'")),
-			mcp.WithNumber("amount", mcp.Required(), mcp.Description("Amount in dollars, positive (e.g. 12.50)")),
+			mcp.WithNumber("amount", mcp.Required(), mcp.Description("Amount in the account's own currency, as a positive decimal like 12.50")),
 			mcp.WithString("date", mcp.Required(), mcp.Description(dateArgDescription)),
 			mcp.WithString("category_id", mcp.Description("Category ID; must match the transaction type")),
 			mcp.WithString("description", mcp.Description("Description, e.g. the merchant (max 500 characters)")),
@@ -44,11 +45,14 @@ func (s *Server) registerTransactionWriteTools() {
 	s.addWriteTool(
 		writeTool("create_transfer",
 			"Move money between two of the user's accounts (for example paying a credit card from a cash account). "+
-				"Transfers are not income or spending.",
+				"Transfers are not income or spending. amount is in the source account's currency. When the two accounts have "+
+				"different currencies, to_amount (the amount arriving, in the destination account's currency) is required; "+
+				"otherwise omit it.",
 			false,
 			mcp.WithString("from_account_id", mcp.Required(), mcp.Description("Account the money leaves")),
 			mcp.WithString("to_account_id", mcp.Required(), mcp.Description("Account the money arrives in")),
-			mcp.WithNumber("amount", mcp.Required(), mcp.Description("Amount in dollars, positive")),
+			mcp.WithNumber("amount", mcp.Required(), mcp.Description("Amount leaving the source account, in the source account's currency, as a positive decimal like 12.50")),
+			mcp.WithNumber("to_amount", mcp.Description("Amount arriving in the destination account, in the destination account's currency, as a positive decimal. Required when the currencies differ; omit (or equal to amount) when they are the same")),
 			mcp.WithString("date", mcp.Required(), mcp.Description(dateArgDescription)),
 			mcp.WithString("description", mcp.Description("Description (max 500 characters)")),
 		),
@@ -58,11 +62,12 @@ func (s *Server) registerTransactionWriteTools() {
 	s.addWriteTool(
 		writeTool("update_transaction",
 			"Edit an income or expense transaction. Only the fields given change; the account balance is adjusted. "+
+				"The amount is in the transaction's account currency. "+
 				"Transfers, investment transactions and repayments cannot be edited here.",
 			true,
 			mcp.WithString("transaction_id", mcp.Required(), mcp.Description("Transaction ID")),
 			mcp.WithString("type", mcp.Enum("income", "expense"), mcp.Description("New type: 'income' or 'expense'")),
-			mcp.WithNumber("amount", mcp.Description("New amount in dollars, positive")),
+			mcp.WithNumber("amount", mcp.Description("New amount in the transaction's account currency, as a positive decimal like 12.50")),
 			mcp.WithString("category_id", mcp.Description("New category ID, or 'none' to remove the category")),
 			mcp.WithString("description", mcp.Description("New description (max 500 characters)")),
 			mcp.WithString("date", mcp.Description("New date, in the user's own time zone (YYYY-MM-DD)")),
@@ -117,7 +122,7 @@ func (s *Server) balanceLine(userID, accountID string) string {
 	if err != nil {
 		return ""
 	}
-	return fmt.Sprintf("  %s balance is now %s\n", untrusted(account.Name), formatCents(account.Balance))
+	return fmt.Sprintf("  %s balance is now %s\n", untrusted(account.Name), formatMoney(account.Balance, account.Currency))
 }
 
 func (s *Server) prepareCreateTransaction(c caller, args map[string]interface{}) (*writeOp, *mcp.CallToolResult) {
@@ -141,6 +146,13 @@ func (s *Server) prepareCreateTransaction(c caller, args map[string]interface{})
 	if res != nil {
 		return nil, res
 	}
+	account, err := s.services.Accounts.GetAccountByID(c.UserID, accountID)
+	if err != nil {
+		return nil, serviceError("find account", err)
+	}
+	if res := s.checkCeiling(c.UserID, "amount", amount, account.Currency); res != nil {
+		return nil, res
+	}
 	var categoryID *string
 	if v := stringArg(args, "category_id"); v != "" {
 		if res := s.checkCategory(c.UserID, v, txType); res != nil {
@@ -157,7 +169,7 @@ func (s *Server) prepareCreateTransaction(c caller, args map[string]interface{})
 
 		var sb strings.Builder
 		fmt.Fprintf(&sb, "Created %s of %s on %s: %s\n",
-			txn.Type, formatCents(txn.Amount), txn.Date.Format("2006-01-02"), untrusted(txn.Description))
+			txn.Type, formatMoney(txn.Amount, account.Currency), txn.Date.Format("2006-01-02"), untrusted(txn.Description))
 		fmt.Fprintf(&sb, "  ID: %s\n", txn.ID)
 		if txn.CategoryID != nil {
 			fmt.Fprintf(&sb, "  Category ID: %s\n", *txn.CategoryID)
@@ -192,8 +204,6 @@ func (s *Server) prepareCreateTransfer(c caller, args map[string]interface{}) (*
 		return nil, res
 	}
 
-	// Cross-currency transfers need a destination amount; not supported over
-	// MCP until Phase 6, so refuse them before anything is written.
 	fromAcc, err := s.services.Accounts.GetAccountByID(c.UserID, fromID)
 	if err != nil {
 		return nil, serviceError("find source account", err)
@@ -202,28 +212,85 @@ func (s *Server) prepareCreateTransfer(c caller, args map[string]interface{}) (*
 	if err != nil {
 		return nil, serviceError("find destination account", err)
 	}
-	if !strings.EqualFold(fromAcc.Currency, toAcc.Currency) {
+	// to_amount follows the API's rules: required when the currencies differ,
+	// otherwise omitted or equal to amount. Both legs count against the ceiling.
+	toAmount, toPresent, res := moneyArg(args, "to_amount")
+	if res != nil {
+		return nil, res
+	}
+	sameCurrency := strings.EqualFold(fromAcc.Currency, toAcc.Currency)
+	switch {
+	case !sameCurrency && !toPresent:
+		return nil, s.toAmountRequired(fromAcc.Currency, toAcc.Currency, amount, date)
+	case sameCurrency && toPresent && toAmount != amount:
 		return nil, mcp.NewToolResultError(fmt.Sprintf(
-			"cross-currency transfers aren't supported over MCP yet (%s to %s); make this transfer in the app",
-			strings.ToUpper(fromAcc.Currency), strings.ToUpper(toAcc.Currency)))
+			"to_amount must be omitted or equal amount: both accounts are in %s", currencyCode(fromAcc.Currency)))
+	}
+	if res := s.checkCeiling(c.UserID, "amount", amount, fromAcc.Currency); res != nil {
+		return nil, res
+	}
+	var toArg *int64
+	if toPresent && !sameCurrency {
+		if res := s.checkCeiling(c.UserID, "to_amount", toAmount, toAcc.Currency); res != nil {
+			return nil, res
+		}
+		toArg = &toAmount
 	}
 
 	return &writeOp{Cost: 1, Run: func() (string, []auditEntry, *mcp.CallToolResult) {
-		txn, err := s.services.Transactions.CreateTransfer(c.UserID, fromID, toID, amount, nil, description, date)
+		txn, err := s.services.Transactions.CreateTransfer(c.UserID, fromID, toID, amount, toArg, description, date)
 		if err != nil {
 			return "", nil, serviceError("create transfer", err)
 		}
 
 		var sb strings.Builder
-		fmt.Fprintf(&sb, "Transferred %s on %s\n", formatCents(txn.Amount), txn.Date.Format("2006-01-02"))
+		fmt.Fprintf(&sb, "Transferred %s on %s\n", transferAmounts(txn, fromAcc.Currency, toAcc.Currency), txn.Date.Format("2006-01-02"))
 		fmt.Fprintf(&sb, "  ID: %s\n", txn.ID)
 		sb.WriteString(s.balanceLine(c.UserID, fromID))
 		sb.WriteString(s.balanceLine(c.UserID, toID))
+		changes := map[string]interface{}{"amount": amount, "from_account_id": fromID, "to_account_id": toID}
+		if toArg != nil {
+			changes["to_amount"] = toAmount
+		}
 		return sb.String(), []auditEntry{{
-			Action: "MCP_CREATE_TRANSFER", ResourceType: "transaction", ResourceID: txn.ID,
-			Changes: map[string]interface{}{"amount": amount, "from_account_id": fromID, "to_account_id": toID},
+			Action: "MCP_CREATE_TRANSFER", ResourceType: "transaction", ResourceID: txn.ID, Changes: changes,
 		}}, nil
 	}}, nil
+}
+
+// transferAmounts renders a created transfer: one amount for a same-currency
+// transfer, "FROM → TO (rate r)" when the legs differ.
+func transferAmounts(txn *models.Transaction, fromCurrency, toCurrency string) string {
+	return transactionAmount(&models.Transaction{
+		Type: models.TransactionTypeTransfer, Amount: txn.Amount, ToAmount: txn.ToAmount, ImpliedRate: txn.ImpliedRate,
+		Account: models.Account{Currency: fromCurrency}, ToAccount: &models.Account{Currency: toCurrency},
+	})
+}
+
+// toAmountRequired is the error for a cross-currency transfer without
+// to_amount. It carries the market-rate suggestion when a rate exists, like
+// the API's FX_AMOUNT_REQUIRED error.
+func (s *Server) toAmountRequired(fromCurrency, toCurrency string, amount int64, at time.Time) *mcp.CallToolResult {
+	return mcp.NewToolResultError(s.amountRequiredText("to_amount", fromCurrency, toCurrency, amount, at, "accounts are"))
+}
+
+// amountRequiredText explains that field must be given in toCurrency, with the
+// market-rate suggestion when one exists.
+func (s *Server) amountRequiredText(field, fromCurrency, toCurrency string, amount int64, at time.Time, who string) string {
+	msg := fmt.Sprintf("%s is required: the %s in different currencies (%s and %s); give the amount in %s",
+		field, who, currencyCode(fromCurrency), currencyCode(toCurrency), currencyCode(toCurrency))
+	if s.services.FX == nil {
+		return msg
+	}
+	quote, err := s.services.FX.Rate(fromCurrency, toCurrency, at)
+	if err != nil {
+		return msg
+	}
+	suggested, err := fx.Convert(amount, quote.Rate)
+	if err != nil || suggested <= 0 {
+		return msg
+	}
+	return fmt.Sprintf("%s (the market rate suggests %s, rate %s)", msg, formatMoney(suggested, toCurrency), quote.Rate.String())
 }
 
 func (s *Server) prepareUpdateTransaction(c caller, args map[string]interface{}) (*writeOp, *mcp.CallToolResult) {
@@ -235,6 +302,12 @@ func (s *Server) prepareUpdateTransaction(c caller, args map[string]interface{})
 	if err != nil {
 		return nil, serviceError("find transaction", err)
 	}
+
+	account, err := s.services.Accounts.GetAccountByID(c.UserID, before.AccountID)
+	if err != nil {
+		return nil, serviceError("find account", err)
+	}
+	currency := account.Currency
 
 	updates := services.TransactionUpdateFields{}
 	changes := map[string]interface{}{}
@@ -254,6 +327,9 @@ func (s *Server) prepareUpdateTransaction(c caller, args map[string]interface{})
 	if amount, present, res := s.amountArg(args); res != nil {
 		return nil, res
 	} else if present {
+		if res := s.checkCeiling(c.UserID, "amount", amount, currency); res != nil {
+			return nil, res
+		}
 		updates.Amount = &amount
 		effectiveAmount = amount
 		changes["amount"] = change(before.Amount, amount)
@@ -262,10 +338,10 @@ func (s *Server) prepareUpdateTransaction(c caller, args map[string]interface{})
 		// Flipping the type reverses the old amount and applies the new one, so
 		// the transaction's amount moves the balance twice over. Both sides must
 		// be within the per-change limit, not just an amount passed explicitly.
-		if res := s.checkCeiling("the existing amount", before.Amount); res != nil {
+		if res := s.checkCeiling(c.UserID, "the existing amount", before.Amount, currency); res != nil {
 			return nil, res
 		}
-		if res := s.checkCeiling("the amount", effectiveAmount); res != nil {
+		if res := s.checkCeiling(c.UserID, "the amount", effectiveAmount, currency); res != nil {
 			return nil, res
 		}
 	}
@@ -324,7 +400,7 @@ func (s *Server) prepareUpdateTransaction(c caller, args map[string]interface{})
 
 		var sb strings.Builder
 		fmt.Fprintf(&sb, "Updated transaction: %s  %s  %s  %s\n",
-			txn.Date.Format("2006-01-02"), txn.Type, formatCents(txn.Amount), untrusted(txn.Description))
+			txn.Date.Format("2006-01-02"), txn.Type, formatMoney(txn.Amount, currency), untrusted(txn.Description))
 		fmt.Fprintf(&sb, "  ID: %s\n", txn.ID)
 		sb.WriteString(note)
 		sb.WriteString(s.balanceLine(c.UserID, txn.AccountID))

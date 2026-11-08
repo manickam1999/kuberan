@@ -664,7 +664,9 @@ func (s *transactionService) GetUserTransactions(userID string, page pagination.
 	}
 
 	var transactions []models.Transaction
-	if err := base.Preload("Category").
+	// Account and ToAccount are preloaded (two extra queries per page, not per
+	// row) so clients can show account names and currencies.
+	if err := base.Preload("Category").Preload("Account").Preload("ToAccount").
 		Scopes(pagination.Paginate(page)).
 		Order("date DESC, created_at DESC").
 		Find(&transactions).Error; err != nil {

@@ -146,16 +146,54 @@ func (s *Server) handleListTransactions(ctx context.Context, req mcp.CallToolReq
 		fmt.Fprintf(&sb, "  %s  %-10s  %12s  %-22s  %s\n",
 			t.Date.Format("2006-01-02"),
 			t.Type,
-			formatCents(t.Amount),
+			transactionAmount(t),
 			category,
 			untrusted(t.Description))
 		if note := transactionNote(*t); note != "" {
 			sb.WriteString("    " + note + "\n")
 		}
-		fmt.Fprintf(&sb, "    ID: %s  Account: %s\n", t.ID, untrusted(t.Account.Name))
+		fmt.Fprintf(&sb, "    ID: %s  Account: %s\n", t.ID, transactionAccounts(t))
 	}
 
 	return mcp.NewToolResultText(sb.String()), nil
+}
+
+// transactionAmount renders a transaction's amount in its account's currency.
+// A transfer shows both legs when they differ in currency or amount:
+// "MYR 4,460.00 → USD 1,100.00 (rate 0.2466)".
+func transactionAmount(t *models.Transaction) string {
+	out := formatMoney(t.Amount, t.Account.Currency)
+	if t.Type != models.TransactionTypeTransfer || t.ToAmount == nil {
+		return out
+	}
+	toCurrency := t.Account.Currency
+	if t.ToAccount != nil {
+		toCurrency = t.ToAccount.Currency
+	}
+	out += " → " + formatMoney(t.EffectiveToAmount(), toCurrency)
+	if t.ImpliedRate != "" {
+		out += " (rate " + trimRate(t.ImpliedRate) + ")"
+	}
+	return out
+}
+
+// transactionAccounts names a transaction's account, or "From → To" for a
+// transfer.
+func transactionAccounts(t *models.Transaction) string {
+	from := untrusted(t.Account.Name)
+	if t.Type == models.TransactionTypeTransfer && t.ToAccount != nil {
+		return from + " → " + untrusted(t.ToAccount.Name)
+	}
+	return from
+}
+
+// trimRate drops the trailing zeros of a decimal rate string ("0.2466000000"
+// becomes "0.2466").
+func trimRate(rate string) string {
+	if !strings.Contains(rate, ".") {
+		return rate
+	}
+	return strings.TrimSuffix(strings.TrimRight(rate, "0"), ".")
 }
 
 // transactionNote returns an extra line describing shared-expense semantics
@@ -169,14 +207,14 @@ func transactionNote(t models.Transaction) string {
 	case t.Type == models.TransactionTypeOpeningBalance:
 		return "Opening balance of the account (not income)"
 	case t.PersonalAmount != nil:
-		return sharedExpenseNote(*t.PersonalAmount, t.Amount)
+		return sharedExpenseNote(*t.PersonalAmount, t.Amount, t.Account.Currency)
 	}
 	return ""
 }
 
 // sharedExpenseNote describes the user's share of a shared expense.
-func sharedExpenseNote(personal, amount int64) string {
-	return fmt.Sprintf("Shared expense: your share %s of %s", formatCents(personal), formatCents(amount))
+func sharedExpenseNote(personal, amount int64, currency string) string {
+	return fmt.Sprintf("Shared expense: your share %s of %s", formatMoney(personal, currency), formatMoney(amount, currency))
 }
 
 func (s *Server) handleGetSpendingByCategory(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -201,11 +239,12 @@ func (s *Server) handleGetSpendingByCategory(ctx context.Context, req mcp.CallTo
 	}
 
 	var sb strings.Builder
-	fmt.Fprintf(&sb, "Spending by Category (%s to %s):\n\n", fromStr, toStr)
+	fmt.Fprintf(&sb, "Spending by Category (%s to %s, in %s):\n\n", fromStr, toStr, currencyCode(result.Currency))
 	for _, item := range result.Items {
-		fmt.Fprintf(&sb, "  %-32s %12s\n", untrusted(item.CategoryName), formatCents(item.Total))
+		fmt.Fprintf(&sb, "  %-32s %12s\n", untrusted(item.CategoryName), formatMoney(item.Total, result.Currency))
 	}
-	fmt.Fprintf(&sb, "\n  Total: %s\n", formatCents(result.TotalSpent))
+	fmt.Fprintf(&sb, "\n  Total in %s: %s\n", currencyCode(result.Currency), formatMoney(result.TotalSpent, result.Currency))
+	sb.WriteString(fxNotes(result.FXMissing, result.Unconverted))
 
 	return mcp.NewToolResultText(sb.String()), nil
 }
@@ -232,15 +271,18 @@ func (s *Server) handleGetMonthlySummary(ctx context.Context, req mcp.CallToolRe
 	}
 
 	var sb strings.Builder
-	fmt.Fprintf(&sb, "Monthly Summary (last %d months):\n\n", months)
+	fmt.Fprintf(&sb, "Monthly Summary (last %d months, in %s):\n\n", months, currencyCode(items[0].Currency))
 	fmt.Fprintf(&sb, "  %-10s %12s %12s %12s\n", "Month", "Income", "Expenses", "Net")
 	fmt.Fprintf(&sb, "  %-10s %12s %12s %12s\n", "-----", "------", "--------", "---")
 
+	missing := false
 	for _, item := range items {
 		net := item.Income - item.Expenses
 		fmt.Fprintf(&sb, "  %-10s %12s %12s %12s\n",
-			item.Month, formatCents(item.Income), formatCents(item.Expenses), formatCents(net))
+			item.Month, formatMoney(item.Income, item.Currency), formatMoney(item.Expenses, item.Currency), formatMoney(net, item.Currency))
+		missing = missing || item.FXMissing
 	}
+	sb.WriteString(fxNotes(missing, nil))
 
 	return mcp.NewToolResultText(sb.String()), nil
 }
@@ -271,10 +313,13 @@ func (s *Server) handleGetDailySpending(ctx context.Context, req mcp.CallToolReq
 	}
 
 	var sb strings.Builder
-	fmt.Fprintf(&sb, "Daily Spending (%s to %s):\n\n", fromStr, toStr)
+	fmt.Fprintf(&sb, "Daily Spending (%s to %s, in %s):\n\n", fromStr, toStr, currencyCode(items[0].Currency))
+	missing := false
 	for _, item := range items {
-		fmt.Fprintf(&sb, "  %s  %12s\n", item.Date, formatCents(item.Total))
+		fmt.Fprintf(&sb, "  %s  %12s\n", item.Date, formatMoney(item.Total, item.Currency))
+		missing = missing || item.FXMissing
 	}
+	sb.WriteString(fxNotes(missing, nil))
 
 	return mcp.NewToolResultText(sb.String()), nil
 }
@@ -305,12 +350,15 @@ func (s *Server) handleGetDailySummary(ctx context.Context, req mcp.CallToolRequ
 	}
 
 	var sb strings.Builder
-	fmt.Fprintf(&sb, "Daily Summary (%s to %s):\n\n", fromStr, toStr)
+	fmt.Fprintf(&sb, "Daily Summary (%s to %s, in %s):\n\n", fromStr, toStr, currencyCode(items[0].Currency))
+	missing := false
 	for _, item := range items {
 		net := item.Income - item.Expenses
 		fmt.Fprintf(&sb, "  %s  +%s  -%s  net %s\n",
-			item.Date, formatCents(item.Income), formatCents(item.Expenses), formatCents(net))
+			item.Date, formatMoney(item.Income, item.Currency), formatMoney(item.Expenses, item.Currency), formatMoney(net, item.Currency))
+		missing = missing || item.FXMissing
 	}
+	sb.WriteString(fxNotes(missing, nil))
 
 	return mcp.NewToolResultText(sb.String()), nil
 }
@@ -348,7 +396,7 @@ func (s *Server) handleGetTopExpenses(ctx context.Context, req mcp.CallToolReque
 	}
 
 	var sb strings.Builder
-	fmt.Fprintf(&sb, "Top Expenses (%s to %s):\n\n", fromStr, toStr)
+	fmt.Fprintf(&sb, "Top Expenses (%s to %s, ranked in %s):\n\n", fromStr, toStr, currencyCode(result.Currency))
 	for i := range result.Items {
 		item := &result.Items[i]
 		// Items are ranked by the effective amount (the user's own share), so show that.
@@ -356,12 +404,19 @@ func (s *Server) handleGetTopExpenses(ctx context.Context, req mcp.CallToolReque
 		if item.PersonalAmount != nil {
 			effective = *item.PersonalAmount
 		}
-		fmt.Fprintf(&sb, "  %2d. %-32s %12s  [%s / %s]  %s\n",
-			i+1, untrusted(item.Description), formatCents(effective), untrusted(item.CategoryName),
-			untrusted(item.AccountName), item.Date.Format("2006-01-02"))
-		if item.PersonalAmount != nil {
-			sb.WriteString("      " + sharedExpenseNote(*item.PersonalAmount, item.Amount) + "\n")
+		var amountBase *int64
+		if !item.FXMissing {
+			amountBase = &item.AmountBase
 		}
+		fmt.Fprintf(&sb, "  %2d. %-32s %12s  [%s / %s]  %s\n",
+			i+1, untrusted(item.Description), moneyWithBase(effective, item.Currency, amountBase, result.Currency),
+			untrusted(item.CategoryName), untrusted(item.AccountName), item.Date.Format("2006-01-02"))
+		if item.PersonalAmount != nil {
+			sb.WriteString("      " + sharedExpenseNote(*item.PersonalAmount, item.Amount, item.Currency) + "\n")
+		}
+	}
+	if result.FXMissing {
+		sb.WriteString("Note: expenses with no exchange rate are not converted and rank last\n")
 	}
 
 	return mcp.NewToolResultText(sb.String()), nil
