@@ -16,6 +16,7 @@ import { toast } from "sonner";
 import { ApiClientError } from "@/lib/api-client";
 import { useRules, useReorderRules, useUpdateRule } from "@/hooks/use-rules";
 import { useAccounts } from "@/hooks/use-accounts";
+import { useBaseCurrency } from "@/hooks/use-profile";
 import { summarizeCondition, summarizeRuleTarget } from "@/lib/rule-format";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -202,9 +203,10 @@ function RuleRow({
 }: RuleRowProps) {
   const updateRule = useUpdateRule(rule.id);
   const dragControls = useDragControls();
+  const baseCurrency = useBaseCurrency();
 
   const summary = rule.conditions
-    .map((c) => summarizeCondition(c, accountName))
+    .map((c) => summarizeCondition(c, accountName, baseCurrency))
     .join(" and ");
 
   function toggleActive(next: boolean) {

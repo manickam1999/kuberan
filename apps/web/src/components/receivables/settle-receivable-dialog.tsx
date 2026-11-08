@@ -201,7 +201,7 @@ function SettleForm({
             id="settle-amount"
             value={amount}
             onChange={setAmount}
-            symbol={currency}
+            currency={currency}
             disabled={settle.isPending}
           />
         </div>

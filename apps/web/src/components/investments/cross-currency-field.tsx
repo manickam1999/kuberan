@@ -88,7 +88,7 @@ export function CrossCurrencyAmountField({
         id={id}
         value={state.value}
         onChange={state.setValue}
-        symbol={state.currency}
+        currency={state.currency}
         placeholder="0.00"
         disabled={disabled}
         required

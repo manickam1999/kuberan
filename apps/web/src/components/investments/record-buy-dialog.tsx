@@ -210,7 +210,7 @@ export function RecordBuyDialog({
               id="buy-price"
               value={pricePerUnit}
               onChange={setPricePerUnit}
-              symbol={securityCurrency}
+              currency={securityCurrency}
               placeholder="0.00"
               disabled={isSubmitting}
             />
@@ -222,7 +222,7 @@ export function RecordBuyDialog({
               id="buy-fee"
               value={fee}
               onChange={setFee}
-              symbol={securityCurrency}
+              currency={securityCurrency}
               placeholder="0.00"
               disabled={isSubmitting}
             />

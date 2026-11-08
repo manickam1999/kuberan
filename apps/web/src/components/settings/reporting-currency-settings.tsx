@@ -16,25 +16,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useBaseCurrency, useSetBaseCurrency } from "@/hooks/use-profile";
+import { REPORTING_CURRENCIES } from "@/lib/currencies";
 import { ApiClientError } from "@/lib/api-client";
-
-/** Currencies offered as a reporting currency (the API validates support). */
-export const REPORTING_CURRENCIES: { code: string; name: string }[] = [
-  { code: "MYR", name: "Malaysian Ringgit" },
-  { code: "USD", name: "US Dollar" },
-  { code: "SGD", name: "Singapore Dollar" },
-  { code: "GBP", name: "British Pound" },
-  { code: "EUR", name: "Euro" },
-  { code: "AUD", name: "Australian Dollar" },
-  { code: "HKD", name: "Hong Kong Dollar" },
-  { code: "CNY", name: "Chinese Yuan" },
-  { code: "CAD", name: "Canadian Dollar" },
-  { code: "NZD", name: "New Zealand Dollar" },
-  { code: "CHF", name: "Swiss Franc" },
-  { code: "THB", name: "Thai Baht" },
-  { code: "IDR", name: "Indonesian Rupiah" },
-  { code: "INR", name: "Indian Rupee" },
-];
 
 export function ReportingCurrencySettings() {
   const baseCurrency = useBaseCurrency();

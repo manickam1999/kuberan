@@ -113,7 +113,7 @@ export function CounterpartyRows({
                       id={amountId}
                       value={row.amount}
                       onChange={(amt) => onAmountChange(row.key, amt)}
-                      symbol={currency}
+                      currency={currency}
                       disabled={disabled}
                       placeholder="0.00"
                     />

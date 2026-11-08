@@ -112,6 +112,10 @@ apps/web/src/
 │   │   ├── categories/           # Category management
 │   │   ├── investments/          # Portfolio overview + [id] detail
 │   │   ├── securities/           # Securities browse + [id] detail
+│   │   ├── analytics/            # Monthly/daily summaries, cashflow, top expenses
+│   │   ├── budgets/              # Budget list + progress
+│   │   ├── receivables/          # Money lent out and owed back, settlements, write-offs
+│   │   ├── rules/                # Transaction rules (conditions + set-category actions)
 │   │   └── settings/             # Settings (profile, appearance, Telegram, connected apps)
 │   └── layout.tsx                # Root layout (providers chain)
 ├── components/
@@ -131,15 +135,14 @@ apps/web/src/
 │   ├── auth-cookie.ts            # Auth flag cookie for middleware route protection
 │   ├── token-utils.ts            # JWT parsing
 │   ├── domain-visuals.ts         # Shared icon/color mappings for domain entities
-│   ├── format.ts                 # Currency (cents->display), date, percentage formatters
+│   ├── format.ts                 # Money (cents->display), date, percentage formatters
+│   ├── currencies.ts             # REPORTING_CURRENCIES (the one currency list), currencySymbol (en-MY)
 │   └── utils.ts                  # cn() Tailwind utility
 ├── types/
 │   ├── models.ts                 # Domain model types matching backend
 │   └── api.ts                    # API request/response DTOs
 └── middleware.ts                  # Next.js middleware for cookie-based route protection
 ```
-
-Note: Budgets exist in the backend API but have no page in the redesigned UI (only the `use-budgets.ts` hook remains).
 
 ### Frontend Patterns
 - **Route groups**: `(auth)` for public pages, `(oauth)` for the Hydra login/consent pages (MCP OAuth flow), `(dashboard)` for protected pages with sidebar layout
@@ -149,6 +152,7 @@ Note: Budgets exist in the backend API but have no page in the redesigned UI (on
 - **Security headers**: per-request nonce CSP in `src/middleware.ts` (pass the nonce from `headers().get("x-nonce")` to any new inline script); static headers (HSTS, nosniff, Referrer/Permissions-Policy) in `next.config.ts`
 - **Component organization**: ShadCN primitives in `ui/`, feature-specific dialogs in domain folders (`accounts/`, `transactions/`, etc.)
 - **Forms**: react-hook-form with zod schemas for validation, ShadCN Form components for UI
+- **Money display**: `formatMoney(cents, currency)` always takes a currency and formats with `en-MY` (`RM 1,234.50`, `US$1,234.50`). Every currency select uses `REPORTING_CURRENCIES` from `lib/currencies.ts` (2-decimal currencies only; no JPY and other zero-decimal ones). `<Money>` (`ui/money.tsx`) shows the native amount with `≈` base beside it and a rate tooltip; `useBaseCurrency()` returns the user's reporting currency; `<FxNotice>` (`ui/fx-notice.tsx`) reports `fx_missing` / `unconverted`. Never add raw amounts across currencies: sum only `*_base` fields. Cross-currency dialogs ask for the second amount (`CrossCurrencyAmount`, `CrossCurrencyAmountField`), pre-filled from `useFxLatest` (`hooks/use-fx-rates.ts`).
 
 ## Data Model & Conventions
 

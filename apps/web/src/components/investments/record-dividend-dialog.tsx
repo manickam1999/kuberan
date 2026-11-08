@@ -191,7 +191,7 @@ export function RecordDividendDialog({
               id="div-amount"
               value={amount}
               onChange={setAmount}
-              symbol={securityCurrency}
+              currency={securityCurrency}
               placeholder="0.00"
               disabled={isSubmitting}
             />
@@ -203,7 +203,7 @@ export function RecordDividendDialog({
               id="div-fee"
               value={fee}
               onChange={setFee}
-              symbol={securityCurrency}
+              currency={securityCurrency}
               placeholder="0.00"
               disabled={isSubmitting}
             />

@@ -7,7 +7,7 @@ import { ApiClientError } from "@/lib/api-client";
 import { useCreateBudget } from "@/hooks/use-budgets";
 import { useCategories } from "@/hooks/use-categories";
 import { useBaseCurrency } from "@/hooks/use-profile";
-import { REPORTING_CURRENCIES } from "@/components/settings/reporting-currency-settings";
+import { REPORTING_CURRENCIES } from "@/lib/currencies";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -218,7 +218,7 @@ export function CreateBudgetDialog({
             <Label htmlFor="budget-amount">Amount</Label>
             <CurrencyInput
               id="budget-amount"
-              symbol={selectedCurrency}
+              currency={selectedCurrency}
               value={amount}
               onChange={setAmount}
               disabled={isSubmitting}

@@ -13,6 +13,7 @@ import {
 } from "@/hooks/use-rules";
 import { useAccounts } from "@/hooks/use-accounts";
 import { useCategories } from "@/hooks/use-categories";
+import { useBaseCurrency } from "@/hooks/use-profile";
 import {
   FIELD_LABELS,
   OPERATOR_LABELS,
@@ -502,6 +503,7 @@ function ConditionValue({
   accounts: { id: string; name: string }[];
   onChange: (patch: Partial<ConditionDraft>) => void;
 }) {
+  const baseCurrency = useBaseCurrency();
   if (condition.field === "description") {
     return (
       <Input
@@ -558,12 +560,14 @@ function ConditionValue({
     return (
       <div className="flex items-center gap-2">
         <CurrencyInput
+          currency={baseCurrency}
           value={condition.amount_min}
           onChange={(cents) => onChange({ amount_min: cents })}
           disabled={disabled}
         />
         <span className="text-sm text-muted-foreground">and</span>
         <CurrencyInput
+          currency={baseCurrency}
           value={condition.amount_max}
           onChange={(cents) => onChange({ amount_max: cents })}
           disabled={disabled}
@@ -573,6 +577,7 @@ function ConditionValue({
   }
   return (
     <CurrencyInput
+      currency={baseCurrency}
       value={condition.operator === "gt" ? condition.amount_min : condition.amount_max}
       onChange={(cents) =>
         onChange(

@@ -378,7 +378,7 @@ export function EditTransactionDialog({
                   id="edit-tx-amount"
                   value={amount}
                   onChange={setAmount}
-                  symbol={inputCurrency}
+                  currency={inputCurrency}
                   placeholder="0.00"
                   disabled={isSaving}
                   className="money h-14 pl-20 text-2xl font-semibold"

@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useBaseCurrency } from "@/hooks/use-profile";
+import { REPORTING_CURRENCIES } from "@/lib/currencies";
 import { CurrencyInput } from "@/components/ui/currency-input";
 import {
   Dialog,
@@ -32,8 +33,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import type { PayoutType, PayoutFrequency, Compounding } from "@/types/models";
-
-const CURRENCIES = ["MYR", "USD", "SGD", "EUR", "GBP", "CAD", "AUD", "JPY", "INR"];
 
 function getErrorMessage(error: unknown): string {
   if (error instanceof ApiClientError) {
@@ -102,7 +101,13 @@ export function CreateAccountDialog({
   const investCurrency = investCurrencyPick ?? baseCurrency;
   const ccCurrency = ccCurrencyPick ?? baseCurrency;
   const currencyOptions = (selected: string) =>
-    Array.from(new Set([baseCurrency, ...CURRENCIES, selected]));
+    Array.from(
+      new Set([
+        baseCurrency,
+        ...REPORTING_CURRENCIES.map((c) => c.code),
+        selected,
+      ])
+    );
 
   const { data: accountsData } = useAccounts({ page_size: 100 });
   const cashAccounts = (accountsData?.data ?? []).filter(
@@ -432,7 +437,7 @@ export function CreateAccountDialog({
                   id="cash-balance"
                   value={cashBalance}
                   onChange={setCashBalance}
-                  symbol={cashCurrency}
+                  currency={cashCurrency}
                   placeholder="0.00"
                   disabled={isSubmitting}
                 />
@@ -573,7 +578,7 @@ export function CreateAccountDialog({
                   id="cc-credit-limit"
                   value={ccCreditLimit}
                   onChange={setCcCreditLimit}
-                  symbol={ccCurrency}
+                  currency={ccCurrency}
                   placeholder="0.00"
                   disabled={isSubmitting}
                 />
@@ -668,7 +673,7 @@ export function CreateAccountDialog({
                   id="fd-principal"
                   value={fdPrincipal}
                   onChange={setFdPrincipal}
-                  symbol={cashAccounts.find((a) => a.id === fdSourceAccountId)?.currency}
+                  currency={cashAccounts.find((a) => a.id === fdSourceAccountId)?.currency ?? baseCurrency}
                   placeholder="0.00"
                   disabled={isSubmitting}
                 />

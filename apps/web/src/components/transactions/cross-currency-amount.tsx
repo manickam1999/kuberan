@@ -1,50 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { apiClient } from "@/lib/api-client";
+import { useFxLatest, convertCents } from "@/hooks/use-fx-rates";
 import { Label } from "@/components/ui/label";
 import { CurrencyInput } from "@/components/ui/currency-input";
-
-/** `GET /fx-rates/latest` body (rate is a JSON decimal string). */
-interface LatestRateResponse {
-  base: string;
-  quote: string;
-  rate: string;
-  recorded_at: string;
-  stale: boolean;
-}
-
-/**
- * Latest market rate `base -> quote` (how many `quote` per 1 `base`), used only
- * to pre-fill a second-amount field. Resolves to no rate (not an error) when
- * the API has none (503 FX_RATE_UNAVAILABLE).
- */
-export function useLatestRate(base: string, quote: string, enabled: boolean) {
-  return useQuery({
-    queryKey: ["fx-rates", "latest", base, quote] as const,
-    queryFn: async () => {
-      try {
-        return await apiClient.get<LatestRateResponse>(
-          "/api/v1/fx-rates/latest",
-          { base, quote }
-        );
-      } catch {
-        return null;
-      }
-    },
-    enabled: enabled && !!base && !!quote && base !== quote,
-    staleTime: 60_000,
-    retry: false,
-  });
-}
-
-/** Convert cents at a decimal-string rate (both currencies use 2 decimals). */
-export function convertCents(cents: number, rate: string): number {
-  const r = parseFloat(rate);
-  if (!Number.isFinite(r) || r <= 0) return 0;
-  return Math.round(cents * r);
-}
 
 /** `1 MYR = 0.2466 USD` for an amount pair, or null when it can't be computed. */
 export function formatImpliedRate(
@@ -82,14 +41,15 @@ export function useCrossAmount(
   fromAmount: number
 ): CrossAmountState {
   const needed = !!fromCurrency && !!toCurrency && fromCurrency !== toCurrency;
-  const { data } = useLatestRate(fromCurrency, toCurrency, needed);
+  // Disabled for an empty or same-currency pair, like `needed`.
+  const { data } = useFxLatest(fromCurrency, toCurrency);
   const [manual, setManual] = useState<{ pair: string; value: number } | null>(
     null
   );
   const pair = `${fromCurrency}>${toCurrency}`;
   const suggested =
     needed && data?.rate && fromAmount > 0
-      ? convertCents(fromAmount, data.rate)
+      ? (convertCents(fromAmount, data.rate) ?? 0)
       : 0;
   const value = manual && manual.pair === pair ? manual.value : suggested;
   return {
@@ -135,7 +95,7 @@ export function CrossCurrencyAmount({
         id={id}
         value={value}
         onChange={onChange}
-        symbol={toCurrency}
+        currency={toCurrency}
         placeholder="0.00"
         disabled={disabled}
         required

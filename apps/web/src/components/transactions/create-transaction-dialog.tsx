@@ -452,7 +452,7 @@ export function CreateTransactionDialog({
               id="tx-amount"
               value={amount}
               onChange={setAmount}
-              symbol={amountCurrency}
+              currency={amountCurrency}
               placeholder="0.00"
               disabled={isSubmitting}
               className="money h-14 pl-20 text-2xl font-semibold"

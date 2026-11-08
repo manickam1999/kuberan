@@ -106,7 +106,7 @@ function WriteOffForm({
           id="writeoff-amount"
           value={amount}
           onChange={setAmount}
-          symbol={receivable.currency}
+          currency={receivable.currency}
           disabled={writeOff.isPending}
         />
         {impact && <p className="text-xs text-muted-foreground">{impact}</p>}

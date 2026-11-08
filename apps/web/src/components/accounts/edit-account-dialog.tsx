@@ -304,7 +304,7 @@ export function EditAccountDialog({
                   id="edit-account-credit-limit"
                   value={creditLimit}
                   onChange={setCreditLimit}
-                  symbol={account.currency}
+                  currency={account.currency}
                   disabled={isSubmitting}
                 />
               </div>

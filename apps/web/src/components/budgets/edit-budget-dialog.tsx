@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { ApiClientError } from "@/lib/api-client";
 import { useUpdateBudget } from "@/hooks/use-budgets";
-import { REPORTING_CURRENCIES } from "@/components/settings/reporting-currency-settings";
+import { REPORTING_CURRENCIES } from "@/lib/currencies";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -170,7 +170,7 @@ export function EditBudgetDialog({
             <Label htmlFor="edit-budget-amount">Amount</Label>
             <CurrencyInput
               id="edit-budget-amount"
-              symbol={selectedCurrency}
+              currency={selectedCurrency}
               value={amount}
               onChange={setAmount}
               disabled={isSubmitting}

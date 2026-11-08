@@ -11,6 +11,7 @@ import {
 } from "@/components/investments/cross-currency-field";
 import { useAddInvestment } from "@/hooks/use-investments";
 import { useSecurities } from "@/hooks/use-securities";
+import { useBaseCurrency } from "@/hooks/use-profile";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -68,6 +69,7 @@ export function AddInvestmentDialog({
   open,
   onOpenChange,
 }: AddInvestmentDialogProps) {
+  const baseCurrency = useBaseCurrency();
   const [selectedSecurity, setSelectedSecurity] = useState<Security | null>(
     null
   );
@@ -292,7 +294,7 @@ export function AddInvestmentDialog({
               id="inv-price"
               value={purchasePrice}
               onChange={setPurchasePrice}
-              symbol={selectedSecurity?.currency}
+              currency={selectedSecurity?.currency ?? baseCurrency}
               placeholder="0.00"
               disabled={isSubmitting}
             />
@@ -317,7 +319,7 @@ export function AddInvestmentDialog({
               id="inv-fee"
               value={fee}
               onChange={setFee}
-              symbol={selectedSecurity?.currency}
+              currency={selectedSecurity?.currency ?? baseCurrency}
               placeholder="0.00"
               disabled={isSubmitting}
             />

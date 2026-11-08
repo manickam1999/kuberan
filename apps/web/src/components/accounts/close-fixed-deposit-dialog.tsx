@@ -221,7 +221,7 @@ export function CloseFixedDepositDialog({
               onChange={(v) =>
                 setInterestOverride(v !== estimatedInterest ? v : null)
               }
-              symbol={account.currency}
+              currency={account.currency}
               placeholder={String(estimatedInterest / 100)}
               disabled={closeFD.isPending}
             />
@@ -240,7 +240,7 @@ export function CloseFixedDepositDialog({
                 id="close-fd-penalty"
                 value={penalty}
                 onChange={setPenalty}
-                symbol={account.currency}
+                currency={account.currency}
                 placeholder="0.00"
                 disabled={closeFD.isPending}
               />

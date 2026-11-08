@@ -187,7 +187,7 @@ function LendForm({
             id="lend-amount"
             value={amount}
             onChange={setAmount}
-            symbol={currency}
+            currency={currency}
             placeholder="0.00"
             disabled={createShared.isPending}
           />

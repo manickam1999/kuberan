@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { currencySymbol } from "@/lib/currencies";
 import { cn } from "@/lib/utils";
 
 interface CurrencyInputProps
@@ -9,14 +10,14 @@ interface CurrencyInputProps
   value: number;
   /** Called with value in cents */
   onChange: (cents: number) => void;
-  /** Currency symbol to display (default: "MYR") */
-  symbol?: string;
+  /** ISO 4217 code of the amount; shown as its en-MY symbol (RM, US$, ...). */
+  currency: string;
 }
 
 function CurrencyInput({
   value,
   onChange,
-  symbol = "MYR",
+  currency,
   className,
   ...props
 }: CurrencyInputProps) {
@@ -61,7 +62,7 @@ function CurrencyInput({
   return (
     <div className="relative">
       <span className="text-muted-foreground pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm">
-        {symbol}
+        {currencySymbol(currency)}
       </span>
       <input
         type="text"
