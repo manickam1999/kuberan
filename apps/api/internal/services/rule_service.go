@@ -48,6 +48,14 @@ func (s *ruleService) CreateRule(userID string, in CreateRuleInput) (*models.Tra
 		if err := tx.Create(rule).Error; err != nil {
 			return apperrors.Wrap(apperrors.ErrInternalServer, err)
 		}
+		// GORM skips zero values that have a column default (and back-fills the
+		// default into the struct), so a rule created paused would come back
+		// active: write is_active explicitly from the request.
+		if in.IsActive != nil && !*in.IsActive {
+			if err := tx.Model(rule).Update("is_active", false).Error; err != nil {
+				return apperrors.Wrap(apperrors.ErrInternalServer, err)
+			}
+		}
 		return s.insertChildren(tx, rule.ID, in.Conditions, in.Actions)
 	})
 	if err != nil {
