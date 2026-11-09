@@ -49,3 +49,22 @@ setup_pgpass() {
     export PGHOST="$DB_HOST" PGPORT="$DB_PORT" PGUSER="$DB_USER"
     trap 'rm -f "$PGPASSFILE"' EXIT
 }
+
+# record_backup_run <started_at epoch> <ok|failed> <size_bytes or empty> <error>
+# Inserts one row into backup_runs (the API's "last backup" heartbeat, plan 023
+# 1.7). Strictly best-effort: a failed insert (table missing on an older schema,
+# database unreachable) is logged and never changes the backup's outcome.
+record_backup_run() {
+    _err="$(printf '%s' "$4" | cut -c1-500)"
+    # psql variables (:'name') quote the values, so nothing is spliced into SQL.
+    if ! PGCONNECT_TIMEOUT=10 psql -d "$DB_NAME" -v ON_ERROR_STOP=1 -q \
+        -v started="$1" -v finished="$(date +%s)" -v status="$2" -v size="$3" -v err="$_err" \
+        -f - > /dev/null 2>&1 <<'SQL'
+INSERT INTO backup_runs (started_at, finished_at, status, size_bytes, error)
+VALUES (to_timestamp(:started), to_timestamp(:finished), :'status', NULLIF(:'size', '')::bigint, :'err');
+SQL
+    then
+        log "WARN: could not record the backup run in backup_runs (ignored)"
+    fi
+    return 0
+}

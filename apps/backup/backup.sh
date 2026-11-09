@@ -22,6 +22,7 @@ umask 077
 BACKUP_DIR="${BACKUP_DIR:-/backups}"
 RETENTION_DAYS="${BACKUP_RETENTION_DAYS:-30}"
 TIMESTAMP="$(date +%Y%m%d_%H%M%S)"
+STARTED_EPOCH="$(date +%s)"
 LABEL="${BACKUP_LABEL:-}"
 SUFFIX="${LABEL:+${LABEL}_}${TIMESTAMP}.dump"
 HYDRA_DB="${BACKUP_HYDRA_DB_NAME-hydra}"
@@ -40,11 +41,13 @@ dump_db() {
     if ! pg_dump -d "$db" --no-owner --no-acl -Fc -f "${out}.partial"; then
         log "ERROR: pg_dump of ${db} failed"
         rm -f "${out}.partial"
+        record_backup_run "$STARTED_EPOCH" failed "" "pg_dump of ${db} failed"
         exit 1
     fi
     if ! pg_restore --list "${out}.partial" > /dev/null; then
         log "ERROR: ${out} failed verification (pg_restore --list)"
         rm -f "${out}.partial"
+        record_backup_run "$STARTED_EPOCH" failed "" "${db} dump failed verification"
         exit 1
     fi
     mv "${out}.partial" "$out"
@@ -70,6 +73,14 @@ if [ -n "$HYDRA_DB" ] && [ "$HYDRA_DB" != "$DB_NAME" ]; then
         log "No separate '${HYDRA_DB}' database on this server; skipping (on Supabase the hydra schema is inside the ${DB_NAME} dump)."
     fi
 fi
+
+# Heartbeat for the API's system status: every dump was written and verified.
+# Best-effort, see record_backup_run in lib.sh.
+TOTAL_BYTES=0
+for f in $DUMPS; do
+    TOTAL_BYTES=$((TOTAL_BYTES + $(wc -c < "$f")))
+done
+record_backup_run "$STARTED_EPOCH" ok "$TOTAL_BYTES" ""
 
 # Prune old backups (and any stale partial files from crashed runs)
 for pattern in 'kuberan_*.dump' 'hydra_*.dump'; do

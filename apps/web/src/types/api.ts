@@ -727,3 +727,15 @@ export interface RenameCounterpartyRequest {
 export interface RenameCounterpartyResponse {
   updated: number;
 }
+
+/**
+ * GET /api/v1/system/status. Each field is an RFC 3339 time, or null when it
+ * has never happened (or is not available). `latest_snapshot_at` is the
+ * caller's own latest portfolio snapshot.
+ */
+export interface SystemStatus {
+  latest_price_at: string | null;
+  latest_fx_rate_at: string | null;
+  latest_snapshot_at: string | null;
+  last_backup_at: string | null;
+}

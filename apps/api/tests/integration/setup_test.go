@@ -17,6 +17,7 @@ import (
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 
+	"kuberan/internal/config"
 	"kuberan/internal/handlers"
 	"kuberan/internal/hydra"
 	"kuberan/internal/logger"
@@ -79,6 +80,7 @@ func setupIsolatedDB(t *testing.T) *gorm.DB {
 		&models.FixedDepositDetails{},
 		&models.Receivable{},
 		&models.ReceivableSettlement{},
+		&models.BackupRun{},
 	}
 	if err := db.AutoMigrate(allModels...); err != nil {
 		t.Fatalf("failed to migrate test database: %v", err)
@@ -152,6 +154,8 @@ func setupApp(t *testing.T) *testApp {
 		Telegram:             handlers.NewTelegramHandler(telegramService, auditService),
 		FX:                   handlers.NewFXHandler(fxService, auditService),
 		Import:               handlers.NewImportHandler(importService, auditService, testMaxUploadBytes),
+		Export:               handlers.NewExportHandler(services.NewExportService(db), services.NewSystemStatusService(db), auditService),
+		Limits:               handlers.NewRouteLimits(config.RateLimits{}), // auth limits off; export keeps its fixed 1/min
 	}, handlers.RouteSecrets{
 		BotInternalSecret: "test-bot-secret",
 		PipelineAPIKey:    "test-pipeline-key",

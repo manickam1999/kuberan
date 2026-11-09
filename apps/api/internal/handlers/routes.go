@@ -30,6 +30,7 @@ type Routes struct {
 	Telegram             *TelegramHandler
 	FX                   *FXHandler
 	Import               *ImportHandler
+	Export               *ExportHandler
 
 	// Limits rate-limits the public auth endpoints. The zero value applies no
 	// limits (used by tests that don't exercise them).
@@ -40,6 +41,9 @@ type Routes struct {
 // enforces its own upload-size cap instead of the global body limit.
 const AttachmentUploadRoute = "/api/v1/transactions/:id/attachments"
 
+// exportPerMinute is the fixed budget of GET /export per user (plan 023 1.7).
+const exportPerMinute = 1
+
 // RouteLimits holds the rate-limit middleware chains for public endpoints.
 // Nil entries are skipped.
 type RouteLimits struct {
@@ -47,6 +51,7 @@ type RouteLimits struct {
 	Register     []gin.HandlerFunc // /auth/register
 	Refresh      []gin.HandlerFunc // /auth/refresh
 	Registration []gin.HandlerFunc // OAuth DCR (/oauth2/register and its alias)
+	Export       []gin.HandlerFunc // GET /export (runs after AuthMiddleware)
 }
 
 // NewRouteLimits builds the rate limiters from configuration. Logins are
@@ -66,6 +71,9 @@ func NewRouteLimits(cfg config.RateLimits) RouteLimits {
 		},
 		Registration: []gin.HandlerFunc{
 			middleware.RateLimit(middleware.NewRateLimiter(cfg.RegistrationPerHour, time.Hour), middleware.ClientIPKey),
+		},
+		Export: []gin.HandlerFunc{
+			middleware.RateLimit(middleware.NewRateLimiter(exportPerMinute, time.Minute), middleware.UserIDKey),
 		},
 	}
 }
@@ -143,6 +151,10 @@ func RegisterRoutes(router *gin.Engine, h Routes, secrets RouteSecrets) {
 	// Statement imports (plan 024, phase 3b). The upload enforces its own size cap
 	// (see ImportIBKRRoute).
 	protected.POST("/imports/ibkr", h.Import.ImportIBKR)
+
+	// Data export (plan 023 1.7): streamed zip of CSVs, 1 per minute per user.
+	protected.GET("/export", with(h.Limits.Export, h.Export.Export)...)
+	protected.GET("/system/status", h.Export.GetSystemStatus)
 
 	// Telegram routes
 	// Connected apps: the user's OAuth client grants (plan 022).

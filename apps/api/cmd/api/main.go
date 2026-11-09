@@ -160,6 +160,7 @@ func run() error {
 	telegramHandler := handlers.NewTelegramHandler(telegramService, auditService)
 	fxHandler := handlers.NewFXHandler(fxService, auditService)
 	importHandler := handlers.NewImportHandler(importService, auditService, appConfig.MaxUploadBytes)
+	exportHandler := handlers.NewExportHandler(services.NewExportService(db), services.NewSystemStatusService(db), auditService)
 
 	// Register custom validators before routes
 	validator.Register()
@@ -219,6 +220,7 @@ func run() error {
 		Telegram:             telegramHandler,
 		FX:                   fxHandler,
 		Import:               importHandler,
+		Export:               exportHandler,
 		Limits:               handlers.NewRouteLimits(appConfig.RateLimits),
 	}, handlers.RouteSecrets{
 		BotInternalSecret: appConfig.BotInternalSecret,
@@ -227,7 +229,8 @@ func run() error {
 
 	// Create HTTP server
 	// Timeouts bound slow-client (slowloris) and stuck-connection resource use;
-	// WriteTimeout leaves room for attachment uploads/downloads.
+	// WriteTimeout leaves room for attachment uploads/downloads;
+	// the data export extends its own write deadline (see handlers.ExportHandler).
 	srv := &http.Server{
 		Addr:              ":" + appConfig.Port,
 		Handler:           router,
