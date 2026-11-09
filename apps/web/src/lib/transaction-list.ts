@@ -174,13 +174,23 @@ export function parseTxQuery(params: URLSearchParams): TxQueryState {
     const v = params.get(key) ?? "";
     return /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : "";
   };
+  const from = date("from");
+  const to = date("to");
+  // Links from other screens (Insights) send from/to without a period, and
+  // the API's names category_id/account_id; accept both forms.
+  const parsedPeriod: PeriodKey =
+    period && PERIODS.includes(period)
+      ? period
+      : from || to
+        ? "custom"
+        : "all";
   return {
     q: (params.get("q") ?? "").slice(0, 100),
-    period: period && PERIODS.includes(period) ? period : "all",
-    from: date("from"),
-    to: date("to"),
-    account: params.get("account") ?? "",
-    category: params.get("category") ?? "",
+    period: parsedPeriod,
+    from,
+    to,
+    account: params.get("account") ?? params.get("account_id") ?? "",
+    category: params.get("category") ?? params.get("category_id") ?? "",
     type: (TYPES as readonly string[]).includes(type) ? type : "",
     min: amount("min"),
     max: amount("max"),

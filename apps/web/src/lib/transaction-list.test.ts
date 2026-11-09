@@ -191,3 +191,25 @@ describe("recentCategoryIds", () => {
     expect(recentCategoryIds(rows, "expense", 1)).toEqual(["a"]);
   });
 });
+
+describe("parseTxQuery links from other screens", () => {
+  it("treats from/to without a period as a custom range and accepts API param names", () => {
+    const s = parseTxQuery(
+      new URLSearchParams(
+        "category_id=c1&account_id=a1&type=expense&from=2026-10-01&to=2026-10-31"
+      )
+    );
+    expect(s.period).toBe("custom");
+    expect(s.from).toBe("2026-10-01");
+    expect(s.to).toBe("2026-10-31");
+    expect(s.category).toBe("c1");
+    expect(s.account).toBe("a1");
+    expect(s.type).toBe("expense");
+  });
+
+  it("keeps an explicit period and the page's own names", () => {
+    const s = parseTxQuery(new URLSearchParams("period=this-month&category=c2"));
+    expect(s.period).toBe("this-month");
+    expect(s.category).toBe("c2");
+  });
+});

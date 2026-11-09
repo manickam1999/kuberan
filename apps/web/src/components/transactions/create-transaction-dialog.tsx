@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
 import { PencilLine, Receipt, Split, Star } from "lucide-react";
@@ -102,12 +102,18 @@ interface CreateTransactionDialogProps {
    * Without it, the user's saved default account is preselected.
    */
   defaultAccountId?: string;
+  /** Open on this type, e.g. "transfer" for "Pay card". */
+  defaultType?: DialogType;
+  /** Preselect the transfer's destination, e.g. the card being paid. */
+  defaultToAccountId?: string;
 }
 
 export function CreateTransactionDialog({
   open,
   onOpenChange,
   defaultAccountId,
+  defaultType,
+  defaultToAccountId,
 }: CreateTransactionDialogProps) {
   // Explicit picks; empty means "use the preselected account" (see below).
   const [accountId, setAccountId] = useState<string>("");
@@ -130,6 +136,13 @@ export function CreateTransactionDialog({
   // Transfer-specific state
   const [fromAccountId, setFromAccountId] = useState<string>("");
   const [toAccountId, setToAccountId] = useState<string>("");
+
+  // Apply the opening presets each time the dialog opens.
+  useEffect(() => {
+    if (!open) return;
+    if (defaultType) setType(defaultType);
+    if (defaultToAccountId) setToAccountId(defaultToAccountId);
+  }, [open, defaultType, defaultToAccountId]);
   // Set when the API asked for the received amount although the cached
   // accounts looked like same-currency (stale data).
   const [fxRequired, setFxRequired] = useState<FxAmountRequired | null>(null);

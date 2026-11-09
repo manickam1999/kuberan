@@ -175,9 +175,13 @@ export function CreditCardView({ account }: { account: Account }) {
 
       <AccountActivity accountId={account.id} />
 
-      {/* The add-transaction dialog has no transfer prefill yet, so it opens
-          without a pinned account and the type is chosen in the dialog. */}
-      <CreateTransactionDialog open={payOpen} onOpenChange={setPayOpen} />
+      {/* Pay card: a transfer into this card from the user's default account. */}
+      <CreateTransactionDialog
+        open={payOpen}
+        onOpenChange={setPayOpen}
+        defaultType="transfer"
+        defaultToAccountId={account.id}
+      />
       <CreateTransactionDialog
         open={txOpen}
         onOpenChange={setTxOpen}
