@@ -24,11 +24,13 @@ async function dayRate(api: Api, base: string, day: string): Promise<string> {
  */
 function convert(cents: number, rate: string): number {
   const [whole, frac = ""] = rate.split(".");
-  const scale = 10n ** BigInt(frac.length);
+  const one = BigInt(1);
+  const two = BigInt(2);
+  const scale = BigInt("1" + "0".repeat(frac.length));
   const num = BigInt(cents) * (BigInt(whole) * scale + BigInt(frac || "0"));
   let q = num / scale;
-  const r2 = (num % scale) * 2n;
-  if (r2 > scale || (r2 === scale && q % 2n === 1n)) q += 1n;
+  const r2 = (num % scale) * two;
+  if (r2 > scale || (r2 === scale && q % two === one)) q += one;
   return Number(q);
 }
 
