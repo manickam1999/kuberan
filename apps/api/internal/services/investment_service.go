@@ -264,8 +264,8 @@ func (s *investmentService) AddInvestment(userID string, p AddInvestmentParams) 
 
 // GetAccountInvestments returns a paginated list of investments for an account.
 func (s *investmentService) GetAccountInvestments(userID, accountID string, page pagination.PageRequest) (*pagination.PageResponse[models.Investment], error) {
-	// Verify account exists and belongs to user
-	if _, err := s.accountService.GetAccountByID(userID, accountID); err != nil {
+	// Verify account exists and belongs to user (deactivated accounts stay readable)
+	if _, err := s.accountService.GetAccountByIDIncludingInactive(userID, accountID); err != nil {
 		return nil, err
 	}
 

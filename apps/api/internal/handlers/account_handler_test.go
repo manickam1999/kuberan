@@ -81,6 +81,10 @@ func (m *mockAccountService) GetAccountByID(userID, accountID string) (*models.A
 	return &models.Account{}, nil
 }
 
+func (m *mockAccountService) GetAccountByIDIncludingInactive(userID, accountID string) (*models.Account, error) {
+	return m.GetAccountByID(userID, accountID)
+}
+
 func (m *mockAccountService) UpdateAccount(userID, accountID string, updates services.AccountUpdateFields) (*models.Account, error) {
 	if m.updateAccountFn != nil {
 		return m.updateAccountFn(userID, accountID, updates)

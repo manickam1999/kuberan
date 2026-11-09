@@ -645,8 +645,8 @@ func (s *transactionService) UpdateTransaction(userID, transactionID string, upd
 
 // GetAccountTransactions retrieves a paginated, filtered list of transactions for a specific account.
 func (s *transactionService) GetAccountTransactions(userID, accountID string, page pagination.PageRequest, filter TransactionFilter) (*pagination.PageResponse[models.Transaction], error) {
-	// First verify the account belongs to the user
-	_, err := s.accountService.GetAccountByID(userID, accountID)
+	// First verify the account belongs to the user (deactivated accounts keep their history)
+	_, err := s.accountService.GetAccountByIDIncludingInactive(userID, accountID)
 	if err != nil {
 		return nil, err
 	}

@@ -228,6 +228,8 @@ type AccountServicer interface {
 	CloseFixedDeposit(userID, accountID string, params CloseFixedDepositParams) (*models.Account, error)
 	GetUserAccounts(userID string, page pagination.PageRequest, opts ...AccountListOptions) (*pagination.PageResponse[models.Account], error)
 	GetAccountByID(userID, accountID string) (*models.Account, error)
+	// GetAccountByIDIncludingInactive also returns deactivated accounts (reads and reactivation).
+	GetAccountByIDIncludingInactive(userID, accountID string) (*models.Account, error)
 	UpdateAccount(userID, accountID string, updates AccountUpdateFields) (*models.Account, error)
 	// ApplyBalanceDelta applies a transaction's balance effect with a relative
 	// update (balance = balance + delta) on accountID, whose type the caller
@@ -681,6 +683,9 @@ const (
 	FXPathInverse = "inverse"
 	// FXPathPivotUSD is the product of two legs through USD.
 	FXPathPivotUSD = "pivot:USD"
+	// FXPathPivotPrefix starts the path of a quote crossed through a user's base
+	// currency, e.g. "pivot:MYR" for USD→SGD from USD→MYR and SGD→MYR.
+	FXPathPivotPrefix = "pivot:"
 )
 
 // FXQuote is an exchange rate resolved for a point in time.

@@ -403,7 +403,8 @@ func (h *AccountHandler) GetAccountByID(c *gin.Context) {
 		return
 	}
 
-	account, err := h.accountService.GetAccountByID(userID, accountID)
+	// Deactivated accounts stay reachable: the accounts list links to them.
+	account, err := h.accountService.GetAccountByIDIncludingInactive(userID, accountID)
 	if err != nil {
 		respondWithError(c, err)
 		return

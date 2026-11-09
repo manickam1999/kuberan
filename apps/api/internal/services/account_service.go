@@ -347,10 +347,26 @@ func (s *accountService) GetUserAccounts(userID string, page pagination.PageRequ
 	return &result, nil
 }
 
-// GetAccountByID retrieves an account by ID for a specific user
+// GetAccountByID retrieves an active account by ID for a specific user. A
+// deactivated account reads as missing, so it can't take new activity.
 func (s *accountService) GetAccountByID(userID, accountID string) (*models.Account, error) {
+	return s.loadAccount(userID, accountID, false)
+}
+
+// GetAccountByIDIncludingInactive is GetAccountByID for read and edit paths
+// that must also reach deactivated accounts: opening one from the accounts
+// list, reading its activity, and reactivating it.
+func (s *accountService) GetAccountByIDIncludingInactive(userID, accountID string) (*models.Account, error) {
+	return s.loadAccount(userID, accountID, true)
+}
+
+func (s *accountService) loadAccount(userID, accountID string, includeInactive bool) (*models.Account, error) {
 	var account models.Account
-	if err := s.db.Preload("FixedDeposit").Where("id = ? AND user_id = ? AND is_active = ?", accountID, userID, true).First(&account).Error; err != nil {
+	q := s.db.Preload("FixedDeposit").Where("id = ? AND user_id = ?", accountID, userID)
+	if !includeInactive {
+		q = q.Where("is_active = ?", true)
+	}
+	if err := q.First(&account).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, apperrors.ErrAccountNotFound
 		}
@@ -414,7 +430,8 @@ func (s *accountService) enrichBaseBalances(userID string, accounts []models.Acc
 // UpdateAccount updates an existing account for any account type.
 // Only fields relevant to the account's type are applied.
 func (s *accountService) UpdateAccount(userID, accountID string, fields AccountUpdateFields) (*models.Account, error) {
-	account, err := s.GetAccountByID(userID, accountID)
+	// Includes inactive accounts: this is how one is reactivated.
+	account, err := s.GetAccountByIDIncludingInactive(userID, accountID)
 	if err != nil {
 		return nil, err
 	}
