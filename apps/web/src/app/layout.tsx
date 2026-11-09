@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { headers } from "next/headers";
 import {
   Geist,
@@ -64,6 +64,32 @@ const geistPixel = localFont({
 export const metadata: Metadata = {
   title: "Kuberan",
   description: "Personal finance tracker",
+  applicationName: "Kuberan",
+  // apple-mobile-web-app-* metas: iOS has no install event, so these make
+  // "Add to Home Screen" open full screen with a translucent status bar (the
+  // header pads by the safe-area top inset).
+  appleWebApp: {
+    capable: true,
+    title: "Kuberan",
+    statusBarStyle: "black-translucent",
+  },
+  formatDetection: { telephone: false },
+  // Next emits the standard mobile-web-app-capable; older iOS wants the
+  // prefixed name too.
+  other: { "apple-mobile-web-app-capable": "yes" },
+};
+
+// viewport-fit=cover lets the layout extend under the notch / home indicator;
+// the header and tab bar pad by the safe-area insets. themeColor follows the
+// default palette's background per colour scheme.
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#e6e9ef" },
+    { media: "(prefers-color-scheme: dark)", color: "#181825" },
+  ],
 };
 
 export default async function RootLayout({
