@@ -270,13 +270,24 @@ func newServer(svc Services, write WriteConfig) *Server {
 	return s
 }
 
-// Run creates the MCP server, registers all tools, and starts the HTTP transport.
-// oauth carries the Resource Server discovery settings advertised at the
-// RFC 9728 well-known endpoint and in WWW-Authenticate challenges. validator
-// verifies incoming Bearer access tokens against Hydra's JWKS. write controls
-// the write tools and their limits. trustedProxies are the networks whose
-// CF-Connecting-IP header is believed for audit logging.
-func Run(svc Services, addr string, oauth OAuthConfig, validator TokenValidator, write WriteConfig, trustedProxies []*net.IPNet) error {
+// handlerOptions are the clocks the HTTP handler uses for its caches and
+// bookkeeping; tests replace them.
+type handlerOptions struct {
+	now func() time.Time
+	// background runs request bookkeeping (recording an app's use) off the
+	// request path. Nil starts a goroutine.
+	background func(func())
+}
+
+// buildHandler assembles the MCP HTTP endpoint exactly as Run serves it: the
+// /mcp transport behind Bearer validation, the user and grant gates and the
+// WWW-Authenticate challenge, the RFC 9728 discovery document and /health. It
+// also returns the MCP transport, which Run shuts down on exit.
+func buildHandler(svc Services, oauth OAuthConfig, validator TokenValidator, write WriteConfig,
+	trustedProxies []*net.IPNet, opts handlerOptions) (http.Handler, *server.StreamableHTTPServer) {
+	if opts.now == nil {
+		opts.now = time.Now
+	}
 	s := newServer(svc, write)
 
 	mcpHandler := server.NewStreamableHTTPServer(s.mcp,
@@ -284,12 +295,15 @@ func Run(svc Services, addr string, oauth OAuthConfig, validator TokenValidator,
 	)
 	var active *activeUsers
 	if svc.Users != nil {
-		active = newActiveUsers(svc.Users, activeUserTTL, time.Now)
+		active = newActiveUsers(svc.Users, activeUserTTL, opts.now)
 	}
 
 	var gate *grantGate
 	if svc.Grants != nil {
-		gate = newGrantGate(svc.Grants, grantTTL, time.Now)
+		gate = newGrantGate(svc.Grants, grantTTL, opts.now)
+		if opts.background != nil {
+			gate.background = opts.background
+		}
 	}
 
 	// Wrap the MCP handler in our own mux so we can expose an unauthenticated
@@ -307,6 +321,17 @@ func Run(svc Services, addr string, oauth OAuthConfig, validator TokenValidator,
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`{"status":"ok"}`))
 	})
+	return mux, mcpHandler
+}
+
+// Run creates the MCP server, registers all tools, and starts the HTTP transport.
+// oauth carries the Resource Server discovery settings advertised at the
+// RFC 9728 well-known endpoint and in WWW-Authenticate challenges. validator
+// verifies incoming Bearer access tokens against Hydra's JWKS. write controls
+// the write tools and their limits. trustedProxies are the networks whose
+// CF-Connecting-IP header is believed for audit logging.
+func Run(svc Services, addr string, oauth OAuthConfig, validator TokenValidator, write WriteConfig, trustedProxies []*net.IPNet) error {
+	mux, mcpHandler := buildHandler(svc, oauth, validator, write, trustedProxies, handlerOptions{})
 
 	httpServer := &http.Server{
 		Addr:              addr,
