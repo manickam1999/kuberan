@@ -3,12 +3,7 @@
 import { useState } from "react";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
-import {
-  ArrowDownRight,
-  ArrowUpRight,
-  ArrowLeftRight,
-  Star,
-} from "lucide-react";
+import { PencilLine, Receipt, Split, Star } from "lucide-react";
 import { ApiClientError, apiClient, getFxAmountRequired, type FxAmountRequired } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
 import { useAccounts } from "@/hooks/use-accounts";
@@ -26,8 +21,13 @@ import { buildSharedCounterparties } from "@/lib/shared-expense";
 import {
   useCreateTransaction,
   useCreateTransfer,
+  useTransactions,
   transactionKeys,
 } from "@/hooks/use-transactions";
+import { recentCategoryIds } from "@/lib/transaction-list";
+import { CategoryTile } from "@/components/transactions/category-picker";
+import { Segmented } from "@/components/ui/segmented";
+import { Textarea } from "@/components/ui/textarea";
 import { useCategories } from "@/hooks/use-categories";
 import {
   CrossCurrencyAmount,
@@ -65,31 +65,15 @@ import type { TransactionType } from "@/types/models";
 
 type DialogType = TransactionType | "transfer";
 
-const TYPE_OPTIONS: {
-  value: DialogType;
-  label: string;
-  icon: typeof ArrowUpRight;
-  activeText: string;
-}[] = [
-  {
-    value: "expense",
-    label: "Expense",
-    icon: ArrowDownRight,
-    activeText: "text-negative",
-  },
-  {
-    value: "income",
-    label: "Income",
-    icon: ArrowUpRight,
-    activeText: "text-positive",
-  },
-  {
-    value: "transfer",
-    label: "Transfer",
-    icon: ArrowLeftRight,
-    activeText: "text-info",
-  },
+const TYPE_OPTIONS: { value: DialogType; label: string }[] = [
+  { value: "expense", label: "Expense" },
+  { value: "income", label: "Income" },
+  { value: "transfer", label: "Transfer" },
 ];
+
+/** Notes are capped at 2,000 characters by the API. */
+const NOTES_MAX = 2000;
+const CHIP_COUNT = 5;
 
 function getErrorMessage(error: unknown): string {
   if (error instanceof ApiClientError) {
@@ -136,6 +120,12 @@ export function CreateTransactionDialog({
   const [stagedFiles, setStagedFiles] = useState<File[]>([]);
   const [uploading, setUploading] = useState(false);
   const [owed, setOwed] = useState<OwedBackState>(initialOwedBackState);
+  const [notes, setNotes] = useState("");
+  // The optional extras stay folded away until asked for.
+  const [showNotes, setShowNotes] = useState(false);
+  const [showReceipts, setShowReceipts] = useState(false);
+  const [showSplit, setShowSplit] = useState(false);
+  const [showAllCategories, setShowAllCategories] = useState(false);
 
   // Transfer-specific state
   const [fromAccountId, setFromAccountId] = useState<string>("");
@@ -163,6 +153,33 @@ export function CreateTransactionDialog({
   const categories = [...(categoriesData?.data ?? [])].sort((a, b) =>
     a.name.localeCompare(b.name)
   );
+  // Quick category chips: the latest ones used for this type, topped up
+  // alphabetically so a new user still sees something to tap.
+  const { data: recentData } = useTransactions(
+    { page_size: 50, type: type === "income" ? "income" : "expense" },
+    { enabled: open && type !== "transfer" }
+  );
+  const chipCategories = (() => {
+    const byId = new Map(categories.map((c) => [c.id, c]));
+    const ids = recentCategoryIds(
+      recentData?.data ?? [],
+      type === "income" ? "income" : "expense",
+      CHIP_COUNT
+    ).filter((id) => byId.has(id));
+    for (const c of categories) {
+      if (ids.length >= CHIP_COUNT) break;
+      if (!ids.includes(c.id)) ids.push(c.id);
+    }
+    if (
+      categoryId &&
+      categoryId !== "none" &&
+      byId.has(categoryId) &&
+      !ids.includes(categoryId)
+    ) {
+      ids.unshift(categoryId);
+    }
+    return ids.map((id) => byId.get(id)!);
+  })();
   // The account detail page pins its own account; everywhere else fall back to
   // the user's saved default so the common case needs no account selection.
   const preselectedAccountId =
@@ -209,6 +226,26 @@ export function CreateTransactionDialog({
     setFxRequired(null);
     setStagedFiles([]);
     setOwed(initialOwedBackState());
+    setNotes("");
+    setShowNotes(false);
+    setShowReceipts(false);
+    setShowSplit(false);
+    setShowAllCategories(false);
+  }
+
+  // After "save and add another": keep the type, account(s) and date, clear
+  // what belongs to the entry just saved, and go back to the amount.
+  function resetForAnother() {
+    setAmount(0);
+    setCategoryId("");
+    setDescription("");
+    setNotes("");
+    setError("");
+    setToAccountId("");
+    setFxRequired(null);
+    setStagedFiles([]);
+    setOwed(initialOwedBackState());
+    requestAnimationFrame(() => document.getElementById("tx-amount")?.focus());
   }
 
   function handleOpenChange(nextOpen: boolean) {
@@ -244,9 +281,20 @@ export function CreateTransactionDialog({
     });
   }
 
-  async function handleSubmit(e: React.FormEvent) {
+  function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    void submit(false);
+  }
+
+  /** Saves the entry; with `addAnother` the dialog stays open for the next one. */
+  async function submit(addAnother: boolean) {
+    if (isSubmitting) return;
     setError("");
+    const finish = () => {
+      if (addAnother) resetForAnother();
+      else handleOpenChange(false);
+    };
+    const noteText = notes.trim() || undefined;
 
     if (amount <= 0) {
       setError("Amount must be greater than zero");
@@ -280,11 +328,12 @@ export function CreateTransactionDialog({
           to_amount: received.needed ? received.value : undefined,
           description: description.trim() || undefined,
           date: date ? toRFC3339(date) : undefined,
+          notes: noteText,
         },
         {
           onSuccess: () => {
             toast.success("Transfer completed");
-            handleOpenChange(false);
+            finish();
           },
           onError: (err) => {
             const need = getFxAmountRequired(err);
@@ -329,6 +378,7 @@ export function CreateTransactionDialog({
             amount,
             description: description.trim() || undefined,
             date: date ? toRFC3339(date) : undefined,
+            notes: noteText,
             kind: owed.mode,
             mode: shareMode,
             counterparties: built.counterparties,
@@ -342,6 +392,7 @@ export function CreateTransactionDialog({
               categoryId && categoryId !== "none" ? categoryId : undefined,
             description: description.trim() || undefined,
             date: date ? toRFC3339(date) : undefined,
+            notes: noteText,
           });
         }
       } catch (err) {
@@ -365,7 +416,7 @@ export function CreateTransactionDialog({
       } else {
         toast.success(sharedActive ? "Shared expense created" : "Transaction created");
       }
-      handleOpenChange(false);
+      finish();
     }
   }
 
@@ -400,52 +451,63 @@ export function CreateTransactionDialog({
     return failures;
   }
 
+  const saveLabel = isSubmitting
+    ? isTransfer
+      ? "Transferring…"
+      : "Saving…"
+    : isTransfer
+      ? "Transfer funds"
+      : type === "income"
+        ? "Save income"
+        : "Save expense";
+
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent mobileFull className="sm:max-w-md">
+      <DialogContent
+        mobileFull
+        className="sm:max-w-md"
+        onOpenAutoFocus={(e) => {
+          // Amount first: land the cursor there, not on the close button.
+          e.preventDefault();
+          document.getElementById("tx-amount")?.focus();
+        }}
+      >
         <DialogHeader>
           <DialogTitle>
             {isTransfer ? "Transfer funds" : "New transaction"}
           </DialogTitle>
-          <DialogDescription>
+          <DialogDescription className="sr-only">
             {isTransfer
               ? "Move money between your accounts."
               : "Record an income or expense."}
           </DialogDescription>
         </DialogHeader>
 
-        <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-          {/* Type segmented control */}
-          <div className="grid grid-cols-3 gap-1 rounded-xl bg-muted p-1">
-            {TYPE_OPTIONS.map((opt) => {
-              const active = type === opt.value;
-              const Icon = opt.icon;
-              return (
-                <button
-                  key={opt.value}
-                  type="button"
-                  onClick={() => handleTypeChange(opt.value)}
-                  disabled={isSubmitting}
-                  className={cn(
-                    "flex items-center justify-center gap-1.5 rounded-lg px-2 py-2 text-sm font-medium transition-all disabled:opacity-50",
-                    active
-                      ? cn("bg-background shadow-sm", opt.activeText)
-                      : "text-muted-foreground hover:text-foreground"
-                  )}
-                >
-                  <Icon className="size-4" />
-                  {opt.label}
-                </button>
-              );
-            })}
-          </div>
+        <form
+          onSubmit={handleSubmit}
+          onKeyDown={(e) => {
+            // Cmd/Ctrl+Enter saves; adding Shift saves and starts another.
+            if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+              e.preventDefault();
+              void submit(e.shiftKey);
+            }
+          }}
+          className="flex flex-1 flex-col gap-4"
+        >
+          <Segmented
+            full
+            aria-label="Transaction type"
+            value={type}
+            onValueChange={handleTypeChange}
+            options={TYPE_OPTIONS.map((o) => ({
+              ...o,
+              disabled: isSubmitting,
+            }))}
+          />
 
-          {/* Amount — the primary field */}
+          {/* Amount: first and largest */}
           <div className="flex flex-col gap-1.5">
-            <Label
-              htmlFor="tx-amount"
-              className="text-xs font-medium uppercase tracking-wide text-muted-foreground"
-            >
+            <Label htmlFor="tx-amount" className="sr-only">
               Amount
             </Label>
             <CurrencyInput
@@ -455,55 +517,78 @@ export function CreateTransactionDialog({
               currency={amountCurrency}
               placeholder="0.00"
               disabled={isSubmitting}
-              className="money h-14 pl-20 text-2xl font-semibold md:text-2xl"
+              className="font-figures h-16 pl-16 text-4xl font-medium tracking-tight md:text-4xl"
             />
           </div>
 
           {error && (
-            <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
+            <div
+              role="alert"
+              className="rounded-md bg-destructive/10 p-3 text-sm text-destructive"
+            >
               {error}
             </div>
           )}
 
-          {/* Account (expense/income) */}
-          {!isTransfer && !defaultAccountId && (
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="tx-account">Account</Label>
-              <Select
-                value={selectedAccountId}
-                onValueChange={setAccountId}
-                disabled={isSubmitting}
-              >
-                <SelectTrigger id="tx-account" className="w-full">
-                  <SelectValue placeholder="Select account" />
-                </SelectTrigger>
-                <SelectContent>
-                  {accounts.map((a) => (
-                    <SelectItem key={a.id} value={a.id}>
-                      {a.name} ({a.currency})
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {selectedAccount && canBeDefaultAccount(selectedAccount) && (
-                <div className="flex justify-end">
-                  {selectedAccount.id === savedDefaultAccountId ? (
-                    <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-                      <Star className="size-3 fill-current" />
-                      Default account
-                    </span>
-                  ) : (
+          {/* Recent categories (expense/income) */}
+          {!isTransfer && (
+            <div className="flex flex-col gap-2">
+              <span className="text-muted-foreground text-xs font-medium">
+                Category
+              </span>
+              <div className="-mx-5 flex gap-2 overflow-x-auto px-5 pb-1 [scrollbar-width:none] sm:mx-0 sm:flex-wrap sm:px-0 [&::-webkit-scrollbar]:hidden">
+                {chipCategories.map((c) => {
+                  const on = categoryId === c.id;
+                  return (
                     <button
+                      key={c.id}
                       type="button"
-                      onClick={handleMakeDefault}
-                      disabled={isSubmitting || setDefaultAccount.isPending}
-                      className="inline-flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"
+                      aria-pressed={on}
+                      disabled={isSubmitting}
+                      onClick={() => setCategoryId(on ? "" : c.id)}
+                      className={cn(
+                        "focus-visible:ring-ring/50 inline-flex h-10 shrink-0 items-center gap-1.5 rounded-control border pr-3 pl-1.5 text-[13px] whitespace-nowrap transition-colors outline-none focus-visible:ring-[3px] disabled:opacity-50 md:h-9",
+                        on
+                          ? "border-primary bg-primary/10 text-foreground"
+                          : "bg-elevated text-muted-foreground hover:text-foreground"
+                      )}
                     >
-                      <Star className="size-3" />
-                      {setDefaultAccount.isPending ? "Saving…" : "Make default"}
+                      <CategoryTile category={c} />
+                      {c.name}
                     </button>
-                  )}
-                </div>
+                  );
+                })}
+                <button
+                  type="button"
+                  aria-expanded={showAllCategories}
+                  onClick={() => setShowAllCategories((v) => !v)}
+                  className="focus-visible:ring-ring/50 text-muted-foreground hover:text-foreground inline-flex h-10 shrink-0 items-center rounded-control border border-dashed px-3 text-[13px] outline-none focus-visible:ring-[3px] md:h-9"
+                >
+                  All…
+                </button>
+              </div>
+              {showAllCategories && (
+                <Select
+                  value={categoryId}
+                  onValueChange={setCategoryId}
+                  disabled={isSubmitting}
+                >
+                  <SelectTrigger
+                    id="tx-category"
+                    aria-label="Category"
+                    className="w-full"
+                  >
+                    <SelectValue placeholder="Select category (optional)" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">No category</SelectItem>
+                    {categories.map((cat) => (
+                      <SelectItem key={cat.id} value={cat.id}>
+                        {cat.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               )}
             </div>
           )}
@@ -572,66 +657,141 @@ export function CreateTransactionDialog({
             />
           )}
 
-          {/* Category (expense/income) */}
-          {!isTransfer && (
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="tx-category">Category</Label>
-              <Select
-                value={categoryId}
-                onValueChange={setCategoryId}
+          {/* Description, account, date */}
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="flex flex-col gap-1.5 sm:col-span-2">
+              <Label htmlFor="tx-description">Description</Label>
+              <Input
+                id="tx-description"
+                placeholder={isTransfer ? "Optional" : "What was it for?"}
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
                 disabled={isSubmitting}
-              >
-                <SelectTrigger id="tx-category" className="w-full">
-                  <SelectValue placeholder="Select category (optional)" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">No category</SelectItem>
-                  {categories.map((cat) => (
-                    <SelectItem key={cat.id} value={cat.id}>
-                      {cat.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                maxLength={500}
+              />
+            </div>
+
+            {!isTransfer && !defaultAccountId && (
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="tx-account">Account</Label>
+                <Select
+                  value={selectedAccountId}
+                  onValueChange={setAccountId}
+                  disabled={isSubmitting}
+                >
+                  <SelectTrigger id="tx-account" className="w-full">
+                    <SelectValue placeholder="Select account" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {accounts.map((a) => (
+                      <SelectItem key={a.id} value={a.id}>
+                        {a.name} ({a.currency})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {selectedAccount && canBeDefaultAccount(selectedAccount) && (
+                  <div className="flex justify-end">
+                    {selectedAccount.id === savedDefaultAccountId ? (
+                      <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+                        <Star className="size-3 fill-current" />
+                        Default account
+                      </span>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={handleMakeDefault}
+                        disabled={isSubmitting || setDefaultAccount.isPending}
+                        className="inline-flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"
+                      >
+                        <Star className="size-3" />
+                        {setDefaultAccount.isPending ? "Saving…" : "Make default"}
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="tx-date">Date</Label>
+              <Input
+                id="tx-date"
+                type="date"
+                value={date}
+                onChange={(e) => setDate(e.target.value)}
+                disabled={isSubmitting}
+              />
+            </div>
+          </div>
+
+          {/* Optional extras, folded away until asked for */}
+          <div className="flex flex-wrap gap-x-4 gap-y-1">
+            {type === "expense" && (
+              <ExtraToggle
+                icon={<Split />}
+                label="Split with someone"
+                active={showSplit || owed.enabled}
+                onClick={() => {
+                  const next = !(showSplit || owed.enabled);
+                  setShowSplit(next);
+                  setOwed({ ...owed, enabled: next });
+                }}
+              />
+            )}
+            <ExtraToggle
+              icon={<Receipt />}
+              label={
+                stagedFiles.length > 0
+                  ? `Receipts (${stagedFiles.length})`
+                  : "Attach receipt"
+              }
+              active={showReceipts || stagedFiles.length > 0}
+              onClick={() => setShowReceipts((v) => !v)}
+              hidden={isTransfer}
+            />
+            <ExtraToggle
+              icon={<PencilLine />}
+              label="Add note"
+              active={showNotes || notes !== ""}
+              onClick={() => setShowNotes((v) => !v)}
+            />
+          </div>
+
+          {(showNotes || notes !== "") && (
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="tx-notes">Note</Label>
+              <Textarea
+                id="tx-notes"
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                maxLength={NOTES_MAX}
+                disabled={isSubmitting}
+                placeholder="Anything worth remembering"
+                className="min-h-[72px]"
+              />
+              {notes.length > NOTES_MAX - 200 && (
+                <span className="text-muted-foreground self-end text-xs">
+                  {notes.length}/{NOTES_MAX}
+                </span>
+              )}
             </div>
           )}
 
-          {/* Date + Description */}
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="tx-date">Date</Label>
-            <Input
-              id="tx-date"
-              type="date"
-              value={date}
-              onChange={(e) => setDate(e.target.value)}
-              disabled={isSubmitting}
-            />
-          </div>
-
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="tx-description">Note</Label>
-            <Input
-              id="tx-description"
-              placeholder="Optional description"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              disabled={isSubmitting}
-            />
-          </div>
-
-          {/* Money owed back (expense only) */}
-          {type === "expense" && (
+          {type === "expense" && (showSplit || owed.enabled) && (
             <MoneyOwedBackSection
               state={owed}
-              onChange={setOwed}
+              onChange={(next) => {
+                setOwed(next);
+                if (!next.enabled) setShowSplit(false);
+              }}
               amount={amount}
               currency={amountCurrency}
               disabled={isSubmitting}
             />
           )}
 
-          {/* Receipts (expense/income only) */}
-          {!isTransfer && (
+          {!isTransfer && (showReceipts || stagedFiles.length > 0) && (
             <StagedAttachments
               files={stagedFiles}
               onChange={setStagedFiles}
@@ -639,19 +799,51 @@ export function CreateTransactionDialog({
             />
           )}
 
-          <DialogFooter className="mt-1">
-            <Button type="submit" className="w-full" disabled={isSubmitting}>
-              {isSubmitting
-                ? isTransfer
-                  ? "Transferring…"
-                  : "Adding…"
-                : isTransfer
-                  ? "Transfer funds"
-                  : "Add transaction"}
+          <DialogFooter className="mt-auto items-center sm:justify-between">
+            <span className="text-muted-foreground hidden text-xs sm:inline">
+              <kbd className="font-sans">⌘</kbd>
+              <kbd className="font-sans">↵</kbd> save ·{" "}
+              <kbd className="font-sans">⇧</kbd>
+              <kbd className="font-sans">⌘</kbd>
+              <kbd className="font-sans">↵</kbd> save and add another
+            </span>
+            <Button type="submit" className="max-sm:w-full" disabled={isSubmitting}>
+              {saveLabel}
             </Button>
           </DialogFooter>
         </form>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/** A text button that folds an optional section in or out. */
+function ExtraToggle({
+  icon,
+  label,
+  active,
+  onClick,
+  hidden,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  active: boolean;
+  onClick: () => void;
+  hidden?: boolean;
+}) {
+  if (hidden) return null;
+  return (
+    <button
+      type="button"
+      aria-pressed={active}
+      onClick={onClick}
+      className={cn(
+        "focus-visible:ring-ring/50 inline-flex min-h-9 items-center gap-1.5 rounded-sm text-[13px] transition-colors outline-none focus-visible:ring-[3px] [&_svg]:size-4",
+        active ? "text-foreground" : "text-muted-foreground hover:text-foreground"
+      )}
+    >
+      {icon}
+      {label}
+    </button>
   );
 }

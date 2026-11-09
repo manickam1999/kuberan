@@ -89,8 +89,12 @@ export function useAccountTransactions(
   });
 }
 
-export function useTransactions(filters?: UserTransactionFilters) {
+export function useTransactions(
+  filters?: UserTransactionFilters,
+  options?: { enabled?: boolean }
+) {
   return useQuery({
+    enabled: options?.enabled ?? true,
     queryKey: transactionKeys.userList(filters),
     queryFn: () =>
       apiClient.get<PageResponse<Transaction>>("/api/v1/transactions", {

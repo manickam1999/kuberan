@@ -1,406 +1,332 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { ChevronLeft, ChevronRight, Paperclip, Plus, X } from "lucide-react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { ChevronLeft, ChevronRight, ListChecks, Plus, Search } from "lucide-react";
 
 import { useAccounts, useAccountCurrencies } from "@/hooks/use-accounts";
-import { useTransactions } from "@/hooks/use-transactions";
 import { useCategories } from "@/hooks/use-categories";
-import { formatMoney, formatDate } from "@/lib/format";
-import { useAuth } from "@/hooks/use-auth";
-import { TransactionAmount } from "@/components/transactions/transaction-amount";
-import { transactionVisual } from "@/lib/domain-visuals";
+import { useTransactions } from "@/hooks/use-transactions";
+import { shouldIgnoreShortcut } from "@/hooks/use-shell-shortcuts";
+import {
+  activeFilterCount,
+  groupByDay,
+  parseTxQuery,
+  serializeTxQuery,
+  toFilters,
+  EMPTY_TX_QUERY,
+  type TxQueryState,
+} from "@/lib/transaction-list";
+import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Skeleton } from "@/components/ui/skeleton";
-import { Card, CardContent } from "@/components/ui/card";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { CreateTransactionDialog } from "@/components/transactions/create-transaction-dialog";
-import {
-  SharedKindBadge,
-  YourShareText,
-} from "@/components/receivables/shared-expense-indicators";
 import { EditTransactionDialog } from "@/components/transactions/edit-transaction-dialog";
-import type { Transaction, TransactionType } from "@/types/models";
-import type { UserTransactionFilters } from "@/types/api";
+import { flattenCategories } from "@/components/transactions/category-picker";
+import { TransactionsFilterBar } from "@/components/transactions/transactions-filter-bar";
+import {
+  TransactionsList,
+  TransactionsListSkeleton,
+} from "@/components/transactions/transactions-list";
+import { TransactionsBulkBar } from "@/components/transactions/transactions-bulk-bar";
+import type { Transaction } from "@/types/models";
 
-const PAGE_SIZE = 25;
+const PAGE_SIZE = 50;
 
-function TransactionRow({
-  transaction,
-  accountName,
-  onClick,
-}: {
-  transaction: Transaction;
-  accountName: string;
-  onClick: () => void;
-}) {
-  const v = transactionVisual(transaction.type);
-  const Icon = v.icon;
-
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-accent/40"
-    >
-      <span
-        className={`flex size-9 shrink-0 items-center justify-center rounded-lg ${v.chip}`}
-      >
-        <Icon className="size-4" />
-      </span>
-      <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-medium">
-          {transaction.description || v.label}
-        </p>
-        <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-          {(transaction.attachments_count ?? 0) > 0 && (
-            <>
-              <Paperclip className="size-3 shrink-0" aria-hidden="true" />
-              <span className="sr-only">Has receipts</span>
-            </>
-          )}
-          <SharedKindBadge transaction={transaction} />
-          <span className="truncate">{accountName}</span>
-          {transaction.category && (
-            <>
-              <span>·</span>
-              <span className="flex items-center gap-1 truncate">
-                {transaction.category.color && (
-                  <span
-                    className="size-2 shrink-0 rounded-full"
-                    style={{ backgroundColor: transaction.category.color }}
-                  />
-                )}
-                {transaction.category.name}
-              </span>
-            </>
-          )}
-        </div>
-      </div>
-      <span className="shrink-0 text-right">
-        <span className={`money block text-sm font-semibold ${v.text}`}>
-          <TransactionAmount transaction={transaction} direction={v.sign} />
-        </span>
-        <YourShareText transaction={transaction} />
-      </span>
-    </button>
+function TransactionsView() {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const state = useMemo(
+    () => parseTxQuery(new URLSearchParams(searchParams.toString())),
+    [searchParams]
   );
-}
 
-export default function TransactionsPage() {
-  const [page, setPage] = useState(1);
-  const [accountFilter, setAccountFilter] = useState("all");
-  const [typeFilter, setTypeFilter] = useState("all");
-  const [categoryFilter, setCategoryFilter] = useState("all");
-  const [fromDate, setFromDate] = useState("");
-  const [toDate, setToDate] = useState("");
-  const [txDialogOpen, setTxDialogOpen] = useState(false);
-  const [editTxOpen, setEditTxOpen] = useState(false);
-  const [selectedTransaction, setSelectedTransaction] =
-    useState<Transaction | null>(null);
+  const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
+  const [selectMode, setSelectMode] = useState(false);
+  const [activeId, setActiveId] = useState<string | null>(null);
+  const [pickerId, setPickerId] = useState<string | null>(null);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [detailId, setDetailId] = useState<string | null>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
 
-  const filters: UserTransactionFilters = {
-    page,
-    page_size: PAGE_SIZE,
-    account_id: accountFilter !== "all" ? accountFilter : undefined,
-    type: typeFilter !== "all" ? (typeFilter as TransactionType) : undefined,
-    category_id: categoryFilter !== "all" ? categoryFilter : undefined,
-    from_date: fromDate || undefined,
-    to_date: toDate || undefined,
-  };
+  const update = useCallback(
+    (patch: Partial<TxQueryState>) => {
+      const next = { ...state, ...patch };
+      const qs = serializeTxQuery(next);
+      router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+      setSelected(new Set());
+      setSelectMode(false);
+      setActiveId(null);
+    },
+    [state, router, pathname]
+  );
 
-  const { data, isLoading } = useTransactions(filters);
+  const filters = useMemo(() => toFilters(state, PAGE_SIZE), [state]);
+  const { data, isLoading, isError, refetch } = useTransactions(filters);
   const { data: accountsData } = useAccounts({ page_size: 100 });
   const { data: categoriesData } = useCategories({ page_size: 100 });
+  const currencyOf = useAccountCurrencies();
 
   const transactions = useMemo(() => data?.data ?? [], [data?.data]);
+  const accounts = useMemo(() => accountsData?.data ?? [], [accountsData?.data]);
+  const categories = useMemo(
+    () => flattenCategories(categoriesData?.data ?? []),
+    [categoriesData?.data]
+  );
+  const accountNames = useMemo(
+    () => new Map(accounts.map((a) => [a.id, a.name])),
+    [accounts]
+  );
+  const groups = useMemo(() => groupByDay(transactions), [transactions]);
+  const total = data?.total_items ?? transactions.length;
   const totalPages = data?.total_pages ?? 1;
-  const accounts = [...(accountsData?.data ?? [])].sort((a, b) =>
-    a.name.localeCompare(b.name)
+  const filterCount = activeFilterCount(state);
+  const hasQuery = filterCount > 0 || state.q.trim() !== "";
+
+  const selectedRows = useMemo(
+    () => transactions.filter((t) => selected.has(t.id)),
+    [transactions, selected]
   );
-  const categories = [...(categoriesData?.data ?? [])].sort((a, b) =>
-    a.name.localeCompare(b.name)
+  // The detail dialog follows the live list row, so edits show immediately.
+  const detailTx = useMemo(
+    () => transactions.find((t) => t.id === detailId) ?? null,
+    [transactions, detailId]
   );
+  const detailRef = useRef<Transaction | null>(null);
+  if (detailTx) detailRef.current = detailTx;
 
-  const accountNameMap = new Map(accounts.map((a) => [a.id, a.name]));
+  const toggle = useCallback((id: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+  const toggleAll = useCallback((ids: string[], on: boolean) => {
+    setSelected(on ? new Set(ids) : new Set());
+  }, []);
+  const clearSelection = useCallback(() => {
+    setSelected(new Set());
+    setSelectMode(false);
+  }, []);
+  const openDetail = useCallback((tx: Transaction) => {
+    setActiveId(tx.id);
+    setDetailId(tx.id);
+  }, []);
+  const enterSelectMode = useCallback((id: string) => {
+    setSelectMode(true);
+    setSelected(new Set([id]));
+  }, []);
 
-  // Group transactions by day for readable scanning.
-  const groups = useMemo(() => {
-    const map = new Map<string, Transaction[]>();
-    for (const tx of transactions) {
-      const key = formatDate(tx.date);
-      const arr = map.get(key);
-      if (arr) arr.push(tx);
-      else map.set(key, [tx]);
-    }
-    return Array.from(map.entries()).map(([date, txs]) => ({ date, txs }));
-  }, [transactions]);
-
-  // Net cash flow of a day, per currency: amounts in different currencies are
-  // never added together.
-  const currencyOf = useAccountCurrencies();
-  const { hideBalances } = useAuth();
-  const dayNets = (txs: Transaction[]) => {
-    const nets = new Map<string, number>();
-    for (const t of txs) {
-      // Repayments are inflows to the account (cash flow, not income or spending).
-      const delta =
-        t.type === "income" || t.type === "reimbursement"
-          ? t.amount
-          : t.type === "expense"
-            ? -t.amount
-            : 0;
-      if (delta === 0) continue;
-      const ccy = currencyOf(t.account_id, t.account);
-      nets.set(ccy, (nets.get(ccy) ?? 0) + delta);
-    }
-    return Array.from(nets).filter(([, n]) => n !== 0);
-  };
-
-  const activeFilterCount = [
-    accountFilter !== "all",
-    typeFilter !== "all",
-    categoryFilter !== "all",
-    fromDate !== "",
-    toDate !== "",
-  ].filter(Boolean).length;
-
-  const resetPage = () => setPage(1);
-  const clearFilters = () => {
-    setAccountFilter("all");
-    setTypeFilter("all");
-    setCategoryFilter("all");
-    setFromDate("");
-    setToDate("");
-    resetPage();
-  };
+  // j/k move, x selects, c recategorises, e opens. Same guard as the shell
+  // shortcuts: ignored while typing or while a dialog, menu or popover is open.
+  const flat = useMemo(() => transactions.map((t) => t.id), [transactions]);
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (shouldIgnoreShortcut(e)) return;
+      const key = e.key;
+      if (key === "Escape") {
+        if (selected.size > 0 || selectMode) {
+          e.preventDefault();
+          clearSelection();
+        }
+        return;
+      }
+      if (flat.length === 0) return;
+      const index = activeId ? flat.indexOf(activeId) : -1;
+      if (key === "j" || key === "k") {
+        e.preventDefault();
+        const next =
+          key === "j"
+            ? Math.min(flat.length - 1, index + 1)
+            : Math.max(0, index === -1 ? 0 : index - 1);
+        const id = flat[next];
+        setActiveId(id);
+        requestAnimationFrame(() =>
+          document
+            .querySelector(`[data-tx-id="${id}"]`)
+            ?.scrollIntoView({ block: "nearest" })
+        );
+      } else if (activeId && index !== -1) {
+        if (key === "x") {
+          e.preventDefault();
+          toggle(activeId);
+        } else if (key === "c") {
+          e.preventDefault();
+          const tx = transactions[index];
+          if (window.matchMedia("(min-width: 768px)").matches) {
+            if (tx.type === "expense" || tx.type === "income") setPickerId(activeId);
+          } else {
+            openDetail(tx);
+          }
+        } else if (key === "e") {
+          e.preventDefault();
+          openDetail(transactions[index]);
+        }
+      }
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [flat, activeId, selected, selectMode, transactions, toggle, clearSelection, openDetail]);
 
   return (
-    <div className="space-y-5">
+    <div className={cn("space-y-4", selected.size > 0 && "max-md:pb-20")}>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="font-display text-3xl leading-tight">Transactions</h1>
-          <p className="text-sm text-muted-foreground">
-            {data?.total_items ?? transactions.length} total
+          <h1 className="font-display hidden text-3xl leading-tight md:block">
+            Transactions
+          </h1>
+          <p className="text-muted-foreground text-sm">
+            {isLoading
+              ? "Loading…"
+              : `${total.toLocaleString("en-US")} ${total === 1 ? "transaction" : "transactions"}${hasQuery ? " match" : ""}`}
           </p>
         </div>
-        <Button size="sm" onClick={() => setTxDialogOpen(true)}>
-          <Plus className="size-4" />
-          Add transaction
-        </Button>
-      </div>
-
-      {/* Filter toolbar */}
-      <div className="flex flex-wrap items-center gap-2">
-        <Select
-          value={accountFilter}
-          onValueChange={(v) => {
-            setAccountFilter(v);
-            resetPage();
-          }}
-        >
-          <SelectTrigger className="h-9 w-auto min-w-[9rem]">
-            <SelectValue placeholder="Account" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All accounts</SelectItem>
-            {accounts.map((a) => (
-              <SelectItem key={a.id} value={a.id}>
-                {a.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-
-        <Select
-          value={typeFilter}
-          onValueChange={(v) => {
-            setTypeFilter(v);
-            resetPage();
-          }}
-        >
-          <SelectTrigger className="h-9 w-auto min-w-[7.5rem]">
-            <SelectValue placeholder="Type" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All types</SelectItem>
-            <SelectItem value="income">Income</SelectItem>
-            <SelectItem value="expense">Expense</SelectItem>
-            <SelectItem value="transfer">Transfer</SelectItem>
-            <SelectItem value="reimbursement">Repayment</SelectItem>
-            <SelectItem value="opening_balance">Opening balance</SelectItem>
-            <SelectItem value="investment">Investment</SelectItem>
-          </SelectContent>
-        </Select>
-
-        <Select
-          value={categoryFilter}
-          onValueChange={(v) => {
-            setCategoryFilter(v);
-            resetPage();
-          }}
-        >
-          <SelectTrigger className="h-9 w-auto min-w-[9rem]">
-            <SelectValue placeholder="Category" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All categories</SelectItem>
-            {categories.map((cat) => (
-              <SelectItem key={cat.id} value={cat.id}>
-                {cat.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-
-        <Input
-          type="date"
-          aria-label="From date"
-          value={fromDate}
-          onChange={(e) => {
-            setFromDate(e.target.value);
-            resetPage();
-          }}
-          className="h-9 w-auto"
-        />
-        <span className="text-sm text-muted-foreground">–</span>
-        <Input
-          type="date"
-          aria-label="To date"
-          value={toDate}
-          onChange={(e) => {
-            setToDate(e.target.value);
-            resetPage();
-          }}
-          className="h-9 w-auto"
-        />
-
-        {activeFilterCount > 0 && (
+        <div className="flex items-center gap-2">
           <Button
-            variant="ghost"
+            variant={selectMode ? "secondary" : "outline"}
             size="sm"
-            onClick={clearFilters}
-            className="h-9 text-muted-foreground"
+            className="md:hidden"
+            data-select-toggle
+            onClick={() => (selectMode ? clearSelection() : setSelectMode(true))}
           >
-            <X className="size-4" />
-            Clear
+            <ListChecks />
+            {selectMode ? "Done" : "Select"}
           </Button>
-        )}
+          <Button size="sm" className="max-md:hidden" onClick={() => setCreateOpen(true)}>
+            <Plus />
+            Add
+          </Button>
+        </div>
       </div>
 
-      {isLoading ? (
-        <Card>
-          <CardContent className="space-y-3 py-4">
-            {Array.from({ length: 8 }).map((_, i) => (
-              <Skeleton key={i} className="h-12 w-full" />
-            ))}
-          </CardContent>
-        </Card>
+      <TransactionsFilterBar
+        state={state}
+        onChange={update}
+        accounts={accounts}
+        categories={categories}
+        searchRef={searchRef}
+      />
+
+      {selected.size > 0 && (
+        <TransactionsBulkBar
+          selected={selectedRows}
+          categories={categories}
+          currencyOf={(t) => currencyOf(t.account_id, t.account)}
+          onClear={clearSelection}
+        />
+      )}
+
+      {isError && !data ? (
+        <div className="flex flex-col items-center rounded-card border border-dashed p-10 text-center">
+          <h2 className="text-base font-semibold">Couldn&apos;t load transactions</h2>
+          <p className="text-muted-foreground mt-1 text-sm">
+            Check your connection and try again.
+          </p>
+          <Button className="mt-4" size="sm" variant="outline" onClick={() => refetch()}>
+            Try again
+          </Button>
+        </div>
+      ) : isLoading ? (
+        <TransactionsListSkeleton />
       ) : transactions.length === 0 ? (
-        <div className="flex flex-col items-center justify-center rounded-xl border border-dashed p-12 text-center">
-          <h3 className="text-lg font-semibold">No transactions found</h3>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {activeFilterCount > 0
-              ? "No transactions match your filters."
+        <div className="flex flex-col items-center rounded-card border border-dashed p-10 text-center">
+          <Search className="text-muted-foreground mb-2 size-6" aria-hidden />
+          <h2 className="text-base font-semibold">
+            {hasQuery ? "Nothing matches" : "No transactions yet"}
+          </h2>
+          <p className="text-muted-foreground mt-1 text-sm">
+            {hasQuery
+              ? "Try a different search or loosen the filters."
               : "Add your first transaction to get started."}
           </p>
-          {activeFilterCount > 0 ? (
-            <Button className="mt-4" size="sm" variant="outline" onClick={clearFilters}>
-              Clear filters
+          {hasQuery ? (
+            <Button
+              className="mt-4"
+              size="sm"
+              variant="outline"
+              onClick={() => update({ ...EMPTY_TX_QUERY })}
+            >
+              Clear search and filters
             </Button>
           ) : (
-            <Button className="mt-4" size="sm" onClick={() => setTxDialogOpen(true)}>
-              <Plus className="size-4" />
+            <Button className="mt-4" size="sm" onClick={() => setCreateOpen(true)}>
+              <Plus />
               Add transaction
             </Button>
           )}
         </div>
       ) : (
-        <Card className="overflow-hidden py-0">
-          {groups.map((group) => (
-            <div key={group.date}>
-              <div className="flex items-center justify-between bg-muted/40 px-4 py-2">
-                <span className="text-xs font-medium text-muted-foreground">
-                  {group.date}
-                </span>
-                <span
-                  title="Net cash flow for the day (includes repayments)"
-                  className="money flex gap-2 text-xs font-medium"
-                >
-                  {dayNets(group.txs).map(([ccy, net]) => (
-                    <span
-                      key={ccy}
-                      className={
-                        net > 0 ? "text-positive" : "text-muted-foreground"
-                      }
-                    >
-                      {net > 0 && !hideBalances ? "+" : ""}
-                      {formatMoney(net, ccy, hideBalances)}
-                    </span>
-                  ))}
-                </span>
-              </div>
-              <div className="divide-y divide-border/50">
-                {group.txs.map((tx) => (
-                  <TransactionRow
-                    key={tx.id}
-                    transaction={tx}
-                    accountName={
-                      accountNameMap.get(tx.account_id) ?? "Unknown account"
-                    }
-                    onClick={() => {
-                      setSelectedTransaction(tx);
-                      setEditTxOpen(true);
-                    }}
-                  />
-                ))}
-              </div>
-            </div>
-          ))}
-        </Card>
+        <TransactionsList
+          groups={groups}
+          categories={categories}
+          accountName={(id) => accountNames.get(id) ?? "Unknown account"}
+          currencyOf={(t) => currencyOf(t.account_id, t.account)}
+          selected={selected}
+          selectMode={selectMode || selected.size > 0}
+          onEnterSelectMode={enterSelectMode}
+          activeId={activeId}
+          onToggle={toggle}
+          onToggleAll={toggleAll}
+          onOpen={openDetail}
+          pickerId={pickerId}
+          onPickerChange={setPickerId}
+        />
+      )}
+
+      {transactions.length > 0 && (
+        <p className="text-muted-foreground max-md:hidden text-xs">
+          <kbd className="font-mono">j</kbd> <kbd className="font-mono">k</kbd> move ·{" "}
+          <kbd className="font-mono">x</kbd> select · <kbd className="font-mono">c</kbd>{" "}
+          category · <kbd className="font-mono">e</kbd> edit
+        </p>
       )}
 
       {totalPages > 1 && (
         <div className="flex items-center justify-between">
-          <span className="text-sm text-muted-foreground">
-            Page {page} of {totalPages}
+          <span className="text-muted-foreground text-sm">
+            Page {state.page} of {totalPages}
           </span>
           <div className="flex gap-2">
             <Button
               variant="outline"
               size="sm"
-              disabled={page <= 1}
-              onClick={() => setPage((p) => p - 1)}
+              disabled={state.page <= 1}
+              onClick={() => update({ page: state.page - 1 })}
             >
-              <ChevronLeft className="size-4" />
-              <span className="ml-1 hidden sm:inline">Previous</span>
+              <ChevronLeft />
+              <span className="hidden sm:inline">Previous</span>
             </Button>
             <Button
               variant="outline"
               size="sm"
-              disabled={page >= totalPages}
-              onClick={() => setPage((p) => p + 1)}
+              disabled={state.page >= totalPages}
+              onClick={() => update({ page: state.page + 1 })}
             >
-              <span className="mr-1 hidden sm:inline">Next</span>
-              <ChevronRight className="size-4" />
+              <span className="hidden sm:inline">Next</span>
+              <ChevronRight />
             </Button>
           </div>
         </div>
       )}
 
-      <CreateTransactionDialog open={txDialogOpen} onOpenChange={setTxDialogOpen} />
+      <CreateTransactionDialog open={createOpen} onOpenChange={setCreateOpen} />
       <EditTransactionDialog
-        open={editTxOpen}
-        onOpenChange={setEditTxOpen}
-        transaction={selectedTransaction}
+        open={detailId !== null}
+        onOpenChange={(open) => {
+          if (!open) setDetailId(null);
+        }}
+        transaction={detailTx ?? detailRef.current}
       />
     </div>
+  );
+}
+
+export default function TransactionsPage() {
+  return (
+    <Suspense fallback={<TransactionsListSkeleton />}>
+      <TransactionsView />
+    </Suspense>
   );
 }
