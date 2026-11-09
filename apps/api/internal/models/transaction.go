@@ -36,7 +36,6 @@ const (
 	TransactionSourceWeb      TransactionSource = "web"
 	TransactionSourceTelegram TransactionSource = "telegram"
 	TransactionSourceMCP      TransactionSource = "mcp"
-	TransactionSourceRule     TransactionSource = "rule"
 	TransactionSourceImport   TransactionSource = "import"
 	TransactionSourceSystem   TransactionSource = "system"
 )
@@ -45,7 +44,7 @@ const (
 func (s TransactionSource) Valid() bool {
 	switch s {
 	case TransactionSourceWeb, TransactionSourceTelegram, TransactionSourceMCP,
-		TransactionSourceRule, TransactionSourceImport, TransactionSourceSystem:
+		TransactionSourceImport, TransactionSourceSystem:
 		return true
 	}
 	return false

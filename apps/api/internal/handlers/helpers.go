@@ -112,10 +112,10 @@ func respondWithError(c *gin.Context, err error) {
 }
 
 // transactionMeta builds the provenance of a transaction written through REST:
-// "telegram" when the bearer token carries the bot's src claim, otherwise "web".
+// "telegram" when the bearer token is a bot token (token_type "bot"), otherwise "web".
 func transactionMeta(c *gin.Context, notes string) services.TransactionMeta {
 	source := models.TransactionSourceWeb
-	if v, ok := c.Get(middleware.ContextKeySource); ok && v == middleware.SourceTelegram {
+	if v, ok := c.Get(middleware.ContextKeyTokenType); ok && v == middleware.TokenTypeBot {
 		source = models.TransactionSourceTelegram
 	}
 	return services.TransactionMeta{Notes: notes, Source: source}

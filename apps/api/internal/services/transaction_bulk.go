@@ -139,14 +139,6 @@ func (s *transactionService) BulkUpdateTransactions(userID string, in BulkTransa
 
 	result := &BulkTransactionResult{}
 	err = s.db.Transaction(func(tx *gorm.DB) error {
-		var category *models.Category
-		if in.Set.CategoryID != nil {
-			category = &models.Category{}
-			if err := tx.Where("id = ? AND user_id = ?", *in.Set.CategoryID, userID).First(category).Error; err != nil {
-				return apperrors.ErrCategoryNotFound
-			}
-		}
-
 		// Lock all rows in id order so concurrent bulk requests cannot deadlock.
 		var rows []models.Transaction
 		if err := lockUpdate(tx).Where("user_id = ? AND id IN ?", userID, ids).
@@ -173,7 +165,7 @@ func (s *transactionService) BulkUpdateTransactions(userID string, in BulkTransa
 				result.Deleted++
 				continue
 			}
-			changes, err := applyBulkSet(tx, userID, row, in.Set, category)
+			changes, err := applyBulkSet(tx, userID, row, in.Set)
 			if err != nil {
 				return err
 			}
@@ -193,20 +185,20 @@ func (s *transactionService) BulkUpdateTransactions(userID string, in BulkTransa
 }
 
 // applyBulkSet applies the set to one locked row and returns the audit changes.
-func applyBulkSet(tx *gorm.DB, userID string, row *models.Transaction, set BulkTransactionSet, category *models.Category) (map[string]any, error) {
+func applyBulkSet(tx *gorm.DB, userID string, row *models.Transaction, set BulkTransactionSet) (map[string]any, error) {
 	changes := map[string]any{}
 	updates := map[string]any{}
 
-	if category != nil {
+	if set.CategoryID != nil {
 		if !isCategorizableType(row.Type) {
 			return nil, apperrors.WithMessage(apperrors.ErrTransactionNotEditable,
 				fmt.Sprintf("A %s transaction cannot have a category", row.Type))
 		}
-		if err := ensureCategoryMatchesType(category, row.Type); err != nil {
+		if err := ensureCategoryMatchesType(tx, userID, set.CategoryID, row.Type); err != nil {
 			return nil, err
 		}
-		updates["category_id"] = category.ID
-		changes["category_id"] = map[string]any{"from": row.CategoryID, "to": category.ID}
+		updates["category_id"] = *set.CategoryID
+		changes["category_id"] = map[string]any{"from": row.CategoryID, "to": *set.CategoryID}
 	}
 
 	if set.NotesAppend != nil {

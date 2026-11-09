@@ -29,12 +29,12 @@ func TestTransactionHandler_NotesAndSource(t *testing.T) {
 		}
 	})
 
-	t.Run("a src telegram claim writes source telegram", func(t *testing.T) {
+	t.Run("a bot token writes source telegram", func(t *testing.T) {
 		svc := &mockTransactionService{}
 		h := NewTransactionHandler(svc, &mockAuditService{})
 		r := gin.New()
 		r.Use(injectUserID("u1"), func(c *gin.Context) {
-			c.Set(middleware.ContextKeySource, middleware.SourceTelegram)
+			c.Set(middleware.ContextKeyTokenType, middleware.TokenTypeBot)
 			c.Next()
 		})
 		r.POST("/transactions", h.CreateTransaction)

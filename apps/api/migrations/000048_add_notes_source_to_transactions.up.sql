@@ -7,11 +7,15 @@ ALTER TABLE transactions
 
 ALTER TABLE transactions
     ADD CONSTRAINT transactions_source_check
-    CHECK (source IN ('web', 'telegram', 'mcp', 'rule', 'import', 'system'));
+    CHECK (source IN ('web', 'telegram', 'mcp', 'import', 'system'));
 
--- Rows written before this migration by an importer or by account creation.
+-- Backfill. Server-derived rows (opening balances, settlement reimbursements,
+-- investment cash legs) are 'system'; importer rows are 'import'. The import
+-- update runs last so an imported row that is also an investment row is
+-- 'import', the more specific provenance.
+UPDATE transactions SET source = 'system'
+    WHERE type IN ('opening_balance', 'reimbursement', 'investment');
 UPDATE transactions SET source = 'import' WHERE import_ref IS NOT NULL;
-UPDATE transactions SET source = 'system' WHERE type = 'opening_balance';
 
 CREATE EXTENSION IF NOT EXISTS pg_trgm;
 

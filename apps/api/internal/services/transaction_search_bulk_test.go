@@ -38,6 +38,14 @@ func TestTransactionSearch(t *testing.T) {
 	lunch := create(6473, "Lunch", "team lunch with Alex")
 	other := create(900, "100%_off voucher", "")
 
+	// A transfer carrying a to_amount, and a shared expense (personal share 60.00).
+	dest := testutil.CreateTestCashAccountWithBalance(t, e.db, user, 0)
+	xfer, err := e.txn.CreateTransfer(user, e.cash.ID, dest.ID, 1000, nil, "Move", time.Now(), TransactionMeta{})
+	testutil.AssertNoError(t, err)
+	testutil.AssertNoError(t, e.db.Model(&models.Transaction{}).Where("id = ?", xfer.ID).Update("to_amount", 123456).Error)
+	sharedTx, err := e.rec.CreateSharedExpense(user, e.in(9000, ShareModeCustom, models.ReceivableKindSplit, rcpAmt("Alex", 3000)))
+	testutil.AssertNoError(t, err)
+
 	cases := []struct {
 		name string
 		q    string
@@ -47,6 +55,9 @@ func TestTransactionSearch(t *testing.T) {
 		{"notes", "ALEX", []string{lunch.ID}},
 		{"amount with decimals", "64.73", []string{lunch.ID}},
 		{"amount whole number means dollars", "9", []string{other.ID}},
+		{"transfer to_amount", "1234.56", []string{xfer.ID}},
+		{"personal_amount of a shared expense", "60", []string{sharedTx.ID}},
+		{"amount of a shared expense", "90.00", []string{sharedTx.ID}},
 		{"wildcards are literal", "%_", []string{other.ID}},
 		{"trimmed", "  coffee  ", []string{coffee.ID}},
 		{"no match", "zzz", nil},

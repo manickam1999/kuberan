@@ -94,7 +94,6 @@ export type TransactionSource =
   | "web"
   | "telegram"
   | "mcp"
-  | "rule"
   | "import"
   | "system";
 

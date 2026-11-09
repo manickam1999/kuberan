@@ -740,7 +740,7 @@ func searchAmountCents(term string) (int64, bool) {
 
 // applyTransactionSearch matches the trimmed, length-capped term against the
 // description and notes (case-insensitive substring) and, for a numeric term,
-// the amount in cents.
+// the amount, transfer to_amount or personal_amount in cents.
 func applyTransactionSearch(q *gorm.DB, raw string) *gorm.DB {
 	term := strings.TrimSpace(raw)
 	if r := []rune(term); len(r) > MaxSearchLen {
@@ -759,8 +759,8 @@ func applyTransactionSearch(q *gorm.DB, raw string) *gorm.DB {
 	}
 	args := []any{pattern, pattern}
 	if cents, ok := searchAmountCents(term); ok {
-		cond += " OR amount = ?"
-		args = append(args, cents)
+		cond += " OR amount = ? OR to_amount = ? OR personal_amount = ?"
+		args = append(args, cents, cents, cents)
 	}
 	return q.Where(cond+")", args...)
 }

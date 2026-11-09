@@ -25,12 +25,12 @@ const (
 // new one, so a device stays signed in as long as it is used at least this often.
 const RefreshTokenExpiry = 7 * 24 * time.Hour
 
-// SourceTelegram is the "src" claim of tokens minted for the Telegram bot.
-const SourceTelegram = "telegram"
+// TokenTypeBot is the token_type claim of tokens minted for the Telegram bot.
+const TokenTypeBot = "bot"
 
-// ContextKeySource is the gin context key under which AuthMiddleware exposes
-// the token's "src" claim (empty for web tokens).
-const ContextKeySource = "src"
+// ContextKeyTokenType is the gin context key under which AuthMiddleware exposes
+// the token's token_type claim ("access" or "bot").
+const ContextKeyTokenType = "token_type"
 
 // getJWTKey returns the JWT key from configuration
 func getJWTKey() []byte {
@@ -42,9 +42,6 @@ type JWTClaims struct {
 	UserID    string `json:"user_id"`
 	Email     string `json:"email"`
 	TokenType string `json:"token_type"`
-	// Source names the client that holds the token ("telegram" for the bot's
-	// tokens). Handlers record it as the origin of the rows they write.
-	Source string `json:"src,omitempty"`
 	jwt.RegisteredClaims
 }
 
@@ -94,8 +91,7 @@ func GenerateBotToken(user *models.User) (string, error) {
 	claims := &JWTClaims{
 		UserID:    user.ID,
 		Email:     user.Email,
-		TokenType: "bot",
-		Source:    SourceTelegram,
+		TokenType: TokenTypeBot,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(botTokenExpiry)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
@@ -190,10 +186,7 @@ func AuthMiddleware() gin.HandlerFunc {
 		// Set user ID and email in the context
 		c.Set("userID", claims.UserID)
 		c.Set("email", claims.Email)
-		// Only bot tokens may declare a source; it is signed by us.
-		if claims.TokenType == "bot" && claims.Source == SourceTelegram {
-			c.Set(ContextKeySource, claims.Source)
-		}
+		c.Set(ContextKeyTokenType, claims.TokenType)
 		c.Next()
 	}
 }
