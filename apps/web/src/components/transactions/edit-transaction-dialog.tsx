@@ -381,7 +381,7 @@ export function EditTransactionDialog({
                   currency={inputCurrency}
                   placeholder="0.00"
                   disabled={isSaving}
-                  className="money h-14 pl-20 text-2xl font-semibold"
+                  className="money h-14 pl-20 text-2xl font-semibold md:text-2xl"
                 />
               </div>
 
