@@ -58,6 +58,11 @@ export interface MoneyProps {
   dimCents?: boolean;
   /** Compact notation (`RM 1.2K`) for tight spaces. */
   compact?: boolean;
+  /**
+   * Opt-in: round to whole units and drop the decimals (the "Show cents" off
+   * setting). Default false, so existing callers are unchanged.
+   */
+  hideCents?: boolean;
   className?: string;
 }
 
@@ -141,6 +146,7 @@ export function Money({
   size,
   dimCents = false,
   compact = false,
+  hideCents = false,
   className,
 }: MoneyProps) {
   const { hideBalances } = useAuth();
@@ -156,7 +162,7 @@ export function Money({
   const sizeClass = size ? MONEY_SIZE_CLASS[size] : undefined;
   const native = (
     <Amount
-      amount={amount}
+      amount={hideCents ? Math.round(amount / 100) * 100 : amount}
       currency={currency}
       sign={sign}
       size={size}

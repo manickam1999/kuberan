@@ -432,6 +432,11 @@ async function request<T>(
     } catch {
       // Response body is not valid JSON; keep defaults
     }
+    // Surface a rate limit's Retry-After (seconds) as `details.retry_after`.
+    const retryAfter = Number(res.headers.get("Retry-After"));
+    if (res.status === 429 && Number.isFinite(retryAfter) && retryAfter > 0) {
+      details = { ...details, retry_after: retryAfter };
+    }
     throw new ApiClientError(code, message, res.status, details);
   }
 

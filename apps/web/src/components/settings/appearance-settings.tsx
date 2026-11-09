@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { Check, Monitor, Moon, Sun } from "lucide-react";
 import { useTheme } from "next-themes";
 import {
@@ -11,7 +12,13 @@ import {
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { DitherFill } from "@/components/charts/dither-fill";
+import {
+  SettingsRow,
+  SettingsSection,
+} from "@/components/settings/settings-section";
+import { Switch } from "@/components/ui/switch";
 import { useAppearance } from "@/hooks/use-appearance";
+import { useAuth } from "@/hooks/use-auth";
 import { getPalette, PALETTES, type Palette } from "@/lib/palettes";
 import type { AppearanceMode, AppearancePaletteChoice } from "@/types/models";
 import type { ChartTheme } from "@/providers/chart-theme-provider";
@@ -124,7 +131,12 @@ function PalettePreview({
 }
 
 function ColourModeCard() {
-  const { mode, setMode } = useAppearance();
+  const { mode: storedMode, setMode } = useAppearance();
+  // next-themes only knows the stored mode on the client; render no selection
+  // until mounted so the server HTML and the first client render agree.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+  const mode = mounted ? storedMode : null;
 
   return (
     <Card>
@@ -278,12 +290,58 @@ function ChartStyleCard() {
   );
 }
 
+function DisplayCard() {
+  const { appearance, setDensity, setShowCents } = useAppearance();
+  const { hideBalances, toggleHideBalances } = useAuth();
+
+  return (
+    <SettingsSection
+      title="Display"
+      description="Saved to your account, so they follow you between devices."
+    >
+      <div className="divide-y divide-border/60">
+        <SettingsRow
+          title="Hide balances when the app opens"
+          description="Tap the eye in the header to reveal them. Useful in public."
+        >
+          <Switch
+            checked={hideBalances}
+            onCheckedChange={() => void toggleHideBalances()}
+            aria-label="Hide balances when the app opens"
+          />
+        </SettingsRow>
+        <SettingsRow
+          title="Compact transaction rows"
+          description="Fits more rows on screen."
+        >
+          <Switch
+            checked={appearance.density === "compact"}
+            onCheckedChange={(on) => setDensity(on ? "compact" : "comfortable")}
+            aria-label="Compact transaction rows"
+          />
+        </SettingsRow>
+        <SettingsRow
+          title="Show cents"
+          description="Turn off to show whole amounts where a screen supports it."
+        >
+          <Switch
+            checked={appearance.show_cents !== false}
+            onCheckedChange={setShowCents}
+            aria-label="Show cents"
+          />
+        </SettingsRow>
+      </div>
+    </SettingsSection>
+  );
+}
+
 export function AppearanceSettings() {
   return (
     <div className="space-y-4">
-      <ColourModeCard />
       <PaletteCard />
+      <ColourModeCard />
       <ChartStyleCard />
+      <DisplayCard />
     </div>
   );
 }

@@ -846,3 +846,64 @@ export interface SystemStatus {
   latest_snapshot_at: string | null;
   last_backup_at: string | null;
 }
+
+// ---- IBKR Activity Statement import (POST /imports/ibkr; docs/ibkr-import.md) ----
+
+export interface IbkrImportIssue {
+  code: string;
+  detail: string;
+}
+
+export interface IbkrImportCheckpoint {
+  date: string;
+  ibkr_quantity: number;
+  quantity: number;
+  quantity_ok: boolean;
+  ibkr_cost_basis: number;
+  cost_basis: number;
+  cost_basis_diff: number;
+}
+
+export interface IbkrImportSecurity {
+  symbol: string;
+  security_id: string;
+  investment_id: string | null;
+  existing_transactions: number;
+  new_transactions: number;
+  checkpoints: IbkrImportCheckpoint[] | null;
+}
+
+export interface IbkrImportCashCheckpoint {
+  date: string;
+  ibkr: number;
+  ledger: number;
+  diff: number;
+}
+
+export interface IbkrImportUnmatched {
+  date: string;
+  kind: string;
+  amount: number;
+  detail: string;
+}
+
+/** Report of a dry run or an applied import. Lists may be null when empty. */
+export interface IbkrImportReport {
+  applied: boolean;
+  account: string;
+  base_currency: string;
+  periods: { start: string; end: string }[] | null;
+  ignored_sections: string[] | null;
+  securities: IbkrImportSecurity[] | null;
+  cash: {
+    opening_balance: number;
+    legs: number;
+    dividends: number;
+    fees: number;
+    deposits_matched: { date: string; amount: number }[] | null;
+    unmatched_deposits: IbkrImportUnmatched[] | null;
+    checkpoints: IbkrImportCashCheckpoint[] | null;
+  };
+  errors: IbkrImportIssue[] | null;
+  warnings: string[] | null;
+}

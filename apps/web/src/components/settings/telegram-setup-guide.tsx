@@ -38,6 +38,7 @@ export function TelegramSetupGuide() {
                   <li>Track income with /income</li>
                   <li>View budget status with /budgets</li>
                   <li>Get monthly summaries with /summary</li>
+                  <li>See who owes you with /owed</li>
                 </ul>
               </div>
             </AccordionContent>
@@ -98,7 +99,9 @@ export function TelegramSetupGuide() {
                   <li><code className="bg-muted px-1 py-0.5 rounded">/budgets</code> - Check your budget status</li>
                   <li><code className="bg-muted px-1 py-0.5 rounded">/summary</code> - Get monthly summary</li>
                   <li><code className="bg-muted px-1 py-0.5 rounded">/categories</code> - View your categories</li>
-                  <li><code className="bg-muted px-1 py-0.5 rounded">/clear</code> - Clear the chat</li>
+                  <li><code className="bg-muted px-1 py-0.5 rounded">/accounts</code> - List your accounts</li>
+                  <li><code className="bg-muted px-1 py-0.5 rounded">/owed</code> - See who owes you</li>
+                  <li><code className="bg-muted px-1 py-0.5 rounded">/cancel</code> - Stop what you are adding</li>
                 </ul>
               </div>
             </AccordionContent>

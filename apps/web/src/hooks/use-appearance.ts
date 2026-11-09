@@ -17,6 +17,7 @@ import { useChartTheme } from "@/providers/chart-theme-provider";
 import type {
   Appearance,
   AppearanceChartStyle,
+  AppearanceDensity,
   AppearanceMode,
   AppearancePaletteChoice,
   User,
@@ -172,8 +173,21 @@ export function useAppearance() {
     [chartTheme, mutate, setChartTheme]
   );
 
+  const setDisplayPref = useCallback(
+    (patch: Pick<Appearance, "density" | "show_cents">) => {
+      mutate(patch, {
+        onError: () => toast.error("Could not save your display setting"),
+      });
+    },
+    [mutate]
+  );
+
   return {
     appearance,
+    /** Saves `density` (stored only; consumers read `appearance.density`). */
+    setDensity: (density: AppearanceDensity) => setDisplayPref({ density }),
+    /** Saves `show_cents` (stored only; `<Money hideCents>` opts in). */
+    setShowCents: (show: boolean) => setDisplayPref({ show_cents: show }),
     paletteChoice,
     serverDefaultPalette,
     resolvedPalette,

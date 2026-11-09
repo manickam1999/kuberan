@@ -1,134 +1,87 @@
 "use client";
 
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { TelegramSettings } from "@/components/settings/telegram-settings";
+import { Suspense, useEffect } from "react";
+import Link from "next/link";
+import { useSearchParams } from "next/navigation";
+import { Download, Link2, Send, Sun, Users } from "lucide-react";
 import { AppearanceSettings } from "@/components/settings/appearance-settings";
-import { DefaultAccountSettings } from "@/components/settings/default-account-settings";
-import { ReportingCurrencySettings } from "@/components/settings/reporting-currency-settings";
 import { ConnectedAppsSettings } from "@/components/settings/connected-apps-settings";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Skeleton } from "@/components/ui/skeleton";
-import { useProfile } from "@/hooks/use-profile";
-import { formatDateTime } from "@/lib/format";
+import { DataSettings } from "@/components/settings/data-settings";
+import { ProfileSettings } from "@/components/settings/profile-settings";
+import { TelegramSettings } from "@/components/settings/telegram-settings";
+import { parseSettingsTab, type SettingsTab } from "@/lib/settings-tabs";
+import { cn } from "@/lib/utils";
 
-function getInitials(first?: string, last?: string) {
-  return ((first?.[0] ?? "") + (last?.[0] ?? "")).toUpperCase() || "U";
-}
+const NAV: { value: SettingsTab; label: string; icon: typeof Users }[] = [
+  { value: "profile", label: "Profile & security", icon: Users },
+  { value: "appearance", label: "Appearance", icon: Sun },
+  { value: "telegram", label: "Telegram", icon: Send },
+  { value: "connected-apps", label: "Connected apps", icon: Link2 },
+  { value: "data", label: "Data & export", icon: Download },
+];
 
-function ProfileTab() {
-  const { data: user, isLoading } = useProfile();
+function SettingsContent() {
+  const tab = parseSettingsTab(useSearchParams().get("tab"));
 
-  if (isLoading) {
-    return (
-      <Card>
-        <CardContent className="flex items-center gap-4 py-6">
-          <Skeleton className="size-16 rounded-full" />
-          <div className="space-y-2">
-            <Skeleton className="h-5 w-40" />
-            <Skeleton className="h-4 w-52" />
-          </div>
-        </CardContent>
-      </Card>
-    );
-  }
-
-  if (!user) return null;
-
-  const fullName =
-    [user.first_name, user.last_name].filter(Boolean).join(" ") || user.email;
-
-  const rows: { label: string; value: string }[] = [
-    { label: "First name", value: user.first_name || "—" },
-    { label: "Last name", value: user.last_name || "—" },
-    { label: "Email", value: user.email },
-    {
-      label: "Status",
-      value: user.is_active === false ? "Inactive" : "Active",
-    },
-    {
-      label: "Last login",
-      value: user.last_login_at ? formatDateTime(user.last_login_at) : "—",
-    },
-  ];
+  // On phones the strip scrolls sideways: keep the open tab in view.
+  useEffect(() => {
+    document
+      .querySelector('nav[aria-label="Settings sections"] [aria-current="page"]')
+      ?.scrollIntoView({ inline: "center", block: "nearest" });
+  }, [tab]);
 
   return (
-    <div className="space-y-4">
-      <Card>
-        <CardContent className="flex items-center gap-4">
-          <Avatar className="size-16 ring-2 ring-primary/25">
-            <AvatarFallback className="bg-primary/15 text-lg font-semibold text-primary">
-              {getInitials(user.first_name, user.last_name)}
-            </AvatarFallback>
-          </Avatar>
-          <div className="min-w-0">
-            <p className="truncate text-lg font-semibold">{fullName}</p>
-            <p className="truncate text-sm text-muted-foreground">
-              {user.email}
-            </p>
-          </div>
-        </CardContent>
-      </Card>
+    <div className="space-y-5">
+      <div className="hidden md:block">
+        <h1 className="font-display text-3xl leading-tight">Settings</h1>
+        <p className="text-sm text-muted-foreground">
+          Your profile, look, bot, connected apps and data
+        </p>
+      </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Account details</CardTitle>
-        </CardHeader>
-        <CardContent className="divide-y divide-border/60">
-          {rows.map((row) => (
-            <div
-              key={row.label}
-              className="flex items-center justify-between gap-4 py-3 first:pt-0 last:pb-0"
+      <div className="grid gap-5 md:grid-cols-[200px_minmax(0,1fr)] md:items-start">
+        {/* A real link per tab, so each is linkable and keyboard reachable.
+            On phones the strip scrolls sideways, not the page. */}
+        <nav
+          aria-label="Settings sections"
+          className="-mx-4 flex gap-1 overflow-x-auto px-4 pb-1 md:sticky md:top-20 md:mx-0 md:flex-col md:overflow-visible md:px-0 md:pb-0"
+        >
+          {NAV.map(({ value, label, icon: Icon }) => (
+            <Link
+              key={value}
+              href={`/settings?tab=${value}`}
+              replace
+              scroll={false}
+              aria-current={tab === value ? "page" : undefined}
+              className={cn(
+                "flex shrink-0 items-center gap-2 whitespace-nowrap rounded-control px-3 py-2 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                tab === value
+                  ? "bg-accent font-medium text-foreground"
+                  : "text-muted-foreground hover:bg-accent/50 hover:text-foreground"
+              )}
             >
-              <span className="text-sm text-muted-foreground">{row.label}</span>
-              <span className="truncate text-sm font-medium">{row.value}</span>
-            </div>
+              <Icon className="size-4" aria-hidden />
+              {label}
+            </Link>
           ))}
-        </CardContent>
-      </Card>
+        </nav>
 
-      <DefaultAccountSettings />
-
-      <ReportingCurrencySettings />
+        <div className="min-w-0">
+          {tab === "profile" && <ProfileSettings />}
+          {tab === "appearance" && <AppearanceSettings />}
+          {tab === "telegram" && <TelegramSettings />}
+          {tab === "connected-apps" && <ConnectedAppsSettings />}
+          {tab === "data" && <DataSettings />}
+        </div>
+      </div>
     </div>
   );
 }
 
 export default function SettingsPage() {
   return (
-    <div className="space-y-5">
-      <div>
-        <h1 className="font-display text-3xl leading-tight">Settings</h1>
-        <p className="text-sm text-muted-foreground">
-          Manage your account and integrations
-        </p>
-      </div>
-
-      <Tabs defaultValue="profile" className="w-full">
-        {/* Four tabs overflow a phone screen; scroll the tab bar, not the page. */}
-        <TabsList className="max-w-full justify-start overflow-x-auto">
-          <TabsTrigger value="profile">Profile</TabsTrigger>
-          <TabsTrigger value="appearance">Appearance</TabsTrigger>
-          <TabsTrigger value="telegram">Telegram bot</TabsTrigger>
-          <TabsTrigger value="connected-apps">Connected apps</TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="profile" className="mt-5">
-          <ProfileTab />
-        </TabsContent>
-
-        <TabsContent value="appearance" className="mt-5">
-          <AppearanceSettings />
-        </TabsContent>
-
-        <TabsContent value="telegram" className="mt-5">
-          <TelegramSettings />
-        </TabsContent>
-
-        <TabsContent value="connected-apps" className="mt-5">
-          <ConnectedAppsSettings />
-        </TabsContent>
-      </Tabs>
-    </div>
+    <Suspense fallback={null}>
+      <SettingsContent />
+    </Suspense>
   );
 }
