@@ -4,6 +4,8 @@ import { Download, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { CsvImport } from "@/components/settings/csv-import";
+import { DemoDataCard } from "@/components/settings/demo-data-card";
 import { IbkrImport } from "@/components/settings/ibkr-import";
 import { SettingsSection } from "@/components/settings/settings-section";
 import { useDataExport } from "@/hooks/use-data-export";
@@ -121,8 +123,10 @@ export function DataSettings() {
   return (
     <div className="space-y-4">
       <ExportCard />
-      <StatusCard />
+      <CsvImport />
       <IbkrImport />
+      <StatusCard />
+      <DemoDataCard />
     </div>
   );
 }

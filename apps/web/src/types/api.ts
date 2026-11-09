@@ -875,6 +875,94 @@ export interface SystemStatus {
   latest_fx_rate_at: string | null;
   latest_snapshot_at: string | null;
   last_backup_at: string | null;
+  /** The server offers the sample household (DEMO_ENABLED). */
+  demo_enabled: boolean;
+  /** The caller currently has sample rows. */
+  demo_loaded: boolean;
+}
+
+// ---- Sample household (POST /demo/load, DELETE /demo; plan 023 5.7) ----
+
+export interface DemoResult {
+  /** Rows created or removed, by table. */
+  rows: Record<string, number>;
+  total: number;
+}
+
+// ---- Bank-statement CSV import (POST /imports/csv; docs/csv-import.md) ----
+
+export type CsvAmountSign = "negative_is_expense" | "positive_is_expense";
+
+export interface CsvMapping {
+  date_column: string;
+  description_column: string;
+  amount_column?: string;
+  debit_column?: string;
+  credit_column?: string;
+  category_column?: string;
+  notes_column?: string;
+  /** e.g. "DD/MM/YYYY"; one of the report's `date_formats`. */
+  date_format: string;
+  /** "." or ",". */
+  decimal_separator: string;
+  amount_sign?: CsvAmountSign;
+}
+
+export type CsvRowStatus =
+  | "create"
+  | "skip_duplicate"
+  | "skip_manual"
+  | "invalid";
+
+export interface CsvImportRow {
+  line: number;
+  status: CsvRowStatus;
+  date?: string;
+  description?: string;
+  type?: "income" | "expense";
+  /** Cents, positive; the type gives the direction. */
+  amount?: number;
+  category?: string;
+  category_source?: "column" | "rule";
+  reason?: string;
+}
+
+export interface CsvImportIssue {
+  line: number;
+  code: string;
+  detail: string;
+}
+
+export interface CsvImportSummary {
+  rows: number;
+  would_create: number;
+  skip_duplicate: number;
+  skip_manual: number;
+  invalid: number;
+  categorized: number;
+  categorized_by_rule: number;
+  unknown_category: number;
+  income_total: number;
+  expense_total: number;
+  first_date?: string;
+  last_date?: string;
+}
+
+export interface CsvImportReport {
+  applied: boolean;
+  account: { id: string; name: string; currency: string };
+  delimiter: string;
+  columns: string[];
+  sample: string[][] | null;
+  suggested_mapping: CsvMapping;
+  /** The mapping used; absent on the first look at a file. */
+  mapping?: CsvMapping;
+  summary?: CsvImportSummary;
+  rows?: CsvImportRow[];
+  rows_truncated?: boolean;
+  issues?: CsvImportIssue[];
+  created: number;
+  date_formats: string[];
 }
 
 // ---- IBKR Activity Statement import (POST /imports/ibkr; docs/ibkr-import.md) ----

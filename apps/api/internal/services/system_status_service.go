@@ -16,6 +16,11 @@ type SystemStatus struct {
 	LatestFXRateAt   *time.Time `json:"latest_fx_rate_at"`
 	LatestSnapshotAt *time.Time `json:"latest_snapshot_at"`
 	LastBackupAt     *time.Time `json:"last_backup_at"`
+	// DemoEnabled says whether the server offers the sample household
+	// (DEMO_ENABLED), so the UI can show "Load demo data".
+	DemoEnabled bool `json:"demo_enabled"`
+	// DemoLoaded says whether the caller currently has sample rows.
+	DemoLoaded bool `json:"demo_loaded"`
 }
 
 // SystemStatusServicer reads freshness timestamps for the host-status chip.
@@ -26,12 +31,25 @@ type SystemStatusServicer interface {
 }
 
 type systemStatusService struct {
-	db *gorm.DB
+	db          *gorm.DB
+	demoEnabled bool
+}
+
+// SystemStatusOption configures a SystemStatusServicer.
+type SystemStatusOption func(*systemStatusService)
+
+// WithDemoEnabled reports DEMO_ENABLED in the status.
+func WithDemoEnabled(enabled bool) SystemStatusOption {
+	return func(s *systemStatusService) { s.demoEnabled = enabled }
 }
 
 // NewSystemStatusService creates a SystemStatusServicer.
-func NewSystemStatusService(db *gorm.DB) SystemStatusServicer {
-	return &systemStatusService{db: db}
+func NewSystemStatusService(db *gorm.DB, opts ...SystemStatusOption) SystemStatusServicer {
+	s := &systemStatusService{db: db}
+	for _, o := range opts {
+		o(s)
+	}
+	return s
 }
 
 // latestTime returns the newest value of column among rows of model matching
@@ -69,6 +87,14 @@ func (s *systemStatusService) GetStatus(userID string) (*SystemStatus, error) {
 	}
 	if st.LastBackupAt, err = s.latestTime(&models.BackupRun{}, "finished_at", "status = ?", "ok"); err != nil {
 		return nil, err
+	}
+	if s.demoEnabled {
+		st.DemoEnabled = true
+		var n int64
+		if err := s.db.Model(&models.DemoRow{}).Where("user_id = ?", userID).Limit(1).Count(&n).Error; err != nil {
+			return nil, err
+		}
+		st.DemoLoaded = n > 0
 	}
 	return &st, nil
 }

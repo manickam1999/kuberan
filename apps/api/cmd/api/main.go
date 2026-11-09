@@ -93,6 +93,8 @@ func run() error {
 	budgetService := services.NewBudgetService(db, services.WithBudgetFXService(fxService))
 	investmentService := services.NewInvestmentService(db, accountService, fxService)
 	importService := services.NewImportService(db, accountService, fxService)
+	csvImportService := services.NewCSVImportService(db)
+	demoService := services.NewDemoService(db, services.WithDemoFXService(fxService))
 	securityService := services.NewSecurityService(db)
 	snapshotService := services.NewPortfolioSnapshotService(db, fxService)
 	fdService := services.NewFixedDepositService(db, categoryService)
@@ -170,7 +172,9 @@ func run() error {
 	importHandler := handlers.NewImportHandler(importService, auditService, appConfig.MaxUploadBytes)
 	accountHistoryHandler := handlers.NewAccountHistoryHandler(services.NewAccountBalanceHistoryService(db))
 	analyticsHandler := handlers.NewAnalyticsHandler(services.NewTypicalService(db, fxService))
-	exportHandler := handlers.NewExportHandler(services.NewExportService(db), services.NewSystemStatusService(db), auditService)
+	csvImportHandler := handlers.NewCSVImportHandler(csvImportService, auditService, appConfig.MaxUploadBytes)
+	demoHandler := handlers.NewDemoHandler(demoService, auditService, appConfig.DemoEnabled)
+	exportHandler := handlers.NewExportHandler(services.NewExportService(db), services.NewSystemStatusService(db, services.WithDemoEnabled(appConfig.DemoEnabled)), auditService)
 
 	// Register custom validators before routes
 	validator.Register()
@@ -193,7 +197,7 @@ func run() error {
 	router.Use(middleware.CORS(appConfig.CORSOrigins))
 	router.Use(middleware.Gzip())
 	// The attachment upload enforces its own (larger) MAX_UPLOAD_BYTES cap.
-	router.Use(middleware.BodySizeLimit(appConfig.MaxBodyBytes, "POST "+handlers.AttachmentUploadRoute, "POST "+handlers.ImportIBKRRoute))
+	router.Use(middleware.BodySizeLimit(appConfig.MaxBodyBytes, "POST "+handlers.AttachmentUploadRoute, "POST "+handlers.ImportIBKRRoute, "POST "+handlers.ImportCSVRoute))
 	router.Use(middleware.ErrorHandler())
 
 	// Swagger documentation (not served in production).
@@ -231,6 +235,8 @@ func run() error {
 		Reminder:             handlers.NewReminderHandler(reminderService, auditService),
 		FX:                   fxHandler,
 		Import:               importHandler,
+		CSVImport:            csvImportHandler,
+		Demo:                 demoHandler,
 		Export:               exportHandler,
 		AccountHistory:       accountHistoryHandler,
 		Analytics:            analyticsHandler,

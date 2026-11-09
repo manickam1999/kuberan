@@ -81,6 +81,8 @@ type SystemStatusResponse struct {
 	LatestFXRateAt   *time.Time `json:"latest_fx_rate_at"`
 	LatestSnapshotAt *time.Time `json:"latest_snapshot_at"`
 	LastBackupAt     *time.Time `json:"last_backup_at"`
+	DemoEnabled      bool       `json:"demo_enabled"`
+	DemoLoaded       bool       `json:"demo_loaded"`
 }
 
 // GetSystemStatus reports when prices, FX rates, snapshots and backups last ran.

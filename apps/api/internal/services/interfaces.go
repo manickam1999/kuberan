@@ -805,6 +805,27 @@ type ImportServicer interface {
 	ImportIBKR(userID string, p IBKRImportParams, files []io.Reader) (*IBKRImportReport, error)
 }
 
+// CSVImportServicer defines the contract for bank-statement CSV imports (plan 023 5.8).
+type CSVImportServicer interface {
+	// ImportCSV inspects a CSV upload and, given a mapping, plans the import of
+	// its rows into one account. A dry run (p.Apply false) writes nothing; apply
+	// writes the new rows in one DB transaction. The file is only read in memory.
+	ImportCSV(userID string, p CSVImportParams, file io.Reader) (*CSVImportReport, error)
+}
+
+// DemoServicer defines the contract for the sample household (plan 023 5.7).
+type DemoServicer interface {
+	// Load creates the sample household and lists every row in demo_rows. It
+	// fails with DEMO_ALREADY_LOADED when it is present and DEMO_HAS_DATA when
+	// the user has transactions of their own.
+	Load(userID string) (*DemoResult, error)
+	// Remove hard-deletes exactly the listed sample rows in one transaction. It
+	// fails with DEMO_IN_USE when the user's own rows refer to sample accounts.
+	Remove(userID string) (*DemoResult, error)
+	// IsLoaded reports whether the user has sample rows.
+	IsLoaded(userID string) (bool, error)
+}
+
 // AuditServicer defines the contract for audit logging.
 type AuditServicer interface {
 	// Log records an event. Without opts the row's source is "web".

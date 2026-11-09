@@ -106,6 +106,10 @@ type Config struct {
 	StorageUsePathStyle bool  // true for MinIO
 	MaxUploadBytes      int64 // per-file cap, default 10 MiB
 	MaxAttachmentsPerTx int   // per-transaction cap, default 10
+
+	// DemoEnabled turns on POST /demo/load and DELETE /demo (DEMO_ENABLED,
+	// default off; on for the public demo instance). When off both return 404.
+	DemoEnabled bool
 }
 
 // DefaultOAuthScopes is the full granular read:* scope set the RS enforces.
@@ -207,6 +211,7 @@ func Load() (*Config, error) {
 		StorageUsePathStyle: getEnvBool("STORAGE_USE_PATH_STYLE", true),
 		MaxUploadBytes:      getEnvInt64("MAX_UPLOAD_BYTES", 10*1024*1024),
 		MaxAttachmentsPerTx: int(getEnvInt64("MAX_ATTACHMENTS_PER_TX", 10)),
+		DemoEnabled:         getEnvBool("DEMO_ENABLED", false),
 	}
 
 	config.OAuthScopes = withWriteScopes(config.OAuthScopes, config.MCPWriteEnabled)

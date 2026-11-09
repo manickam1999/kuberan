@@ -84,6 +84,7 @@ func setupIsolatedDB(t *testing.T) *gorm.DB {
 		&models.BackupRun{},
 		&models.Reminder{},
 		&models.TelegramLink{},
+		&models.DemoRow{},
 	}
 	if err := db.AutoMigrate(allModels...); err != nil {
 		t.Fatalf("failed to migrate test database: %v", err)
@@ -109,6 +110,8 @@ func setupApp(t *testing.T) *testApp {
 	budgetService := services.NewBudgetService(db, services.WithBudgetFXService(fxService))
 	investmentService := services.NewInvestmentService(db, accountService, fxService)
 	importService := services.NewImportService(db, accountService, fxService)
+	csvImportService := services.NewCSVImportService(db)
+	demoService := services.NewDemoService(db, services.WithDemoFXService(fxService))
 	securityService := services.NewSecurityService(db)
 	snapshotService := services.NewPortfolioSnapshotService(db, fxService)
 	auditService := services.NewAuditService(db)
@@ -136,7 +139,7 @@ func setupApp(t *testing.T) *testApp {
 	router.Use(middleware.SecurityHeaders(false))
 	router.Use(middleware.CORS([]string{"http://localhost:3000"}))
 	router.Use(middleware.Gzip())
-	router.Use(middleware.BodySizeLimit(middleware.DefaultMaxBodyBytes, "POST "+handlers.AttachmentUploadRoute, "POST "+handlers.ImportIBKRRoute))
+	router.Use(middleware.BodySizeLimit(middleware.DefaultMaxBodyBytes, "POST "+handlers.AttachmentUploadRoute, "POST "+handlers.ImportIBKRRoute, "POST "+handlers.ImportCSVRoute))
 	router.Use(middleware.ErrorHandler())
 
 	handlers.RegisterRoutes(router, handlers.Routes{
@@ -160,9 +163,11 @@ func setupApp(t *testing.T) *testApp {
 		Reminder:             handlers.NewReminderHandler(services.NewReminderService(db), auditService),
 		FX:                   handlers.NewFXHandler(fxService, auditService),
 		Import:               handlers.NewImportHandler(importService, auditService, testMaxUploadBytes),
-		Export:               handlers.NewExportHandler(services.NewExportService(db), services.NewSystemStatusService(db), auditService),
 		AccountHistory:       handlers.NewAccountHistoryHandler(services.NewAccountBalanceHistoryService(db)),
 		Analytics:            handlers.NewAnalyticsHandler(services.NewTypicalService(db, fxService)),
+		CSVImport:            handlers.NewCSVImportHandler(csvImportService, auditService, testMaxUploadBytes),
+		Demo:                 handlers.NewDemoHandler(demoService, auditService, true),
+		Export:               handlers.NewExportHandler(services.NewExportService(db), services.NewSystemStatusService(db, services.WithDemoEnabled(true)), auditService),
 		Limits:               handlers.NewRouteLimits(config.RateLimits{}), // auth limits off; export keeps its fixed 1/min
 	}, handlers.RouteSecrets{
 		BotInternalSecret: "test-bot-secret",

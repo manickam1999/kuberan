@@ -161,6 +161,9 @@ func (s *transactionService) CreateTransfer(
 			return txErr
 		}
 		fromAccount, toAccount := accounts[fromAccountID], accounts[toAccountID]
+		if txErr := guardDemoTransfer(tx, userID, fromAccountID, toAccountID); txErr != nil {
+			return txErr
+		}
 
 		stored, txErr := s.resolveToAmount(fromAccount, toAccount, amount, toAmount, date)
 		if txErr != nil {
@@ -494,9 +497,11 @@ func (s *transactionService) UpdateTransaction(userID, transactionID string, upd
 			}
 		}
 
-		// Imported rows are derived from the statement: only description,
-		// category, date and notes may change (a re-import reverses them by type).
-		if transaction.ImportRef != nil &&
+		// IBKR-imported rows are derived from the statement: only description,
+		// category, date and notes may change (a re-import reverses them by
+		// type). CSV-imported rows ("csv:" refs) are plain entries and stay
+		// fully editable.
+		if transaction.ImportRef != nil && strings.HasPrefix(*transaction.ImportRef, "ibkr:") &&
 			((updates.Type != nil && *updates.Type != transaction.Type) ||
 				(updates.Amount != nil && *updates.Amount != transaction.Amount) ||
 				(updates.AccountID != nil && *updates.AccountID != transaction.AccountID)) {

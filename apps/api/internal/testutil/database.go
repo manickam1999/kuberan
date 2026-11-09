@@ -38,6 +38,7 @@ var allModels = []interface{}{
 	&models.ReceivableSettlement{},
 	&models.BackupRun{},
 	&models.Reminder{},
+	&models.DemoRow{},
 }
 
 // SetupTestDB creates an in-memory SQLite database with all models migrated.

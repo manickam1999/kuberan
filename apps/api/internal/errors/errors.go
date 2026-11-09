@@ -273,3 +273,27 @@ var (
 // ErrBaseCurrencyLocked is returned when the user tries to change the reporting
 // currency while having investment history (plan 024).
 var ErrBaseCurrencyLocked = &AppError{Code: "BASE_CURRENCY_LOCKED", Message: "Reporting currency can't change while you have investment history, because cost basis is recorded in your current reporting currency", StatusCode: http.StatusConflict}
+
+// Demo data errors (plan 023 5.7).
+var (
+	// ErrDemoAlreadyLoaded is returned when the sample household is already present.
+	ErrDemoAlreadyLoaded = &AppError{Code: "DEMO_ALREADY_LOADED", Message: "The sample household is already loaded", StatusCode: http.StatusConflict}
+
+	// ErrDemoHasData is returned when the user already has transactions of their own.
+	ErrDemoHasData = &AppError{Code: "DEMO_HAS_DATA", Message: "Sample data can only be loaded before you add your own transactions", StatusCode: http.StatusConflict}
+
+	// ErrDemoInUse is returned when real data refers to the sample household, so removing it would damage that data.
+	ErrDemoInUse = &AppError{Code: "DEMO_IN_USE", Message: "Some of your own entries use the sample accounts; move or delete them before removing the sample data", StatusCode: http.StatusConflict}
+
+	// ErrDemoBusy is returned when a load or removal of the sample data is already running.
+	ErrDemoBusy = &AppError{Code: "DEMO_BUSY", Message: "The sample data is being changed; try again in a moment", StatusCode: http.StatusConflict}
+
+	// ErrDemoTransferBlocked is returned for a transfer between a sample account and a real one.
+	ErrDemoTransferBlocked = &AppError{Code: "DEMO_TRANSFER_BLOCKED", Message: "Transfers between sample and real accounts are not allowed", StatusCode: http.StatusConflict}
+)
+
+// CSV import errors (plan 023 5.8).
+var (
+	// ErrCSVTooManyRows is returned when a CSV file has more data rows than one import accepts.
+	ErrCSVTooManyRows = &AppError{Code: "CSV_TOO_MANY_ROWS", Message: "The file has too many rows; split it into files of at most 5,000 rows", StatusCode: http.StatusBadRequest}
+)

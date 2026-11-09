@@ -6,6 +6,7 @@ import { Card } from "@/components/ui/card";
 import { Money } from "@/components/ui/money";
 import { Tile } from "@/components/ui/tile";
 import { Eyebrow, HomeCard } from "@/components/dashboard/home-bits";
+import { SampleDataCard } from "@/components/dashboard/sample-data-card";
 import { accountVisual } from "@/lib/domain-visuals";
 import { useBaseCurrency } from "@/hooks/use-profile";
 import { cn } from "@/lib/utils";
@@ -142,42 +143,45 @@ export function Welcome({
           </ol>
         </Card>
 
-        {accounts.length > 0 && (
-          <HomeCard title="Your accounts" href="/accounts" linkLabel="Manage">
-            <div className="space-y-0.5">
-              {accounts.slice(0, 5).map((a) => {
-                const v = accountVisual(a.type);
-                const Icon = v.icon;
-                return (
-                  <Link
-                    key={a.id}
-                    href={`/accounts/${a.id}`}
-                    className="-mx-2 flex items-center gap-3 rounded-lg px-2 py-2 transition-colors hover:bg-accent/50 focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
-                  >
-                    <Tile tone="accent">
-                      <Icon />
-                    </Tile>
-                    <span className="min-w-0 flex-1 truncate text-sm font-medium">
-                      {a.name}
-                    </span>
-                    <span className="shrink-0 text-sm font-medium">
-                      <Money
-                        amount={a.balance}
-                        currency={a.currency}
-                        baseAmount={a.balance_base}
-                        baseCurrency={baseCurrency}
-                        fxRate={a.fx_rate}
-                        fxStale={a.fx_stale}
-                        fxMissing={a.fx_missing}
-                        layout="stacked"
-                      />
-                    </span>
-                  </Link>
-                );
-              })}
-            </div>
-          </HomeCard>
-        )}
+        <div className="space-y-4">
+          <SampleDataCard />
+          {accounts.length > 0 && (
+            <HomeCard title="Your accounts" href="/accounts" linkLabel="Manage">
+              <div className="space-y-0.5">
+                {accounts.slice(0, 5).map((a) => {
+                  const v = accountVisual(a.type);
+                  const Icon = v.icon;
+                  return (
+                    <Link
+                      key={a.id}
+                      href={`/accounts/${a.id}`}
+                      className="-mx-2 flex items-center gap-3 rounded-lg px-2 py-2 transition-colors hover:bg-accent/50 focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
+                    >
+                      <Tile tone="accent">
+                        <Icon />
+                      </Tile>
+                      <span className="min-w-0 flex-1 truncate text-sm font-medium">
+                        {a.name}
+                      </span>
+                      <span className="shrink-0 text-sm font-medium">
+                        <Money
+                          amount={a.balance}
+                          currency={a.currency}
+                          baseAmount={a.balance_base}
+                          baseCurrency={baseCurrency}
+                          fxRate={a.fx_rate}
+                          fxStale={a.fx_stale}
+                          fxMissing={a.fx_missing}
+                          layout="stacked"
+                        />
+                      </span>
+                    </Link>
+                  );
+                })}
+              </div>
+            </HomeCard>
+          )}
+        </div>
       </div>
     </div>
   );

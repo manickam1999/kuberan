@@ -34,6 +34,8 @@ type Routes struct {
 	AccountHistory       *AccountHistoryHandler
 	Analytics            *AnalyticsHandler
 	Reminder             *ReminderHandler
+	CSVImport            *CSVImportHandler
+	Demo                 *DemoHandler
 
 	// Limits rate-limits the public auth endpoints. The zero value applies no
 	// limits (used by tests that don't exercise them).
@@ -169,6 +171,13 @@ func RegisterRoutes(router *gin.Engine, h Routes, secrets RouteSecrets) {
 	// Statement imports (plan 024, phase 3b). The upload enforces its own size cap
 	// (see ImportIBKRRoute).
 	protected.POST("/imports/ibkr", h.Import.ImportIBKR)
+	// Bank-statement CSV import (plan 023 5.8); also enforces its own size cap
+	// (see ImportCSVRoute).
+	protected.POST("/imports/csv", h.CSVImport.ImportCSV)
+
+	// Sample household (plan 023 5.7): 404 unless DEMO_ENABLED.
+	protected.POST("/demo/load", h.Demo.LoadDemo)
+	protected.DELETE("/demo", h.Demo.RemoveDemo)
 
 	// Data export (plan 023 1.7): streamed zip of CSVs, 1 per minute per user.
 	protected.GET("/export", with(h.Limits.Export, h.Export.Export)...)
