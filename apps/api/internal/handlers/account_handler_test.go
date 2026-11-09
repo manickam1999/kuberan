@@ -25,6 +25,24 @@ type mockAccountService struct {
 	getUserAccountsFn           func(userID string, page pagination.PageRequest) (*pagination.PageResponse[models.Account], error)
 	getAccountByIDFn            func(userID, accountID string) (*models.Account, error)
 	updateAccountFn             func(userID, accountID string, updates services.AccountUpdateFields) (*models.Account, error)
+	createCreditCardParamsFn    func(userID string, params services.CreateCreditCardParams) (*models.Account, error)
+	createDebtAccountFn         func(userID string, params services.CreateDebtParams) (*models.Account, error)
+}
+
+// CreateCreditCardAccountWithParams records the params when a params hook is
+// set, otherwise it falls back to the positional hook.
+func (m *mockAccountService) CreateCreditCardAccountWithParams(userID string, p services.CreateCreditCardParams) (*models.Account, error) {
+	if m.createCreditCardParamsFn != nil {
+		return m.createCreditCardParamsFn(userID, p)
+	}
+	return m.CreateCreditCardAccount(userID, p.Name, p.Description, p.Currency, p.CreditLimit, p.InterestRate, p.DueDate, p.CurrentBalance)
+}
+
+func (m *mockAccountService) CreateDebtAccount(userID string, p services.CreateDebtParams) (*models.Account, error) {
+	if m.createDebtAccountFn != nil {
+		return m.createDebtAccountFn(userID, p)
+	}
+	return &models.Account{}, nil
 }
 
 func (m *mockAccountService) CreateCashAccount(userID, name, description, currency string, initialBalance int64) (*models.Account, error) {

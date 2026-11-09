@@ -4,7 +4,7 @@ All calls go through one shared ``httpx.AsyncClient`` so handlers never block
 the bot's event loop and connections to the API are pooled.
 """
 import logging
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 import httpx
 
@@ -85,6 +85,27 @@ class KuberanAPIClient:
             )
         except httpx.HTTPError as e:
             logger.warning("Failed to record activity: %s", type(e).__name__)
+
+    async def get_due_reminders(self) -> List[Dict[str, Any]]:
+        """Fetch the reminders that are due to be sent (internal endpoint).
+
+        Each item: {id, kind, telegram_user_id, account_name, due_on, amount,
+        currency, monthly_payment?}; amounts are in the account's own currency.
+        """
+        response = await self.http.get(
+            "/api/v1/internal/telegram/reminders/due",
+            headers=self._internal_headers,
+        )
+        response.raise_for_status()
+        return response.json().get("reminders", [])
+
+    async def mark_reminder_sent(self, reminder_id: str) -> None:
+        """Confirm a reminder was delivered. Idempotent on the API side."""
+        response = await self.http.post(
+            f"/api/v1/internal/telegram/reminders/{reminder_id}/sent",
+            headers=self._internal_headers,
+        )
+        response.raise_for_status()
 
 
 class UserAPIClient:

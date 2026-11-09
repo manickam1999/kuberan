@@ -98,6 +98,7 @@ func run() error {
 	fdService := services.NewFixedDepositService(db, categoryService)
 	auditService := services.NewAuditService(db)
 	telegramService := services.NewTelegramService(db)
+	reminderService := services.NewReminderService(db)
 	oauthGrantService := services.NewOAuthGrantService(db)
 
 	// Receipt attachments (plan 017): blob store + service. The store is only
@@ -227,6 +228,7 @@ func run() error {
 		Snapshot:             snapshotHandler,
 		FixedDepositPipeline: fdPipelineHandler,
 		Telegram:             telegramHandler,
+		Reminder:             handlers.NewReminderHandler(reminderService, auditService),
 		FX:                   fxHandler,
 		Import:               importHandler,
 		Export:               exportHandler,

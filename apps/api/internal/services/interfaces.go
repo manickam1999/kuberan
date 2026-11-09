@@ -47,6 +47,17 @@ type TelegramServicer interface {
 	RecordActivity(telegramUserID int64) error
 	IsLinked(userID string) (bool, error)
 	GetUserWithAuthToken(telegramUserID int64) (*TelegramUserAuth, error)
+	// UpdateReminderSettings switches the reminder kinds on or off for the
+	// user's link; nil fields are left unchanged (plan 023, 5.6).
+	UpdateReminderSettings(userID string, settings ReminderSettings) (*models.TelegramLink, error)
+}
+
+// ReminderSettings holds the optional per-kind reminder switches of a Telegram
+// link. A nil field means "don't change".
+type ReminderSettings struct {
+	CardDue    *bool
+	LoanDue    *bool
+	FDMaturity *bool
 }
 
 // RecordConsentInput holds the outcome of one consent decision (plan 022).
@@ -112,6 +123,12 @@ type AccountUpdateFields struct {
 	DueDate       *time.Time // credit_card only
 	CreditLimit   *int64     // credit_card only
 
+	// DueDay (1-31) is the day of the month a credit card or loan falls due;
+	// 0 clears it. MonthlyPayment (cents) is the loan instalment; debt only,
+	// 0 clears it (plan 023, 5.3).
+	DueDay         *int
+	MonthlyPayment *int64
+
 	// Fixed deposit mutable fields (plan 020, B4). Principal and StartDate are
 	// immutable after creation and are intentionally absent here.
 	MaturityDate    *time.Time              // fixed_deposit only
@@ -119,6 +136,34 @@ type AccountUpdateFields struct {
 	PayoutFrequency *models.PayoutFrequency // fixed_deposit only; required when PayoutType=periodic
 	LinkedAccountID *string                 // fixed_deposit only; pointer-to-nil clears the field
 	Compounding     *models.Compounding     // fixed_deposit only
+}
+
+// CreateCreditCardParams holds the parameters for opening a credit card account.
+type CreateCreditCardParams struct {
+	Name         string
+	Description  string
+	Currency     string // defaults to the user's base currency
+	CreditLimit  int64
+	InterestRate float64
+	DueDate      *time.Time
+	// DueDay (1-31), 0 for none: the day of the month the statement falls due.
+	DueDay int
+	// CurrentBalance is the amount already owed, in cents (>= 0).
+	CurrentBalance int64
+}
+
+// CreateDebtParams holds the parameters for creating a loan (debt) account.
+type CreateDebtParams struct {
+	Name        string
+	Description string
+	Currency    string // defaults to the user's base currency
+	// AmountOwed (cents, >= 0) is recorded as an opening_balance row.
+	AmountOwed   int64
+	InterestRate float64
+	// MonthlyPayment (cents, >= 0), 0 for none.
+	MonthlyPayment int64
+	// DueDay (1-31), 0 for none.
+	DueDay int
 }
 
 // CreateFixedDepositParams holds the parameters for opening a new fixed deposit account.
@@ -169,6 +214,12 @@ type AccountServicer interface {
 	CreateCashAccount(userID, name, description, currency string, initialBalance int64) (*models.Account, error)
 	CreateInvestmentAccount(userID, name, description, currency, broker, accountNumber string) (*models.Account, error)
 	CreateCreditCardAccount(userID, name, description, currency string, creditLimit int64, interestRate float64, dueDate *time.Time, currentBalance int64) (*models.Account, error)
+	// CreateCreditCardAccountWithParams is CreateCreditCardAccount with the
+	// recurring due day (plan 023, 5.3 / 5.6).
+	CreateCreditCardAccountWithParams(userID string, params CreateCreditCardParams) (*models.Account, error)
+	// CreateDebtAccount creates a loan: the amount owed is an opening_balance
+	// row (never inverted), in one database transaction (plan 023, 5.3).
+	CreateDebtAccount(userID string, params CreateDebtParams) (*models.Account, error)
 	// CreateFixedDepositAccount opens a new fixed deposit, transferring principal from a
 	// source cash account atomically (plan 020, B4).
 	CreateFixedDepositAccount(userID string, params CreateFixedDepositParams) (*models.Account, error)

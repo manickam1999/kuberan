@@ -82,6 +82,8 @@ func setupIsolatedDB(t *testing.T) *gorm.DB {
 		&models.Receivable{},
 		&models.ReceivableSettlement{},
 		&models.BackupRun{},
+		&models.Reminder{},
+		&models.TelegramLink{},
 	}
 	if err := db.AutoMigrate(allModels...); err != nil {
 		t.Fatalf("failed to migrate test database: %v", err)
@@ -155,6 +157,7 @@ func setupApp(t *testing.T) *testApp {
 		Snapshot:             handlers.NewPortfolioSnapshotHandler(snapshotService, auditService),
 		FixedDepositPipeline: handlers.NewFixedDepositPipelineHandler(fdService, auditService),
 		Telegram:             handlers.NewTelegramHandler(telegramService, auditService),
+		Reminder:             handlers.NewReminderHandler(services.NewReminderService(db), auditService),
 		FX:                   handlers.NewFXHandler(fxService, auditService),
 		Import:               handlers.NewImportHandler(importService, auditService, testMaxUploadBytes),
 		Export:               handlers.NewExportHandler(services.NewExportService(db), services.NewSystemStatusService(db), auditService),

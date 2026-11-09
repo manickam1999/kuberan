@@ -151,6 +151,29 @@ func (s *accountService) CreateInvestmentAccount(userID, name, description, curr
 // recorded as an opening_balance transaction in the same database transaction.
 // Opening balances are never inverted, so the card balance equals currentBalance.
 func (s *accountService) CreateCreditCardAccount(userID, name, description, currency string, creditLimit int64, interestRate float64, dueDate *time.Time, currentBalance int64) (*models.Account, error) {
+	return s.CreateCreditCardAccountWithParams(userID, CreateCreditCardParams{
+		Name: name, Description: description, Currency: currency, CreditLimit: creditLimit,
+		InterestRate: interestRate, DueDate: dueDate, CurrentBalance: currentBalance,
+	})
+}
+
+// validateDueDay checks an optional due day: 0 means none, otherwise 1-31.
+func validateDueDay(day int) error {
+	if day < 0 || day > 31 {
+		return apperrors.WithMessage(apperrors.ErrInvalidInput, "due day must be between 1 and 31")
+	}
+	return nil
+}
+
+// CreateCreditCardAccountWithParams creates a credit card like
+// CreateCreditCardAccount and also stores the recurring due day, creating its
+// reminder in the same database transaction.
+func (s *accountService) CreateCreditCardAccountWithParams(userID string, params CreateCreditCardParams) (*models.Account, error) {
+	name, description, currency := params.Name, params.Description, params.Currency
+	creditLimit, interestRate, dueDate, currentBalance := params.CreditLimit, params.InterestRate, params.DueDate, params.CurrentBalance
+	if err := validateDueDay(params.DueDay); err != nil {
+		return nil, err
+	}
 	if name == "" {
 		return nil, apperrors.WithMessage(apperrors.ErrInvalidInput, "account name is required")
 	}
@@ -179,6 +202,10 @@ func (s *accountService) CreateCreditCardAccount(userID, name, description, curr
 	if dueDate != nil {
 		account.DueDate = *dueDate
 	}
+	if params.DueDay > 0 {
+		day := params.DueDay
+		account.DueDay = &day
+	}
 
 	err = s.db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Create(account).Error; err != nil {
@@ -199,12 +226,82 @@ func (s *accountService) CreateCreditCardAccount(userID, name, description, curr
 				return apperrors.Wrap(apperrors.ErrInternalServer, err)
 			}
 		}
-		return nil
+		return syncAccountReminders(tx, account.ID, time.Now())
 	})
 	if err != nil {
 		return nil, err
 	}
 
+	return account, nil
+}
+
+// CreateDebtAccount creates a loan (debt) account. The amount owed is written
+// as an opening_balance transaction, which is never inverted, so the account
+// balance equals the amount owed; account, opening row and the due-day
+// reminder are created in one database transaction.
+func (s *accountService) CreateDebtAccount(userID string, params CreateDebtParams) (*models.Account, error) {
+	if params.Name == "" {
+		return nil, apperrors.WithMessage(apperrors.ErrInvalidInput, "account name is required")
+	}
+	if params.AmountOwed < 0 {
+		return nil, apperrors.WithMessage(apperrors.ErrInvalidInput, "amount owed cannot be negative")
+	}
+	if params.MonthlyPayment < 0 {
+		return nil, apperrors.WithMessage(apperrors.ErrInvalidInput, "monthly payment cannot be negative")
+	}
+	if params.InterestRate < 0 || params.InterestRate > 100 {
+		return nil, apperrors.WithMessage(apperrors.ErrInvalidInput, "interest rate must be between 0 and 100")
+	}
+	if err := validateDueDay(params.DueDay); err != nil {
+		return nil, err
+	}
+	currency, err := s.resolveAccountCurrency(userID, params.Currency)
+	if err != nil {
+		return nil, err
+	}
+
+	account := &models.Account{
+		UserID:       userID,
+		Name:         params.Name,
+		Type:         models.AccountTypeDebt,
+		Description:  params.Description,
+		Balance:      params.AmountOwed,
+		Currency:     currency,
+		IsActive:     true,
+		InterestRate: params.InterestRate,
+	}
+	if params.MonthlyPayment > 0 {
+		payment := params.MonthlyPayment
+		account.MonthlyPayment = &payment
+	}
+	if params.DueDay > 0 {
+		day := params.DueDay
+		account.DueDay = &day
+	}
+
+	err = s.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(account).Error; err != nil {
+			return apperrors.Wrap(apperrors.ErrInternalServer, err)
+		}
+		if params.AmountOwed > 0 {
+			opening := &models.Transaction{
+				UserID:      userID,
+				AccountID:   account.ID,
+				Type:        models.TransactionTypeOpeningBalance,
+				Amount:      params.AmountOwed,
+				Description: "Initial balance",
+				Date:        time.Now(),
+				Source:      models.TransactionSourceSystem,
+			}
+			if err := tx.Create(opening).Error; err != nil {
+				return apperrors.Wrap(apperrors.ErrInternalServer, err)
+			}
+		}
+		return syncAccountReminders(tx, account.ID, time.Now())
+	})
+	if err != nil {
+		return nil, err
+	}
 	return account, nil
 }
 
@@ -361,6 +458,35 @@ func (s *accountService) UpdateAccount(userID, accountID string, fields AccountU
 		}
 	}
 
+	// Loan and credit card recurring fields.
+	if account.Type == models.AccountTypeCreditCard || account.Type == models.AccountTypeDebt {
+		if fields.DueDay != nil {
+			if err := validateDueDay(*fields.DueDay); err != nil {
+				return nil, err
+			}
+			if *fields.DueDay == 0 {
+				updates["due_day"] = nil
+			} else {
+				updates["due_day"] = *fields.DueDay
+			}
+		}
+	}
+	if account.Type == models.AccountTypeDebt {
+		if fields.InterestRate != nil {
+			updates["interest_rate"] = *fields.InterestRate
+		}
+		if fields.MonthlyPayment != nil {
+			switch {
+			case *fields.MonthlyPayment < 0:
+				return nil, apperrors.WithMessage(apperrors.ErrInvalidInput, "monthly payment cannot be negative")
+			case *fields.MonthlyPayment == 0:
+				updates["monthly_payment"] = nil
+			default:
+				updates["monthly_payment"] = *fields.MonthlyPayment
+			}
+		}
+	}
+
 	// Fixed deposit mutable fields.
 	// Principal and StartDate are immutable; any attempt to change them is silently
 	// ignored here — the handler should reject such requests before calling this.
@@ -393,6 +519,14 @@ func (s *accountService) UpdateAccount(userID, accountID string, fields AccountU
 		if err := s.updateFixedDepositDetails(account, fields); err != nil {
 			return nil, err
 		}
+	}
+
+	// Keep the account's reminder in step with due_day, the maturity date and
+	// the active flag (plan 023, 5.6).
+	if err := s.db.Transaction(func(tx *gorm.DB) error {
+		return syncAccountReminders(tx, account.ID, time.Now())
+	}); err != nil {
+		return nil, err
 	}
 
 	return account, nil
@@ -747,7 +881,7 @@ func (s *accountService) CreateFixedDepositAccount(userID string, params CreateF
 
 		// Attach details to the account so callers get them back.
 		fdAccount.FixedDeposit = &details
-		return nil
+		return syncAccountReminders(tx, fdAccount.ID, time.Now())
 	})
 	if err != nil {
 		return nil, err
@@ -938,7 +1072,7 @@ func (s *accountService) CloseFixedDeposit(userID, accountID string, params Clos
 		fdAccount.IsActive = false
 		details.Status = models.FixedDepositStatusClosed
 		fdAccount.FixedDeposit = details
-		return nil
+		return syncAccountReminders(tx, fdAccount.ID, time.Now())
 	})
 	if err != nil {
 		return nil, err

@@ -50,6 +50,13 @@ type Account struct {
 	DueDate      time.Time `json:"due_date,omitempty"`
 	CreditLimit  int64     `gorm:"type:bigint;default:0" json:"credit_limit,omitempty"`
 
+	// MonthlyPayment is the loan's instalment in cents (account currency); debt
+	// accounts only. DueDay (1-31) is the day of the month a credit card
+	// statement or loan instalment falls due; months that are shorter use their
+	// last day. Both are nil when unset (plan 023, 5.3).
+	MonthlyPayment *int64 `gorm:"type:bigint" json:"monthly_payment,omitempty"`
+	DueDay         *int   `gorm:"type:smallint" json:"due_day,omitempty"`
+
 	// For fixed deposit accounts (also reuses InterestRate for the annual rate)
 	FixedDeposit *FixedDepositDetails `gorm:"foreignKey:AccountID" json:"fixed_deposit,omitempty"`
 
@@ -76,20 +83,24 @@ func (a *Account) BeforeCreate(tx *gorm.DB) error {
 		a.Broker = ""
 		a.AccountNumber = ""
 		a.InterestRate = 0
+		a.MonthlyPayment, a.DueDay = nil, nil
 	case AccountTypeInvestment:
 		a.InterestRate = 0
+		a.MonthlyPayment, a.DueDay = nil, nil
 	case AccountTypeDebt:
 		a.Broker = ""
 		a.AccountNumber = ""
 	case AccountTypeCreditCard:
 		a.Broker = ""
 		a.AccountNumber = ""
+		a.MonthlyPayment = nil
 	case AccountTypeFixedDeposit:
 		// FD keeps interest_rate; clear fields that belong to other types.
 		a.Broker = ""
 		a.AccountNumber = ""
 		a.CreditLimit = 0
 		a.DueDate = time.Time{}
+		a.MonthlyPayment, a.DueDay = nil, nil
 	}
 	return nil
 }

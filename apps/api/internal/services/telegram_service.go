@@ -282,3 +282,28 @@ func generateLinkCode(length int) (string, error) {
 	}
 	return string(out), nil
 }
+
+// UpdateReminderSettings implements TelegramServicer.
+func (s *telegramService) UpdateReminderSettings(userID string, settings ReminderSettings) (*models.TelegramLink, error) {
+	link, err := s.GetLinkByUserID(userID)
+	if err != nil {
+		return nil, err
+	}
+	updates := map[string]interface{}{}
+	if settings.CardDue != nil {
+		updates["remind_card_due"] = *settings.CardDue
+	}
+	if settings.LoanDue != nil {
+		updates["remind_loan_due"] = *settings.LoanDue
+	}
+	if settings.FDMaturity != nil {
+		updates["remind_fd_maturity"] = *settings.FDMaturity
+	}
+	if len(updates) > 0 {
+		if err := s.db.Model(link).Updates(updates).Error; err != nil {
+			return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)
+		}
+		return s.GetLinkByUserID(userID)
+	}
+	return link, nil
+}

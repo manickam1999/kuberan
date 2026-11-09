@@ -33,6 +33,7 @@ type Routes struct {
 	Export               *ExportHandler
 	AccountHistory       *AccountHistoryHandler
 	Analytics            *AnalyticsHandler
+	Reminder             *ReminderHandler
 
 	// Limits rate-limits the public auth endpoints. The zero value applies no
 	// limits (used by tests that don't exercise them).
@@ -184,6 +185,11 @@ func RegisterRoutes(router *gin.Engine, h Routes, secrets RouteSecrets) {
 	telegram.GET("/link", h.Telegram.GetLink)
 	telegram.POST("/generate-code", h.Telegram.GenerateCode)
 	telegram.DELETE("/unlink", h.Telegram.Unlink)
+	telegram.PUT("/reminder-settings", h.Telegram.UpdateReminderSettings)
+
+	// Reminders (plan 023, 5.6): card due, loan due and deposit maturity.
+	protected.GET("/reminders", h.Reminder.List)
+	protected.PATCH("/reminders/:id", h.Reminder.SetEnabled)
 
 	// Internal routes (for bot service communication)
 	internal := v1.Group("/internal")
@@ -191,6 +197,8 @@ func RegisterRoutes(router *gin.Engine, h Routes, secrets RouteSecrets) {
 	internal.POST("/telegram/complete-link", h.Telegram.CompleteLink)
 	internal.GET("/telegram/resolve/:telegram_user_id", h.Telegram.ResolveUser)
 	internal.POST("/telegram/activity/:telegram_user_id", h.Telegram.RecordActivity)
+	internal.GET("/telegram/reminders/due", h.Reminder.Due)
+	internal.POST("/telegram/reminders/:id/sent", h.Reminder.MarkSent)
 
 	// Pipeline routes (API key auth, no JWT)
 	pipeline := v1.Group("/pipeline")
@@ -214,6 +222,7 @@ func registerAccountRoutes(protected *gin.RouterGroup, h Routes) {
 	accounts.POST("/cash", h.Account.CreateCashAccount)
 	accounts.POST("/investment", h.Account.CreateInvestmentAccount)
 	accounts.POST("/credit-card", h.Account.CreateCreditCardAccount)
+	accounts.POST("/debt", h.Account.CreateDebtAccount)
 	accounts.POST("/fixed-deposit", h.Account.CreateFixedDepositAccount)
 	accounts.GET("", h.Account.GetUserAccounts)
 	accounts.GET("/sparklines", h.AccountHistory.GetSparklines)

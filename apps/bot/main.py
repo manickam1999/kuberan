@@ -14,6 +14,7 @@ from api_client import KuberanAPIClient
 from handlers import balance, budgets, accounts, categories, summary, help_cmd, owed
 from handlers.common import describe_error
 from handlers.start import create_start_conversation
+from reminders import send_due_reminders
 from handlers.transaction_flow import create_transaction_conversation
 
 logging.basicConfig(
@@ -105,6 +106,11 @@ def build_application(api_client: KuberanAPIClient) -> Application:
         # Without the job-queue extra, conversation timeouts silently never fire.
         raise RuntimeError("JobQueue unavailable: install python-telegram-bot[job-queue]")
     app.job_queue.run_repeating(heartbeat, interval=HEARTBEAT_INTERVAL_SECONDS, first=0)
+    # Pull due reminders (card/loan due dates, deposit maturities) and send them.
+    app.job_queue.run_repeating(
+        send_due_reminders, interval=config.REMINDER_POLL_SECONDS, first=30,
+        data=api_client, name="reminders",
+    )
 
     return app
 

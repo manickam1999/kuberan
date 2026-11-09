@@ -123,6 +123,10 @@ func (m *mockTelegramService) GetUserWithAuthToken(telegramUserID int64) (*servi
 	return &services.TelegramUserAuth{}, nil
 }
 
+func (m *mockTelegramService) UpdateReminderSettings(_ string, _ services.ReminderSettings) (*models.TelegramLink, error) {
+	return &models.TelegramLink{}, nil
+}
+
 var _ services.TelegramServicer = (*mockTelegramService)(nil)
 
 // --- router setup helpers ---
