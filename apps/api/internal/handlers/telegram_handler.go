@@ -36,12 +36,11 @@ type CompleteLinkRequest struct {
 
 // GetLink retrieves the user's Telegram link status
 // @Summary     Get Telegram link status
-// @Description Get the current Telegram link for the authenticated user
+// @Description Get the current Telegram link for the authenticated user; "link" is null when none exists
 // @Tags        telegram
 // @Accept      json
 // @Produce     json
 // @Success     200 {object} object "Link information"
-// @Failure     404 {object} ErrorResponse "Not found"
 // @Failure     401 {object} ErrorResponse "Unauthorized"
 // @Router      /telegram/link [get]
 // @Security    BearerAuth
@@ -54,6 +53,12 @@ func (h *TelegramHandler) GetLink(c *gin.Context) {
 
 	link, err := h.telegramService.GetLinkByUserID(userID)
 	if err != nil {
+		// Not linked is a normal state, not an error: answering 404 made every
+		// page that shows reminder status log a failed request in the browser.
+		if errors.Is(err, apperrors.ErrNotFound) {
+			c.JSON(http.StatusOK, gin.H{"link": nil})
+			return
+		}
 		respondWithError(c, err)
 		return
 	}

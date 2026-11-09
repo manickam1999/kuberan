@@ -185,7 +185,7 @@ func TestTelegramHandler_GetLink(t *testing.T) {
 		}
 	})
 
-	t.Run("returns_404_when_not_found", func(t *testing.T) {
+	t.Run("returns_200_with_null_link_when_not_linked", func(t *testing.T) {
 		telegramSvc := &mockTelegramService{
 			getLinkByUserIDFn: func(userID string) (*models.TelegramLink, error) {
 				return nil, apperrors.ErrNotFound
@@ -196,8 +196,12 @@ func TestTelegramHandler_GetLink(t *testing.T) {
 
 		rec := doTelegramRequest(r, "GET", "/telegram/link", "")
 
-		if rec.Code != http.StatusNotFound {
-			t.Fatalf("expected 404, got %d", rec.Code)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d", rec.Code)
+		}
+		result := parseTelegramJSON(t, rec)
+		if link, ok := result["link"]; !ok || link != nil {
+			t.Errorf("expected link: null, got %v (present=%v)", link, ok)
 		}
 	})
 
@@ -441,7 +445,7 @@ func TestTelegramHandler_ResolveUser(t *testing.T) {
 		}
 	})
 
-	t.Run("returns_404_when_not_found", func(t *testing.T) {
+	t.Run("returns_200_with_null_link_when_not_linked", func(t *testing.T) {
 		telegramSvc := &mockTelegramService{
 			getUserWithAuthTokenFn: func(telegramUserID int64) (*services.TelegramUserAuth, error) {
 				return nil, apperrors.ErrNotFound
