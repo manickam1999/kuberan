@@ -34,6 +34,7 @@ RUN addgroup -S -g 10002 demoreset && adduser -S -D -H -u 10002 -G demoreset -s 
 COPY --from=migrate /out/migrate /migrate
 COPY --from=api migrations /migrations
 COPY reset.sh /reset.sh
+COPY backfill-snapshots.sql /backfill-snapshots.sql
 COPY crontab /etc/supercronic/crontab
 RUN chmod 0755 /reset.sh /migrate
 

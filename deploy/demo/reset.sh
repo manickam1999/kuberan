@@ -13,7 +13,9 @@
 # Optional: DEMO_FIRST_NAME (Demo), WAIT_SECONDS (120), DEMO_BASE_CURRENCY (empty =
 # the default, MYR; any other currency needs an FX rate or USD, which a demo
 # without the oracle does not have),
-# MIGRATE_BIN (/migrate; run from the directory that holds migrations/).
+# PIPELINE_API_KEY (when set: record today's snapshot and backfill a sample
+# net-worth history, see backfill-snapshots.sql), BACKFILL_SQL, MIGRATE_BIN
+# (/migrate; run from the directory that holds migrations/).
 set -eu
 
 log() { printf '%s demo-reset: %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*"; }
@@ -85,5 +87,17 @@ log "loading the sample household"
 code=$(curl -sS -o /tmp/load.out -w '%{http_code}' -X POST "${API_URL}/api/v1/demo/load" \
     -H "Authorization: Bearer ${token}") || die "demo load request failed"
 [ "$code" = "201" ] || die "POST /demo/load returned HTTP ${code}: $(head -c 300 /tmp/load.out) (is DEMO_ENABLED=true on the api?)"
+
+# Net-worth history: the demo has no oracle, so ask the api for today's snapshot
+# (pipeline endpoint) and derive a sample 90-day history from it.
+if [ -n "${PIPELINE_API_KEY:-}" ]; then
+    log "recording today's snapshot and a sample history"
+    curl -fsS -o /dev/null -X POST "${API_URL}/api/v1/pipeline/snapshots" \
+        -H "X-API-Key: ${PIPELINE_API_KEY}" -H 'Content-Type: application/json' \
+        -d "{\"recorded_at\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}" || die "POST /pipeline/snapshots failed"
+    psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -v ON_ERROR_STOP=1 -q \
+        -v "email=${DEMO_EMAIL}" -f "${BACKFILL_SQL:-/backfill-snapshots.sql}" >/dev/null \
+        || die "snapshot backfill failed"
+fi
 
 log "done: $(jq -c '{total: .total}' /tmp/load.out 2>/dev/null || echo loaded)"
