@@ -126,7 +126,7 @@ export function AccountRow({
       </span>
       <ChevronRight
         aria-hidden
-        className="text-muted-foreground size-4 shrink-0"
+        className="text-muted-foreground hidden size-4 shrink-0 sm:block"
       />
     </Link>
   );
