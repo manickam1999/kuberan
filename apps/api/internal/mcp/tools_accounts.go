@@ -50,8 +50,10 @@ func (s *Server) handleListAccounts(ctx context.Context, _ mcp.CallToolRequest) 
 	fmt.Fprintf(&sb, "Accounts (%d total):\n\n", result.TotalItems)
 	var netWorth int64
 	var excluded []services.UnconvertedAmount
+	stale := false
 	for i := range result.Data {
 		a := &result.Data[i]
+		stale = stale || (a.FXStale && a.BalanceBase != nil)
 		status := ""
 		if !a.IsActive {
 			status = " [inactive]"
@@ -83,6 +85,9 @@ func (s *Server) handleListAccounts(ctx context.Context, _ mcp.CallToolRequest) 
 	fmt.Fprintf(&sb, "\nNet worth (%s): %s (active cash, fixed-deposit and investment accounts minus credit cards and debts; receivables are not counted)\n",
 		strings.ToUpper(base), formatMoney(netWorth, base))
 	sb.WriteString(fxNotes(false, excluded))
+	if stale {
+		sb.WriteString("Note: some exchange rates used are stale\n")
+	}
 	if result.TotalItems > int64(len(result.Data)) {
 		fmt.Fprintf(&sb, "Note: only the first %d of %d accounts are listed and counted in the net worth\n", len(result.Data), result.TotalItems)
 	}

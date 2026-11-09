@@ -46,7 +46,7 @@ func (s *Server) handleGetNetWorthHistory(ctx context.Context, req mcp.CallToolR
 	if res != nil {
 		return res, nil
 	}
-	fromStr, toStr := from.Format("2006-01-02"), to.Format("2006-01-02")
+	fromStr, toStr := from.UTC().Format("2006-01-02"), to.UTC().Format("2006-01-02")
 
 	// The service buckets by day (or hour) only; week and month are cut here.
 	snapshots, err := s.services.Snapshots.GetGroupedSnapshots(userID, from, to, "day")
@@ -70,7 +70,7 @@ func (s *Server) handleGetNetWorthHistory(ctx context.Context, req mcp.CallToolR
 	for i, snap := range snapshots {
 		cur := snap.Currency
 		fmt.Fprintf(&sb, "  %-12s %-4s %18s %18s %18s %18s %18s\n",
-			snap.RecordedAt.Format("2006-01-02"), currencyCode(cur),
+			snap.RecordedAt.UTC().Format("2006-01-02"), currencyCode(cur),
 			formatMoney(snap.TotalNetWorth, cur),
 			formatMoney(snap.CashBalance, cur),
 			formatMoney(snap.FixedDepositBalance, cur),

@@ -106,7 +106,7 @@ func (s *Server) handleListReceivables(ctx context.Context, req mcp.CallToolRequ
 			formatMoney(r.PaidAmount, r.Currency), formatMoney(r.WrittenOffAmount, r.Currency), formatMoney(r.OutstandingAmount(), r.Currency))
 		if r.Transaction != nil {
 			fmt.Fprintf(&sb, "    Expense: %s on %s (total %s)\n",
-				untrusted(r.Transaction.Description), r.Transaction.Date.Format("2006-01-02"), formatMoney(r.Transaction.Amount, r.Currency))
+				untrusted(r.Transaction.Description), r.Transaction.Date.UTC().Format("2006-01-02"), formatMoney(r.Transaction.Amount, r.Currency))
 		}
 		fmt.Fprintf(&sb, "    ID: %s\n", r.ID)
 	}
@@ -149,7 +149,7 @@ func (s *Server) handleGetReceivablesSummary(ctx context.Context, _ mcp.CallTool
 	fmt.Fprintf(&sb, "\nBy counterparty (in %s):\n", currencyCode(summary.Currency))
 	for _, c := range summary.ByCounterparty {
 		fmt.Fprintf(&sb, "  %-27s %12s  (%d open, oldest %s)\n",
-			untrusted(c.CounterpartyName), formatMoney(c.Outstanding, summary.Currency), c.OpenCount, c.OldestDate.Format("2006-01-02"))
+			untrusted(c.CounterpartyName), formatMoney(c.Outstanding, summary.Currency), c.OpenCount, c.OldestDate.UTC().Format("2006-01-02"))
 	}
 
 	fmt.Fprintf(&sb, "\nBy kind (in %s):\n", currencyCode(summary.Currency))

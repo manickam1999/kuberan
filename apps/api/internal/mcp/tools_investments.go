@@ -75,6 +75,9 @@ func (s *Server) handleGetPortfolio(ctx context.Context, _ mcp.CallToolRequest) 
 		for j := range holdings.Data {
 			sb.WriteString(holdingLines(&holdings.Data[j], base))
 		}
+		if holdings.TotalItems > int64(len(holdings.Data)) {
+			fmt.Fprintf(&sb, "  Note: only the first %d of %d holdings are listed\n", len(holdings.Data), holdings.TotalItems)
+		}
 	}
 
 	return mcp.NewToolResultText(sb.String()), nil

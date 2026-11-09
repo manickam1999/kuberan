@@ -205,7 +205,7 @@ func (s *Server) prepareCreateTransaction(c caller, args map[string]interface{})
 
 		var sb strings.Builder
 		fmt.Fprintf(&sb, "Created %s of %s on %s: %s\n",
-			txn.Type, formatMoney(txn.Amount, account.Currency), txn.Date.Format("2006-01-02"), untrusted(txn.Description))
+			txn.Type, formatMoney(txn.Amount, account.Currency), txn.Date.UTC().Format("2006-01-02"), untrusted(txn.Description))
 		fmt.Fprintf(&sb, "  ID: %s\n", txn.ID)
 		if txn.CategoryID != nil {
 			sb.WriteString(s.categoryLine(c.UserID, *txn.CategoryID, categoryID == nil))
@@ -289,7 +289,7 @@ func (s *Server) prepareCreateTransfer(c caller, args map[string]interface{}) (*
 		}
 
 		var sb strings.Builder
-		fmt.Fprintf(&sb, "Transferred %s on %s\n", transferAmounts(txn, fromAcc.Currency, toAcc.Currency), txn.Date.Format("2006-01-02"))
+		fmt.Fprintf(&sb, "Transferred %s on %s\n", transferAmounts(txn, fromAcc.Currency, toAcc.Currency), txn.Date.UTC().Format("2006-01-02"))
 		fmt.Fprintf(&sb, "  ID: %s\n", txn.ID)
 		sb.WriteString(s.balanceLine(c.UserID, fromID))
 		sb.WriteString(s.balanceLine(c.UserID, toID))
@@ -465,7 +465,7 @@ func (s *Server) prepareUpdateTransaction(c caller, args map[string]interface{})
 
 		var sb strings.Builder
 		fmt.Fprintf(&sb, "Updated transaction: %s  %s  %s  %s\n",
-			txn.Date.Format("2006-01-02"), txn.Type, formatMoney(txn.Amount, currency), untrusted(txn.Description))
+			txn.Date.UTC().Format("2006-01-02"), txn.Type, formatMoney(txn.Amount, currency), untrusted(txn.Description))
 		fmt.Fprintf(&sb, "  ID: %s\n", txn.ID)
 		sb.WriteString(note)
 		sb.WriteString(s.balanceLine(c.UserID, txn.AccountID))

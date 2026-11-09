@@ -123,7 +123,7 @@ func (s *Server) prepareRecordRepayment(c caller, args map[string]interface{}) (
 		}
 
 		var sb strings.Builder
-		fmt.Fprintf(&sb, "Recorded repayment of %s on %s\n", formatMoney(settlement.Amount, rec.Currency), settlement.Date.Format("2006-01-02"))
+		fmt.Fprintf(&sb, "Recorded repayment of %s on %s\n", formatMoney(settlement.Amount, rec.Currency), settlement.Date.UTC().Format("2006-01-02"))
 		if settlement.AccountAmount != nil {
 			fmt.Fprintf(&sb, "  Credited to the account: %s\n", formatMoney(*settlement.AccountAmount, account.Currency))
 		}

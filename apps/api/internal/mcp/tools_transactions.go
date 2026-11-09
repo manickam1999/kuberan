@@ -148,7 +148,7 @@ func (s *Server) handleListTransactions(ctx context.Context, req mcp.CallToolReq
 			category = untrusted(t.Category.Name)
 		}
 		fmt.Fprintf(&sb, "  %s  %-10s  %12s  %-22s  %s\n",
-			t.Date.Format("2006-01-02"),
+			t.Date.UTC().Format("2006-01-02"),
 			t.Type,
 			transactionAmount(t),
 			category,
@@ -250,7 +250,7 @@ func (s *Server) handleGetSpendingByCategory(ctx context.Context, req mcp.CallTo
 	if res != nil {
 		return res, nil
 	}
-	fromStr, toStr := from.Format("2006-01-02"), to.Format("2006-01-02")
+	fromStr, toStr := from.UTC().Format("2006-01-02"), to.UTC().Format("2006-01-02")
 
 	result, err := s.services.Transactions.GetSpendingByCategory(userID, from, to)
 	if err != nil {
@@ -320,7 +320,7 @@ func (s *Server) handleGetDailySpending(ctx context.Context, req mcp.CallToolReq
 	if res != nil {
 		return res, nil
 	}
-	fromStr, toStr := from.Format("2006-01-02"), to.Format("2006-01-02")
+	fromStr, toStr := from.UTC().Format("2006-01-02"), to.UTC().Format("2006-01-02")
 
 	items, err := s.services.Transactions.GetDailySpending(userID, from, to)
 	if err != nil {
@@ -357,7 +357,7 @@ func (s *Server) handleGetDailySummary(ctx context.Context, req mcp.CallToolRequ
 	if res != nil {
 		return res, nil
 	}
-	fromStr, toStr := from.Format("2006-01-02"), to.Format("2006-01-02")
+	fromStr, toStr := from.UTC().Format("2006-01-02"), to.UTC().Format("2006-01-02")
 
 	items, err := s.services.Transactions.GetDailySummary(userID, from, to)
 	if err != nil {
@@ -396,7 +396,7 @@ func (s *Server) handleGetTopExpenses(ctx context.Context, req mcp.CallToolReque
 	if res != nil {
 		return res, nil
 	}
-	fromStr, toStr := from.Format("2006-01-02"), to.Format("2006-01-02")
+	fromStr, toStr := from.UTC().Format("2006-01-02"), to.UTC().Format("2006-01-02")
 
 	limit := limitArg(args, "limit", 10)
 
@@ -429,7 +429,7 @@ func (s *Server) handleGetTopExpenses(ctx context.Context, req mcp.CallToolReque
 		}
 		fmt.Fprintf(&sb, "  %2d. %-32s %12s  [%s / %s]  %s\n",
 			i+1, untrusted(item.Description), moneyWithBase(effective, item.Currency, amountBase, result.Currency),
-			untrusted(item.CategoryName), untrusted(item.AccountName), item.Date.Format("2006-01-02"))
+			untrusted(item.CategoryName), untrusted(item.AccountName), item.Date.UTC().Format("2006-01-02"))
 		if item.PersonalAmount != nil {
 			sb.WriteString("      " + sharedExpenseNote(*item.PersonalAmount, item.Amount, item.Currency) + "\n")
 		}
