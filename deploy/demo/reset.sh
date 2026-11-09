@@ -10,7 +10,9 @@
 #   DB_HOST DB_USER DB_PASSWORD DB_NAME   Postgres owner/superuser (DB_PORT default 5432)
 #   API_URL                               e.g. http://api:8080
 #   DEMO_EMAIL DEMO_PASSWORD              the public demo login
-# Optional: DEMO_FIRST_NAME (Demo), DEMO_BASE_CURRENCY (MYR), WAIT_SECONDS (120),
+# Optional: DEMO_FIRST_NAME (Demo), WAIT_SECONDS (120), DEMO_BASE_CURRENCY (empty =
+# the default, MYR; any other currency needs an FX rate or USD, which a demo
+# without the oracle does not have),
 # MIGRATE_BIN (/migrate; run from the directory that holds migrations/).
 set -eu
 
@@ -27,6 +29,7 @@ case "$DB_NAME" in
     *[!A-Za-z0-9_]*) die "DB_NAME must be letters, digits and underscores only" ;;
 esac
 
+trap 'rm -f /tmp/register.out /tmp/load.out' EXIT
 export PGPASSWORD="$DB_PASSWORD"
 DB_PORT="${DB_PORT:-5432}"
 WAIT_SECONDS="${WAIT_SECONDS:-120}"
@@ -62,15 +65,16 @@ retry "$WAIT_SECONDS" "the api" curl -fsS "${API_URL}/api/health"
 
 register_body=$(jq -n \
     --arg email "$DEMO_EMAIL" --arg password "$DEMO_PASSWORD" \
-    --arg first "${DEMO_FIRST_NAME:-Demo}" --arg cur "${DEMO_BASE_CURRENCY:-MYR}" \
-    '{email: $email, password: $password, first_name: $first, base_currency: $cur}')
+    --arg first "${DEMO_FIRST_NAME:-Demo}" --arg cur "${DEMO_BASE_CURRENCY:-}" \
+    '{email: $email, password: $password, first_name: $first}
+     + (if $cur == "" then {} else {base_currency: $cur} end)')
 login_body=$(jq -n --arg email "$DEMO_EMAIL" --arg password "$DEMO_PASSWORD" \
     '{email: $email, password: $password}')
 
 log "registering the demo user"
 code=$(curl -sS -o /tmp/register.out -w '%{http_code}' -X POST "${API_URL}/api/v1/auth/register" \
     -H 'Content-Type: application/json' -d "$register_body") || die "register request failed"
-[ "$code" = "201" ] || [ "$code" = "200" ] || die "register returned HTTP ${code}"
+[ "$code" = "201" ] || [ "$code" = "200" ] || die "register returned HTTP ${code}: $(head -c 300 /tmp/register.out)"
 
 log "signing in"
 token=$(curl -fsS -X POST "${API_URL}/api/v1/auth/login" \
@@ -80,6 +84,6 @@ token=$(curl -fsS -X POST "${API_URL}/api/v1/auth/login" \
 log "loading the sample household"
 code=$(curl -sS -o /tmp/load.out -w '%{http_code}' -X POST "${API_URL}/api/v1/demo/load" \
     -H "Authorization: Bearer ${token}") || die "demo load request failed"
-[ "$code" = "201" ] || die "POST /demo/load returned HTTP ${code} (is DEMO_ENABLED=true on the api?)"
+[ "$code" = "201" ] || die "POST /demo/load returned HTTP ${code}: $(head -c 300 /tmp/load.out) (is DEMO_ENABLED=true on the api?)"
 
 log "done: $(jq -c '{total: .total}' /tmp/load.out 2>/dev/null || echo loaded)"

@@ -147,7 +147,7 @@ services:
       DEMO_EMAIL: ${DEMO_EMAIL:-demo@kuberan.example.com}
       DEMO_PASSWORD: ${DEMO_PASSWORD:?DEMO_PASSWORD is required (it is public)}
       DEMO_FIRST_NAME: ${DEMO_FIRST_NAME:-Demo}
-      DEMO_BASE_CURRENCY: ${DEMO_BASE_CURRENCY:-MYR}
+      DEMO_BASE_CURRENCY: ${DEMO_BASE_CURRENCY:-}
     networks: [backend]
     depends_on:
       postgres:
