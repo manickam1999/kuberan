@@ -35,26 +35,15 @@ type JWTClaims struct {
 	UserID    string `json:"user_id"`
 	Email     string `json:"email"`
 	TokenType string `json:"token_type"`
-	// SessionID (sid) is the refresh session the access token was issued for.
-	// Absent on bot tokens and on access tokens issued before it existed.
-	SessionID string `json:"sid,omitempty"`
 	jwt.RegisteredClaims
 }
 
-// GenerateAccessToken generates a short-lived JWT access token for a user,
-// not tied to a refresh session.
+// GenerateAccessToken generates a short-lived JWT access token for a user.
 func GenerateAccessToken(user *models.User) (string, error) {
-	return GenerateAccessTokenForSession(user, "")
-}
-
-// GenerateAccessTokenForSession generates a short-lived access token carrying
-// the refresh session it belongs to as the sid claim ("" omits the claim).
-func GenerateAccessTokenForSession(user *models.User, sessionID string) (string, error) {
 	claims := &JWTClaims{
 		UserID:    user.ID,
 		Email:     user.Email,
 		TokenType: "access",
-		SessionID: sessionID,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(accessTokenExpiry)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
@@ -190,7 +179,6 @@ func AuthMiddleware() gin.HandlerFunc {
 		// Set user ID and email in the context
 		c.Set("userID", claims.UserID)
 		c.Set("email", claims.Email)
-		c.Set("sessionID", claims.SessionID)
 		c.Next()
 	}
 }

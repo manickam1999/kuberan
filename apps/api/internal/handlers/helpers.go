@@ -107,11 +107,3 @@ func respondWithError(c *gin.Context, err error) {
 		},
 	})
 }
-
-// getSessionID returns the refresh session ID from the access token's sid
-// claim, or "" when the token carries none.
-func getSessionID(c *gin.Context) string {
-	id, _ := c.Get("sessionID")
-	s, _ := id.(string)
-	return s
-}

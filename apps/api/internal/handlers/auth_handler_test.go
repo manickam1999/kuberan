@@ -67,30 +67,18 @@ func (m *mockUserService) AttemptLogin(email, password string) (*models.User, er
 	return &models.User{}, nil
 }
 
-func (m *mockUserService) CreateRefreshSession(userID, tokenHash, userAgent, ipAddress string, expiresAt time.Time) (string, error) {
+func (m *mockUserService) CreateRefreshSession(userID, tokenHash, userAgent, ipAddress string, expiresAt time.Time) error {
 	if m.createRefreshSessionFn != nil {
-		return "mock-session", m.createRefreshSessionFn(userID, tokenHash, userAgent, ipAddress, expiresAt)
+		return m.createRefreshSessionFn(userID, tokenHash, userAgent, ipAddress, expiresAt)
 	}
-	return "mock-session", nil
+	return nil
 }
 
-func (m *mockUserService) RotateRefreshSession(userID, oldHash, newHash string, expiresAt time.Time) (string, error) {
+func (m *mockUserService) RotateRefreshSession(userID, oldHash, newHash string, expiresAt time.Time) error {
 	if m.rotateRefreshSessionFn != nil {
-		return "mock-session", m.rotateRefreshSessionFn(userID, oldHash, newHash, expiresAt)
+		return m.rotateRefreshSessionFn(userID, oldHash, newHash, expiresAt)
 	}
-	return "mock-session", nil
-}
-
-func (m *mockUserService) ListRefreshSessions(string) ([]models.RefreshSession, error) {
-	return nil, nil
-}
-
-func (m *mockUserService) RevokeRefreshSessionByID(string, string, string) error { return nil }
-
-func (m *mockUserService) RevokeOtherRefreshSessions(string, string) (int64, error) { return 0, nil }
-
-func (m *mockUserService) ChangePassword(string, string, string, string) (int64, error) {
-	return 0, nil
+	return nil
 }
 
 func (m *mockUserService) RevokeRefreshSession(userID, tokenHash string) error {
@@ -105,6 +93,22 @@ func (m *mockUserService) UpdateProfileSettings(userID string, update services.P
 		return m.updateProfileSettingsFn(userID, update)
 	}
 	return nil
+}
+
+func (m *mockUserService) FindRefreshSessionID(string, string) (string, error) {
+	return "", apperrors.ErrSessionNotFound
+}
+
+func (m *mockUserService) ListRefreshSessions(string) ([]models.RefreshSession, error) {
+	return nil, nil
+}
+
+func (m *mockUserService) RevokeRefreshSessionByID(string, string, string) error { return nil }
+
+func (m *mockUserService) RevokeOtherRefreshSessions(string, string) (int64, error) { return 0, nil }
+
+func (m *mockUserService) ChangePassword(string, string, string, string) (int64, error) {
+	return 0, nil
 }
 
 type mockAuditService struct{}

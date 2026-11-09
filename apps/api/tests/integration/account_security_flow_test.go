@@ -1,7 +1,6 @@
 package integration
 
 import (
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -9,34 +8,41 @@ import (
 	"strings"
 	"testing"
 
+	"kuberan/internal/handlers"
 	"kuberan/internal/middleware"
 	"kuberan/internal/models"
 )
 
-// tokenSID returns the sid claim of an access token ("" when absent).
-func tokenSID(t *testing.T, token string) string {
-	t.Helper()
-	parts := strings.Split(token, ".")
-	if len(parts) != 3 {
-		t.Fatalf("malformed JWT: %q", token)
+// authRequest makes a request with both the Bearer token and the refresh
+// cookie, as the browser sends to /api/v1/auth/*. An empty refresh sends no cookie.
+func (app *testApp) authRequest(method, path, body, access, refresh string) *httptest.ResponseRecorder {
+	req := httptest.NewRequest(method, path, strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	if access != "" {
+		req.Header.Set("Authorization", "Bearer "+access)
 	}
-	payload, err := base64.RawURLEncoding.DecodeString(parts[1])
-	if err != nil {
-		t.Fatalf("decode JWT payload: %v", err)
+	if refresh != "" {
+		req.AddCookie(&http.Cookie{Name: handlers.RefreshCookieName, Value: refresh})
 	}
-	var claims struct {
-		SID string `json:"sid"`
-	}
-	if err := json.Unmarshal(payload, &claims); err != nil {
-		t.Fatalf("parse JWT payload: %v", err)
-	}
-	return claims.SID
+	rec := httptest.NewRecorder()
+	app.Router.ServeHTTP(rec, req)
+	return rec
 }
 
-// listSessions returns GET /auth/sessions for token.
-func (app *testApp) listSessions(t *testing.T, token string) []map[string]interface{} {
+// sessionIDOf returns the ID of the session holding the refresh token.
+func (app *testApp) sessionIDOf(t *testing.T, refresh string) string {
 	t.Helper()
-	rec := app.request("GET", "/api/v1/auth/sessions", "", token)
+	var session models.RefreshSession
+	if err := app.DB.Where("token_hash = ?", middleware.HashToken(refresh)).First(&session).Error; err != nil {
+		t.Fatalf("find session: %v", err)
+	}
+	return session.ID
+}
+
+// listSessions returns GET /auth/sessions for the access token and cookie.
+func (app *testApp) listSessions(t *testing.T, access, refresh string) []map[string]interface{} {
+	t.Helper()
+	rec := app.authRequest("GET", "/api/v1/auth/sessions", "", access, refresh)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("list sessions: %d %s", rec.Code, rec.Body.String())
 	}
@@ -74,38 +80,40 @@ func (app *testApp) auditCount(t *testing.T, action string) int64 {
 	return n
 }
 
-func TestAccountSecurity_SessionIDClaim(t *testing.T) {
+func TestAccountSecurity_CurrentSessionFromCookie(t *testing.T) {
 	app := setupApp(t)
-	regAccess, regRefresh, _ := app.registerUser(t, "sid@test.com", "password123")
-	loginAccess, loginRefresh := app.loginUser(t, "sid@test.com", "password123")
-
-	regSID, loginSID := tokenSID(t, regAccess), tokenSID(t, loginAccess)
-	if regSID == "" || loginSID == "" || regSID == loginSID {
-		t.Fatalf("expected distinct non-empty sid claims, got %q and %q", regSID, loginSID)
+	regAccess, regRefresh, _ := app.registerUser(t, "cookie@test.com", "password123")
+	loginAccess, loginRefresh := app.loginUser(t, "cookie@test.com", "password123")
+	regSID, loginSID := app.sessionIDOf(t, regRefresh), app.sessionIDOf(t, loginRefresh)
+	if regSID == loginSID {
+		t.Fatal("expected distinct sessions")
 	}
 
-	// Refresh keeps the session, so the sid is stable across rotations.
-	rec := app.requestWithRefreshCookie("POST", "/api/v1/auth/refresh", regRefresh)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("refresh: %d %s", rec.Code, rec.Body.String())
-	}
-	refreshed := parseJSON(t, rec)["access_token"].(string)
-	if got := tokenSID(t, refreshed); got != regSID {
-		t.Errorf("sid after refresh = %q, want %q", got, regSID)
-	}
-
-	// current follows the presented token's sid.
-	sessions := app.listSessions(t, refreshed)
+	sessions := app.listSessions(t, regAccess, regRefresh)
 	if len(sessions) != 2 {
 		t.Fatalf("expected 2 sessions, got %d", len(sessions))
 	}
 	if id := currentSession(t, sessions)["id"]; id != regSID {
 		t.Errorf("current session = %v, want %s", id, regSID)
 	}
-	if id := currentSession(t, app.listSessions(t, loginAccess))["id"]; id != loginSID {
+	if id := currentSession(t, app.listSessions(t, loginAccess, loginRefresh))["id"]; id != loginSID {
 		t.Errorf("current session = %v, want %s", id, loginSID)
 	}
-	_ = loginRefresh
+
+	// After a rotation the new cookie still identifies the session, and so
+	// does the rotated-out one during the grace window.
+	rec := app.requestWithRefreshCookie("POST", "/api/v1/auth/refresh", regRefresh)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("refresh: %d %s", rec.Code, rec.Body.String())
+	}
+	rotated := refreshCookieValue(t, rec)
+	if id := currentSession(t, app.listSessions(t, regAccess, rotated))["id"]; id != regSID {
+		t.Errorf("current after rotation = %v, want %s", id, regSID)
+	}
+	sessions = app.listSessions(t, regAccess, regRefresh)
+	if id := currentSession(t, sessions)["id"]; id != regSID {
+		t.Errorf("current via grace token = %v, want %s", id, regSID)
+	}
 
 	cur := currentSession(t, sessions)
 	for _, f := range []string{"id", "created_at", "last_seen_at", "user_agent", "ip_address", "current"} {
@@ -113,35 +121,21 @@ func TestAccountSecurity_SessionIDClaim(t *testing.T) {
 			t.Errorf("session missing field %q", f)
 		}
 	}
-	// The rotated session's last_seen_at is its rotation time, not its creation.
-	if cur["last_seen_at"] == "" {
-		t.Error("last_seen_at is empty")
-	}
 
-	// A token without sid (bot/legacy) lists sessions but marks none current.
-	rec = app.request("GET", "/api/v1/auth/sessions", "", mustLegacyToken(t, app, "sid@test.com"))
-	if rec.Code != http.StatusOK {
-		t.Fatalf("list with sid-less token: %d %s", rec.Code, rec.Body.String())
-	}
-	for _, s := range parseJSON(t, rec)["sessions"].([]interface{}) {
-		if s.(map[string]interface{})["current"] == true {
-			t.Error("no session should be current for a token without sid")
+	// Another user's cookie matches nothing.
+	_, strangerRefresh, _ := app.registerUser(t, "cookie-stranger@test.com", "password123")
+	for _, s := range app.listSessions(t, regAccess, strangerRefresh) {
+		if s["current"] == true {
+			t.Error("a foreign cookie must not mark a session current")
 		}
 	}
-}
 
-// mustLegacyToken signs an access token without a sid claim.
-func mustLegacyToken(t *testing.T, app *testApp, email string) string {
-	t.Helper()
-	var user models.User
-	if err := app.DB.Where("email = ?", email).First(&user).Error; err != nil {
-		t.Fatalf("find user: %v", err)
+	// No cookie (bot token, API client): sessions list, none is current.
+	for _, s := range app.listSessions(t, regAccess, "") {
+		if s["current"] == true {
+			t.Error("no session should be current without the refresh cookie")
+		}
 	}
-	token, err := middleware.GenerateAccessToken(&user)
-	if err != nil {
-		t.Fatalf("GenerateAccessToken: %v", err)
-	}
-	return token
 }
 
 func TestAccountSecurity_SessionsRequireAuth(t *testing.T) {
@@ -161,29 +155,29 @@ func TestAccountSecurity_SessionsRequireAuth(t *testing.T) {
 func TestAccountSecurity_RevokeOneSession(t *testing.T) {
 	app := setupApp(t)
 	access, refresh, _ := app.registerUser(t, "revoke1@test.com", "password123")
-	otherAccess, otherRefresh := app.loginUser(t, "revoke1@test.com", "password123")
-	otherSID := tokenSID(t, otherAccess)
-	mySID := tokenSID(t, access)
+	_, otherRefresh := app.loginUser(t, "revoke1@test.com", "password123")
+	otherSID := app.sessionIDOf(t, otherRefresh)
+	mySID := app.sessionIDOf(t, refresh)
 
 	// The current session cannot be revoked this way.
-	rec := app.request("DELETE", "/api/v1/auth/sessions/"+mySID, "", access)
+	rec := app.authRequest("DELETE", "/api/v1/auth/sessions/"+mySID, "", access, refresh)
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("revoking current: expected 400, got %d: %s", rec.Code, rec.Body.String())
 	}
 	assertErrorCode(t, rec, "CURRENT_SESSION")
 
-	rec = app.request("DELETE", "/api/v1/auth/sessions/not-a-uuid", "", access)
+	rec = app.authRequest("DELETE", "/api/v1/auth/sessions/not-a-uuid", "", access, refresh)
 	if rec.Code != http.StatusBadRequest {
 		t.Errorf("bad id: expected 400, got %d", rec.Code)
 	}
-	rec = app.request("DELETE", "/api/v1/auth/sessions/00000000-0000-7000-8000-000000000000", "", access)
+	rec = app.authRequest("DELETE", "/api/v1/auth/sessions/00000000-0000-7000-8000-000000000000", "", access, refresh)
 	if rec.Code != http.StatusNotFound {
 		t.Errorf("unknown session: expected 404, got %d", rec.Code)
 	}
 
 	// Another user's session is indistinguishable from a missing one.
-	strangerAccess, _, _ := app.registerUser(t, "stranger@test.com", "password123")
-	rec = app.request("DELETE", "/api/v1/auth/sessions/"+otherSID, "", strangerAccess)
+	strangerAccess, strangerRefresh, _ := app.registerUser(t, "stranger@test.com", "password123")
+	rec = app.authRequest("DELETE", "/api/v1/auth/sessions/"+otherSID, "", strangerAccess, strangerRefresh)
 	if rec.Code != http.StatusNotFound {
 		t.Errorf("foreign session: expected 404, got %d", rec.Code)
 	}
@@ -191,7 +185,7 @@ func TestAccountSecurity_RevokeOneSession(t *testing.T) {
 		t.Fatalf("foreign delete must not end the session, refresh got %d", rec.Code)
 	}
 
-	rec = app.request("DELETE", "/api/v1/auth/sessions/"+otherSID, "", access)
+	rec = app.authRequest("DELETE", "/api/v1/auth/sessions/"+otherSID, "", access, refresh)
 	if rec.Code != http.StatusNoContent {
 		t.Fatalf("revoke other: expected 204, got %d: %s", rec.Code, rec.Body.String())
 	}
@@ -201,7 +195,7 @@ func TestAccountSecurity_RevokeOneSession(t *testing.T) {
 	if rec := app.requestWithRefreshCookie("POST", "/api/v1/auth/refresh", refresh); rec.Code != http.StatusOK {
 		t.Errorf("current device refresh: expected 200, got %d", rec.Code)
 	}
-	if n := len(app.listSessions(t, access)); n != 1 {
+	if n := len(app.listSessions(t, access, refresh)); n != 1 {
 		t.Errorf("expected 1 live session left, got %d", n)
 	}
 	if n := app.auditCount(t, "REVOKE_SESSION"); n != 1 {
@@ -215,16 +209,16 @@ func TestAccountSecurity_RevokeOtherSessions(t *testing.T) {
 	_, r2 := app.loginUser(t, "revokeall@test.com", "password123")
 	_, r3 := app.loginUser(t, "revokeall@test.com", "password123")
 
-	// A token without sid cannot say which session to keep.
-	rec := app.request("POST", "/api/v1/auth/sessions/revoke-others", "", mustLegacyToken(t, app, "revokeall@test.com"))
+	// Without the refresh cookie there is no way to say which session to keep.
+	rec := app.authRequest("POST", "/api/v1/auth/sessions/revoke-others", "", access, "")
 	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("revoke-others without sid: expected 400, got %d: %s", rec.Code, rec.Body.String())
+		t.Fatalf("revoke-others without cookie: expected 400, got %d: %s", rec.Code, rec.Body.String())
 	}
-	if n := len(app.listSessions(t, access)); n != 3 {
+	if n := len(app.listSessions(t, access, refresh)); n != 3 {
 		t.Fatalf("refused revoke-others must keep all sessions, got %d", n)
 	}
 
-	rec = app.request("POST", "/api/v1/auth/sessions/revoke-others", "", access)
+	rec = app.authRequest("POST", "/api/v1/auth/sessions/revoke-others", "", access, refresh)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("revoke-others: %d %s", rec.Code, rec.Body.String())
 	}
@@ -250,8 +244,8 @@ func TestAccountSecurity_ChangePassword(t *testing.T) {
 	_, otherRefresh := app.loginUser(t, "pw@test.com", "password123")
 
 	change := func(cur, next string) *httptest.ResponseRecorder {
-		return app.request("POST", "/api/v1/auth/password",
-			fmt.Sprintf(`{"current_password":%q,"new_password":%q}`, cur, next), access)
+		return app.authRequest("POST", "/api/v1/auth/password",
+			fmt.Sprintf(`{"current_password":%q,"new_password":%q}`, cur, next), access, refresh)
 	}
 
 	rec := change("password123", "short")
@@ -275,7 +269,7 @@ func TestAccountSecurity_ChangePassword(t *testing.T) {
 	if user.FailedLoginAttempts != 1 {
 		t.Errorf("wrong current password must count toward lockout, attempts = %d", user.FailedLoginAttempts)
 	}
-	if n := len(app.listSessions(t, access)); n != 2 {
+	if n := len(app.listSessions(t, access, refresh)); n != 2 {
 		t.Errorf("a failed change must not revoke sessions, got %d", n)
 	}
 
@@ -412,6 +406,20 @@ func TestAccountSecurity_LastLoginInResponses(t *testing.T) {
 	user = parseJSON(t, rec)["user"].(map[string]interface{})
 	if s, _ := user["last_login_at"].(string); s == "" {
 		t.Errorf("profile last_login_at = %v, want a timestamp", user["last_login_at"])
+	}
+}
+
+func TestAccountSecurity_ChangePasswordWithoutCookieRevokesAll(t *testing.T) {
+	app := setupApp(t)
+	access, refresh, _ := app.registerUser(t, "nocookie@test.com", "password123")
+
+	rec := app.authRequest("POST", "/api/v1/auth/password",
+		`{"current_password":"password123","new_password":"newpassword456"}`, access, "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("change: %d %s", rec.Code, rec.Body.String())
+	}
+	if rec := app.requestWithRefreshCookie("POST", "/api/v1/auth/refresh", refresh); rec.Code != http.StatusUnauthorized {
+		t.Errorf("without a cookie every session ends: expected 401, got %d", rec.Code)
 	}
 }
 

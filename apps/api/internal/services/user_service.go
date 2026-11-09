@@ -296,12 +296,10 @@ func (s *userService) recordFailedLogin(userID string, now time.Time) (lockoutTr
 }
 
 // CreateRefreshSession starts a new per-device refresh session holding the
-// hash of its first refresh token and returns its ID (the access token's sid
-// claim). Expired sessions for the user are pruned, and the oldest are dropped
+// hash of its first refresh token. Expired sessions for the user are pruned, and the oldest are dropped
 // beyond maxRefreshSessionsPerUser, so the table stays bounded even if clients
 // never log out.
-func (s *userService) CreateRefreshSession(userID, tokenHash, userAgent, ipAddress string, expiresAt time.Time) (string, error) {
-	var sessionID string
+func (s *userService) CreateRefreshSession(userID, tokenHash, userAgent, ipAddress string, expiresAt time.Time) error {
 	err := s.db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Unscoped().Where("user_id = ? AND expires_at <= ?", userID, time.Now()).
 			Delete(&models.RefreshSession{}).Error; err != nil {
@@ -318,7 +316,6 @@ func (s *userService) CreateRefreshSession(userID, tokenHash, userAgent, ipAddre
 		if err := tx.Create(&session).Error; err != nil {
 			return err
 		}
-		sessionID = session.ID
 
 		var stale []string
 		if err := tx.Model(&models.RefreshSession{}).Where("user_id = ?", userID).
@@ -331,19 +328,18 @@ func (s *userService) CreateRefreshSession(userID, tokenHash, userAgent, ipAddre
 		return nil
 	})
 	if err != nil {
-		return "", apperrors.Wrap(apperrors.ErrInternalServer, err)
+		return apperrors.Wrap(apperrors.ErrInternalServer, err)
 	}
-	return sessionID, nil
+	return nil
 }
 
 // RotateRefreshSession swaps oldHash for newHash in the user's session that
-// holds it, extends the session to expiresAt and returns the session's ID.
-// oldHash is accepted if it is the session's current token, or the token
+// holds it and extends the session to expiresAt. oldHash is accepted if it is the session's current token, or the token
 // rotated out less than refreshRotationGrace ago (two tabs refreshing at once,
 // or a lost response). Each branch is a single conditional UPDATE, so
 // concurrent rotations of the same token cannot both win the current-token
 // branch. Returns ErrUnauthorized when no live session matches.
-func (s *userService) RotateRefreshSession(userID, oldHash, newHash string, expiresAt time.Time) (string, error) {
+func (s *userService) RotateRefreshSession(userID, oldHash, newHash string, expiresAt time.Time) error {
 	now := time.Now()
 
 	res := s.db.Model(&models.RefreshSession{}).
@@ -355,7 +351,7 @@ func (s *userService) RotateRefreshSession(userID, oldHash, newHash string, expi
 			"expires_at":          expiresAt,
 		})
 	if res.Error != nil {
-		return "", apperrors.Wrap(apperrors.ErrInternalServer, res.Error)
+		return apperrors.Wrap(apperrors.ErrInternalServer, res.Error)
 	}
 	if res.RowsAffected == 0 {
 		// Grace path: keep previous_token_hash as is so the window is measured
@@ -368,16 +364,29 @@ func (s *userService) RotateRefreshSession(userID, oldHash, newHash string, expi
 				"expires_at": expiresAt,
 			})
 		if res.Error != nil {
-			return "", apperrors.Wrap(apperrors.ErrInternalServer, res.Error)
+			return apperrors.Wrap(apperrors.ErrInternalServer, res.Error)
 		}
 	}
 	if res.RowsAffected != 1 {
-		return "", apperrors.ErrUnauthorized
+		return apperrors.ErrUnauthorized
 	}
 
+	return nil
+}
+
+// FindRefreshSessionID returns the ID of the user's live session whose current
+// or just-rotated-out (grace window) token hash is tokenHash, or "" with
+// ErrSessionNotFound when none matches.
+func (s *userService) FindRefreshSessionID(userID, tokenHash string) (string, error) {
 	var session models.RefreshSession
-	if err := s.db.Select("id").Where("user_id = ? AND token_hash = ?", userID, newHash).
-		First(&session).Error; err != nil {
+	err := s.db.Select("id").
+		Where("user_id = ? AND expires_at > ? AND (token_hash = ? OR (previous_token_hash = ? AND rotated_at > ?))",
+			userID, time.Now(), tokenHash, tokenHash, time.Now().Add(-refreshRotationGrace)).
+		First(&session).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return "", apperrors.ErrSessionNotFound
+	}
+	if err != nil {
 		return "", apperrors.Wrap(apperrors.ErrInternalServer, err)
 	}
 	return session.ID, nil
@@ -418,7 +427,7 @@ func (s *userService) RevokeRefreshSessionByID(userID, sessionID, currentSession
 func (s *userService) RevokeOtherRefreshSessions(userID, currentSessionID string) (int64, error) {
 	if currentSessionID == "" {
 		return 0, apperrors.WithMessage(apperrors.ErrInvalidInput,
-			"current session is unknown; sign in again before revoking other devices")
+			"current session is unknown; the refresh cookie is required")
 	}
 	return s.revokeSessionsExcept(s.db, userID, currentSessionID)
 }

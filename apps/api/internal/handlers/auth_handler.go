@@ -250,16 +250,15 @@ func (h *AuthHandler) RefreshToken(c *gin.Context) {
 		return
 	}
 
-	refreshToken, err := middleware.GenerateRefreshToken(user)
+	accessToken, refreshToken, err := issueTokenPair(user)
 	if err != nil {
-		respondWithError(c, apperrors.Wrap(apperrors.ErrInternalServer, err))
+		respondWithError(c, err)
 		return
 	}
 
 	// Rotate within this device's session only; other devices are unaffected.
-	sessionID, err := h.userService.RotateRefreshSession(user.ID, middleware.HashToken(presented),
-		middleware.HashToken(refreshToken), time.Now().Add(middleware.RefreshTokenExpiry))
-	if err != nil {
+	if err := h.userService.RotateRefreshSession(user.ID, middleware.HashToken(presented),
+		middleware.HashToken(refreshToken), time.Now().Add(middleware.RefreshTokenExpiry)); err != nil {
 		if errors.Is(err, apperrors.ErrUnauthorized) {
 			// A validly signed token that matches no live session: revoked
 			// (logout), rotated out past the grace window, or replayed.
@@ -268,12 +267,6 @@ func (h *AuthHandler) RefreshToken(c *gin.Context) {
 			h.clearRefreshCookie(c)
 		}
 		respondWithError(c, err)
-		return
-	}
-
-	accessToken, err := middleware.GenerateAccessTokenForSession(user, sessionID)
-	if err != nil {
-		respondWithError(c, apperrors.Wrap(apperrors.ErrInternalServer, err))
 		return
 	}
 
@@ -543,21 +536,29 @@ func (h *AuthHandler) UpdateProfileSettings(c *gin.Context) {
 }
 
 // startSession issues a token pair for a fresh login and records a new
-// per-device refresh session for it. The access token carries the new
-// session's ID as its sid claim.
+// per-device refresh session for it.
 func (h *AuthHandler) startSession(c *gin.Context, user *models.User) (accessToken, refreshToken string, err error) {
-	refreshToken, err = middleware.GenerateRefreshToken(user)
-	if err != nil {
-		return "", "", apperrors.Wrap(apperrors.ErrInternalServer, err)
-	}
-
-	sessionID, err := h.userService.CreateRefreshSession(user.ID, middleware.HashToken(refreshToken),
-		c.Request.UserAgent(), c.ClientIP(), time.Now().Add(middleware.RefreshTokenExpiry))
+	accessToken, refreshToken, err = issueTokenPair(user)
 	if err != nil {
 		return "", "", err
 	}
 
-	accessToken, err = middleware.GenerateAccessTokenForSession(user, sessionID)
+	if err := h.userService.CreateRefreshSession(user.ID, middleware.HashToken(refreshToken),
+		c.Request.UserAgent(), c.ClientIP(), time.Now().Add(middleware.RefreshTokenExpiry)); err != nil {
+		return "", "", err
+	}
+
+	return accessToken, refreshToken, nil
+}
+
+// issueTokenPair signs a new access/refresh token pair without persisting it.
+func issueTokenPair(user *models.User) (accessToken, refreshToken string, err error) {
+	accessToken, err = middleware.GenerateAccessToken(user)
+	if err != nil {
+		return "", "", apperrors.Wrap(apperrors.ErrInternalServer, err)
+	}
+
+	refreshToken, err = middleware.GenerateRefreshToken(user)
 	if err != nil {
 		return "", "", apperrors.Wrap(apperrors.ErrInternalServer, err)
 	}
@@ -629,7 +630,7 @@ func (h *AuthHandler) ChangePassword(c *gin.Context) {
 		return
 	}
 
-	revoked, err := h.userService.ChangePassword(userID, req.CurrentPassword, req.NewPassword, getSessionID(c))
+	revoked, err := h.userService.ChangePassword(userID, req.CurrentPassword, req.NewPassword, h.currentSessionID(c, userID))
 	if err != nil {
 		if errors.Is(err, apperrors.ErrInvalidCurrentPassword) || errors.Is(err, apperrors.ErrAccountLocked) {
 			reason := "invalid_current_password"
@@ -650,7 +651,7 @@ func (h *AuthHandler) ChangePassword(c *gin.Context) {
 
 // ListSessions lists the user's signed-in devices.
 // @Summary     List device sessions
-// @Description List the authenticated user's live refresh sessions; current marks the one making the request
+// @Description List the authenticated user's live refresh sessions; current marks the one whose refresh cookie the request carries
 // @Tags        auth
 // @Produce     json
 // @Security    BearerAuth
@@ -671,7 +672,7 @@ func (h *AuthHandler) ListSessions(c *gin.Context) {
 		return
 	}
 
-	currentID := getSessionID(c)
+	currentID := h.currentSessionID(c, userID)
 	out := make([]SessionResponse, 0, len(sessions))
 	for i := range sessions {
 		session := &sessions[i]
@@ -717,7 +718,7 @@ func (h *AuthHandler) RevokeSession(c *gin.Context) {
 		return
 	}
 
-	if err := h.userService.RevokeRefreshSessionByID(userID, sessionID, getSessionID(c)); err != nil {
+	if err := h.userService.RevokeRefreshSessionByID(userID, sessionID, h.currentSessionID(c, userID)); err != nil {
 		respondWithError(c, err)
 		return
 	}
@@ -733,7 +734,7 @@ func (h *AuthHandler) RevokeSession(c *gin.Context) {
 // @Produce     json
 // @Security    BearerAuth
 // @Success     200 {object} RevokedSessionsResponse "Other sessions revoked"
-// @Failure     400 {object} ErrorResponse "Current session unknown (token predates device sessions); sign in again"
+// @Failure     400 {object} ErrorResponse "Current session unknown (no refresh cookie sent)"
 // @Failure     401 {object} ErrorResponse "Unauthorized"
 // @Failure     500 {object} ErrorResponse "Server error"
 // @Router      /auth/sessions/revoke-others [post]
@@ -744,7 +745,7 @@ func (h *AuthHandler) RevokeOtherSessions(c *gin.Context) {
 		return
 	}
 
-	revoked, err := h.userService.RevokeOtherRefreshSessions(userID, getSessionID(c))
+	revoked, err := h.userService.RevokeOtherRefreshSessions(userID, h.currentSessionID(c, userID))
 	if err != nil {
 		respondWithError(c, err)
 		return
@@ -753,4 +754,21 @@ func (h *AuthHandler) RevokeOtherSessions(c *gin.Context) {
 	h.auditService.Log(userID, "REVOKE_OTHER_SESSIONS", "user", userID, c.ClientIP(),
 		map[string]interface{}{"revoked_sessions": revoked})
 	c.JSON(http.StatusOK, RevokedSessionsResponse{RevokedSessions: revoked})
+}
+
+// currentSessionID resolves the caller's device session from the
+// kuberan_refresh cookie (the browser sends it to every /auth route): the
+// session whose current or just-rotated-out token hash matches. It returns ""
+// when there is no cookie or no live session matches, e.g. for bot tokens and
+// non-browser clients.
+func (h *AuthHandler) currentSessionID(c *gin.Context, userID string) string {
+	token, err := c.Cookie(RefreshCookieName)
+	if err != nil || token == "" {
+		return ""
+	}
+	id, err := h.userService.FindRefreshSessionID(userID, middleware.HashToken(token))
+	if err != nil {
+		return ""
+	}
+	return id
 }
