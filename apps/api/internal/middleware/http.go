@@ -81,6 +81,8 @@ func CORS(allowed []string) gin.HandlerFunc {
 			h.Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
 			h.Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-API-Key")
 			h.Set("Access-Control-Max-Age", "600")
+			// Lets the web app read when a rate-limited request may be retried.
+			h.Set("Access-Control-Expose-Headers", "Retry-After")
 		}
 
 		if c.Request.Method == http.MethodOptions {
