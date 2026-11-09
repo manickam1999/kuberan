@@ -150,7 +150,7 @@ apps/web/src/
 ```
 
 ### Frontend Patterns
-- **Look and feel**: tokens (ink/line/fg/accent/pos/neg/k1..k8) come from `lib/palettes.ts`; a user picks a palette in Settings > Appearance (stored in `users.appearance`), otherwise the server's `DEFAULT_PALETTE` (public `GET /appearance`), otherwise Catppuccin. Fonts: Instrument Serif (display and money), Source Serif 4, Geist. Phones get a bottom tab bar and a quick-add sheet; the app has a web manifest (installable)
+- **Look and feel**: tokens (ink/line/fg/accent/pos/neg/k1..k8) come from `lib/palettes.ts`; a user picks a palette in Settings > Appearance (stored in `users.appearance`), otherwise the server's `DEFAULT_PALETTE` (public `GET /appearance`), otherwise Catppuccin. Fonts: Instrument Serif (display and money), Source Serif 4, Geist. Phones get a bottom tab bar with a central add button; the app has a web manifest (installable)
 - **Route groups**: `(auth)` for public pages, `(oauth)` for the Hydra login/consent pages (MCP OAuth flow), `(dashboard)` for protected pages with sidebar layout
 - **Provider chain**: Root layout wraps `ThemeProvider` > `QueryProvider` > `AuthProvider` > `Toaster`
 - **Data fetching**: All API calls go through `lib/api-client.ts`, consumed by React Query hooks in `src/hooks/`. Each hook file exports a query key factory for structured cache management
