@@ -1,6 +1,11 @@
 import type { Metadata } from "next";
 import { headers } from "next/headers";
-import { Geist, Geist_Mono } from "next/font/google";
+import {
+  Geist,
+  Geist_Mono,
+  Instrument_Serif,
+  Source_Serif_4,
+} from "next/font/google";
 import localFont from "next/font/local";
 import { ThemeProvider } from "@/providers/theme-provider";
 import { QueryProvider } from "@/providers/query-provider";
@@ -22,6 +27,23 @@ const geistSans = Geist({
 const geistMono = Geist_Mono({
   variable: "--font-geist-mono",
   subsets: ["latin"],
+});
+
+// Display face (page titles, brand) and figures face (hero / KPI amounts).
+// Self-hosted at build time by next/font, so the CSP's `font-src 'self'` holds.
+const instrumentSerif = Instrument_Serif({
+  variable: "--font-instrument-serif",
+  subsets: ["latin"],
+  weight: "400",
+  style: ["normal", "italic"],
+  display: "swap",
+});
+
+const sourceSerif = Source_Serif_4({
+  variable: "--font-source-serif",
+  subsets: ["latin"],
+  axes: ["opsz"],
+  display: "swap",
 });
 
 // Geist Pixel (Square) — the pixel accent dither-kit uses on its own site
@@ -70,7 +92,7 @@ export default async function RootLayout({
         />
       </head>
       <body
-        className={`${geistSans.variable} ${geistMono.variable} ${geistPixel.variable} antialiased`}
+        className={`${geistSans.variable} ${geistMono.variable} ${geistPixel.variable} ${instrumentSerif.variable} ${sourceSerif.variable} antialiased`}
       >
         <ThemeProvider nonce={nonce}>
           <ChartThemeProvider>

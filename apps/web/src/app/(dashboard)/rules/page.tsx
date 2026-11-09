@@ -91,7 +91,7 @@ export default function RulesPage() {
     <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Rules</h1>
+          <h1 className="font-display text-3xl leading-tight">Rules</h1>
           <p className="text-sm text-muted-foreground">
             Auto-categorize new transactions. Rules run top to bottom; the first
             match wins. Drag to reorder.

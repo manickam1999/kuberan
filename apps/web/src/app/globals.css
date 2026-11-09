@@ -90,30 +90,30 @@
   --radius: 0.75rem;
 
   --background: #e6e9ef;
-  --foreground: #4c4f69;
+  --foreground: #484b64;
   --card: #eff1f5;
-  --card-foreground: #4c4f69;
+  --card-foreground: #484b64;
   --elevated: #ffffff;
-  --elevated-foreground: #4c4f69;
+  --elevated-foreground: #484b64;
   --popover: #ffffff;
-  --popover-foreground: #4c4f69;
+  --popover-foreground: #484b64;
 
   --primary: #8839ef;
   --primary-foreground: #ffffff;
   --secondary: #dce0e8;
-  --secondary-foreground: #4c4f69;
+  --secondary-foreground: #484b64;
   --muted: #dce0e8;
   --muted-foreground: #5c5f77;
   --accent: rgba(136,57,239,.1);
-  --accent-foreground: #4c4f69;
+  --accent-foreground: #484b64;
   --destructive: #c20e35;
-  --border: rgba(76,79,105,.1);
-  --input: rgba(76,79,105,.18);
+  --border: rgba(72,75,100,.1);
+  --input: rgba(72,75,100,.18);
   --ring: #8839ef;
 
-  --positive: #2f7d1e;
+  --positive: #2d781d;
   --positive-foreground: #ffffff;
-  --positive-muted: rgba(47,125,30,.1);
+  --positive-muted: rgba(45,120,29,.1);
   --negative: #c20e35;
   --negative-foreground: #ffffff;
   --negative-muted: rgba(194,14,53,.1);
@@ -126,7 +126,7 @@
   --investment: #5563d0;
   --investment-foreground: #ffffff;
   --investment-muted: color-mix(in srgb, #5563d0 14%, transparent);
-  --positive-text: #2f7d1e;
+  --positive-text: #2d781d;
   --warning-text: #9a5e0c;
   --info-text: #1e5fe0;
 
@@ -142,8 +142,8 @@
   --sidebar-primary: #8839ef;
   --sidebar-primary-foreground: #ffffff;
   --sidebar-accent: rgba(136,57,239,.1);
-  --sidebar-accent-foreground: #4c4f69;
-  --sidebar-border: rgba(76,79,105,.1);
+  --sidebar-accent-foreground: #484b64;
+  --sidebar-border: rgba(72,75,100,.1);
   --sidebar-ring: #8839ef;
   color-scheme: light;
 }
@@ -229,17 +229,17 @@
   --muted-foreground: #625a50;
   --accent: rgba(143,106,31,.11);
   --accent-foreground: #1d1a16;
-  --destructive: #b4513c;
+  --destructive: #b2503b;
   --border: rgba(40,30,15,.09);
   --input: rgba(40,30,15,.17);
   --ring: #8f6a1f;
 
-  --positive: #2f7d52;
+  --positive: #2f7c51;
   --positive-foreground: #fffaf0;
-  --positive-muted: rgba(47,125,82,.1);
-  --negative: #b4513c;
+  --positive-muted: rgba(47,124,81,.1);
+  --negative: #b2503b;
   --negative-foreground: #fffaf0;
-  --negative-muted: rgba(180,81,60,.1);
+  --negative-muted: rgba(178,80,59,.1);
   --warning: #946f12;
   --warning-foreground: #fffaf0;
   --warning-muted: rgba(148,111,18,.1);
@@ -249,7 +249,7 @@
   --investment: #7570ad;
   --investment-foreground: #fffaf0;
   --investment-muted: color-mix(in srgb, #7570ad 14%, transparent);
-  --positive-text: #2f7d52;
+  --positive-text: #2f7c51;
   --warning-text: #946f12;
   --info-text: #4f7fae;
 
@@ -933,30 +933,30 @@
 
 [data-palette="catppuccin"] {
   --background: #e6e9ef;
-  --foreground: #4c4f69;
+  --foreground: #484b64;
   --card: #eff1f5;
-  --card-foreground: #4c4f69;
+  --card-foreground: #484b64;
   --elevated: #ffffff;
-  --elevated-foreground: #4c4f69;
+  --elevated-foreground: #484b64;
   --popover: #ffffff;
-  --popover-foreground: #4c4f69;
+  --popover-foreground: #484b64;
 
   --primary: #8839ef;
   --primary-foreground: #ffffff;
   --secondary: #dce0e8;
-  --secondary-foreground: #4c4f69;
+  --secondary-foreground: #484b64;
   --muted: #dce0e8;
   --muted-foreground: #5c5f77;
   --accent: rgba(136,57,239,.1);
-  --accent-foreground: #4c4f69;
+  --accent-foreground: #484b64;
   --destructive: #c20e35;
-  --border: rgba(76,79,105,.1);
-  --input: rgba(76,79,105,.18);
+  --border: rgba(72,75,100,.1);
+  --input: rgba(72,75,100,.18);
   --ring: #8839ef;
 
-  --positive: #2f7d1e;
+  --positive: #2d781d;
   --positive-foreground: #ffffff;
-  --positive-muted: rgba(47,125,30,.1);
+  --positive-muted: rgba(45,120,29,.1);
   --negative: #c20e35;
   --negative-foreground: #ffffff;
   --negative-muted: rgba(194,14,53,.1);
@@ -969,7 +969,7 @@
   --investment: #5563d0;
   --investment-foreground: #ffffff;
   --investment-muted: color-mix(in srgb, #5563d0 14%, transparent);
-  --positive-text: #2f7d1e;
+  --positive-text: #2d781d;
   --warning-text: #9a5e0c;
   --info-text: #1e5fe0;
 
@@ -985,8 +985,8 @@
   --sidebar-primary: #8839ef;
   --sidebar-primary-foreground: #ffffff;
   --sidebar-accent: rgba(136,57,239,.1);
-  --sidebar-accent-foreground: #4c4f69;
-  --sidebar-border: rgba(76,79,105,.1);
+  --sidebar-accent-foreground: #484b64;
+  --sidebar-border: rgba(72,75,100,.1);
   --sidebar-ring: #8839ef;
   color-scheme: light;
 }
@@ -1239,3 +1239,27 @@ html[data-chart-theme="dither"] body {
     border-radius: 9999px;
   }
 }
+
+/* ==========================================================================
+ * Plan 023 phase 2.2 / 2.3 (type, money): font stacks and utilities.
+ * Self-contained block; the variables come from next/font in layout.tsx.
+ * ======================================================================== */
+:root {
+  --font-display: var(--font-instrument-serif), "Iowan Old Style", Georgia, serif;
+  --font-figures: var(--font-source-serif), "Iowan Old Style", Georgia, serif;
+}
+
+@layer utilities {
+  /* Page titles and the wordmark. Instrument Serif has a single weight. */
+  .font-display {
+    font-family: var(--font-display);
+    font-weight: 400;
+  }
+  /* Hero and KPI figures: optical-size serif with lining, tabular numerals. */
+  .font-figures {
+    font-optical-sizing: auto;
+    font-family: var(--font-figures);
+    font-variant-numeric: lining-nums tabular-nums;
+  }
+}
+/* ===== end plan 023 phase 2.2 / 2.3 ====================================== */

@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
+import { RingMark } from "@/components/brand/ring-mark";
 import { useAuth } from "@/hooks/use-auth";
 
 export default function AuthLayout({
@@ -36,11 +37,9 @@ export default function AuthLayout({
 
       <div className="relative w-full max-w-sm space-y-6">
         <div className="flex flex-col items-center gap-3 text-center">
-          <div className="flex size-12 items-center justify-center rounded-2xl bg-gradient-to-br from-primary to-emerald-600 text-lg font-semibold text-primary-foreground shadow-lg shadow-primary/30">
-            K
-          </div>
+          <RingMark className="size-12" />
           <div>
-            <h1 className="text-lg font-semibold tracking-tight">Kuberan</h1>
+            <h1 className="font-display text-4xl leading-none">Kuberan</h1>
             <p className="text-sm text-muted-foreground">
               Your finances, in focus
             </p>

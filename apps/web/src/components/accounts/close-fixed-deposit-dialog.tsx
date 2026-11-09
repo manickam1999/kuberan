@@ -186,7 +186,7 @@ export function CloseFixedDepositDialog({
             {isEarlyClose && penalty > 0 && (
               <div className="flex justify-between text-destructive">
                 <span>Penalty</span>
-                <span>-{formatMoney(penalty, account.currency)}</span>
+                <span>{formatMoney(-penalty, account.currency)}</span>
               </div>
             )}
             <div className="flex justify-between border-t border-border/60 pt-2 font-semibold">

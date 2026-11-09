@@ -66,17 +66,12 @@ const CHECKS: Check[] = SURFACES.flatMap((bg) => [
 ]);
 
 /**
- * Pairs in the design prototype's own values that miss the rule above. They
- * are reported, not silently re-coloured: change the prototype value and
- * delete the entry. The test fails when an entry stops failing, so the list
+ * Pairs that miss the rule above (all four prototype misses were fixed in 2.1;
+ * keep this empty). A new entry must be reported, not silently re-coloured;
+ * the test fails when an entry stops failing, so the list
  * cannot go stale.
  */
-const KNOWN_PROTOTYPE_FAILURES = new Set([
-  "gold/light: positive on ink0", // 4.46:1
-  "gold/light: negative on ink0", // 4.46:1
-  "catppuccin/light: text on ink0", // 6.57:1
-  "catppuccin/light: positive on ink0", // 4.24:1
-]);
+const KNOWN_PROTOTYPE_FAILURES = new Set<string>([]);
 
 describe.each(PALETTES)("palette $id contrast", (palette) => {
   for (const mode of ["light", "dark"] as const) {

@@ -72,7 +72,7 @@ export function StatCard({
       <div className="mt-3">
         <div
           className={cn(
-            "money text-2xl font-semibold leading-tight sm:text-[1.65rem]",
+            "money font-figures text-2xl font-normal leading-tight sm:text-[1.65rem]",
             toneValue[tone]
           )}
         >

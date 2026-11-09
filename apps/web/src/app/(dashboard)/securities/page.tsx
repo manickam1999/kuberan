@@ -106,7 +106,7 @@ export default function SecuritiesPage() {
     <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Securities</h1>
+          <h1 className="font-display text-3xl leading-tight">Securities</h1>
           <p className="text-sm text-muted-foreground">
             {data?.total_items ?? securities.length} instruments available
           </p>

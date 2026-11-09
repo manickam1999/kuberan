@@ -55,7 +55,7 @@ export default function AnalyticsPage() {
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <h1 className="text-2xl font-semibold tracking-tight">
+        <h1 className="font-display text-3xl leading-tight">
           Expense Analytics
         </h1>
         <PeriodSelector period={period} />

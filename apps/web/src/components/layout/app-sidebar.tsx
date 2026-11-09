@@ -1,5 +1,6 @@
 "use client";
 
+import { RingMark } from "@/components/brand/ring-mark";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
@@ -90,11 +91,9 @@ export function AppSidebar() {
           onClick={handleLinkClick}
           className="flex items-center gap-2.5 px-2 py-2"
         >
-          <div className="relative flex size-9 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-emerald-600 font-semibold text-primary-foreground shadow-sm shadow-primary/30">
-            <span className="text-base leading-none">K</span>
-          </div>
+          <RingMark className="size-9" />
           <div className="flex flex-col group-data-[collapsible=icon]:hidden">
-            <span className="font-semibold leading-tight tracking-tight">
+            <span className="font-display text-[22px] leading-none">
               Kuberan
             </span>
             <span className="text-[11px] leading-tight text-muted-foreground">

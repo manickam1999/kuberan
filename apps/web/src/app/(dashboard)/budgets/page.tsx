@@ -218,7 +218,7 @@ export default function BudgetsPage() {
     <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Budgets</h1>
+          <h1 className="font-display text-3xl leading-tight">Budgets</h1>
           <p className="text-sm text-muted-foreground">
             Set recurring spending caps and track them against this period
           </p>

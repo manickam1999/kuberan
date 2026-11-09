@@ -108,9 +108,11 @@ export const config = {
      * Match all request paths except:
      * - _next/static (static files)
      * - _next/image (image optimization)
-     * - favicon.ico, sitemap.xml, robots.txt (metadata files)
+     * - favicon.ico, icon.svg, apple-icon.png, the maskable icon, the web
+     *   manifest, sitemap.xml, robots.txt (metadata files; the login page
+     *   needs the icons while signed out)
      * - api routes (handled by backend)
      */
-    "/((?!_next/static|_next/image|favicon\\.ico|sitemap\\.xml|robots\\.txt|api).*)",
+    "/((?!_next/static|_next/image|favicon\\.ico|icon\\.svg|apple-icon\\.png|icon-maskable-512\\.png|manifest\\.webmanifest|sitemap\\.xml|robots\\.txt|api).*)",
   ],
 };

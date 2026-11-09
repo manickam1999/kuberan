@@ -46,7 +46,7 @@ export function holdingFigures(inv: Investment): HoldingFigures {
   };
 }
 
-/** Signed money text: "+US$1.00" / "-US$1.00" (the sign comes from the amount). */
+/** Signed money text: "+US$1.00" / "US$\u22121.00" (the sign comes from the amount). */
 export function formatSigned(
   cents: number,
   currency: string,

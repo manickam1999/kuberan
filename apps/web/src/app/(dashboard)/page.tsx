@@ -211,7 +211,7 @@ export default function DashboardPage() {
     <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">
+          <h1 className="font-display text-3xl leading-tight">
             {user?.first_name ? `Welcome back, ${user.first_name}` : "Dashboard"}
           </h1>
           <p className="text-sm text-muted-foreground">{today}</p>

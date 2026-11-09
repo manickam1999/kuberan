@@ -156,7 +156,7 @@ export default function ReceivablesPage() {
     <div className="space-y-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Owed to me</h1>
+          <h1 className="font-display text-3xl leading-tight">Owed to me</h1>
           <p className="text-sm text-muted-foreground">
             Money others owe you. Shown for information only and not counted in
             your net worth until it is repaid.

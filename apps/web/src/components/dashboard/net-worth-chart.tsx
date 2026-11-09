@@ -258,7 +258,7 @@ export function NetWorthChart() {
               Net worth
             </CardDescription>
             <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-              <CardTitle className="money text-3xl font-semibold sm:text-4xl">
+              <CardTitle className="money font-figures text-3xl font-normal sm:text-[2.75rem]">
                 {latestNetWorth !== null
                   ? formatMoney(latestNetWorth, currency, hideBalances)
                   : "—"}

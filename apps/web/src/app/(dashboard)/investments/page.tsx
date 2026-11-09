@@ -737,7 +737,7 @@ export default function InvestmentsPage() {
   if (!portfolio) {
     return (
       <div className="space-y-6">
-        <h1 className="text-2xl font-bold">Investments</h1>
+        <h1 className="font-display text-3xl leading-tight">Investments</h1>
         <Card>
           <CardHeader>
             <CardTitle>No Portfolio Data</CardTitle>
@@ -764,7 +764,7 @@ export default function InvestmentsPage() {
   const money = (cents: number) =>
     formatMoney(cents, portfolioCurrency, hideBalances);
   const signed = (cents: number) =>
-    formatSigned(cents, portfolioCurrency, hideBalances).replace("-", "−");
+    formatSigned(cents, portfolioCurrency, hideBalances);
   const gainUp = portfolio.total_gain_loss >= 0;
   const realizedUp = portfolio.total_realized_gain_loss >= 0;
 
@@ -780,7 +780,7 @@ export default function InvestmentsPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Investments</h1>
+        <h1 className="font-display text-3xl leading-tight">Investments</h1>
         <p className="text-sm text-muted-foreground">
           {holdingsCount} holding{holdingsCount !== 1 ? "s" : ""} across{" "}
           {holdingsEntries.length} asset class

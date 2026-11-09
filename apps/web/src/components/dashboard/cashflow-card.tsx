@@ -135,8 +135,8 @@ export function CashflowCard({
                 netUp ? "text-positive" : "text-negative"
               }`}
             >
-              {netUp ? "+" : "−"}
-              {formatMoney(Math.abs(net), currency, hideBalances)}
+              {netUp && !hideBalances ? "+" : ""}
+              {formatMoney(net, currency, hideBalances)}
             </p>
           </div>
         </div>
@@ -219,8 +219,8 @@ export function CashflowCard({
                         <span
                           className={`money ${m.net >= 0 ? "text-positive" : "text-negative"}`}
                         >
-                          {m.net >= 0 ? "+" : "−"}
-                          {formatMoney(Math.abs(m.net), m.currency, hideBalances)}
+                          {m.net >= 0 && !hideBalances ? "+" : ""}
+                          {formatMoney(m.net, m.currency, hideBalances)}
                         </span>
                       </div>
                     </div>

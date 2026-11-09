@@ -192,7 +192,7 @@ export function CompositionCard() {
                 <span className="text-sm text-muted-foreground">Debt</span>
               </span>
               <span className="money shrink-0 text-sm font-medium text-negative">
-                −{formatMoney(debt, baseCurrency, hideBalances)}
+                {formatMoney(-debt, baseCurrency, hideBalances)}
               </span>
             </div>
           )}

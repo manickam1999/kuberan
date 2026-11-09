@@ -187,7 +187,7 @@ export default function TransactionsPage() {
     <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Transactions</h1>
+          <h1 className="font-display text-3xl leading-tight">Transactions</h1>
           <p className="text-sm text-muted-foreground">
             {data?.total_items ?? transactions.length} total
           </p>
@@ -342,8 +342,8 @@ export default function TransactionsPage() {
                         net > 0 ? "text-positive" : "text-muted-foreground"
                       }
                     >
-                      {net > 0 ? "+" : "−"}
-                      {formatMoney(Math.abs(net), ccy, hideBalances)}
+                      {net > 0 && !hideBalances ? "+" : ""}
+                      {formatMoney(net, ccy, hideBalances)}
                     </span>
                   ))}
                 </span>
