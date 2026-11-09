@@ -137,8 +137,10 @@ func setupApp(t *testing.T) *testApp {
 	router.Use(middleware.ErrorHandler())
 
 	handlers.RegisterRoutes(router, handlers.Routes{
-		Auth:                 handlers.NewAuthHandler(userService, auditService),
-		OAuth:                handlers.NewOAuthHandler(hydraAdmin, userService, oauthGrantService, auditService, oauthScopes, "http://localhost:8081"),
+		Auth: handlers.NewAuthHandler(userService, auditService),
+		OAuth: handlers.NewOAuthHandler(hydraAdmin, userService, oauthGrantService, auditService, oauthScopes, "http://localhost:8081",
+			handlers.WithAppActivity(services.NewAppActivityService(db)),
+			handlers.WithWriteLimits(handlers.WriteLimitsConfig{MaxAmount: 1_000_000, PerMinute: 30, PerDay: 500})),
 		Registration:         handlers.NewRegistrationHandler(hydraAdmin, auditService, oauthScopes),
 		Account:              handlers.NewAccountHandler(accountService, auditService),
 		Category:             handlers.NewCategoryHandler(categoryService, auditService),
