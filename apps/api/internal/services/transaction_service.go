@@ -666,6 +666,9 @@ func (s *transactionService) GetAccountTransactions(userID, accountID string, pa
 	if err := attachReceivables(s.db, userID, transactions); err != nil {
 		return nil, err
 	}
+	if err := attachSourceClientNames(s.db, userID, transactions); err != nil {
+		return nil, err
+	}
 
 	result := pagination.NewPageResponse(transactions, page.Page, page.PageSize, totalItems)
 	return &result, nil
@@ -793,6 +796,9 @@ func (s *transactionService) GetUserTransactions(userID string, page pagination.
 	if err := attachReceivables(s.db, userID, transactions); err != nil {
 		return nil, err
 	}
+	if err := attachSourceClientNames(s.db, userID, transactions); err != nil {
+		return nil, err
+	}
 
 	result := pagination.NewPageResponse(transactions, page.Page, page.PageSize, totalItems)
 	return &result, nil
@@ -838,7 +844,16 @@ func (s *transactionService) populateAttachmentCounts(transactions []models.Tran
 // GetTransactionByID retrieves a transaction by ID for a specific user. For an
 // expense with receivables they are included (without settlements).
 func (s *transactionService) GetTransactionByID(userID, transactionID string) (*models.Transaction, error) {
-	return loadExpenseWithReceivables(s.db, userID, transactionID)
+	txn, err := loadExpenseWithReceivables(s.db, userID, transactionID)
+	if err != nil {
+		return nil, err
+	}
+	one := []models.Transaction{*txn}
+	if err := attachSourceClientNames(s.db, userID, one); err != nil {
+		return nil, err
+	}
+	txn.SourceClientName = one[0].SourceClientName
+	return txn, nil
 }
 
 // DeleteTransaction deletes a transaction and reverses its effect on the account

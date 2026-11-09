@@ -170,6 +170,8 @@ func RegisterRoutes(router *gin.Engine, h Routes, secrets RouteSecrets) {
 	// Telegram routes
 	// Connected apps: the user's OAuth client grants (plan 022).
 	protected.GET("/oauth/clients", h.OAuth.ListConnectedApps)
+	protected.GET("/oauth/clients/activity", h.OAuth.GetAllAppActivity)
+	protected.GET("/oauth/clients/:client_id/activity", h.OAuth.GetAppActivity)
 	protected.DELETE("/oauth/clients/:client_id", h.OAuth.DisconnectApp)
 
 	telegram := protected.Group("/telegram")

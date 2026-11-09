@@ -248,9 +248,33 @@ application").
   `DELETE /admin/oauth2/auth/sessions/consent?subject=&client=` (revokes the
   consent and its refresh tokens) even when there is no grant row, then marks
   any grant revoked and audits `OAUTH_CLIENT_REVOKED`. If Hydra fails, nothing
-  changes and the user can retry. An access JWT already issued keeps working
-  for reads until it expires (15 minutes max) but is refused for writes at
-  once (below).
+  changes and the user can retry. Writes are refused at once (below). Reads
+  are refused within a minute: `requireBearer` checks that the token's
+  client still has a non-revoked grant, cached per user and app for 1 minute
+  (the same TTL as the active-user check), so a request already under way may
+  finish. A token with no grant row is refused the same way (see Upgrading).
+- **Activity and last use** (plan 023, 1.6). Every authenticated MCP request
+  records the app's `last_used_at` in the background (throttled to once a
+  minute in process and in SQL; a failure is logged, never fails the
+  request), so a read-only app shows use too. MCP writes are audited with
+  `audit_logs.source = 'mcp'` and the OAuth `client_id`;
+  `GET /api/v1/oauth/clients/:client_id/activity` and
+  `GET /api/v1/oauth/clients/activity` list them with a server-built
+  plain-text `summary`. `oauth_client_grants.client_host` (where the app's
+  authorization code is sent, e.g. `claude.ai`) is recorded on every consent,
+  including auto-accepted ones, and shown under the app's name.
+
+### Upgrading to the 1.6 release
+
+Connections made before per-app grants existed (a Hydra consent session but
+no `oauth_client_grants` row; the Connected apps screen labels them
+"reconnect to choose permissions") used to keep read access. They are now
+refused on reads with the same 401 an invalid token gets. Those apps must
+reconnect once after the deploy: the client starts a new authorization, the
+user sees the consent screen, and a grant row is written. Apps with a grant
+are unaffected. Add `MCP_MAX_WRITE_AMOUNT`, `MCP_WRITE_RATE_PER_MINUTE` and
+`MCP_WRITE_RATE_PER_DAY` to the `api` service too (the compose files do) so
+the Connected apps screen shows the limits the `mcp` service enforces.
 
 ## Write access (plan 022)
 

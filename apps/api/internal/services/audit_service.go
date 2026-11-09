@@ -26,7 +26,15 @@ func NewAuditService(db *gorm.DB) AuditServicer {
 // non-empty ID that is not a UUID (e.g. a non-UUID OAuth client_id) is stored
 // as NULL with the raw value kept in changes under "user_ref" or
 // "resource_ref", so the event is never dropped by a type error.
-func (s *auditService) Log(userID, action, resourceType, resourceID, ipAddress string, changes map[string]any) {
+func (s *auditService) Log(userID, action, resourceType, resourceID, ipAddress string, changes map[string]any, opts ...LogOpts) {
+	var opt LogOpts
+	if len(opts) > 0 {
+		opt = opts[0]
+	}
+	source := opt.Source
+	if source == "" {
+		source = models.AuditSourceWeb
+	}
 	userRef, userRaw := auditUUID(userID)
 	resourceRef, resourceRaw := auditUUID(resourceID)
 	if userRaw != "" || resourceRaw != "" {
@@ -61,6 +69,8 @@ func (s *auditService) Log(userID, action, resourceType, resourceID, ipAddress s
 		ResourceID:   resourceRef,
 		IPAddress:    ipAddress,
 		Changes:      changesJSON,
+		Source:       source,
+		ClientID:     opt.ClientID,
 	}
 
 	if err := s.db.Create(entry).Error; err != nil {

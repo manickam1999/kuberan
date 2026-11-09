@@ -23,7 +23,7 @@ func init() {
 
 type mockTelegramAuditService struct{}
 
-func (m *mockTelegramAuditService) Log(_, _, _, _, _ string, _ map[string]interface{}) {
+func (m *mockTelegramAuditService) Log(_, _, _, _, _ string, _ map[string]interface{}, _ ...services.LogOpts) {
 }
 
 var _ services.AuditServicer = (*mockTelegramAuditService)(nil)

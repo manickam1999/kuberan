@@ -665,12 +665,46 @@ export interface OAuthConsentAcceptRequest {
 export interface ConnectedApp {
   client_id: string;
   client_name: string;
+  /** Where the app connects from ("claude.ai"); "" until its next consent. */
+  client_host: string;
   scopes: string[];
   auto_accept: boolean;
   legacy?: boolean;
+  /** Present when the grant has any write:* scope. */
+  write_limits?: AppWriteLimits;
   created_at?: string;
-  // Updated only when the app makes a change (an MCP write), not on reads.
+  /** Updated by any authenticated request from the app, reads included
+   * (throttled to once a minute). */
   last_used_at?: string;
+}
+
+/** What a write-enabled app may change. */
+export interface AppWriteLimits {
+  /** Per-change ceiling, cents of `currency` (the user's reporting currency). */
+  max_amount: number;
+  currency: string;
+  /** Writes allowed per minute / per day for this app; 0 means no limit. */
+  per_minute: number;
+  per_day: number;
+}
+
+/**
+ * One change a connected app made. `summary` is plain text built by the
+ * server: render it as text, never as HTML.
+ */
+export interface AppActivityItem {
+  id: string;
+  created_at: string;
+  action: string;
+  resource_type: string;
+  resource_id?: string;
+  summary: string;
+}
+
+/** An AppActivityItem from the all-apps feed, tagged with the app. */
+export interface AllAppActivityItem extends AppActivityItem {
+  client_id: string;
+  client_name: string;
 }
 
 export interface ConnectedAppsResponse {

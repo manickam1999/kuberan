@@ -10,6 +10,7 @@ import (
 
 	apperrors "kuberan/internal/errors"
 	"kuberan/internal/hydra"
+	"kuberan/internal/services"
 )
 
 // recordingAuditService captures the last audit call so tests can assert that a
@@ -20,7 +21,7 @@ type recordingAuditService struct {
 	resID  string
 }
 
-func (m *recordingAuditService) Log(_, action, _, resourceID, _ string, _ map[string]interface{}) {
+func (m *recordingAuditService) Log(_, action, _, resourceID, _ string, _ map[string]interface{}, _ ...services.LogOpts) {
 	m.called = true
 	m.action = action
 	m.resID = resourceID

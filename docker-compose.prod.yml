@@ -123,6 +123,11 @@ services:
       HYDRA_PINNED_CLIENT_ID: ${HYDRA_PINNED_CLIENT_ID:-}
       # MCP write access (plan 022): must match the mcp service.
       MCP_WRITE_ENABLED: ${MCP_WRITE_ENABLED:-false}
+      # The write limits the Connected apps screen shows (plan 023, 1.6); must
+      # match the mcp service, which enforces them.
+      MCP_MAX_WRITE_AMOUNT: ${MCP_MAX_WRITE_AMOUNT:-}
+      MCP_WRITE_RATE_PER_MINUTE: ${MCP_WRITE_RATE_PER_MINUTE:-}
+      MCP_WRITE_RATE_PER_DAY: ${MCP_WRITE_RATE_PER_DAY:-}
       # Receipt attachments (plan 017). The S3 API is reached over the private
       # storage network; MinIO is NEVER published to the tunnel. Keys are the
       # scoped service account minted by minio-init.

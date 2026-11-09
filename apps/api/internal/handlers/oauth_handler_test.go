@@ -143,6 +143,8 @@ type mockGrantService struct {
 	revokeErr  error
 	recorded   *services.RecordConsentInput
 	revokedFor string
+	hostSet    string
+	hostSetFor string
 }
 
 func (m *mockGrantService) Get(_, _ string) (*models.OAuthClientGrant, error) {
@@ -178,6 +180,16 @@ func (m *mockGrantService) Revoke(_, clientID string) error {
 func (m *mockGrantService) Authorize(_, _, _ string) error { return nil }
 
 func (m *mockGrantService) RevokeAll(_ string) (int64, error) { return 0, nil }
+
+func (m *mockGrantService) IsActive(_, _ string) (bool, error) { return true, nil }
+
+func (m *mockGrantService) Touch(_, _ string) error { return nil }
+
+func (m *mockGrantService) SetClientHost(_, clientID, host string) error {
+	m.hostSet = host
+	m.hostSetFor = clientID
+	return nil
+}
 
 // rememberedGrant returns an auto-accepting grant for client "known".
 func rememberedGrant(approved, reviewed string) *models.OAuthClientGrant {
@@ -1087,7 +1099,7 @@ type countingAuditService struct {
 	changes []map[string]interface{}
 }
 
-func (m *countingAuditService) Log(_, action, _, _, _ string, changes map[string]interface{}) {
+func (m *countingAuditService) Log(_, action, _, _, _ string, changes map[string]interface{}, _ ...services.LogOpts) {
 	m.actions = append(m.actions, action)
 	m.changes = append(m.changes, changes)
 }

@@ -369,6 +369,14 @@ func TestCreateTransactionTool(t *testing.T) {
 			!strings.Contains(log.Changes, testClientID) || !strings.Contains(log.Changes, `"via":"mcp"`) {
 			t.Errorf("unexpected audit row: %+v", log)
 		}
+		// Plan 023 1.6: the row carries its source and client as columns, and
+		// the description and currency a summary is built from.
+		if log.Source != models.AuditSourceMCP || log.ClientID != testClientID {
+			t.Errorf("audit source/client = %q/%q, want mcp/%s", log.Source, log.ClientID, testClientID)
+		}
+		if !strings.Contains(log.Changes, `"description":"Lunch"`) || !strings.Contains(log.Changes, `"currency":"USD"`) {
+			t.Errorf("audit changes must record description and currency, got %s", log.Changes)
+		}
 
 		var txn models.Transaction
 		if err := e.db.Where("account_id = ? AND type = ?", acct.ID, models.TransactionTypeExpense).First(&txn).Error; err != nil {

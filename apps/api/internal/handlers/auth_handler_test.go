@@ -113,7 +113,8 @@ func (m *mockUserService) ChangePassword(string, string, string, string) (int64,
 
 type mockAuditService struct{}
 
-func (m *mockAuditService) Log(_, _, _, _, _ string, _ map[string]interface{}) {}
+func (m *mockAuditService) Log(_, _, _, _, _ string, _ map[string]interface{}, _ ...services.LogOpts) {
+}
 
 // --- test helpers ---
 

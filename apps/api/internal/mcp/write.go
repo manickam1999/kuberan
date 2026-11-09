@@ -178,7 +178,8 @@ func (s *Server) audit(c caller, tool string, a auditEntry) {
 	changes["via"] = "mcp"
 	changes["client_id"] = c.ClientID
 	changes["tool"] = tool
-	s.services.Audit.Log(c.UserID, a.Action, a.ResourceType, a.ResourceID, c.IP, changes)
+	s.services.Audit.Log(c.UserID, a.Action, a.ResourceType, a.ResourceID, c.IP, changes,
+		services.LogOpts{Source: models.AuditSourceMCP, ClientID: c.ClientID})
 }
 
 // change records a field's before and after values in an audit entry.

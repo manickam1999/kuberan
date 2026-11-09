@@ -143,7 +143,13 @@ func run() error {
 	// Initialize handlers
 	authHandler := handlers.NewAuthHandler(userService, auditService, handlers.WithSecureCookie(appConfig.CookieSecure))
 	oauthHandler := handlers.NewOAuthHandler(hydraAdmin, userService, oauthGrantService, auditService, appConfig.OAuthScopes, appConfig.MCPResourceURL,
-		handlers.WithPinnedClientID(appConfig.HydraPinnedClientID))
+		handlers.WithPinnedClientID(appConfig.HydraPinnedClientID),
+		handlers.WithAppActivity(services.NewAppActivityService(db)),
+		handlers.WithWriteLimits(handlers.WriteLimitsConfig{
+			MaxAmount: appConfig.MCPMaxWriteAmount,
+			PerMinute: appConfig.MCPWriteRatePerMinute,
+			PerDay:    appConfig.MCPWriteRatePerDay,
+		}))
 	registrationHandler := handlers.NewRegistrationHandler(hydraAdmin, auditService, appConfig.OAuthScopes,
 		handlers.WithResourceAudience(appConfig.MCPResourceURL))
 	accountHandler := handlers.NewAccountHandler(accountService, auditService)

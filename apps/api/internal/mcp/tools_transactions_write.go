@@ -177,7 +177,10 @@ func (s *Server) prepareCreateTransaction(c caller, args map[string]interface{})
 		sb.WriteString(s.balanceLine(c.UserID, accountID))
 		return sb.String(), []auditEntry{{
 			Action: "MCP_CREATE_TRANSACTION", ResourceType: "transaction", ResourceID: txn.ID,
-			Changes: map[string]interface{}{"type": txType, "amount": amount, "account_id": accountID},
+			Changes: map[string]interface{}{
+				"type": txType, "amount": amount, "account_id": accountID,
+				"description": description, "currency": currencyCode(account.Currency),
+			},
 		}}, nil
 	}}, nil
 }
@@ -248,7 +251,10 @@ func (s *Server) prepareCreateTransfer(c caller, args map[string]interface{}) (*
 		fmt.Fprintf(&sb, "  ID: %s\n", txn.ID)
 		sb.WriteString(s.balanceLine(c.UserID, fromID))
 		sb.WriteString(s.balanceLine(c.UserID, toID))
-		changes := map[string]interface{}{"amount": amount, "from_account_id": fromID, "to_account_id": toID}
+		changes := map[string]interface{}{
+			"amount": amount, "from_account_id": fromID, "to_account_id": toID,
+			"description": description, "currency": currencyCode(fromAcc.Currency),
+		}
 		if toArg != nil {
 			changes["to_amount"] = toAmount
 		}

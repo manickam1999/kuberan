@@ -60,6 +60,9 @@ type RecordConsentInput struct {
 	Reviewed []string
 	// AutoAccept is the "remember this application" choice.
 	AutoAccept bool
+	// ClientHost is the host the authorization code is sent to ("" if unknown;
+	// an empty value keeps the host already recorded).
+	ClientHost string
 }
 
 // OAuthGrantServicer manages per-user, per-scope OAuth consent grants
@@ -84,6 +87,16 @@ type OAuthGrantServicer interface {
 	// RevokeAll marks every active grant of the user revoked (used when the
 	// user is deactivated) and returns how many were revoked.
 	RevokeAll(userID string) (int64, error)
+	// IsActive reports whether the user holds a non-revoked grant for clientID.
+	// A missing grant is not active. The MCP server uses it to refuse reads
+	// from disconnected (or never-granted) clients.
+	IsActive(userID, clientID string) (bool, error)
+	// Touch records that clientID was just used by the user (reads included).
+	// It is throttled to one UPDATE per lastUsedInterval, in process and in SQL.
+	Touch(userID, clientID string) error
+	// SetClientHost records the host the client's authorization code goes to.
+	// An empty host or a missing grant is a no-op.
+	SetClientHost(userID, clientID, host string) error
 }
 
 // AccountUpdateFields holds optional fields for updating an account.
@@ -741,7 +754,17 @@ type ImportServicer interface {
 
 // AuditServicer defines the contract for audit logging.
 type AuditServicer interface {
-	Log(userID, action, resourceType, resourceID, ipAddress string, changes map[string]interface{})
+	// Log records an event. Without opts the row's source is "web".
+	Log(userID, action, resourceType, resourceID, ipAddress string, changes map[string]interface{}, opts ...LogOpts)
+}
+
+// LogOpts carries optional provenance for an audit row. The zero value (and
+// omitting it) records a "web" event with no client.
+type LogOpts struct {
+	// Source is where the event came from: "web" (default) or "mcp".
+	Source string
+	// ClientID is the OAuth client behind an "mcp" event.
+	ClientID string
 }
 
 // AttachmentLimits holds the per-request caps enforced by the attachment

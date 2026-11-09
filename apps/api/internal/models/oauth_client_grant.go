@@ -17,14 +17,17 @@ import (
 // MCP server can refuse writes from tokens issued before the revocation.
 type OAuthClientGrant struct {
 	Base
-	UserID         string     `gorm:"type:uuid;not null;uniqueIndex:idx_oauth_client_grants_user_client,where:deleted_at IS NULL" json:"user_id"`
-	ClientID       string     `gorm:"type:varchar(255);not null;uniqueIndex:idx_oauth_client_grants_user_client,where:deleted_at IS NULL" json:"client_id"`
-	ClientName     string     `gorm:"type:varchar(255);not null;default:''" json:"client_name"`
-	ApprovedScopes string     `gorm:"type:text;not null;default:''" json:"-"`
-	ReviewedScopes string     `gorm:"type:text;not null;default:''" json:"-"`
-	AutoAccept     bool       `gorm:"not null;default:false" json:"auto_accept"`
-	LastUsedAt     *time.Time `json:"last_used_at,omitempty"`
-	RevokedAt      *time.Time `json:"revoked_at,omitempty"`
+	UserID         string `gorm:"type:uuid;not null;uniqueIndex:idx_oauth_client_grants_user_client,where:deleted_at IS NULL" json:"user_id"`
+	ClientID       string `gorm:"type:varchar(255);not null;uniqueIndex:idx_oauth_client_grants_user_client,where:deleted_at IS NULL" json:"client_id"`
+	ClientName     string `gorm:"type:varchar(255);not null;default:''" json:"client_name"`
+	ApprovedScopes string `gorm:"type:text;not null;default:''" json:"-"`
+	ReviewedScopes string `gorm:"type:text;not null;default:''" json:"-"`
+	AutoAccept     bool   `gorm:"not null;default:false" json:"auto_accept"`
+	// ClientHost is the host the app's authorization code is sent to
+	// (claude.ai); "" until the user's next consent.
+	ClientHost string     `gorm:"type:varchar(255);not null;default:''" json:"client_host"`
+	LastUsedAt *time.Time `json:"last_used_at,omitempty"`
+	RevokedAt  *time.Time `json:"revoked_at,omitempty"`
 }
 
 // TableName pins the table name so GORM does not split "OAuth" into "o_auth";

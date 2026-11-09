@@ -110,6 +110,8 @@ export interface Transaction extends BaseModel {
   source: TransactionSource;
   /** OAuth client id that wrote the row when source is "mcp". */
   source_client_id?: string | null;
+  /** The app's name from the user's grant ("an app" once the grant is gone). */
+  source_client_name?: string;
   date: string; // ISO 8601
   to_account_id?: string | null; // UUIDv7, for transfers
   account?: Account; // preloaded relation

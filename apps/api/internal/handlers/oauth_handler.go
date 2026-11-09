@@ -11,6 +11,7 @@ import (
 
 	apperrors "kuberan/internal/errors"
 	"kuberan/internal/hydra"
+	"kuberan/internal/logger"
 	"kuberan/internal/models"
 	"kuberan/internal/services"
 )
@@ -41,6 +42,31 @@ type OAuthHandler struct {
 	// shown as verified on the consent screen. Every other client registered
 	// itself through DCR, so its name is whatever it chose to call itself.
 	pinnedClientID string
+	// activity backs the per-app and all-apps change logs (plan 023, 1.6).
+	activity services.AppActivityServicer
+	// writeLimits are the MCP write limits shown for apps with write scopes;
+	// nil until WithWriteLimits is applied.
+	writeLimits *WriteLimitsConfig
+}
+
+// WriteLimitsConfig is the MCP write configuration the api reports on the
+// Connected apps screen. It must match the mcp service, which enforces it.
+type WriteLimitsConfig struct {
+	// MaxAmount is the per-change ceiling in cents, in the user's base currency.
+	MaxAmount int64
+	// PerMinute and PerDay cap writes per (user, client); 0 means unlimited.
+	PerMinute int
+	PerDay    int
+}
+
+// WithAppActivity enables the connected-app change log endpoints.
+func WithAppActivity(activity services.AppActivityServicer) OAuthHandlerOption {
+	return func(h *OAuthHandler) { h.activity = activity }
+}
+
+// WithWriteLimits sets the MCP write limits reported by GET /oauth/clients.
+func WithWriteLimits(limits WriteLimitsConfig) OAuthHandlerOption {
+	return func(h *OAuthHandler) { h.writeLimits = &limits }
 }
 
 // OAuthHandlerOption configures optional OAuthHandler settings.
@@ -245,6 +271,11 @@ func (h *OAuthHandler) GetConsent(c *gin.Context) {
 	requested := h.grantableScopes(consent.RequestedScope)
 	if grant != nil && grant.AutoAccept && containsAll(grant.Reviewed(), apiScopes(requested)) {
 		granted := intersect(requested, append(grant.Approved(), protocolScopeList(requested)...))
+		// A remembered app skips AcceptConsent, so record where it connects from
+		// here too; otherwise it would never get a host. Bookkeeping only.
+		if err := h.grants.SetClientHost(consent.Subject, consent.Client.ClientID, consentRedirectTarget(consent).Host); err != nil {
+			logger.Get().Warnw("consent: could not record the client host", "error", err, "client_id", consent.Client.ClientID)
+		}
 		redirectTo, err := h.acceptConsent(c, consent, granted, false)
 		if err != nil {
 			respondWithError(c, err)
@@ -410,6 +441,7 @@ func (h *OAuthHandler) AcceptConsent(c *gin.Context) {
 		Approved:   approved,
 		Reviewed:   reviewed,
 		AutoAccept: req.RememberClient,
+		ClientHost: consentRedirectTarget(consent).Host,
 	}); err != nil {
 		respondWithError(c, err)
 		return

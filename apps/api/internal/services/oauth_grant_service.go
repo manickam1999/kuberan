@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"gorm.io/gorm"
@@ -24,11 +25,20 @@ const lastUsedInterval = time.Minute
 type oauthGrantService struct {
 	db  *gorm.DB
 	now func() time.Time
+
+	// touched remembers when each (user, client) last had its last_used_at
+	// written, so a busy client costs one UPDATE per lastUsedInterval at most.
+	touchMu sync.Mutex
+	touched map[string]time.Time
 }
+
+// maxTouchEntries bounds the in-process touch throttle; expired entries are
+// swept when it fills.
+const maxTouchEntries = 10_000
 
 // NewOAuthGrantService creates a new OAuthGrantServicer.
 func NewOAuthGrantService(db *gorm.DB) OAuthGrantServicer {
-	return &oauthGrantService{db: db, now: time.Now}
+	return &oauthGrantService{db: db, now: time.Now, touched: map[string]time.Time{}}
 }
 
 // Get returns the user's grant for clientID, revoked or not.
@@ -63,7 +73,9 @@ func (s *oauthGrantService) RecordConsent(in RecordConsentInput) (*models.OAuthC
 	name := truncateRunes(in.ClientName, maxClientNameLen)
 	approved := strings.Join(in.Approved, " ")
 	reviewed := strings.Join(in.Reviewed, " ")
+	host := truncateRunes(strings.TrimSpace(in.ClientHost), maxClientNameLen)
 	grant := &models.OAuthClientGrant{
+		ClientHost:     host,
 		UserID:         in.UserID,
 		ClientID:       in.ClientID,
 		ClientName:     name,
@@ -71,17 +83,22 @@ func (s *oauthGrantService) RecordConsent(in RecordConsentInput) (*models.OAuthC
 		ReviewedScopes: reviewed,
 		AutoAccept:     in.AutoAccept,
 	}
+	assignments := map[string]interface{}{
+		"client_name":     name,
+		"approved_scopes": approved,
+		"reviewed_scopes": reviewed,
+		"auto_accept":     in.AutoAccept,
+		"revoked_at":      nil,
+		"updated_at":      s.now(),
+	}
+	if host != "" {
+		// A consent with no known host (a native app) keeps the one recorded.
+		assignments["client_host"] = host
+	}
 	err := s.db.Clauses(clause.OnConflict{
 		Columns:     []clause.Column{{Name: "user_id"}, {Name: "client_id"}},
 		TargetWhere: clause.Where{Exprs: []clause.Expression{clause.Expr{SQL: "deleted_at IS NULL"}}},
-		DoUpdates: clause.Assignments(map[string]interface{}{
-			"client_name":     name,
-			"approved_scopes": approved,
-			"reviewed_scopes": reviewed,
-			"auto_accept":     in.AutoAccept,
-			"revoked_at":      nil,
-			"updated_at":      s.now(),
-		}),
+		DoUpdates:   clause.Assignments(assignments),
 	}).Create(grant).Error
 	if err != nil {
 		return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)
@@ -157,6 +174,80 @@ func (s *oauthGrantService) Authorize(userID, clientID, scope string) error {
 		if err := s.db.Model(grant).UpdateColumn("last_used_at", now).Error; err != nil {
 			logger.Get().Warnw("failed to record OAuth grant last use", "error", err, "client_id", clientID)
 		}
+	}
+	return nil
+}
+
+// IsActive reports whether the user holds a non-revoked grant for clientID.
+func (s *oauthGrantService) IsActive(userID, clientID string) (bool, error) {
+	if userID == "" || clientID == "" {
+		return false, nil
+	}
+	grant, err := s.Get(userID, clientID)
+	if errors.Is(err, apperrors.ErrOAuthClientNotFound) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return !grant.IsRevoked(), nil
+}
+
+// Touch records a use of clientID by the user, reads included. It is
+// throttled twice: in process (at most one UPDATE per client per
+// lastUsedInterval from this instance) and in SQL (the UPDATE only matches a
+// grant not used within the interval, so several MCP replicas stay cheap).
+// The cutoff is computed in Go because SQLite has no now() - interval.
+func (s *oauthGrantService) Touch(userID, clientID string) error {
+	if userID == "" || clientID == "" {
+		return nil
+	}
+	now := s.now()
+	key := userID + "|" + clientID
+
+	s.touchMu.Lock()
+	if last, ok := s.touched[key]; ok && now.Sub(last) < lastUsedInterval {
+		s.touchMu.Unlock()
+		return nil
+	}
+	if len(s.touched) >= maxTouchEntries {
+		for k, at := range s.touched {
+			if now.Sub(at) >= lastUsedInterval {
+				delete(s.touched, k)
+			}
+		}
+	}
+	if len(s.touched) < maxTouchEntries {
+		s.touched[key] = now
+	}
+	s.touchMu.Unlock()
+
+	cutoff := now.Add(-lastUsedInterval)
+	err := s.db.Model(&models.OAuthClientGrant{}).
+		Where("user_id = ? AND client_id = ? AND revoked_at IS NULL", userID, clientID).
+		Where("last_used_at IS NULL OR last_used_at < ?", cutoff).
+		UpdateColumn("last_used_at", now).Error
+	if err != nil {
+		// Let the next request retry rather than wait out the interval.
+		s.touchMu.Lock()
+		delete(s.touched, key)
+		s.touchMu.Unlock()
+		return apperrors.Wrap(apperrors.ErrInternalServer, err)
+	}
+	return nil
+}
+
+// SetClientHost records the host clientID's authorization code is sent to.
+func (s *oauthGrantService) SetClientHost(userID, clientID, host string) error {
+	host = truncateRunes(strings.TrimSpace(host), maxClientNameLen)
+	if userID == "" || clientID == "" || host == "" {
+		return nil
+	}
+	err := s.db.Model(&models.OAuthClientGrant{}).
+		Where("user_id = ? AND client_id = ? AND client_host <> ?", userID, clientID, host).
+		UpdateColumn("client_host", host).Error
+	if err != nil {
+		return apperrors.Wrap(apperrors.ErrInternalServer, err)
 	}
 	return nil
 }

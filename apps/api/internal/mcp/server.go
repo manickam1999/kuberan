@@ -39,10 +39,14 @@ type Services struct {
 
 // GrantAuthorizer is the one part of services.OAuthGrantServicer the MCP
 // server needs: the per-write check that the user still grants the calling
-// client a scope. Authorize also records the grant's last use (shown as
-// "Last change" under Settings > Connected apps).
+// client a scope. Authorize also records the grant's last use. IsActive backs
+// the read-path check that the app is still connected, and Touch records a
+// use by any request, reads included (shown as "Last used" under Settings >
+// Connected apps).
 type GrantAuthorizer interface {
 	Authorize(userID, clientID, scope string) error
+	IsActive(userID, clientID string) (bool, error)
+	Touch(userID, clientID string) error
 }
 
 type userIDKey struct{}
@@ -172,9 +176,15 @@ func errUnauthorized() *mcpgo.CallToolResult {
 // and a refresh token keeps minting them, so without this a deactivated user
 // would keep read access for as long as the client keeps refreshing.
 //
+// When gate is set, the app (the token's client_id) must also still hold a
+// non-revoked grant, cached for a minute: disconnecting an app then stops its
+// reads within a minute, not when its access token expires. An app with no
+// grant row (a legacy connection) is refused the same way and must reconnect.
+// Each allowed request also records the app's last use in the background.
+//
 // The validated claims are attached to the request context for
 // makeAuthFromRequest, so each request validates its token once.
-func requireBearer(next http.Handler, v TokenValidator, active *activeUsers) http.Handler {
+func requireBearer(next http.Handler, v TokenValidator, active *activeUsers, gate *grantGate) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		parts := strings.SplitN(r.Header.Get("Authorization"), " ", 2)
 		if len(parts) != 2 || parts[0] != "Bearer" || parts[1] == "" {
@@ -201,6 +211,23 @@ func requireBearer(next http.Handler, v TokenValidator, active *activeUsers) htt
 				writeUnauthorized(w)
 				return
 			}
+		}
+		if gate != nil {
+			ok, err := gate.isActive(claims.Subject, claims.ClientID)
+			if err != nil {
+				logger.Get().Errorf("MCP auth: grant check failed: %v", err)
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusServiceUnavailable)
+				_, _ = w.Write([]byte(`{"error":"temporarily_unavailable"}`))
+				return
+			}
+			if !ok {
+				logger.Get().Warnw("MCP auth: token for a client with no active grant",
+					"user_id", claims.Subject, "client_id", claims.ClientID)
+				writeUnauthorized(w)
+				return
+			}
+			gate.touch(claims.Subject, claims.ClientID)
 		}
 		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), claimsKey{}, claims)))
 	})
@@ -260,6 +287,11 @@ func Run(svc Services, addr string, oauth OAuthConfig, validator TokenValidator,
 		active = newActiveUsers(svc.Users, activeUserTTL, time.Now)
 	}
 
+	var gate *grantGate
+	if svc.Grants != nil {
+		gate = newGrantGate(svc.Grants, grantTTL, time.Now)
+	}
+
 	// Wrap the MCP handler in our own mux so we can expose an unauthenticated
 	// /health endpoint for container/orchestrator health checks alongside the
 	// authenticated /mcp transport endpoint.
@@ -268,7 +300,7 @@ func Run(svc Services, addr string, oauth OAuthConfig, validator TokenValidator,
 	// so those 401s carry a WWW-Authenticate challenge pointing at the Protected
 	// Resource Metadata document (RFC 9728); serve that document so MCP clients
 	// can discover the Hydra authorization server.
-	mux.Handle("/mcp", withWWWAuthenticate(requireBearer(mcpHandler, validator, active), oauth))
+	mux.Handle("/mcp", withWWWAuthenticate(requireBearer(mcpHandler, validator, active, gate), oauth))
 	mux.Handle(ProtectedResourceMetadataPath, discoveryHandler(oauth))
 	mux.HandleFunc("/health", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
