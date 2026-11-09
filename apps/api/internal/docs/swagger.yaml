@@ -318,10 +318,49 @@ definitions:
         type: string
       due_date:
         type: string
+      due_day:
+        description: |-
+          DueDay (1-31) is the day of the month the statement falls due; it drives
+          the Telegram reminder.
+        maximum: 31
+        minimum: 0
+        type: integer
       interest_rate:
         maximum: 100
         minimum: 0
         type: number
+      name:
+        maxLength: 100
+        minLength: 1
+        type: string
+    required:
+    - name
+    type: object
+  internal_handlers.CreateDebtAccountRequest:
+    properties:
+      amount_owed:
+        description: AmountOwed (cents) is recorded as an opening_balance row, never
+          inverted.
+        minimum: 0
+        type: integer
+      currency:
+        description: Currency defaults to the user's base currency.
+        type: string
+      description:
+        maxLength: 500
+        type: string
+      due_day:
+        description: DueDay (1-31) is the day of the month the instalment falls due.
+        maximum: 31
+        minimum: 0
+        type: integer
+      interest_rate:
+        maximum: 100
+        minimum: 0
+        type: number
+      monthly_payment:
+        minimum: 0
+        type: integer
       name:
         maxLength: 100
         minLength: 1
@@ -963,6 +1002,13 @@ definitions:
       user_agent:
         type: string
     type: object
+  internal_handlers.SetReminderEnabledRequest:
+    properties:
+      enabled:
+        type: boolean
+    required:
+    - enabled
+    type: object
   internal_handlers.SettleReceivableRequest:
     properties:
       account_amount:
@@ -1001,6 +1047,10 @@ definitions:
     type: object
   internal_handlers.SystemStatusResponse:
     properties:
+      demo_enabled:
+        type: boolean
+      demo_loaded:
+        type: boolean
       last_backup_at:
         type: string
       latest_fx_rate_at:
@@ -1057,6 +1107,11 @@ definitions:
         type: string
       due_date:
         type: string
+      due_day:
+        description: DueDay (1-31) for credit cards and loans; 0 clears it.
+        maximum: 31
+        minimum: 0
+        type: integer
       interest_rate:
         maximum: 100
         minimum: 0
@@ -1075,6 +1130,10 @@ definitions:
           Fixed deposit mutable fields (plan 020). Principal and start_date are
           immutable after creation and are intentionally absent here.
         type: string
+      monthly_payment:
+        description: MonthlyPayment (cents) for loans; 0 clears it.
+        minimum: 0
+        type: integer
       name:
         maxLength: 100
         minLength: 1
@@ -1177,6 +1236,15 @@ definitions:
         type: array
     required:
     - receivables
+    type: object
+  internal_handlers.UpdateReminderSettingsRequest:
+    properties:
+      card_due:
+        type: boolean
+      fd_maturity:
+        type: boolean
+      loan_due:
+        type: boolean
     type: object
   internal_handlers.UpdateRuleRequest:
     properties:
@@ -1405,6 +1473,8 @@ definitions:
         type: string
       due_date:
         type: string
+      due_day:
+        type: integer
       fixed_deposit:
         allOf:
         - $ref: '#/definitions/kuberan_internal_models.FixedDepositDetails'
@@ -1432,6 +1502,13 @@ definitions:
         type: boolean
       is_pinned:
         type: boolean
+      monthly_payment:
+        description: |-
+          MonthlyPayment is the loan's instalment in cents (account currency); debt
+          accounts only. DueDay (1-31) is the day of the month a credit card
+          statement or loan instalment falls due; months that are shorter use their
+          last day. Both are nil when unset (plan 023, 5.3).
+        type: integer
       name:
         type: string
       transactions:
@@ -2195,6 +2272,14 @@ definitions:
         type: string
       is_active:
         type: boolean
+      last_matched_at:
+        type: string
+      match_count:
+        description: |-
+          MatchCount is how many transactions this rule has categorized (new
+          transactions it matched plus rows a backfill changed); LastMatchedAt is
+          when that last happened (nil if never).
+        type: integer
       name:
         type: string
       priority:
@@ -2467,6 +2552,32 @@ definitions:
       total_pages:
         type: integer
     type: object
+  kuberan_internal_services.AccountBalanceHistory:
+    properties:
+      account_id:
+        type: string
+      currency:
+        type: string
+      from:
+        type: string
+      points:
+        items:
+          $ref: '#/definitions/kuberan_internal_services.BalancePoint'
+        type: array
+      to:
+        type: string
+    type: object
+  kuberan_internal_services.AccountSparkline:
+    properties:
+      account_id:
+        type: string
+      currency:
+        type: string
+      points:
+        items:
+          $ref: '#/definitions/kuberan_internal_services.BalancePoint'
+        type: array
+    type: object
   kuberan_internal_services.AllAppActivityItem:
     properties:
       action:
@@ -2545,6 +2656,14 @@ definitions:
           $ref: '#/definitions/kuberan_internal_models.Transaction'
         type: array
     type: object
+  kuberan_internal_services.BalancePoint:
+    properties:
+      balance:
+        type: integer
+      day:
+        description: UTC day, YYYY-MM-DD
+        type: string
+    type: object
   kuberan_internal_services.BudgetProgress:
     properties:
       budget_id:
@@ -2571,6 +2690,156 @@ definitions:
         type: integer
       updated:
         type: integer
+    type: object
+  kuberan_internal_services.CSVImportAccount:
+    properties:
+      currency:
+        type: string
+      id:
+        type: string
+      name:
+        type: string
+    type: object
+  kuberan_internal_services.CSVImportIssue:
+    properties:
+      code:
+        type: string
+      detail:
+        type: string
+      line:
+        type: integer
+    type: object
+  kuberan_internal_services.CSVImportReport:
+    properties:
+      account:
+        $ref: '#/definitions/kuberan_internal_services.CSVImportAccount'
+      applied:
+        type: boolean
+      columns:
+        description: Columns are the file's header names.
+        items:
+          type: string
+        type: array
+      created:
+        description: Created is the number of transactions written (apply only).
+        type: integer
+      date_formats:
+        description: DateFormats lists the accepted date_format values.
+        items:
+          type: string
+        type: array
+      delimiter:
+        type: string
+      issues:
+        items:
+          $ref: '#/definitions/kuberan_internal_services.CSVImportIssue'
+        type: array
+      mapping:
+        allOf:
+        - $ref: '#/definitions/kuberan_internal_services.CSVMapping'
+        description: Mapping is the mapping used; nil when the request carried none.
+      rows:
+        items:
+          $ref: '#/definitions/kuberan_internal_services.CSVImportRow'
+        type: array
+      rows_truncated:
+        type: boolean
+      sample:
+        description: Sample is the first rows of the file.
+        items:
+          items:
+            type: string
+          type: array
+        type: array
+      suggested_mapping:
+        allOf:
+        - $ref: '#/definitions/kuberan_internal_services.CSVMapping'
+        description: SuggestedMapping is the mapping guessed from the headers and
+          sample.
+      summary:
+        allOf:
+        - $ref: '#/definitions/kuberan_internal_services.CSVImportSummary'
+        description: Summary and Rows are present when a mapping was given.
+    type: object
+  kuberan_internal_services.CSVImportRow:
+    properties:
+      amount:
+        type: integer
+      category:
+        type: string
+      category_source:
+        description: CategorySource is "column" or "rule" when a category was found.
+        type: string
+      date:
+        type: string
+      description:
+        type: string
+      line:
+        type: integer
+      reason:
+        description: Reason explains a skipped or invalid row.
+        type: string
+      status:
+        type: string
+      type:
+        type: string
+    type: object
+  kuberan_internal_services.CSVImportSummary:
+    properties:
+      categorized:
+        type: integer
+      categorized_by_rule:
+        type: integer
+      expense_total:
+        type: integer
+      first_date:
+        type: string
+      income_total:
+        description: IncomeTotal and ExpenseTotal are the totals of the rows to create,
+          in cents of the account's currency.
+        type: integer
+      invalid:
+        type: integer
+      last_date:
+        type: string
+      rows:
+        type: integer
+      skip_duplicate:
+        type: integer
+      skip_manual:
+        type: integer
+      unknown_category:
+        type: integer
+      would_create:
+        type: integer
+    type: object
+  kuberan_internal_services.CSVMapping:
+    properties:
+      amount_column:
+        type: string
+      amount_sign:
+        description: |-
+          AmountSign is "negative_is_expense" (default) or "positive_is_expense".
+          It only applies to AmountColumn.
+        type: string
+      category_column:
+        type: string
+      credit_column:
+        type: string
+      date_column:
+        type: string
+      date_format:
+        description: DateFormat is one of CSVDateFormatNames, e.g. "DD/MM/YYYY".
+        type: string
+      debit_column:
+        type: string
+      decimal_separator:
+        description: DecimalSeparator is "." or ",".
+        type: string
+      description_column:
+        type: string
+      notes_column:
+        type: string
     type: object
   kuberan_internal_services.Cashflow:
     properties:
@@ -2610,6 +2879,17 @@ definitions:
         type: string
       name:
         type: string
+    type: object
+  kuberan_internal_services.DemoResult:
+    properties:
+      rows:
+        additionalProperties:
+          type: integer
+        description: Rows counts the rows by table name.
+        type: object
+      total:
+        description: Total is the sum of Rows.
+        type: integer
     type: object
   kuberan_internal_services.IBKRImportCandidate:
     properties:
@@ -2944,6 +3224,17 @@ definitions:
           $ref: '#/definitions/kuberan_internal_models.Transaction'
         type: array
     type: object
+  kuberan_internal_services.RuleSuggestion:
+    properties:
+      category_id:
+        type: string
+      count:
+        type: integer
+      description_pattern:
+        type: string
+      type:
+        $ref: '#/definitions/kuberan_internal_models.TransactionType'
+    type: object
   kuberan_internal_services.ShareMode:
     enum:
     - equal
@@ -3062,6 +3353,53 @@ definitions:
         type: integer
       value:
         type: integer
+    type: object
+  kuberan_internal_services.Typical:
+    properties:
+      avg_income:
+        description: AvgIncome and AvgSpending are per-month averages.
+        type: integer
+      avg_spending:
+        type: integer
+      by_category:
+        description: ByCategory is the average monthly spending per category, largest
+          first.
+        items:
+          $ref: '#/definitions/kuberan_internal_services.SpendingByCategoryItem'
+        type: array
+      currency:
+        type: string
+      daily_cumulative:
+        description: |-
+          DailyCumulative is the average cumulative spending after day 1..31 of a
+          month (always 31 points; a shorter month holds its total after its last
+          day).
+        items:
+          type: integer
+        type: array
+      fx_missing:
+        description: FXMissing is true when some amounts had no exchange rate and
+          were left out.
+        type: boolean
+      months:
+        description: Months is the number of months asked for.
+        type: integer
+      months_used:
+        description: |-
+          MonthsUsed is how many of them the averages cover: the months from the
+          user's first income or expense in the window, so a new user is not
+          averaged against empty months. 0 means there is no history yet and
+          every figure is zero.
+        type: integer
+      saved_percent:
+        description: |-
+          SavedPercent is (income - spending) / income over the window, in
+          percent with one decimal; 0 when there was no income.
+        type: number
+      unconverted:
+        items:
+          $ref: '#/definitions/kuberan_internal_services.UnconvertedAmount'
+        type: array
     type: object
   kuberan_internal_services.UnconvertedAmount:
     properties:
@@ -3207,6 +3545,51 @@ paths:
       security:
       - BearerAuth: []
       summary: Update account
+      tags:
+      - accounts
+  /accounts/{id}/balance-history:
+    get:
+      description: Daily balances of one account in the account's own currency, one
+        point per recorded UTC day (written by the snapshot pipeline). from defaults
+        to 90 days before to, to defaults to today; at most 3700 days.
+      parameters:
+      - description: Account ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Start date (RFC3339 or YYYY-MM-DD)
+        in: query
+        name: from
+        type: string
+      - description: End date (RFC3339 or YYYY-MM-DD)
+        in: query
+        name: to
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Balance history
+          schema:
+            additionalProperties:
+              $ref: '#/definitions/kuberan_internal_services.AccountBalanceHistory'
+            type: object
+        "400":
+          description: Invalid input
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "404":
+          description: Account not found
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get account balance history
       tags:
       - accounts
   /accounts/{id}/fixed-deposit/close:
@@ -3466,6 +3849,43 @@ paths:
       summary: Create a credit card account
       tags:
       - accounts
+  /accounts/debt:
+    post:
+      consumes:
+      - application/json
+      description: Create a loan (debt) account. The amount owed is recorded as an
+        opening balance in one transaction.
+      parameters:
+      - description: Loan details
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_handlers.CreateDebtAccountRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Account created
+          schema:
+            $ref: '#/definitions/internal_handlers.AccountResponse'
+        "400":
+          description: Invalid input
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "500":
+          description: Server error
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Create a loan account
+      tags:
+      - accounts
   /accounts/fixed-deposit:
     post:
       consumes:
@@ -3539,6 +3959,73 @@ paths:
       summary: Create an investment account
       tags:
       - accounts
+  /accounts/sparklines:
+    get:
+      description: Daily balances over the last N days (default 30, 2 to 365) for
+        each of the user's active accounts, in each account's own currency. Accounts
+        with no recorded history have an empty points list.
+      parameters:
+      - description: Number of days (default 30, min 2, max 365)
+        in: query
+        name: days
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Sparklines
+          schema:
+            additionalProperties:
+              items:
+                $ref: '#/definitions/kuberan_internal_services.AccountSparkline'
+              type: array
+            type: object
+        "400":
+          description: Invalid input
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get account sparklines
+      tags:
+      - accounts
+  /analytics/typical:
+    get:
+      description: 'Averages over the last N complete months (default 6, 1 to 24),
+        in the base currency: monthly income, spending and saved percentage, the average
+        cumulative daily spending curve (31 points) and average spending by category.
+        months_used says how many months the averages cover (0 when there is no history).'
+      parameters:
+      - description: Number of complete months (default 6, min 1, max 24)
+        in: query
+        name: months
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Typical month
+          schema:
+            additionalProperties:
+              $ref: '#/definitions/kuberan_internal_services.Typical'
+            type: object
+        "400":
+          description: Invalid input
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get typical month
+      tags:
+      - analytics
   /appearance:
     get:
       description: Public. Returns only the palette used by users who have not picked
@@ -4289,6 +4776,67 @@ paths:
       summary: Update category
       tags:
       - categories
+  /demo:
+    delete:
+      description: 'Permanently deletes exactly the rows recorded in demo_rows, children
+        first, in one transaction. Idempotent: with nothing loaded it returns an empty
+        result. 409 DEMO_IN_USE when the user''s own entries still use the sample
+        accounts. 404 unless DEMO_ENABLED is set.'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/kuberan_internal_services.DemoResult'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "404":
+          description: Demo data is not enabled
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "409":
+          description: DEMO_IN_USE or DEMO_BUSY
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Remove the sample household
+      tags:
+      - demo
+  /demo/load:
+    post:
+      description: Creates sample accounts, categories, about three months of transactions,
+        a budget, holdings with prices and receivables, listing every row in demo_rows.
+        Only when the user has no transactions of their own (409 DEMO_HAS_DATA) and
+        has not loaded it yet (409 DEMO_ALREADY_LOADED). 404 unless DEMO_ENABLED is
+        set.
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/kuberan_internal_services.DemoResult'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "404":
+          description: Demo data is not enabled
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "409":
+          description: DEMO_ALREADY_LOADED, DEMO_HAS_DATA or DEMO_BUSY
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Load the sample household
+      tags:
+      - demo
   /export:
     get:
       description: Streams a zip archive with one CSV per table (accounts, categories,
@@ -4407,6 +4955,104 @@ paths:
       summary: Latest FX rate
       tags:
       - fx
+  /imports/csv:
+    post:
+      consumes:
+      - multipart/form-data
+      description: Upload one CSV (at most 5,000 data rows) with a header row. A dry
+        run (default) returns the detected columns, a sample, the suggested mapping
+        and, when a mapping is sent, what would be created or skipped; apply=true
+        writes the new rows in one transaction with source "import". Rows repeating
+        an earlier import (same import_ref) and rows matching an entry typed by hand
+        are skipped; the user's rules categorise the rest. Amounts are in the target
+        account's currency. The file is processed in memory only.
+      parameters:
+      - description: The CSV file (UTF-8)
+        in: formData
+        name: file
+        required: true
+        type: file
+      - description: Cash, credit-card or debt account the rows go into
+        in: formData
+        name: account_id
+        required: true
+        type: string
+      - description: Header of the date column (starts the mapping)
+        in: formData
+        name: date_column
+        type: string
+      - description: Header of the description column
+        in: formData
+        name: description_column
+        type: string
+      - description: Header of a signed amount column (or use debit_column and credit_column)
+        in: formData
+        name: amount_column
+        type: string
+      - description: Header of the money-out column
+        in: formData
+        name: debit_column
+        type: string
+      - description: Header of the money-in column
+        in: formData
+        name: credit_column
+        type: string
+      - description: Header of a category column (matched to your categories by name)
+        in: formData
+        name: category_column
+        type: string
+      - description: Header of a notes column
+        in: formData
+        name: notes_column
+        type: string
+      - description: 'e.g. DD/MM/YYYY (default: the suggested format)'
+        in: formData
+        name: date_format
+        type: string
+      - description: '''.'' or '','' (default: the suggested one)'
+        in: formData
+        name: decimal_separator
+        type: string
+      - description: negative_is_expense (default) or positive_is_expense
+        in: formData
+        name: amount_sign
+        type: string
+      - description: 'Write the changes (default: dry run; needs a mapping)'
+        in: formData
+        name: apply
+        type: boolean
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/kuberan_internal_services.CSVImportReport'
+        "400":
+          description: Invalid input, CSV_TOO_MANY_ROWS or IMPORT_INVALID
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "404":
+          description: Account not found
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "409":
+          description: Another import is being applied
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "413":
+          description: File too large
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Import a bank-statement CSV
+      tags:
+      - imports
   /imports/ibkr:
     post:
       consumes:
@@ -4540,6 +5186,48 @@ paths:
       security:
       - InternalSecret: []
       summary: Complete Telegram linking
+      tags:
+      - internal
+  /internal/telegram/reminders/{id}/sent:
+    post:
+      description: 'Mark a reminder as sent. Idempotent: confirming twice is fine
+        (internal endpoint)'
+      parameters:
+      - description: Reminder ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Reminder
+          schema:
+            type: object
+        "404":
+          description: Not found
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+      security:
+      - InternalSecret: []
+      summary: Confirm a reminder was sent
+      tags:
+      - internal
+  /internal/telegram/reminders/due:
+    get:
+      description: Unsent, enabled reminders whose time has come, for users with an
+        active Telegram link that has the kind switched on (internal endpoint)
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Due reminders
+          schema:
+            type: object
+      security:
+      - InternalSecret: []
+      summary: Reminders due for delivery
       tags:
       - internal
   /internal/telegram/resolve/{telegram_user_id}:
@@ -6058,6 +6746,69 @@ paths:
       summary: Receivables summary
       tags:
       - receivables
+  /reminders:
+    get:
+      description: Upcoming (unsent or not yet due) reminders of the authenticated
+        user, soonest first; ref_id limits it to one account
+      parameters:
+      - description: Account ID
+        in: query
+        name: ref_id
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Reminders
+          schema:
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List reminders
+      tags:
+      - reminders
+  /reminders/{id}:
+    patch:
+      consumes:
+      - application/json
+      description: Enable or disable the reminder (all occurrences of its kind for
+        that account)
+      parameters:
+      - description: Reminder ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Switch
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_handlers.SetReminderEnabledRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Reminder
+          schema:
+            type: object
+        "400":
+          description: Invalid input
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "404":
+          description: Not found
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Switch a reminder on or off
+      tags:
+      - reminders
   /rules:
     get:
       description: List all rules for the authenticated user in evaluation order
@@ -6331,6 +7082,34 @@ paths:
       summary: Reorder transaction rules
       tags:
       - rules
+  /rules/suggestions:
+    get:
+      description: Patterns of at least 3 income/expense rows in the last 90 days
+        with the same normalised description and category that no active rule matches
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Suggestions
+          schema:
+            additionalProperties:
+              items:
+                $ref: '#/definitions/kuberan_internal_services.RuleSuggestion'
+              type: array
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "500":
+          description: Server error
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Suggest transaction rules
+      tags:
+      - rules
   /securities:
     get:
       consumes:
@@ -6527,6 +7306,43 @@ paths:
       security:
       - BearerAuth: []
       summary: Get Telegram link status
+      tags:
+      - telegram
+  /telegram/reminder-settings:
+    put:
+      consumes:
+      - application/json
+      description: Switch the card due, loan due and fixed-deposit maturity reminders
+        on or off for the linked Telegram account
+      parameters:
+      - description: Reminder switches
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_handlers.UpdateReminderSettingsRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Updated link
+          schema:
+            type: object
+        "400":
+          description: Invalid input
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "404":
+          description: No Telegram link
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Update reminder settings
       tags:
       - telegram
   /telegram/unlink:

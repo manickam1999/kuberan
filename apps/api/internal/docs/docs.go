@@ -190,6 +190,63 @@ const docTemplate = `{
                 }
             }
         },
+        "/accounts/debt": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Create a loan (debt) account. The amount owed is recorded as an opening balance in one transaction.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "accounts"
+                ],
+                "summary": "Create a loan account",
+                "parameters": [
+                    {
+                        "description": "Loan details",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.CreateDebtAccountRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Account created",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.AccountResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid input",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Server error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/accounts/fixed-deposit": {
             "post": {
                 "security": [
@@ -297,6 +354,57 @@ const docTemplate = `{
                     },
                     "500": {
                         "description": "Server error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/accounts/sparklines": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Daily balances over the last N days (default 30, 2 to 365) for each of the user's active accounts, in each account's own currency. Accounts with no recorded history have an empty points list.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "accounts"
+                ],
+                "summary": "Get account sparklines",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Number of days (default 30, min 2, max 365)",
+                        "name": "days",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Sparklines",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "array",
+                                "items": {
+                                    "$ref": "#/definitions/kuberan_internal_services.AccountSparkline"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid input",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
                         "schema": {
                             "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
@@ -426,6 +534,73 @@ const docTemplate = `{
                     },
                     "500": {
                         "description": "Server error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/accounts/{id}/balance-history": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Daily balances of one account in the account's own currency, one point per recorded UTC day (written by the snapshot pipeline). from defaults to 90 days before to, to defaults to today; at most 3700 days.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "accounts"
+                ],
+                "summary": "Get account balance history",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Account ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Start date (RFC3339 or YYYY-MM-DD)",
+                        "name": "from",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "End date (RFC3339 or YYYY-MM-DD)",
+                        "name": "to",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Balance history",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "$ref": "#/definitions/kuberan_internal_services.AccountBalanceHistory"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid input",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Account not found",
                         "schema": {
                             "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
@@ -702,6 +877,54 @@ const docTemplate = `{
                     },
                     "500": {
                         "description": "Server error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/analytics/typical": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Averages over the last N complete months (default 6, 1 to 24), in the base currency: monthly income, spending and saved percentage, the average cumulative daily spending curve (31 points) and average spending by category. months_used says how many months the averages cover (0 when there is no history).",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "analytics"
+                ],
+                "summary": "Get typical month",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Number of complete months (default 6, min 1, max 24)",
+                        "name": "months",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Typical month",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "$ref": "#/definitions/kuberan_internal_services.Typical"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid input",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
                         "schema": {
                             "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
@@ -1864,6 +2087,92 @@ const docTemplate = `{
                 }
             }
         },
+        "/demo": {
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Permanently deletes exactly the rows recorded in demo_rows, children first, in one transaction. Idempotent: with nothing loaded it returns an empty result. 409 DEMO_IN_USE when the user's own entries still use the sample accounts. 404 unless DEMO_ENABLED is set.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "demo"
+                ],
+                "summary": "Remove the sample household",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/kuberan_internal_services.DemoResult"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Demo data is not enabled",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "DEMO_IN_USE or DEMO_BUSY",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/demo/load": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Creates sample accounts, categories, about three months of transactions, a budget, holdings with prices and receivables, listing every row in demo_rows. Only when the user has no transactions of their own (409 DEMO_HAS_DATA) and has not loaded it yet (409 DEMO_ALREADY_LOADED). 404 unless DEMO_ENABLED is set.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "demo"
+                ],
+                "summary": "Load the sample household",
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/kuberan_internal_services.DemoResult"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Demo data is not enabled",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "DEMO_ALREADY_LOADED, DEMO_HAS_DATA or DEMO_BUSY",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/export": {
             "get": {
                 "security": [
@@ -2030,6 +2339,146 @@ const docTemplate = `{
                     },
                     "503": {
                         "description": "Exchange rate unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/imports/csv": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Upload one CSV (at most 5,000 data rows) with a header row. A dry run (default) returns the detected columns, a sample, the suggested mapping and, when a mapping is sent, what would be created or skipped; apply=true writes the new rows in one transaction with source \"import\". Rows repeating an earlier import (same import_ref) and rows matching an entry typed by hand are skipped; the user's rules categorise the rest. Amounts are in the target account's currency. The file is processed in memory only.",
+                "consumes": [
+                    "multipart/form-data"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "imports"
+                ],
+                "summary": "Import a bank-statement CSV",
+                "parameters": [
+                    {
+                        "type": "file",
+                        "description": "The CSV file (UTF-8)",
+                        "name": "file",
+                        "in": "formData",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Cash, credit-card or debt account the rows go into",
+                        "name": "account_id",
+                        "in": "formData",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Header of the date column (starts the mapping)",
+                        "name": "date_column",
+                        "in": "formData"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Header of the description column",
+                        "name": "description_column",
+                        "in": "formData"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Header of a signed amount column (or use debit_column and credit_column)",
+                        "name": "amount_column",
+                        "in": "formData"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Header of the money-out column",
+                        "name": "debit_column",
+                        "in": "formData"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Header of the money-in column",
+                        "name": "credit_column",
+                        "in": "formData"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Header of a category column (matched to your categories by name)",
+                        "name": "category_column",
+                        "in": "formData"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Header of a notes column",
+                        "name": "notes_column",
+                        "in": "formData"
+                    },
+                    {
+                        "type": "string",
+                        "description": "e.g. DD/MM/YYYY (default: the suggested format)",
+                        "name": "date_format",
+                        "in": "formData"
+                    },
+                    {
+                        "type": "string",
+                        "description": "'.' or ',' (default: the suggested one)",
+                        "name": "decimal_separator",
+                        "in": "formData"
+                    },
+                    {
+                        "type": "string",
+                        "description": "negative_is_expense (default) or positive_is_expense",
+                        "name": "amount_sign",
+                        "in": "formData"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Write the changes (default: dry run; needs a mapping)",
+                        "name": "apply",
+                        "in": "formData"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/kuberan_internal_services.CSVImportReport"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid input, CSV_TOO_MANY_ROWS or IMPORT_INVALID",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Account not found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Another import is being applied",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "413": {
+                        "description": "File too large",
                         "schema": {
                             "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
@@ -2230,6 +2679,71 @@ const docTemplate = `{
                     },
                     "409": {
                         "description": "Telegram already linked",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/internal/telegram/reminders/due": {
+            "get": {
+                "security": [
+                    {
+                        "InternalSecret": []
+                    }
+                ],
+                "description": "Unsent, enabled reminders whose time has come, for users with an active Telegram link that has the kind switched on (internal endpoint)",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "internal"
+                ],
+                "summary": "Reminders due for delivery",
+                "responses": {
+                    "200": {
+                        "description": "Due reminders",
+                        "schema": {
+                            "type": "object"
+                        }
+                    }
+                }
+            }
+        },
+        "/internal/telegram/reminders/{id}/sent": {
+            "post": {
+                "security": [
+                    {
+                        "InternalSecret": []
+                    }
+                ],
+                "description": "Mark a reminder as sent. Idempotent: confirming twice is fine (internal endpoint)",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "internal"
+                ],
+                "summary": "Confirm a reminder was sent",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Reminder ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Reminder",
+                        "schema": {
+                            "type": "object"
+                        }
+                    },
+                    "404": {
+                        "description": "Not found",
                         "schema": {
                             "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
@@ -4530,6 +5044,103 @@ const docTemplate = `{
                 }
             }
         },
+        "/reminders": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Upcoming (unsent or not yet due) reminders of the authenticated user, soonest first; ref_id limits it to one account",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "reminders"
+                ],
+                "summary": "List reminders",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Account ID",
+                        "name": "ref_id",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Reminders",
+                        "schema": {
+                            "type": "object"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/reminders/{id}": {
+            "patch": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Enable or disable the reminder (all occurrences of its kind for that account)",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "reminders"
+                ],
+                "summary": "Switch a reminder on or off",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Reminder ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Switch",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.SetReminderEnabledRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Reminder",
+                        "schema": {
+                            "type": "object"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid input",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/rules": {
             "get": {
                 "security": [
@@ -4737,6 +5348,49 @@ const docTemplate = `{
                     },
                     "401": {
                         "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/rules/suggestions": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Patterns of at least 3 income/expense rows in the last 90 days with the same normalised description and category that no active rule matches",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "rules"
+                ],
+                "summary": "Suggest transaction rules",
+                "responses": {
+                    "200": {
+                        "description": "Suggestions",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "array",
+                                "items": {
+                                    "$ref": "#/definitions/kuberan_internal_services.RuleSuggestion"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Server error",
                         "schema": {
                             "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
@@ -5262,6 +5916,63 @@ const docTemplate = `{
                     },
                     "404": {
                         "description": "Not found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/telegram/reminder-settings": {
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Switch the card due, loan due and fixed-deposit maturity reminders on or off for the linked Telegram account",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "telegram"
+                ],
+                "summary": "Update reminder settings",
+                "parameters": [
+                    {
+                        "description": "Reminder switches",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.UpdateReminderSettingsRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Updated link",
+                        "schema": {
+                            "type": "object"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid input",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "No Telegram link",
                         "schema": {
                             "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
@@ -7029,9 +7740,56 @@ const docTemplate = `{
                 "due_date": {
                     "type": "string"
                 },
+                "due_day": {
+                    "description": "DueDay (1-31) is the day of the month the statement falls due; it drives\nthe Telegram reminder.",
+                    "type": "integer",
+                    "maximum": 31,
+                    "minimum": 0
+                },
                 "interest_rate": {
                     "type": "number",
                     "maximum": 100,
+                    "minimum": 0
+                },
+                "name": {
+                    "type": "string",
+                    "maxLength": 100,
+                    "minLength": 1
+                }
+            }
+        },
+        "internal_handlers.CreateDebtAccountRequest": {
+            "type": "object",
+            "required": [
+                "name"
+            ],
+            "properties": {
+                "amount_owed": {
+                    "description": "AmountOwed (cents) is recorded as an opening_balance row, never inverted.",
+                    "type": "integer",
+                    "minimum": 0
+                },
+                "currency": {
+                    "description": "Currency defaults to the user's base currency.",
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string",
+                    "maxLength": 500
+                },
+                "due_day": {
+                    "description": "DueDay (1-31) is the day of the month the instalment falls due.",
+                    "type": "integer",
+                    "maximum": 31,
+                    "minimum": 0
+                },
+                "interest_rate": {
+                    "type": "number",
+                    "maximum": 100,
+                    "minimum": 0
+                },
+                "monthly_payment": {
+                    "type": "integer",
                     "minimum": 0
                 },
                 "name": {
@@ -7922,6 +8680,17 @@ const docTemplate = `{
                 }
             }
         },
+        "internal_handlers.SetReminderEnabledRequest": {
+            "type": "object",
+            "required": [
+                "enabled"
+            ],
+            "properties": {
+                "enabled": {
+                    "type": "boolean"
+                }
+            }
+        },
         "internal_handlers.SettleReceivableRequest": {
             "type": "object",
             "required": [
@@ -7976,6 +8745,12 @@ const docTemplate = `{
         "internal_handlers.SystemStatusResponse": {
             "type": "object",
             "properties": {
+                "demo_enabled": {
+                    "type": "boolean"
+                },
+                "demo_loaded": {
+                    "type": "boolean"
+                },
                 "last_backup_at": {
                     "type": "string"
                 },
@@ -8058,6 +8833,12 @@ const docTemplate = `{
                 "due_date": {
                     "type": "string"
                 },
+                "due_day": {
+                    "description": "DueDay (1-31) for credit cards and loans; 0 clears it.",
+                    "type": "integer",
+                    "maximum": 31,
+                    "minimum": 0
+                },
                 "interest_rate": {
                     "type": "number",
                     "maximum": 100,
@@ -8076,6 +8857,11 @@ const docTemplate = `{
                 "maturity_date": {
                     "description": "Fixed deposit mutable fields (plan 020). Principal and start_date are\nimmutable after creation and are intentionally absent here.",
                     "type": "string"
+                },
+                "monthly_payment": {
+                    "description": "MonthlyPayment (cents) for loans; 0 clears it.",
+                    "type": "integer",
+                    "minimum": 0
                 },
                 "name": {
                     "type": "string",
@@ -8204,6 +8990,20 @@ const docTemplate = `{
                     "items": {
                         "$ref": "#/definitions/internal_handlers.ReceivableShareRequest"
                     }
+                }
+            }
+        },
+        "internal_handlers.UpdateReminderSettingsRequest": {
+            "type": "object",
+            "properties": {
+                "card_due": {
+                    "type": "boolean"
+                },
+                "fd_maturity": {
+                    "type": "boolean"
+                },
+                "loan_due": {
+                    "type": "boolean"
                 }
             }
         },
@@ -8533,6 +9333,9 @@ const docTemplate = `{
                 "due_date": {
                     "type": "string"
                 },
+                "due_day": {
+                    "type": "integer"
+                },
                 "fixed_deposit": {
                     "description": "For fixed deposit accounts (also reuses InterestRate for the annual rate)",
                     "allOf": [
@@ -8571,6 +9374,10 @@ const docTemplate = `{
                 },
                 "is_pinned": {
                     "type": "boolean"
+                },
+                "monthly_payment": {
+                    "description": "MonthlyPayment is the loan's instalment in cents (account currency); debt\naccounts only. DueDay (1-31) is the day of the month a credit card\nstatement or loan instalment falls due; months that are shorter use their\nlast day. Both are nil when unset (plan 023, 5.3).",
+                    "type": "integer"
                 },
                 "name": {
                     "type": "string"
@@ -9603,6 +10410,13 @@ const docTemplate = `{
                 "is_active": {
                     "type": "boolean"
                 },
+                "last_matched_at": {
+                    "type": "string"
+                },
+                "match_count": {
+                    "description": "MatchCount is how many transactions this rule has categorized (new\ntransactions it matched plus rows a backfill changed); LastMatchedAt is\nwhen that last happened (nil if never).",
+                    "type": "integer"
+                },
                 "name": {
                     "type": "string"
                 },
@@ -10006,6 +10820,46 @@ const docTemplate = `{
                 }
             }
         },
+        "kuberan_internal_services.AccountBalanceHistory": {
+            "type": "object",
+            "properties": {
+                "account_id": {
+                    "type": "string"
+                },
+                "currency": {
+                    "type": "string"
+                },
+                "from": {
+                    "type": "string"
+                },
+                "points": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/kuberan_internal_services.BalancePoint"
+                    }
+                },
+                "to": {
+                    "type": "string"
+                }
+            }
+        },
+        "kuberan_internal_services.AccountSparkline": {
+            "type": "object",
+            "properties": {
+                "account_id": {
+                    "type": "string"
+                },
+                "currency": {
+                    "type": "string"
+                },
+                "points": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/kuberan_internal_services.BalancePoint"
+                    }
+                }
+            }
+        },
         "kuberan_internal_services.AllAppActivityItem": {
             "type": "object",
             "properties": {
@@ -10117,6 +10971,18 @@ const docTemplate = `{
                 }
             }
         },
+        "kuberan_internal_services.BalancePoint": {
+            "type": "object",
+            "properties": {
+                "balance": {
+                    "type": "integer"
+                },
+                "day": {
+                    "description": "UTC day, YYYY-MM-DD",
+                    "type": "string"
+                }
+            }
+        },
         "kuberan_internal_services.BudgetProgress": {
             "type": "object",
             "properties": {
@@ -10153,6 +11019,229 @@ const docTemplate = `{
                 },
                 "updated": {
                     "type": "integer"
+                }
+            }
+        },
+        "kuberan_internal_services.CSVImportAccount": {
+            "type": "object",
+            "properties": {
+                "currency": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
+        "kuberan_internal_services.CSVImportIssue": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string"
+                },
+                "detail": {
+                    "type": "string"
+                },
+                "line": {
+                    "type": "integer"
+                }
+            }
+        },
+        "kuberan_internal_services.CSVImportReport": {
+            "type": "object",
+            "properties": {
+                "account": {
+                    "$ref": "#/definitions/kuberan_internal_services.CSVImportAccount"
+                },
+                "applied": {
+                    "type": "boolean"
+                },
+                "columns": {
+                    "description": "Columns are the file's header names.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "created": {
+                    "description": "Created is the number of transactions written (apply only).",
+                    "type": "integer"
+                },
+                "date_formats": {
+                    "description": "DateFormats lists the accepted date_format values.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "delimiter": {
+                    "type": "string"
+                },
+                "issues": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/kuberan_internal_services.CSVImportIssue"
+                    }
+                },
+                "mapping": {
+                    "description": "Mapping is the mapping used; nil when the request carried none.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/kuberan_internal_services.CSVMapping"
+                        }
+                    ]
+                },
+                "rows": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/kuberan_internal_services.CSVImportRow"
+                    }
+                },
+                "rows_truncated": {
+                    "type": "boolean"
+                },
+                "sample": {
+                    "description": "Sample is the first rows of the file.",
+                    "type": "array",
+                    "items": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        }
+                    }
+                },
+                "suggested_mapping": {
+                    "description": "SuggestedMapping is the mapping guessed from the headers and sample.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/kuberan_internal_services.CSVMapping"
+                        }
+                    ]
+                },
+                "summary": {
+                    "description": "Summary and Rows are present when a mapping was given.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/kuberan_internal_services.CSVImportSummary"
+                        }
+                    ]
+                }
+            }
+        },
+        "kuberan_internal_services.CSVImportRow": {
+            "type": "object",
+            "properties": {
+                "amount": {
+                    "type": "integer"
+                },
+                "category": {
+                    "type": "string"
+                },
+                "category_source": {
+                    "description": "CategorySource is \"column\" or \"rule\" when a category was found.",
+                    "type": "string"
+                },
+                "date": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "line": {
+                    "type": "integer"
+                },
+                "reason": {
+                    "description": "Reason explains a skipped or invalid row.",
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "type": {
+                    "type": "string"
+                }
+            }
+        },
+        "kuberan_internal_services.CSVImportSummary": {
+            "type": "object",
+            "properties": {
+                "categorized": {
+                    "type": "integer"
+                },
+                "categorized_by_rule": {
+                    "type": "integer"
+                },
+                "expense_total": {
+                    "type": "integer"
+                },
+                "first_date": {
+                    "type": "string"
+                },
+                "income_total": {
+                    "description": "IncomeTotal and ExpenseTotal are the totals of the rows to create, in cents of the account's currency.",
+                    "type": "integer"
+                },
+                "invalid": {
+                    "type": "integer"
+                },
+                "last_date": {
+                    "type": "string"
+                },
+                "rows": {
+                    "type": "integer"
+                },
+                "skip_duplicate": {
+                    "type": "integer"
+                },
+                "skip_manual": {
+                    "type": "integer"
+                },
+                "unknown_category": {
+                    "type": "integer"
+                },
+                "would_create": {
+                    "type": "integer"
+                }
+            }
+        },
+        "kuberan_internal_services.CSVMapping": {
+            "type": "object",
+            "properties": {
+                "amount_column": {
+                    "type": "string"
+                },
+                "amount_sign": {
+                    "description": "AmountSign is \"negative_is_expense\" (default) or \"positive_is_expense\".\nIt only applies to AmountColumn.",
+                    "type": "string"
+                },
+                "category_column": {
+                    "type": "string"
+                },
+                "credit_column": {
+                    "type": "string"
+                },
+                "date_column": {
+                    "type": "string"
+                },
+                "date_format": {
+                    "description": "DateFormat is one of CSVDateFormatNames, e.g. \"DD/MM/YYYY\".",
+                    "type": "string"
+                },
+                "debit_column": {
+                    "type": "string"
+                },
+                "decimal_separator": {
+                    "description": "DecimalSeparator is \".\" or \",\".",
+                    "type": "string"
+                },
+                "description_column": {
+                    "type": "string"
+                },
+                "notes_column": {
+                    "type": "string"
                 }
             }
         },
@@ -10210,6 +11299,22 @@ const docTemplate = `{
                 },
                 "name": {
                     "type": "string"
+                }
+            }
+        },
+        "kuberan_internal_services.DemoResult": {
+            "type": "object",
+            "properties": {
+                "rows": {
+                    "description": "Rows counts the rows by table name.",
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "integer"
+                    }
+                },
+                "total": {
+                    "description": "Total is the sum of Rows.",
+                    "type": "integer"
                 }
             }
         },
@@ -10669,6 +11774,23 @@ const docTemplate = `{
                 }
             }
         },
+        "kuberan_internal_services.RuleSuggestion": {
+            "type": "object",
+            "properties": {
+                "category_id": {
+                    "type": "string"
+                },
+                "count": {
+                    "type": "integer"
+                },
+                "description_pattern": {
+                    "type": "string"
+                },
+                "type": {
+                    "$ref": "#/definitions/kuberan_internal_models.TransactionType"
+                }
+            }
+        },
         "kuberan_internal_services.ShareMode": {
             "type": "string",
             "enum": [
@@ -10826,6 +11948,57 @@ const docTemplate = `{
                 },
                 "value": {
                     "type": "integer"
+                }
+            }
+        },
+        "kuberan_internal_services.Typical": {
+            "type": "object",
+            "properties": {
+                "avg_income": {
+                    "description": "AvgIncome and AvgSpending are per-month averages.",
+                    "type": "integer"
+                },
+                "avg_spending": {
+                    "type": "integer"
+                },
+                "by_category": {
+                    "description": "ByCategory is the average monthly spending per category, largest first.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/kuberan_internal_services.SpendingByCategoryItem"
+                    }
+                },
+                "currency": {
+                    "type": "string"
+                },
+                "daily_cumulative": {
+                    "description": "DailyCumulative is the average cumulative spending after day 1..31 of a\nmonth (always 31 points; a shorter month holds its total after its last\nday).",
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "fx_missing": {
+                    "description": "FXMissing is true when some amounts had no exchange rate and were left out.",
+                    "type": "boolean"
+                },
+                "months": {
+                    "description": "Months is the number of months asked for.",
+                    "type": "integer"
+                },
+                "months_used": {
+                    "description": "MonthsUsed is how many of them the averages cover: the months from the\nuser's first income or expense in the window, so a new user is not\naveraged against empty months. 0 means there is no history yet and\nevery figure is zero.",
+                    "type": "integer"
+                },
+                "saved_percent": {
+                    "description": "SavedPercent is (income - spending) / income over the window, in\npercent with one decimal; 0 when there was no income.",
+                    "type": "number"
+                },
+                "unconverted": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/kuberan_internal_services.UnconvertedAmount"
+                    }
                 }
             }
         },

@@ -1,10 +1,13 @@
 # Plan 023 — Launch Redesign
 
-**Status: Phases 0–4 implemented** (migrations `000048` notes/source, `000049` backup runs, `000050` audit
-source, `000051` grant client host, `000052` appearance). Phases 5–7 are proposed. Phase 4 screens render without
-the Phase 5 data they don't have yet (sparklines, pace vs typical, loans, reminders, demo data, CSV import, rule
-match counts and suggestions). Phase 4 additions beyond the table: `GET /accounts?include_inactive=true`, and
-`NEXT_PUBLIC_MCP_URL` (optional) for the "Connect an assistant" steps.
+**Status: Phases 0–5 implemented** (migrations `000048`–`000057`: notes/source, backup runs, audit source, grant
+client host, appearance, account balance snapshots, rule stats, loan columns, reminders, demo rows). Phases 6–7 are
+proposed. Additions beyond the plan text: `GET /accounts?include_inactive=true`; `NEXT_PUBLIC_MCP_URL` (optional) for
+the "Connect an assistant" steps; `GET /system/status` also reports `demo_enabled` / `demo_loaded`; CSV-imported rows
+stay editable (only `ibkr:` rows are locked); `DELETE /demo` also removes what the user added inside sample accounts
+and categories, and refuses with `DEMO_IN_USE` where removal would damage real data; reminders are one row per
+occurrence (`due_on`), 3 days before a card or loan due date and 7 before a deposit matures; investment accounts
+record balance history going forward only (portfolio history is per user, not per account).
 
 Phase 1 notes:
 
