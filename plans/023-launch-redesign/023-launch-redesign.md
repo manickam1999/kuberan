@@ -59,7 +59,7 @@ Re-checked against `main` at `3b3bea4`, after Phase 0 (#39), the security harden
 | 1.3 | Transaction text search, `notes`, `source`, `shared` / `has_attachment` filters | Transactions, ⌘K search, transaction detail | Filters are account, category, type, dates and amount only; no notes or source columns |
 | 1.4 | Bulk edit (`POST /transactions/bulk`) | Transactions (bulk bar) | None |
 | 1.5 | Edit name and email, change password, list and revoke signed-in devices | Settings → Profile & security | `PATCH /profile` takes only `hide_balances`, `default_account_id`, `base_currency`; `refresh_sessions` exist but aren't exposed |
-| 1.6 | MCP change log and write limits | Settings → Connected apps | MCP writes are audited with `via`/`client_id` inside the `changes` JSON, but `audit_logs` has no columns for them and nothing reads them back; limits live only in config |
+| 1.6 | MCP change log, write limits, accurate "last used" (reads too), disconnect that stops reads within 30s, and the app's host | Settings → Connected apps, "via Claude" on transactions | MCP writes are audited with `via`/`client_id` inside the `changes` JSON, but `audit_logs` has no columns for them and nothing reads them back; limits live only in config |
 | 1.7 | Data export and server status | Settings → Data, sidebar host chip | None |
 | 1.8 | Appearance preferences on the profile, plus a server default palette (`DEFAULT_PALETTE`, Catppuccin when unset) | Settings → Appearance, theme picker, sign-in pages | Theme and chart style live in each browser's `localStorage` only |
 | 1.9 | Credit-card "current balance owed" on create (moved from Phase 0) | New account | `CreateCreditCardAccountRequest` has no opening amount |
@@ -256,6 +256,8 @@ Migrations continue from `000047` (plan 024 used `000038`–`000047`). Every ite
 - **Migration `000048_add_notes_source_to_transactions`:**
   - `notes TEXT NOT NULL DEFAULT ''`;
   - `source VARCHAR(20) NOT NULL DEFAULT 'web'`, one of `web | telegram | mcp | rule | import | system`;
+  - `source_client_id VARCHAR(255) NULL`: the OAuth client for `source = 'mcp'`, so a row can say which app
+    changed it (see 1.6);
   - Postgres only: `CREATE EXTENSION IF NOT EXISTS pg_trgm` and a GIN trigram index on `description`.
     The migration is guarded so SQLite tests skip it.
 - **Notes:** both create and update requests take `notes` (max 2,000 characters, counted as characters like the
@@ -308,7 +310,26 @@ Migrations continue from `000047` (plan 024 used `000038`–`000047`). Every ite
   response. Check this first; it may be a frontend read issue.
 - **Tests:** the `sid` claim, revoke-one, revoke-others, password change revoking others, and email uniqueness.
 
-### 1.6 MCP change log
+### 1.6 MCP change log and connected-app tracking
+
+The Connected apps screen is Kuberan's only AI surface (D12), so it has to be accurate about which apps are
+connected, when they were last used, what they changed, and whether a disconnect has taken effect.
+
+How it works today (checked against `main` at `3b3bea4`):
+
+- An app registers through the DCR proxy (`POST /oauth2/register`). Its display name is the `client_name` it
+  declares, sanitised and truncated, and the consent screen marks such apps as unverified.
+- Accepting consent upserts a row in `oauth_client_grants`: user, `client_id`, `client_name`, approved scopes,
+  `auto_accept`, `last_used_at`, `revoked_at`. Hydra keeps its own consent session.
+- `GET /oauth/clients` lists those rows. Each surface of an assistant (claude.ai, Claude Code) registers
+  separately and gets its own row.
+- Disconnect revokes the Hydra consent sessions (refresh tokens die) and then marks the grant revoked.
+- Writes call `Grants.Authorize`, which re-checks the grant on every write and updates `last_used_at`
+  (throttled). Reads are validated offline from the JWT and never consult the grant.
+
+The items below close the gaps between that and the screen.
+
+**Change log**
 
 - **Migration `000049_add_source_to_audit_logs`:**
   - `source VARCHAR(20) NOT NULL DEFAULT 'web'` and `client_id VARCHAR(255) NOT NULL DEFAULT ''`;
@@ -322,10 +343,51 @@ Migrations continue from `000047` (plan 024 used `000038`–`000047`). Every ite
   - The server builds `summary` from a fixed template per action, for example "Added transaction · Blue Bottle ·
     RM 18.71".
   - User-written text in it is truncated to 80 characters. The UI treats it as plain text, never HTML.
+- **`GET /oauth/clients/activity?page=&page_size=`** (new): the same rows for all of the user's apps, newest first,
+  each with `client_id` and the grant's `client_name`. The "Recent changes by apps" card uses this.
+- **"Via Claude" on transactions:** item 1.3's `source` column says `mcp` but not which app. Add a nullable
+  `source_client_id` beside it (in migration `000048`). The API returns `source_client_name` from the grant, falling
+  back to "an app" if the grant is gone.
 - **`GET /oauth/clients`** adds `write_limits: { max_amount, per_minute, per_day }` from config when the grant has
-  any `write:*` scope.
-- **Tests:** the backfill, a scoping test (user A can't read user B's activity), and that the summary template
-  escapes and truncates.
+  any `write:*` scope. Since plan 024, `max_amount` is in the user's base currency; say so in the response.
+
+**Last used, including reads**
+
+- Today `last_used_at` moves only on writes, so a read-only app shows no use at all.
+- Add `Grants.Touch(userID, clientID)`, called once per authenticated MCP request after `requireBearer`.
+  - It runs in the background, and a failure is logged without failing the request.
+  - It's throttled twice: an in-process map skips touches within 10 minutes for the same user and app, and the
+    `UPDATE … WHERE last_used_at IS NULL OR last_used_at < now() - interval '10 minutes'` guard keeps it cheap
+    across several MCP replicas.
+- `Authorize` keeps its own update on writes, with the same interval.
+
+**Disconnect takes effect for reads too**
+
+- Today writes stop at once, but reads keep working until the app's access token expires (Hydra
+  `access_token: 15m`).
+- Add a grant check to the MCP request path. The app's grant must exist, not be revoked, and include a scope the
+  tool needs. Cache it per user and app for 30 seconds, as `activeUsers` already does for deactivated users.
+- A disconnect then stops reads within 30 seconds. Writes keep the uncached check in `Authorize`.
+- The Connected apps screen says "Disconnected. Any request already in progress may finish."
+
+**Where the app connects from**
+
+- Add `client_host` to the grant (migration `000051_add_client_host_to_oauth_grants`, `VARCHAR(255) NOT NULL
+  DEFAULT ''`). At consent accept, set it from the host of the redirect URI Hydra reports for that consent
+  request, the same value #38 shows on the consent screen.
+- `GET /oauth/clients` returns it, and the screen shows it under the name ("claude.ai"). That tells apart two apps
+  that both call themselves "Claude".
+- Existing grants fill in on their next consent; until then the screen shows the name only.
+
+**Tests**
+
+- The audit backfill.
+- Scoping: user A can't read user B's activity, per app or across apps.
+- The summary template escapes and truncates.
+- `source_client_name` resolves, including after a grant is deleted.
+- `Touch` throttling in-process and in SQL, and that a touch failure doesn't fail the request.
+- A revoked grant is refused on reads once the cache expires.
+- `client_host` is recorded at consent.
 
 ### 1.7 Data export
 
@@ -503,7 +565,7 @@ Each screen is its own PR, matching the prototype screen of the same name. The o
 | Settings: Profile and security (`prefs-profile`) | `/settings` | Editable profile, base currency, default account, devices list, change password, log out | 1.5 (base currency done in plan 024) |
 | Settings: Appearance (`prefs-appearance`) | `/settings?tab=appearance` | Theme cards, Clean/Dither, hide-on-open (exists), compact rows and show cents (localStorage) | Today |
 | Settings: Telegram (`prefs-telegram`) | `/settings?tab=telegram` | Linked state with username, last message and message count (all exist on `telegram_links`); a sample chat showing only commands that really exist | Today; the quick-add sample needs Phase 6 |
-| Settings: Connected apps (`prefs-apps`) | `/settings?tab=apps` | Can see / can change per app, write limits, change log, connector URL with copy | 1.6 |
+| Settings: Connected apps (`prefs-apps`) | `/settings?tab=apps` | Per app: name and host, access level, can see / can change, write limits, last used, disconnect. Recent changes across apps. "Connect an assistant" steps with the connector URL and copy | 1.6 (and 1.3 for "via Claude") |
 | Settings: Data and export (`prefs-data`) | `/settings?tab=data` | Export, backup status, demo data | 1.7, plus 5.7 and 5.8 (import) |
 | More (`more`) | `/more` (new) | Mobile hub and Add to Home Screen | Today |
 | Sign in, create account (`signin`, `signup`) | `/login`, `/register` | Split layout, lockout copy, base currency at signup, `autocomplete` attributes | Today (base currency done in plan 024) |
@@ -631,7 +693,7 @@ These items aren't needed to launch. Each one unhides a piece of UI that was bui
 
 | Area | Files |
 |---|---|
-| Migrations | `000037_add_opening_balance_type` (done), base currency done in plan 024 (`000038`–`000047`), `000048_add_notes_source_to_transactions`, `000049_add_source_to_audit_logs`, `000050_add_appearance_to_users`; Phase 5 adds rule stats, `reminders`, `demo_rows`, `securities.region` |
+| Migrations | `000037_add_opening_balance_type` (done), base currency done in plan 024 (`000038`–`000047`), `000048_add_notes_source_to_transactions`, `000049_add_source_to_audit_logs`, `000050_add_appearance_to_users`, `000051_add_client_host_to_oauth_grants`; Phase 5 adds rule stats, `reminders`, `demo_rows`, `securities.region` |
 | API models | `user.go`, `transaction.go`, `audit_log.go`, `refresh_session.go` (read only), `transaction_rule.go` |
 | API services | `account_service.go`, `transaction_service.go` (filter, bulk, opening-balance exclusions), analytics and budget services, `audit_service.go`, auth/user service (password, sessions), new `export_service.go` and `status_service.go` |
 | API handlers | `auth_handler.go` (profile, password, sessions), `transaction_handler.go` (search, bulk), `oauth_clients_handler.go` (activity, limits), new `export_handler.go` and `status_handler.go`, `routes.go` |
