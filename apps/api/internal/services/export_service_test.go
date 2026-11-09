@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"encoding/csv"
+	"strings"
 	"testing"
 	"time"
 
@@ -117,6 +118,21 @@ func seedExportUser(t *testing.T, db *gorm.DB, email, secSymbol string) (*models
 		t.Fatal(err)
 	}
 
+	fdAcct := &models.Account{UserID: user.ID, Name: "FD " + secSymbol, Type: models.AccountTypeFixedDeposit, Balance: 1000000, Currency: "MYR", IsActive: true}
+	if err := db.Create(fdAcct).Error; err != nil {
+		t.Fatal(err)
+	}
+	freq := models.PayoutFrequencyQuarterly
+	if err := db.Create(&models.FixedDepositDetails{AccountID: fdAcct.ID, Principal: 1000000, MaturityValue: 1040000,
+		StartDate: day, MaturityDate: day.AddDate(1, 0, 0), PayoutType: models.PayoutTypePeriodic, PayoutFrequency: &freq,
+		Compounding: models.CompoundingAnnual, LinkedAccountID: &cash.ID, Status: models.FixedDepositStatusActive}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&models.TransactionAttachment{UserID: user.ID, TransactionID: tx1.ID, StorageKey: "secret/key/" + secSymbol,
+		FileName: "receipt-" + secSymbol + ".pdf", ContentType: "application/pdf", ByteSize: 2048, ChecksumSHA256: strings.Repeat("a", 64)}).Error; err != nil {
+		t.Fatal(err)
+	}
+
 	rule := &models.TransactionRule{UserID: user.ID, Name: "Groceries", Priority: 1, IsActive: true}
 	if err := db.Create(rule).Error; err != nil {
 		t.Fatal(err)
@@ -144,7 +160,7 @@ func TestExportService_ZipContentsAndScoping(t *testing.T) {
 	files := readExportZip(t, buf.Bytes())
 
 	wantFiles := map[string]int{ // file -> data rows
-		"accounts.csv": 3, "categories.csv": 1, "transactions.csv": 3, "budgets.csv": 1,
+		"accounts.csv": 4, "fixed_deposits.csv": 1, "attachments.csv": 1, "categories.csv": 1, "transactions.csv": 3, "budgets.csv": 1,
 		"investments.csv": 1, "investment_transactions.csv": 1, "securities.csv": 1,
 		"receivables.csv": 1, "receivable_settlements.csv": 1, "rules.csv": 1,
 	}
@@ -222,6 +238,30 @@ func TestExportService_ZipContentsAndScoping(t *testing.T) {
 		t.Errorf("securities.symbol = %q, want only the held security AAA", got)
 	}
 
+	fd := files["fixed_deposits.csv"]
+	for name, want := range map[string]string{
+		"currency": "MYR", "principal": "1000000", "principal_formatted": "10000.00", "maturity_value_formatted": "10400.00",
+		"payout_type": "periodic", "payout_frequency": "quarterly", "compounding": "annual",
+		"linked_account_id": aliceCash.ID, "status": "active", "start_date": "2026-03-05T00:00:00Z",
+	} {
+		if got := col(t, fd, 1, name); got != want {
+			t.Errorf("fixed_deposits.%s = %q, want %q", name, got, want)
+		}
+	}
+	att := files["attachments.csv"]
+	for name, want := range map[string]string{
+		"file_name": "receipt-AAA.pdf", "content_type": "application/pdf", "byte_size": "2048",
+	} {
+		if got := col(t, att, 1, name); got != want {
+			t.Errorf("attachments.%s = %q, want %q", name, got, want)
+		}
+	}
+	for _, h := range att[0] {
+		if strings.Contains(h, "key") || strings.Contains(h, "checksum") || strings.Contains(h, "path") {
+			t.Errorf("attachments.csv must not expose %q", h)
+		}
+	}
+
 	// Receivables and settlements use the expense account's currency; the
 	// settlement also reports the credited account's currency and amount.
 	rc := files["receivables.csv"]
@@ -243,7 +283,7 @@ func TestExportService_ZipContentsAndScoping(t *testing.T) {
 	for name, recs := range files {
 		for _, row := range recs[1:] {
 			for _, cell := range row {
-				if cell == bob.ID || cell == "BBB" || cell == "UNHELDBBB" || cell == "Bob" {
+				if cell == bob.ID || cell == "BBB" || cell == "UNHELDBBB" || cell == "Bob" || strings.Contains(cell, "BBB") || strings.Contains(cell, "secret/key") {
 					t.Errorf("%s leaks other user's data: %v", name, row)
 				}
 			}
@@ -261,8 +301,8 @@ func TestExportService_EmptyUserHasHeadersOnly(t *testing.T) {
 		t.Fatal(err)
 	}
 	files := readExportZip(t, buf.Bytes())
-	if len(files) != 10 {
-		t.Fatalf("got %d files, want 10", len(files))
+	if len(files) != 12 {
+		t.Fatalf("got %d files, want 12", len(files))
 	}
 	for name, recs := range files {
 		if len(recs) != 1 {

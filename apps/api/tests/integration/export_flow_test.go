@@ -60,6 +60,14 @@ func TestExportFlow_ZipScopingRateLimitAndAudit(t *testing.T) {
 		t.Fatalf("bob account: %d %s", rec.Code, rec.Body.String())
 	}
 
+	for _, u := range []struct{ token, file string }{{alice, "alice-receipt.png"}, {bob, "bob-receipt.png"}} {
+		txID := app.createTxWithAccount(t, u.token)
+		rec := app.uploadFile("/api/v1/transactions/"+txID+"/attachments", u.file, "image/png", makePNG(t), u.token)
+		if rec.Code != http.StatusCreated {
+			t.Fatalf("upload %s: %d %s", u.file, rec.Code, rec.Body.String())
+		}
+	}
+
 	// Unauthenticated callers are refused.
 	if rec := app.exportRequest(""); rec.Code != http.StatusUnauthorized {
 		t.Fatalf("expected 401 without token, got %d", rec.Code)
@@ -98,8 +106,19 @@ func TestExportFlow_ZipScopingRateLimitAndAudit(t *testing.T) {
 	if !sawAlice {
 		t.Error("alice's export is missing her account")
 	}
-	if got := len(files); got != 10 {
-		t.Errorf("expected 10 CSV files, got %d", got)
+	att := files["attachments.csv"]
+	if len(att) != 2 || att[1][2] != "alice-receipt.png" {
+		t.Errorf("attachments.csv should hold only alice's receipt metadata, got %v", att)
+	}
+	for _, row := range att {
+		for _, cell := range row {
+			if strings.Contains(cell, "bob-receipt") || strings.Contains(strings.ToLower(cell), "attachments/") {
+				t.Errorf("attachments.csv leaks data: %v", row)
+			}
+		}
+	}
+	if got := len(files); got != 12 {
+		t.Errorf("expected 12 CSV files, got %d", got)
 	}
 
 	// Rate limit: a second export in the same minute is refused with Retry-After.

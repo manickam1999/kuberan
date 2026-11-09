@@ -84,6 +84,8 @@ func (s *exportService) WriteExport(userID string, w io.Writer) error {
 			return s.investmentTransactionRows(userID, holdingCurrency, user.BaseCurrency, emit)
 		}, investmentTransactionsHeader},
 		{"securities.csv", func(emit exportEmit) error { return s.securityRows(securities, emit) }, securitiesHeader},
+		{"fixed_deposits.csv", func(emit exportEmit) error { return s.fixedDepositRows(userID, accountCurrency, emit) }, fixedDepositsHeader},
+		{"attachments.csv", func(emit exportEmit) error { return s.attachmentRows(userID, emit) }, attachmentsHeader},
 		{"receivables.csv", func(emit exportEmit) error { return s.receivableRows(userID, emit) }, receivablesHeader},
 		{"receivable_settlements.csv", func(emit exportEmit) error { return s.settlementRows(userID, emit) }, settlementsHeader},
 		{"rules.csv", func(emit exportEmit) error { return s.ruleRows(userID, emit) }, rulesHeader},
@@ -577,4 +579,53 @@ func (s *exportService) ruleRows(userID string, emit exportEmit) error {
 // ExportFileName returns the download file name for an export taken at t.
 func ExportFileName(t time.Time) string {
 	return "kuberan-export-" + t.UTC().Format("2006-01-02") + ".zip"
+}
+
+var fixedDepositsHeader = []string{
+	"id", "account_id", "currency", "principal", "principal_formatted",
+	"maturity_value", "maturity_value_formatted", "start_date", "maturity_date",
+	"payout_type", "payout_frequency", "compounding", "linked_account_id", "next_payout_date", "status",
+	"created_at", "updated_at", "deleted_at",
+}
+
+func (s *exportService) fixedDepositRows(userID string, accountCurrency map[string]string, emit exportEmit) error {
+	accountIDs := s.db.Unscoped().Model(&models.Account{}).Select("id").Where("user_id = ?", userID)
+	var batch []models.FixedDepositDetails
+	return s.db.Unscoped().Where("account_id IN (?)", accountIDs).FindInBatches(&batch, exportBatchSize, func(_ *gorm.DB, _ int) error {
+		for i := range batch {
+			d := &batch[i]
+			freq := ""
+			if d.PayoutFrequency != nil {
+				freq = string(*d.PayoutFrequency)
+			}
+			if err := emit(d.ID, d.AccountID, accountCurrency[d.AccountID], exportInt(d.Principal), exportCents(d.Principal),
+				exportInt(d.MaturityValue), exportCents(d.MaturityValue), exportTime(d.StartDate), exportTime(d.MaturityDate),
+				string(d.PayoutType), freq, string(d.Compounding), exportOptStr(d.LinkedAccountID), exportOptTime(d.NextPayoutDate), string(d.Status),
+				exportTime(d.CreatedAt), exportTime(d.UpdatedAt), exportDeleted(d.DeletedAt)); err != nil {
+				return err
+			}
+		}
+		return nil
+	}).Error
+}
+
+// attachmentsHeader lists receipt metadata only: never the file bytes, the
+// storage key or the checksum.
+var attachmentsHeader = []string{
+	"id", "transaction_id", "file_name", "content_type", "byte_size",
+	"created_at", "updated_at", "deleted_at",
+}
+
+func (s *exportService) attachmentRows(userID string, emit exportEmit) error {
+	var batch []models.TransactionAttachment
+	return s.db.Unscoped().Where("user_id = ?", userID).FindInBatches(&batch, exportBatchSize, func(_ *gorm.DB, _ int) error {
+		for i := range batch {
+			a := &batch[i]
+			if err := emit(a.ID, a.TransactionID, exportText(a.FileName), a.ContentType, exportInt(a.ByteSize),
+				exportTime(a.CreatedAt), exportTime(a.UpdatedAt), exportDeleted(a.DeletedAt)); err != nil {
+				return err
+			}
+		}
+		return nil
+	}).Error
 }
