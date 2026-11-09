@@ -214,7 +214,7 @@ func (s *rpcSession) id() int {
 
 // post sends one JSON-RPC message and returns the status, headers and the JSON
 // body (an SSE reply is unwrapped to its data payload).
-func (s *rpcSession) post(msg map[string]any) (int, http.Header, []byte) {
+func (s *rpcSession) post(msg map[string]any) (status int, header http.Header, body []byte) {
 	s.e.t.Helper()
 	payload, _ := json.Marshal(msg)
 	req, err := http.NewRequest(http.MethodPost, s.e.ts.URL+"/mcp", bytes.NewReader(payload))

@@ -11,7 +11,7 @@ import (
 
 // initStatus sends a bare initialize with token and returns the HTTP status and
 // the WWW-Authenticate challenge.
-func initStatus(e *e2eEnv, token string) (int, string) {
+func initStatus(e *e2eEnv, token string) (status int, challenge string) {
 	s := &rpcSession{e: e, token: token}
 	code, hdr, _ := s.post(map[string]any{
 		"jsonrpc": "2.0", "id": 1, "method": "initialize",

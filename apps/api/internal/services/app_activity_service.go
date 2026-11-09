@@ -294,18 +294,20 @@ func changeInt(changes map[string]any, key string) (int64, bool) {
 	return int64(v), true
 }
 
-// changeText reads a text value from an audit row's changes: stored as-is (a
-// create) or as a {from, to} pair (an update), in which case the new value is
-// returned.
 func changeText(changes map[string]any, key string) (string, bool) {
-	switch v := changes[key].(type) {
-	case string:
+	v, ok := changes[key].(string)
+	return v, ok
+}
+
+// changedText reads a name from an audit row's changes: stored as-is (a create)
+// or as a {from, to} pair (an update), in which case the new value is returned.
+func changedText(changes map[string]any, key string) (string, bool) {
+	if v, ok := changeText(changes, key); ok {
 		return v, true
-	case map[string]any:
-		to, ok := v["to"].(string)
-		return to, ok
 	}
-	return "", false
+	pair, _ := changes[key].(map[string]any)
+	to, ok := pair["to"].(string)
+	return to, ok
 }
 
 // joinSummary joins the non-empty parts with " · ".
@@ -345,7 +347,7 @@ func buildActivitySummary(action string, changes map[string]any, txn *txnInfo) s
 		return summaryMoney(cents, currency)
 	}
 	named := func(verb, fallback string) string {
-		name, _ := changeText(changes, "name")
+		name, _ := changedText(changes, "name")
 		return withDetail(verb, fallback, cleanSummaryText(name))
 	}
 

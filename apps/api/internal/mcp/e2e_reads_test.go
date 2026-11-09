@@ -1,6 +1,7 @@
 package mcp
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -222,7 +223,7 @@ func TestE2ESpendingTools(t *testing.T) {
 	t.Run("get_top_expenses ranks by the base-currency effective amount", func(t *testing.T) {
 		out := s.call("get_top_expenses", map[string]any{"from_date": from, "to_date": to}).ok(t)
 		i1, i2, i3, i4 := strings.Index(out, "Jaya Grocer"), strings.Index(out, "Cafe in Austin"), strings.Index(out, "Team dinner"), strings.Index(out, "Paris bakery")
-		if !(i1 > 0 && i1 < i2 && i2 < i3 && i3 < i4) {
+		if i1 <= 0 || i1 >= i2 || i2 >= i3 || i3 >= i4 {
 			t.Errorf("unexpected ranking (%d %d %d %d):\n%s", i1, i2, i3, i4, out)
 		}
 		contains(t, out, "USD 40.00 (≈ MYR 180.00)", "EUR 15.00 (no exchange rate)",
@@ -384,7 +385,7 @@ func TestE2ENetWorthHistory(t *testing.T) {
 	for _, d := range daysAgo {
 		months[day(d).Format("2006-01")] = true
 		y, w := day(d).ISOWeek()
-		weeks[strings.Join([]string{string(rune(y)), string(rune(w))}, "-")] = true
+		weeks[fmt.Sprintf("%d-%d", y, w)] = true
 	}
 	monthly := s.call("get_net_worth_history", args("month")).ok(t)
 	if got := rows(monthly); got != len(months) {
