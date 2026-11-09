@@ -51,9 +51,11 @@ export function useAccountCurrencies(): (
 ) => string {
   const { data } = useAccounts({ page_size: 100 });
   const base = useBaseCurrency();
+  // `||`, not `??`: an embedded account the API didn't preload arrives as a
+  // zero value with currency "", which must fall through too.
   return (accountId, preloaded) =>
-    data?.data.find((a) => a.id === accountId)?.currency ??
-    preloaded?.currency ??
+    data?.data.find((a) => a.id === accountId)?.currency ||
+    preloaded?.currency ||
     base;
 }
 
