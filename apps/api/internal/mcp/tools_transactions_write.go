@@ -67,7 +67,7 @@ func (s *Server) registerTransactionWriteTools() {
 			"Edit an income or expense transaction. Only the fields given change; the account balance is adjusted. "+
 				"The amount is in the transaction's account currency. A category must match the transaction's (new) type; "+
 				"changing the type needs a category_id that fits it, or 'none', when the transaction has a category. "+
-				"Transfers, investment transactions and repayments cannot be edited here.",
+				"Transfers, investment transactions, repayments and opening balances cannot be edited here.",
 			true,
 			mcp.WithString("transaction_id", mcp.Required(), mcp.Description("Transaction ID")),
 			mcp.WithString("type", mcp.Enum("income", "expense"), mcp.Description("New type: 'income' or 'expense'")),
@@ -352,11 +352,11 @@ func (s *Server) prepareUpdateTransaction(c caller, args map[string]interface{})
 	}
 
 	switch before.Type {
-	case models.TransactionTypeTransfer, models.TransactionTypeInvestment, models.TransactionTypeReimbursement:
+	case models.TransactionTypeTransfer, models.TransactionTypeInvestment, models.TransactionTypeReimbursement, models.TransactionTypeOpeningBalance:
 		// Refused here, before it counts against the rate limit; the service
 		// refuses them too.
 		return nil, mcp.NewToolResultError(fmt.Sprintf(
-			"this is a %s transaction, which cannot be edited here: only income and expense transactions can be", before.Type))
+			"%s transactions cannot be edited here: only income and expense transactions can be", before.Type))
 	}
 
 	account, err := s.services.Accounts.GetAccountByID(c.UserID, before.AccountID)

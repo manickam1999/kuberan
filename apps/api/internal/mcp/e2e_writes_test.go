@@ -383,7 +383,7 @@ func TestE2EUpdateTransaction(t *testing.T) {
 	t.Run("rows that cannot be edited are refused before they count against the limit", func(t *testing.T) {
 		transfer := e.txnByDescription("Top up Wise")
 		s.call("update_transaction", map[string]any{"transaction_id": transfer.ID, "amount": 5}).
-			fails(t, "this is a transfer transaction, which cannot be edited here")
+			fails(t, "transfer transactions cannot be edited here")
 		var reimb models.Transaction
 		if _, _, err := e.svc.Receivables.Settle(e.user.ID, firstReceivable(t, e).ID, services.SettleInput{AccountID: e.acc["maybank"].ID, Amount: 1_000, Date: day(0)}); err != nil {
 			t.Fatal(err)
@@ -391,7 +391,16 @@ func TestE2EUpdateTransaction(t *testing.T) {
 		if err := e.db.Where("type = ?", models.TransactionTypeReimbursement).First(&reimb).Error; err != nil {
 			t.Fatal(err)
 		}
-		s.call("update_transaction", map[string]any{"transaction_id": reimb.ID, "amount": 5}).fails(t, "reimbursement transaction")
+		s.call("update_transaction", map[string]any{"transaction_id": reimb.ID, "amount": 5}).fails(t, "reimbursement transactions cannot be edited here")
+	})
+
+	t.Run("an account's opening balance is not editable here", func(t *testing.T) {
+		var opening models.Transaction
+		if err := e.db.Where("type = ? AND account_id = ?", models.TransactionTypeOpeningBalance, e.acc["maybank"].ID).First(&opening).Error; err != nil {
+			t.Fatal(err)
+		}
+		s.call("update_transaction", map[string]any{"transaction_id": opening.ID, "amount": 1}).
+			fails(t, "opening_balance transactions cannot be edited here")
 	})
 
 	t.Run("a shared expense cannot drop below what is owed", func(t *testing.T) {
