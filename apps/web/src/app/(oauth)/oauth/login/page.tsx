@@ -2,20 +2,16 @@
 
 import { Suspense, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import { Plug } from "lucide-react";
 import { apiClient, ApiClientError } from "@/lib/api-client";
 import type { OAuthLoginRequest, OAuthRedirectResponse } from "@/types/api";
 import { followHydraRedirect } from "../redirect";
+import { AuthSplit } from "@/components/auth/auth-split";
+import { PasswordInput } from "@/components/auth/password-input";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Tile } from "@/components/ui/tile";
 
 function getErrorMessage(error: unknown): string {
   if (error instanceof ApiClientError) {
@@ -43,19 +39,21 @@ function OAuthLoginForm() {
 
   if (!loginChallenge) {
     return (
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-2xl">Sign in</CardTitle>
-          <CardDescription>
-            This page can only be reached from an in-progress connection request.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="bg-destructive/10 text-destructive rounded-md p-3 text-sm">
-            Missing login challenge. Start the connection from your MCP client.
-          </div>
-        </CardContent>
-      </Card>
+      <>
+        <div>
+          <h1 className="font-display text-4xl leading-[1.05]">Sign in</h1>
+          <p className="text-muted-foreground mt-1 text-sm">
+            This page can only be reached from an in-progress connection
+            request.
+          </p>
+        </div>
+        <div
+          role="alert"
+          className="bg-destructive/10 text-destructive rounded-md p-3 text-sm"
+        >
+          Missing login challenge. Start the connection from your MCP client.
+        </div>
+      </>
     );
   }
 
@@ -114,68 +112,82 @@ function OAuthLoginForm() {
   }
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="text-2xl">Sign in</CardTitle>
-        <CardDescription>
-          Authorize access to your Kuberan account
-        </CardDescription>
-      </CardHeader>
-      <form onSubmit={handleSubmit}>
-        <CardContent className="flex flex-col gap-4">
-          {error && (
-            <div className="bg-destructive/10 text-destructive rounded-md p-3 text-sm">
-              {error}
-            </div>
-          )}
-          <div className="flex flex-col gap-2">
-            <Label htmlFor="email">Email</Label>
-            <Input
-              id="email"
-              type="email"
-              placeholder="you@example.com"
-              autoComplete="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              disabled={isSubmitting}
-            />
-          </div>
-          <div className="flex flex-col gap-2">
-            <Label htmlFor="password">Password</Label>
-            <Input
-              id="password"
-              type="password"
-              placeholder="Enter your password"
-              autoComplete="current-password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              disabled={isSubmitting}
-            />
-          </div>
-        </CardContent>
-        <CardFooter className="flex flex-col gap-2 pt-2">
-          <Button type="submit" className="w-full" disabled={isSubmitting}>
-            {isSubmitting ? "Signing in..." : "Sign in"}
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            className="w-full"
-            onClick={handleCancel}
-            disabled={isSubmitting}
+    <>
+      <div className="bg-card flex items-start gap-3 rounded-xl border p-3.5">
+        <Tile size="lg" tone="accent" aria-hidden>
+          <Plug />
+        </Tile>
+        <div className="min-w-0 text-sm">
+          <b className="block font-medium">An app wants to connect</b>
+          <span className="text-muted-foreground text-xs">
+            Sign in to Kuberan to continue. You&apos;ll choose what it can do
+            next.
+          </span>
+        </div>
+      </div>
+      <div>
+        <h1 className="font-display text-4xl leading-[1.05]">
+          Sign in to continue
+        </h1>
+      </div>
+      <form onSubmit={handleSubmit} className="grid gap-3.5" noValidate>
+        {error && (
+          <div
+            role="alert"
+            className="bg-destructive/10 text-destructive rounded-md p-3 text-sm"
           >
-            Cancel
-          </Button>
-        </CardFooter>
+            {error}
+          </div>
+        )}
+        <div className="grid gap-2">
+          <Label htmlFor="email">Email</Label>
+          <Input
+            id="email"
+            type="email"
+            placeholder="you@example.com"
+            autoComplete="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            disabled={isSubmitting}
+          />
+        </div>
+        <div className="grid gap-2">
+          <Label htmlFor="password">Password</Label>
+          <PasswordInput
+            id="password"
+            placeholder="Enter your password"
+            autoComplete="current-password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            disabled={isSubmitting}
+          />
+        </div>
+        <Button type="submit" className="w-full" disabled={isSubmitting}>
+          {isSubmitting ? "Signing in..." : "Sign in"}
+        </Button>
+        <Button
+          type="button"
+          variant="ghost"
+          className="w-full"
+          onClick={handleCancel}
+          disabled={isSubmitting}
+        >
+          Cancel and return to the app
+        </Button>
+        <p className="text-muted-foreground text-center text-xs">
+          After 5 wrong passwords the account locks for 15 minutes.
+        </p>
       </form>
-    </Card>
+    </>
   );
 }
 
 export default function OAuthLoginPage() {
   return (
-    <Suspense fallback={null}>
-      <OAuthLoginForm />
-    </Suspense>
+    <AuthSplit>
+      <Suspense fallback={null}>
+        <OAuthLoginForm />
+      </Suspense>
+    </AuthSplit>
   );
 }

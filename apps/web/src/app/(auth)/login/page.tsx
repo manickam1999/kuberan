@@ -8,14 +8,7 @@ import { ApiClientError } from "@/lib/api-client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { PasswordInput } from "@/components/auth/password-input";
 
 function getErrorMessage(error: unknown): string {
   if (error instanceof ApiClientError) {
@@ -74,55 +67,61 @@ export default function LoginPage() {
   }
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="text-xl">Welcome back</CardTitle>
-        <CardDescription>Sign in to continue to your dashboard</CardDescription>
-      </CardHeader>
-      <form onSubmit={handleSubmit}>
-        <CardContent className="flex flex-col gap-4">
-          {error && (
-            <div className="bg-destructive/10 text-destructive rounded-md p-3 text-sm">
-              {error}
-            </div>
-          )}
-          <div className="flex flex-col gap-2">
-            <Label htmlFor="email">Email</Label>
-            <Input
-              id="email"
-              type="email"
-              placeholder="you@example.com"
-              autoComplete="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              disabled={isSubmitting}
-            />
+    <>
+      <div>
+        <h1 className="font-display text-4xl leading-[1.05]">Welcome back</h1>
+        <p className="text-muted-foreground mt-1 text-sm">
+          Sign in to continue to your dashboard.
+        </p>
+      </div>
+      <form onSubmit={handleSubmit} className="grid gap-3.5" noValidate>
+        {error && (
+          <div
+            role="alert"
+            className="bg-destructive/10 text-destructive rounded-md p-3 text-sm"
+          >
+            {error}
           </div>
-          <div className="flex flex-col gap-2">
-            <Label htmlFor="password">Password</Label>
-            <Input
-              id="password"
-              type="password"
-              placeholder="Enter your password"
-              autoComplete="current-password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              disabled={isSubmitting}
-            />
-          </div>
-        </CardContent>
-        <CardFooter className="flex flex-col gap-4 pt-2">
-          <Button type="submit" className="w-full" disabled={isSubmitting}>
-            {isSubmitting ? "Signing in..." : "Sign in"}
-          </Button>
-          <p className="text-muted-foreground text-center text-sm">
-            Don&apos;t have an account?{" "}
-            <Link href="/register" className="text-primary hover:underline">
-              Register
-            </Link>
+        )}
+        <div className="grid gap-2">
+          <Label htmlFor="email">Email</Label>
+          <Input
+            id="email"
+            type="email"
+            placeholder="you@example.com"
+            autoComplete="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            disabled={isSubmitting}
+          />
+        </div>
+        <div className="grid gap-2">
+          <Label htmlFor="password">Password</Label>
+          <PasswordInput
+            id="password"
+            placeholder="Enter your password"
+            autoComplete="current-password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            disabled={isSubmitting}
+          />
+          <p className="text-muted-foreground text-xs">
+            Forgot your password? Ask whoever runs this server to reset it.
           </p>
-        </CardFooter>
+        </div>
+        <Button type="submit" className="w-full" disabled={isSubmitting}>
+          {isSubmitting ? "Signing in..." : "Sign in"}
+        </Button>
+        <p className="text-muted-foreground text-center text-sm">
+          New here?{" "}
+          <Link href="/register" className="text-primary hover:underline">
+            Create an account
+          </Link>
+        </p>
+        <p className="text-muted-foreground text-center text-xs">
+          After 5 wrong passwords the account locks for 15 minutes.
+        </p>
       </form>
-    </Card>
+    </>
   );
 }
