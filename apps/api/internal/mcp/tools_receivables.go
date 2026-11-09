@@ -7,7 +7,6 @@ import (
 
 	"github.com/mark3labs/mcp-go/mcp"
 
-	"kuberan/internal/logger"
 	"kuberan/internal/models"
 	"kuberan/internal/services"
 )
@@ -89,8 +88,7 @@ func (s *Server) handleListReceivables(ctx context.Context, req mcp.CallToolRequ
 
 	result, err := s.services.Receivables.ListReceivables(userID, page, filter)
 	if err != nil {
-		logger.Get().Errorf("MCP list_receivables failed: %v", err)
-		return mcp.NewToolResultError("failed to list receivables"), nil
+		return readError("list receivables", err), nil
 	}
 
 	if len(result.Data) == 0 {
@@ -124,8 +122,7 @@ func (s *Server) handleGetReceivablesSummary(ctx context.Context, _ mcp.CallTool
 
 	summary, err := s.services.Receivables.Summary(userID)
 	if err != nil {
-		logger.Get().Errorf("MCP get_receivables_summary failed: %v", err)
-		return mcp.NewToolResultError("failed to get receivables summary"), nil
+		return readError("get receivables summary", err), nil
 	}
 
 	const note = "Note: receivables are NOT included in net worth; they only count once repaid.\n"

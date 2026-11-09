@@ -118,6 +118,10 @@ func (s *Server) handleListTransactions(ctx context.Context, req mcp.CallToolReq
 			return res, nil
 		}
 	}
+	if filter.ToDate != nil {
+		end := endOfDay(*filter.ToDate)
+		filter.ToDate = &end
+	}
 	if filter.MinAmount, res = amountFilterArg(args, "min_amount"); res != nil {
 		return res, nil
 	}
@@ -127,7 +131,7 @@ func (s *Server) handleListTransactions(ctx context.Context, req mcp.CallToolReq
 
 	result, err := s.services.Transactions.GetUserTransactions(userID, page, filter)
 	if err != nil {
-		return mcp.NewToolResultError("failed to list transactions"), nil
+		return readError("list transactions", err), nil
 	}
 
 	if len(result.Data) == 0 {
@@ -151,6 +155,9 @@ func (s *Server) handleListTransactions(ctx context.Context, req mcp.CallToolReq
 			untrusted(t.Description))
 		if note := transactionNote(*t); note != "" {
 			sb.WriteString("    " + note + "\n")
+		}
+		if t.Notes != "" {
+			sb.WriteString("    Notes: " + untrusted(t.Notes) + "\n")
 		}
 		fmt.Fprintf(&sb, "    ID: %s  Account: %s\n", t.ID, transactionAccounts(t))
 	}
@@ -235,7 +242,7 @@ func (s *Server) handleGetSpendingByCategory(ctx context.Context, req mcp.CallTo
 
 	result, err := s.services.Transactions.GetSpendingByCategory(userID, from, to)
 	if err != nil {
-		return mcp.NewToolResultError("failed to get spending by category"), nil
+		return readError("get spending by category", err), nil
 	}
 
 	var sb strings.Builder
@@ -263,7 +270,7 @@ func (s *Server) handleGetMonthlySummary(ctx context.Context, req mcp.CallToolRe
 
 	items, err := s.services.Transactions.GetMonthlySummary(userID, months)
 	if err != nil {
-		return mcp.NewToolResultError("failed to get monthly summary"), nil
+		return readError("get monthly summary", err), nil
 	}
 
 	if len(items) == 0 {
@@ -305,7 +312,7 @@ func (s *Server) handleGetDailySpending(ctx context.Context, req mcp.CallToolReq
 
 	items, err := s.services.Transactions.GetDailySpending(userID, from, to)
 	if err != nil {
-		return mcp.NewToolResultError("failed to get daily spending"), nil
+		return readError("get daily spending", err), nil
 	}
 
 	if len(items) == 0 {
@@ -342,7 +349,7 @@ func (s *Server) handleGetDailySummary(ctx context.Context, req mcp.CallToolRequ
 
 	items, err := s.services.Transactions.GetDailySummary(userID, from, to)
 	if err != nil {
-		return mcp.NewToolResultError("failed to get daily summary"), nil
+		return readError("get daily summary", err), nil
 	}
 
 	if len(items) == 0 {
@@ -388,7 +395,7 @@ func (s *Server) handleGetTopExpenses(ctx context.Context, req mcp.CallToolReque
 
 	result, err := s.services.Transactions.GetTopExpenses(userID, from, to, limit, categoryID)
 	if err != nil {
-		return mcp.NewToolResultError("failed to get top expenses"), nil
+		return readError("get top expenses", err), nil
 	}
 
 	if len(result.Items) == 0 {

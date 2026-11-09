@@ -13,8 +13,8 @@ import (
 func (s *Server) registerBudgetTools() {
 	s.mcp.AddTool(
 		readTool("list_budgets",
-			mcp.WithDescription("List all budgets with their category, amount (in the budget's currency), and period. Limited to the first 100 budgets."),
-			mcp.WithBoolean("active_only", mcp.Description("Only show active budgets (default true)")),
+			mcp.WithDescription("List budgets with their category, amount (in the budget's currency), and period; paused ones are marked. Limited to the first 100 budgets."),
+			mcp.WithBoolean("active_only", mcp.Description("true (default) lists only active budgets; false also lists paused ones")),
 		),
 		s.handleListBudgets,
 	)
@@ -40,14 +40,17 @@ func (s *Server) handleListBudgets(ctx context.Context, req mcp.CallToolRequest)
 	page := pagination.PageRequest{Page: 1, PageSize: 100}
 
 	args := req.GetArguments()
-	isActive := true
-	if v, ok := args["active_only"].(bool); ok {
-		isActive = v
+	// active_only defaults to true; false lists paused budgets too (a nil
+	// filter), not only the paused ones.
+	var activeFilter *bool
+	if v, ok := args["active_only"].(bool); !ok || v {
+		active := true
+		activeFilter = &active
 	}
 
-	result, err := s.services.Budgets.GetUserBudgets(userID, page, &isActive, nil)
+	result, err := s.services.Budgets.GetUserBudgets(userID, page, activeFilter, nil)
 	if err != nil {
-		return mcp.NewToolResultError("failed to list budgets"), nil
+		return readError("list budgets", err), nil
 	}
 
 	if len(result.Data) == 0 {
@@ -58,8 +61,12 @@ func (s *Server) handleListBudgets(ctx context.Context, req mcp.CallToolRequest)
 	fmt.Fprintf(&sb, "Budgets (%d total):\n\n", result.TotalItems)
 	for i := range result.Data {
 		b := &result.Data[i]
-		fmt.Fprintf(&sb, "  %-27s %12s  %-8s  %s\n",
-			untrusted(b.Name), formatMoney(b.Amount, b.Currency), b.Period, untrusted(b.Category.Name))
+		paused := ""
+		if !b.IsActive {
+			paused = " [paused]"
+		}
+		fmt.Fprintf(&sb, "  %-27s %12s  %-8s  %s%s\n",
+			untrusted(b.Name), formatMoney(b.Amount, b.Currency), b.Period, untrusted(b.Category.Name), paused)
 		fmt.Fprintf(&sb, "    ID: %s\n", b.ID)
 	}
 
@@ -83,7 +90,7 @@ func (s *Server) handleGetBudgetProgress(ctx context.Context, req mcp.CallToolRe
 
 	progress, err := s.services.Budgets.GetBudgetProgress(userID, budgetID)
 	if err != nil {
-		return mcp.NewToolResultError("failed to get budget progress"), nil
+		return readError("get budget progress", err), nil
 	}
 
 	var sb strings.Builder

@@ -15,7 +15,7 @@ import (
 func (s *Server) registerAccountTools() {
 	s.mcp.AddTool(
 		readTool("list_accounts",
-			mcp.WithDescription("List all financial accounts (cash, investment, credit card, debt) with current balances. Each balance is in the account's own currency, with its value in the user's base currency (≈) when that differs. Ends with the net worth in the base currency. Limited to the first 100 accounts."),
+			mcp.WithDescription("List the active financial accounts (types cash, fixed_deposit, investment, credit_card and debt, which is a loan) with current balances. Each balance is in the account's own currency, with its value in the user's base currency (≈) when that differs; an investment account's balance is the value of its holdings, a credit card or debt balance is the amount owed. Ends with the net worth in the base currency. Limited to the first 100 accounts."),
 		),
 		s.handleListAccounts,
 	)
@@ -33,7 +33,7 @@ func (s *Server) handleListAccounts(ctx context.Context, _ mcp.CallToolRequest) 
 	page := pagination.PageRequest{Page: 1, PageSize: 100}
 	result, err := s.services.Accounts.GetUserAccounts(userID, page)
 	if err != nil {
-		return mcp.NewToolResultError("failed to list accounts"), nil
+		return readError("list accounts", err), nil
 	}
 
 	if len(result.Data) == 0 {
@@ -42,7 +42,7 @@ func (s *Server) handleListAccounts(ctx context.Context, _ mcp.CallToolRequest) 
 
 	user, err := s.services.Users.GetUserByID(userID)
 	if err != nil {
-		return mcp.NewToolResultError("failed to list accounts"), nil
+		return readError("list accounts", err), nil
 	}
 	base := user.BaseCurrency
 
@@ -65,11 +65,11 @@ func (s *Server) handleListAccounts(ctx context.Context, _ mcp.CallToolRequest) 
 		}
 		sign := int64(1)
 		switch a.Type {
-		case models.AccountTypeCash, models.AccountTypeFixedDeposit:
+		case models.AccountTypeCash, models.AccountTypeFixedDeposit, models.AccountTypeInvestment:
 		case models.AccountTypeDebt, models.AccountTypeCreditCard:
 			sign = -1
 		default:
-			continue // investment accounts: holdings are valued in get_portfolio
+			continue
 		}
 		switch {
 		case a.BalanceBase != nil:
@@ -80,9 +80,12 @@ func (s *Server) handleListAccounts(ctx context.Context, _ mcp.CallToolRequest) 
 			excluded = append(excluded, services.UnconvertedAmount{Currency: a.Currency, Amount: a.Balance})
 		}
 	}
-	fmt.Fprintf(&sb, "\nNet worth (%s): %s (active cash and fixed-deposit accounts minus credit cards and debts; investment holdings are in get_portfolio)\n",
+	fmt.Fprintf(&sb, "\nNet worth (%s): %s (active cash, fixed-deposit and investment accounts minus credit cards and debts; receivables are not counted)\n",
 		strings.ToUpper(base), formatMoney(netWorth, base))
 	sb.WriteString(fxNotes(false, excluded))
+	if result.TotalItems > int64(len(result.Data)) {
+		fmt.Fprintf(&sb, "Note: only the first %d of %d accounts are listed and counted in the net worth\n", len(result.Data), result.TotalItems)
+	}
 
 	return mcp.NewToolResultText(sb.String()), nil
 }

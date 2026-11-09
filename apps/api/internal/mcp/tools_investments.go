@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"sort"
 	"strings"
 
 	"github.com/mark3labs/mcp-go/mcp"
@@ -33,7 +34,7 @@ func (s *Server) handleGetPortfolio(ctx context.Context, _ mcp.CallToolRequest) 
 
 	portfolio, err := s.services.Investments.GetPortfolio(userID)
 	if err != nil {
-		return mcp.NewToolResultError("failed to get portfolio"), nil
+		return readError("get portfolio", err), nil
 	}
 
 	base := portfolio.Currency
@@ -54,7 +55,13 @@ func (s *Server) handleGetPortfolio(ctx context.Context, _ mcp.CallToolRequest) 
 
 	if len(portfolio.HoldingsByType) > 0 {
 		sb.WriteString("\n  By Asset Type:\n")
-		for assetType, summary := range portfolio.HoldingsByType {
+		types := make([]string, 0, len(portfolio.HoldingsByType))
+		for assetType := range portfolio.HoldingsByType {
+			types = append(types, string(assetType))
+		}
+		sort.Strings(types)
+		for _, assetType := range types {
+			summary := portfolio.HoldingsByType[models.AssetType(assetType)]
 			fmt.Fprintf(&sb, "    %-12s %18s  (%d holdings)\n",
 				assetType, formatMoney(summary.Value, base), summary.Count)
 		}

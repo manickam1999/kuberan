@@ -595,3 +595,15 @@ func fxSuggestionText(e *apperrors.AppError) string {
 	return fmt.Sprintf(" (pass %s in %s; the market rate suggests %s at rate %s)",
 		field, strings.ToUpper(currency), formatMoney(cents, currency), rate)
 }
+
+// readError turns a failed read into a tool error for action. An AppError below
+// 500 carries a client-safe reason (an unknown ID, a bad argument) that the model
+// can act on; anything else is logged and reported generically.
+func readError(action string, err error) *mcp.CallToolResult {
+	var appErr *apperrors.AppError
+	if errors.As(err, &appErr) && appErr.StatusCode < 500 {
+		return mcp.NewToolResultError("failed to " + action + ": " + appErr.Message)
+	}
+	logger.Get().Errorf("MCP %s failed: %v", action, err)
+	return mcp.NewToolResultError("failed to " + action)
+}
