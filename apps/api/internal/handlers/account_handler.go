@@ -48,6 +48,10 @@ type CreateCreditCardAccountRequest struct {
 	CreditLimit  int64   `json:"credit_limit" binding:"gte=0"`
 	InterestRate float64 `json:"interest_rate" binding:"gte=0,lte=100"`
 	DueDate      *string `json:"due_date"`
+	// CurrentBalance is the amount already owed, in cents. When > 0 it is
+	// recorded as an opening_balance transaction. Currency defaults to the
+	// user's base currency when omitted.
+	CurrentBalance int64 `json:"current_balance" binding:"gte=0"`
 }
 
 // UpdateAccountRequest represents the request payload for updating an account.
@@ -245,6 +249,7 @@ func (h *AccountHandler) CreateCreditCardAccount(c *gin.Context) {
 		req.CreditLimit,
 		req.InterestRate,
 		dueDate,
+		req.CurrentBalance,
 	)
 	if err != nil {
 		respondWithError(c, err)

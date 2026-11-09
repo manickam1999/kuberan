@@ -62,6 +62,8 @@ export interface RegisterRequest {
   password: string;
   first_name?: string;
   last_name?: string;
+  /** ISO 4217 reporting currency chosen at sign-up; defaults to MYR. */
+  base_currency?: string;
 }
 
 // The refresh token travels in the HttpOnly `kuberan_refresh` cookie. The body
@@ -145,6 +147,8 @@ export interface CreateCreditCardAccountRequest {
   description?: string;
   currency?: string;
   credit_limit?: number;
+  /** Amount currently owed on the card, in cents (>= 0). */
+  current_balance?: number;
   interest_rate?: number;
   due_date?: string;
 }

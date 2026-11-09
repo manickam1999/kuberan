@@ -73,6 +73,7 @@ export function CreateAccountDialog({
   // null = follow the reporting currency until the user picks one.
   const [ccCurrencyPick, setCcCurrency] = useState<string | null>(null);
   const [ccCreditLimit, setCcCreditLimit] = useState(0);
+  const [ccCurrentBalance, setCcCurrentBalance] = useState(0);
   const [ccInterestRate, setCcInterestRate] = useState("");
   const [ccDueDate, setCcDueDate] = useState("");
 
@@ -134,6 +135,7 @@ export function CreateAccountDialog({
     setCcDescription("");
     setCcCurrency(null);
     setCcCreditLimit(0);
+    setCcCurrentBalance(0);
     setCcInterestRate("");
     setCcDueDate("");
     setFdName("");
@@ -267,6 +269,7 @@ export function CreateAccountDialog({
         description: ccDescription.trim() || undefined,
         currency: ccCurrency,
         credit_limit: ccCreditLimit > 0 ? ccCreditLimit : undefined,
+        current_balance: ccCurrentBalance > 0 ? ccCurrentBalance : undefined,
         interest_rate: interestRate > 0 ? interestRate : undefined,
         due_date: ccDueDate || undefined,
       },
@@ -578,6 +581,22 @@ export function CreateAccountDialog({
                   id="cc-credit-limit"
                   value={ccCreditLimit}
                   onChange={setCcCreditLimit}
+                  currency={ccCurrency}
+                  placeholder="0.00"
+                  disabled={isSubmitting}
+                />
+              </div>
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="cc-current-balance">
+                  Current balance owed
+                  <span className="ml-2 text-xs font-normal text-muted-foreground">
+                    (optional)
+                  </span>
+                </Label>
+                <CurrencyInput
+                  id="cc-current-balance"
+                  value={ccCurrentBalance}
+                  onChange={setCcCurrentBalance}
                   currency={ccCurrency}
                   placeholder="0.00"
                   disabled={isSubmitting}

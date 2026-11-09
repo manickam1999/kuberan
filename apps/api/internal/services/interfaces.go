@@ -13,7 +13,7 @@ import (
 
 // UserServicer defines the contract for user-related business logic.
 type UserServicer interface {
-	CreateUser(email, password, firstName, lastName string) (*models.User, error)
+	CreateUser(email, password, firstName, lastName string, opts ...CreateUserOption) (*models.User, error)
 	GetUserByEmail(email string) (*models.User, error)
 	GetUserByID(id string) (*models.User, error)
 	VerifyPassword(user *models.User, password string) bool
@@ -150,7 +150,7 @@ type CloseFixedDepositParams struct {
 type AccountServicer interface {
 	CreateCashAccount(userID, name, description, currency string, initialBalance int64) (*models.Account, error)
 	CreateInvestmentAccount(userID, name, description, currency, broker, accountNumber string) (*models.Account, error)
-	CreateCreditCardAccount(userID, name, description, currency string, creditLimit int64, interestRate float64, dueDate *time.Time) (*models.Account, error)
+	CreateCreditCardAccount(userID, name, description, currency string, creditLimit int64, interestRate float64, dueDate *time.Time, currentBalance int64) (*models.Account, error)
 	// CreateFixedDepositAccount opens a new fixed deposit, transferring principal from a
 	// source cash account atomically (plan 020, B4).
 	CreateFixedDepositAccount(userID string, params CreateFixedDepositParams) (*models.Account, error)

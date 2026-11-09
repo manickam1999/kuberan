@@ -1,6 +1,8 @@
 package services
 
 import (
+	"errors"
+
 	"gorm.io/gorm"
 
 	apperrors "kuberan/internal/errors"
@@ -22,6 +24,27 @@ func ensureCategoryOwned(db *gorm.DB, userID string, categoryID *string) error {
 	}
 	if n == 0 {
 		return apperrors.ErrCategoryNotFound
+	}
+	return nil
+}
+
+// ensureCategoryMatchesType rejects attaching a category whose type (income or
+// expense) differs from the transaction's type, which would corrupt spending
+// reports. A nil categoryID (clearing the category) always passes.
+func ensureCategoryMatchesType(db *gorm.DB, userID string, categoryID *string, txType models.TransactionType) error {
+	if categoryID == nil {
+		return nil
+	}
+	var cat models.Category
+	if err := db.Select("id", "type").
+		Where("id = ? AND user_id = ?", *categoryID, userID).First(&cat).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return apperrors.ErrCategoryNotFound
+		}
+		return apperrors.Wrap(apperrors.ErrInternalServer, err)
+	}
+	if !categoryTypeMatchesTxType(cat.Type, txType) {
+		return apperrors.ErrCategoryTypeMismatch
 	}
 	return nil
 }

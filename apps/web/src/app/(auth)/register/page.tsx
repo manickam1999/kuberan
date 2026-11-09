@@ -9,6 +9,14 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { REPORTING_CURRENCIES } from "@/lib/currencies";
+import {
   Card,
   CardContent,
   CardDescription,
@@ -38,6 +46,7 @@ export default function RegisterPage() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
+  const [baseCurrency, setBaseCurrency] = useState("MYR");
   const [error, setError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -90,6 +99,7 @@ export default function RegisterPage() {
         password,
         first_name: firstName || undefined,
         last_name: lastName || undefined,
+        base_currency: baseCurrency,
       });
       router.replace("/");
     } catch (err) {
@@ -149,6 +159,28 @@ export default function RegisterPage() {
               onChange={(e) => setEmail(e.target.value)}
               disabled={isSubmitting}
             />
+          </div>
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="baseCurrency">Reporting currency</Label>
+            <Select
+              value={baseCurrency}
+              onValueChange={setBaseCurrency}
+              disabled={isSubmitting}
+            >
+              <SelectTrigger id="baseCurrency" className="w-full">
+                <SelectValue placeholder="Select currency" />
+              </SelectTrigger>
+              <SelectContent>
+                {REPORTING_CURRENCIES.map((c) => (
+                  <SelectItem key={c.code} value={c.code}>
+                    {c.code} · {c.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-muted-foreground text-xs">
+              Totals and budgets are shown in this currency. You can change it later in Settings.
+            </p>
           </div>
           <div className="flex flex-col gap-2">
             <Label htmlFor="password">Password</Label>

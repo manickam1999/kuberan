@@ -88,8 +88,8 @@ func TestCreateCashAccount(t *testing.T) {
 		account, err := svc.CreateCashAccount(user.ID, "No Currency", "", "", 0)
 		testutil.AssertNoError(t, err)
 
-		if account.Currency != "USD" {
-			t.Errorf("expected default currency USD, got %s", account.Currency)
+		if account.Currency != "MYR" {
+			t.Errorf("expected default currency MYR, got %s", account.Currency)
 		}
 	})
 }
@@ -425,8 +425,8 @@ func TestCreateInvestmentAccount(t *testing.T) {
 		account, err := svc.CreateInvestmentAccount(user.ID, "Invest", "", "", "", "")
 		testutil.AssertNoError(t, err)
 
-		if account.Currency != "USD" {
-			t.Errorf("expected default currency USD, got %s", account.Currency)
+		if account.Currency != "MYR" {
+			t.Errorf("expected default currency MYR, got %s", account.Currency)
 		}
 	})
 }
@@ -439,7 +439,7 @@ func TestCreateCreditCardAccount(t *testing.T) {
 		user := testutil.CreateTestUser(t, db)
 
 		dueDate := time.Date(2026, 3, 15, 0, 0, 0, 0, time.UTC)
-		account, err := svc.CreateCreditCardAccount(user.ID, "Visa", "My credit card", "USD", 500000, 19.99, &dueDate)
+		account, err := svc.CreateCreditCardAccount(user.ID, "Visa", "My credit card", "USD", 500000, 19.99, &dueDate, 0)
 		testutil.AssertNoError(t, err)
 
 		if account.ID == "" {
@@ -459,17 +459,17 @@ func TestCreateCreditCardAccount(t *testing.T) {
 		}
 	})
 
-	t.Run("defaults_currency_to_usd", func(t *testing.T) {
+	t.Run("defaults_currency_to_user_base_currency", func(t *testing.T) {
 		db := testutil.SetupTestDB(t)
 		defer testutil.TeardownTestDB(t, db)
 		svc := NewAccountService(db)
 		user := testutil.CreateTestUser(t, db)
 
-		account, err := svc.CreateCreditCardAccount(user.ID, "Amex", "", "", 0, 0, nil)
+		account, err := svc.CreateCreditCardAccount(user.ID, "Amex", "", "", 0, 0, nil, 0)
 		testutil.AssertNoError(t, err)
 
-		if account.Currency != "USD" {
-			t.Errorf("expected default currency USD, got %s", account.Currency)
+		if account.Currency != "MYR" {
+			t.Errorf("expected default currency MYR, got %s", account.Currency)
 		}
 	})
 
@@ -479,7 +479,7 @@ func TestCreateCreditCardAccount(t *testing.T) {
 		svc := NewAccountService(db)
 		user := testutil.CreateTestUser(t, db)
 
-		_, err := svc.CreateCreditCardAccount(user.ID, "", "", "USD", 0, 0, nil)
+		_, err := svc.CreateCreditCardAccount(user.ID, "", "", "USD", 0, 0, nil, 0)
 		testutil.AssertAppError(t, err, "INVALID_INPUT")
 	})
 }

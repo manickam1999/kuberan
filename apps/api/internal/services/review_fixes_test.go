@@ -86,7 +86,7 @@ func TestCreate_RejectsNonTwoDecimalCurrencies(t *testing.T) {
 	testutil.AssertAppError(t, err, want)
 	_, err = acctSvc.CreateInvestmentAccount(user.ID, "a", "", "JPY", "", "")
 	testutil.AssertAppError(t, err, want)
-	_, err = acctSvc.CreateCreditCardAccount(user.ID, "a", "", "JPY", 100, 1, nil)
+	_, err = acctSvc.CreateCreditCardAccount(user.ID, "a", "", "JPY", 100, 1, nil, 0)
 	testutil.AssertAppError(t, err, want)
 
 	src := testutil.CreateTestCashAccountWithBalance(t, db, user.ID, 1_000_000)

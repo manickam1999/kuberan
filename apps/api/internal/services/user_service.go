@@ -87,8 +87,37 @@ func dummyPasswordHash() []byte {
 	return dummyHash
 }
 
+// CreateUserOption configures optional settings of CreateUser.
+type CreateUserOption func(*createUserOptions)
+
+type createUserOptions struct {
+	baseCurrency string
+}
+
+// WithBaseCurrency sets the new user's reporting currency. It is checked like
+// a PATCH /profile base_currency change (ErrUnsupportedCurrency when it is not
+// usable). An empty code keeps the column default.
+func WithBaseCurrency(code string) CreateUserOption {
+	return func(o *createUserOptions) { o.baseCurrency = code }
+}
+
+// checkBaseCurrencySupported reports ErrUnsupportedCurrency unless code (already
+// normalised) is a currency that can be a base currency. Shared by sign-up and
+// PATCH /profile so both use one rule.
+func (s *userService) checkBaseCurrencySupported(code string) error {
+	if !isCurrencyCode(code) || !s.fx.IsSupportedCurrency(code, time.Now()) {
+		return apperrors.ErrUnsupportedCurrency
+	}
+	return nil
+}
+
 // CreateUser registers a new user
-func (s *userService) CreateUser(email, password, firstName, lastName string) (*models.User, error) {
+func (s *userService) CreateUser(email, password, firstName, lastName string, opts ...CreateUserOption) (*models.User, error) {
+	var o createUserOptions
+	for _, opt := range opts {
+		opt(&o)
+	}
+	baseCurrency := normalizeCode(o.baseCurrency)
 	email = NormalizeEmail(email)
 	// Validate input
 	if email == "" || password == "" {
@@ -96,6 +125,11 @@ func (s *userService) CreateUser(email, password, firstName, lastName string) (*
 	}
 	if err := ValidatePassword(password); err != nil {
 		return nil, err
+	}
+	if baseCurrency != "" {
+		if err := s.checkBaseCurrencySupported(baseCurrency); err != nil {
+			return nil, err
+		}
 	}
 
 	// Check if user with email exists. Unscoped: the unique index on email
@@ -121,6 +155,9 @@ func (s *userService) CreateUser(email, password, firstName, lastName string) (*
 		FirstName: firstName,
 		LastName:  lastName,
 		IsActive:  true,
+	}
+	if baseCurrency != "" {
+		user.BaseCurrency = baseCurrency
 	}
 
 	if err := s.db.Create(user).Error; err != nil {
@@ -419,8 +456,8 @@ func (s *userService) validateBaseCurrency(userID, code string) (string, error) 
 	if code == user.BaseCurrency {
 		return code, nil
 	}
-	if !s.fx.IsSupportedCurrency(code, time.Now()) {
-		return "", apperrors.ErrUnsupportedCurrency
+	if err := s.checkBaseCurrencySupported(code); err != nil {
+		return "", err
 	}
 	// Investment cost basis and realized gains are frozen in the base currency
 	// at trade time, so they cannot be re-labelled by changing it.

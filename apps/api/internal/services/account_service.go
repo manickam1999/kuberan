@@ -49,6 +49,22 @@ func NewAccountService(db *gorm.DB, opts ...AccountServiceOption) AccountService
 	return s
 }
 
+// resolveAccountCurrency returns the currency for a new account: currency when
+// given, otherwise the user's base currency. Either way it must be creatable.
+func (s *accountService) resolveAccountCurrency(userID, currency string) (string, error) {
+	if currency == "" {
+		base, err := userBaseCurrency(s.db, userID)
+		if err != nil {
+			return "", err
+		}
+		currency = base
+	}
+	if err := validateCreatableCurrency(currency); err != nil {
+		return "", err
+	}
+	return currency, nil
+}
+
 // CreateCashAccount creates a new cash account for a user
 func (s *accountService) CreateCashAccount(userID, name, description, currency string, initialBalance int64) (*models.Account, error) {
 	// Validate input
@@ -56,10 +72,8 @@ func (s *accountService) CreateCashAccount(userID, name, description, currency s
 		return nil, apperrors.WithMessage(apperrors.ErrInvalidInput, "account name is required")
 	}
 
-	if currency == "" {
-		currency = "USD" // Default currency
-	}
-	if err := validateCreatableCurrency(currency); err != nil {
+	currency, err := s.resolveAccountCurrency(userID, currency)
+	if err != nil {
 		return nil, err
 	}
 
@@ -74,7 +88,7 @@ func (s *accountService) CreateCashAccount(userID, name, description, currency s
 		IsActive:    true,
 	}
 
-	err := s.db.Transaction(func(tx *gorm.DB) error {
+	err = s.db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Create(account).Error; err != nil {
 			return apperrors.Wrap(apperrors.ErrInternalServer, err)
 		}
@@ -108,10 +122,8 @@ func (s *accountService) CreateInvestmentAccount(userID, name, description, curr
 		return nil, apperrors.WithMessage(apperrors.ErrInvalidInput, "account name is required")
 	}
 
-	if currency == "" {
-		currency = "USD"
-	}
-	if err := validateCreatableCurrency(currency); err != nil {
+	currency, err := s.resolveAccountCurrency(userID, currency)
+	if err != nil {
 		return nil, err
 	}
 
@@ -134,15 +146,20 @@ func (s *accountService) CreateInvestmentAccount(userID, name, description, curr
 }
 
 // CreateCreditCardAccount creates a new credit card account for a user.
-func (s *accountService) CreateCreditCardAccount(userID, name, description, currency string, creditLimit int64, interestRate float64, dueDate *time.Time) (*models.Account, error) {
+// currentBalance (cents, >= 0) is the amount already owed; when > 0 it is
+// recorded as an opening_balance transaction in the same database transaction.
+// Opening balances are never inverted, so the card balance equals currentBalance.
+func (s *accountService) CreateCreditCardAccount(userID, name, description, currency string, creditLimit int64, interestRate float64, dueDate *time.Time, currentBalance int64) (*models.Account, error) {
 	if name == "" {
 		return nil, apperrors.WithMessage(apperrors.ErrInvalidInput, "account name is required")
 	}
 
-	if currency == "" {
-		currency = "USD"
+	if currentBalance < 0 {
+		return nil, apperrors.WithMessage(apperrors.ErrInvalidInput, "current balance cannot be negative")
 	}
-	if err := validateCreatableCurrency(currency); err != nil {
+
+	currency, err := s.resolveAccountCurrency(userID, currency)
+	if err != nil {
 		return nil, err
 	}
 
@@ -151,7 +168,7 @@ func (s *accountService) CreateCreditCardAccount(userID, name, description, curr
 		Name:         name,
 		Type:         models.AccountTypeCreditCard,
 		Description:  description,
-		Balance:      0,
+		Balance:      currentBalance,
 		Currency:     currency,
 		IsActive:     true,
 		CreditLimit:  creditLimit,
@@ -162,8 +179,28 @@ func (s *accountService) CreateCreditCardAccount(userID, name, description, curr
 		account.DueDate = *dueDate
 	}
 
-	if err := s.db.Create(account).Error; err != nil {
-		return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)
+	err = s.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(account).Error; err != nil {
+			return apperrors.Wrap(apperrors.ErrInternalServer, err)
+		}
+
+		if currentBalance > 0 {
+			opening := &models.Transaction{
+				UserID:      userID,
+				AccountID:   account.ID,
+				Type:        models.TransactionTypeOpeningBalance,
+				Amount:      currentBalance,
+				Description: "Initial balance",
+				Date:        time.Now(),
+			}
+			if err := tx.Create(opening).Error; err != nil {
+				return apperrors.Wrap(apperrors.ErrInternalServer, err)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
 	}
 
 	return account, nil

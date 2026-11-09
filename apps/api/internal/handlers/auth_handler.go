@@ -58,6 +58,9 @@ type RegisterRequest struct {
 	Password  string `json:"password" binding:"required,min=8,max=72"`
 	FirstName string `json:"first_name" binding:"max=100"`
 	LastName  string `json:"last_name" binding:"max=100"`
+	// BaseCurrency is the optional reporting currency (ISO 4217, 2-decimal,
+	// same rule as PATCH /profile). Omitted keeps the default (MYR).
+	BaseCurrency string `json:"base_currency" binding:"omitempty,iso4217" example:"EUR"`
 }
 
 // LoginRequest represents the login request payload
@@ -98,7 +101,7 @@ type AuthResponse struct {
 // @Produce     json
 // @Param       request body RegisterRequest true "User registration data"
 // @Success     201 {object} AuthResponse "User registered and tokens generated"
-// @Failure     400 {object} ErrorResponse "Invalid input"
+// @Failure     400 {object} ErrorResponse "Invalid input (UNSUPPORTED_CURRENCY for a bad base_currency)"
 // @Failure     500 {object} ErrorResponse "Server error"
 // @Router      /auth/register [post]
 func (h *AuthHandler) Register(c *gin.Context) {
@@ -108,7 +111,8 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		return
 	}
 
-	user, err := h.userService.CreateUser(req.Email, req.Password, req.FirstName, req.LastName)
+	user, err := h.userService.CreateUser(req.Email, req.Password, req.FirstName, req.LastName,
+		services.WithBaseCurrency(req.BaseCurrency))
 	if err != nil {
 		respondWithError(c, err)
 		return

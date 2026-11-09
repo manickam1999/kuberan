@@ -569,7 +569,16 @@ func (s *transactionService) UpdateTransaction(userID, transactionID string, upd
 			if err := ensureCategoryOwned(tx, userID, *updates.CategoryID); err != nil {
 				return err
 			}
+			if err := ensureCategoryMatchesType(tx, userID, *updates.CategoryID, newType); err != nil {
+				return err
+			}
 			transaction.CategoryID = *updates.CategoryID
+		} else if newType != oldType && transaction.CategoryID != nil {
+			// A type change keeps the existing category, which must still fit.
+			// Unscoped: a soft-deleted category is still a valid reference.
+			if err := ensureCategoryMatchesType(tx.Unscoped(), userID, transaction.CategoryID, newType); err != nil {
+				return err
+			}
 		}
 
 		// personal_amount must change in the same UPDATE as amount: the
