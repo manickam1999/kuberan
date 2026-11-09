@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
+import Link from "next/link";
 import {
   Card,
   CardContent,
@@ -10,94 +11,46 @@ import {
 } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useDailySummary } from "@/hooks/use-transactions";
-import { formatCompactAmount } from "@/lib/format";
+import { formatCompactAmount, toLocalDateString } from "@/lib/format";
+import { heatIntensity, transactionsHref } from "@/lib/insights";
 import { useBaseCurrency } from "@/hooks/use-profile";
 import { FxNotice } from "@/components/ui/fx-notice";
 import { cn } from "@/lib/utils";
 
-const WEEKDAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const WEEKDAY_LABELS = ["S", "M", "T", "W", "T", "F", "S"];
 
-/**
- * Parse a date string robustly as a LOCAL date, avoiding the UTC-midnight
- * off-by-one that `new Date("YYYY-MM-DD")` causes in timezones behind UTC.
- *
- * - If the string contains "T" it is treated as an ISO instant and handed
- *   straight to the Date constructor (which interprets "T"-bearing strings in
- *   the local timezone per spec).
- * - Otherwise it is split on "-" and built via `new Date(y, m-1, d)` so the
- *   result is always in local time regardless of the user's UTC offset.
- */
 function parseLocalDate(str: string): Date {
-  if (str.includes("T")) {
-    return new Date(str);
-  }
-  const parts = str.split("-");
-  const y = parseInt(parts[0], 10);
-  const m = parseInt(parts[1], 10);
-  const d = parseInt(parts[2], 10);
+  const [y, m, d] = str.split("-").map(Number);
   return new Date(y, m - 1, d);
 }
 
-/**
- * Format a YYYY-MM-DD date key for a given year, 0-based month, and day.
- */
-function toDateKey(year: number, month: number, day: number): string {
-  return `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+function dateKey(year: number, month: number, day: number): string {
+  return toLocalDateString(new Date(year, month, day));
 }
 
-/**
- * Build the ordered list of { year, month } objects (month is 0-based) that
- * the given [fromDate, toDate] range spans, inclusive.
- */
-function spanningMonths(
-  fromDate: string,
-  toDate: string
-): { year: number; month: number }[] {
-  const from = parseLocalDate(fromDate);
-  const to = parseLocalDate(toDate);
-
-  const startYear = from.getFullYear();
-  const startMonth = from.getMonth();
-  const endYear = to.getFullYear();
-  const endMonth = to.getMonth();
-
-  const result: { year: number; month: number }[] = [];
-  let y = startYear;
-  let m = startMonth;
-  while (y < endYear || (y === endYear && m <= endMonth)) {
-    result.push({ year: y, month: m });
+/** Calendar months (0-based month) that the inclusive range touches. */
+function spanningMonths(from: string, to: string) {
+  const a = parseLocalDate(from);
+  const b = parseLocalDate(to);
+  const out: { year: number; month: number }[] = [];
+  let y = a.getFullYear();
+  let m = a.getMonth();
+  while (y < b.getFullYear() || (y === b.getFullYear() && m <= b.getMonth())) {
+    out.push({ year: y, month: m });
     m++;
     if (m > 11) {
       m = 0;
       y++;
     }
   }
-  return result;
-}
-
-function signedCompact(cents: number, sign: "+" | "-"): string {
-  return `${sign === "-" ? "\u2212" : "+"}${formatCompactAmount(cents)}`;
+  return out;
 }
 
 /**
- * Build the ordered list of cells (null = blank leading/trailing pad, object =
- * real day) for a single calendar month grid.
+ * Daily spending as a calendar heatmap: darker cells are bigger spending
+ * days, with the compact amount in each cell. Every day with spending links
+ * to that day's expenses in Transactions.
  */
-function buildMonthCells(
-  year: number,
-  month: number
-): ({ day: number; dateKey: string } | null)[] {
-  const daysInMonth = new Date(year, month + 1, 0).getDate();
-  const firstWeekday = new Date(year, month, 1).getDay();
-  const list: ({ day: number; dateKey: string } | null)[] = [];
-  for (let i = 0; i < firstWeekday; i++) list.push(null);
-  for (let day = 1; day <= daysInMonth; day++) {
-    list.push({ day, dateKey: toDateKey(year, month, day) });
-  }
-  while (list.length % 7 !== 0) list.push(null);
-  return list;
-}
-
 export function DailySpendingCalendar({
   fromDate,
   toDate,
@@ -107,57 +60,45 @@ export function DailySpendingCalendar({
   toDate: string;
   hideBalances: boolean;
 }) {
-  const { data, isLoading } = useDailySummary(fromDate, toDate);
+  const { data, isLoading, isError } = useDailySummary(fromDate, toDate);
   const baseCurrency = useBaseCurrency();
-  // Cell amounts are compact figures without a symbol, so the card names the
-  // currency (the response's, i.e. the user's base) in its description.
   const currency = data?.[0]?.currency ?? baseCurrency;
   const anyFxMissing = (data ?? []).some((d) => d.fx_missing);
 
-  const byDate = useMemo(() => {
-    const map = new Map<string, { income: number; expenses: number }>();
-    for (const item of data ?? []) {
-      map.set(item.date, { income: item.income, expenses: item.expenses });
-    }
+  const spendByDate = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const item of data ?? []) map.set(item.date, item.expenses);
     return map;
   }, [data]);
 
-  // Compute the list of calendar months this range spans (stable across renders).
   const months = useMemo(
     () => spanningMonths(fromDate, toDate),
     [fromDate, toDate]
   );
+  const multi = months.length > 1;
+  const todayKey = toLocalDateString();
 
-  // Pre-compute per-month cell arrays inside useMemo to avoid re-building each render.
-  const monthGrids = useMemo(
-    () =>
-      months.map(({ year, month }) => ({
-        year,
-        month,
-        cells: buildMonthCells(year, month),
-      })),
-    [months]
-  );
-
-  const isMultiMonth = months.length > 1;
-
-  // For "out of range" boundary checking we need Date objects.
-  const rangeFrom = useMemo(() => parseLocalDate(fromDate), [fromDate]);
-  const rangeTo = useMemo(() => parseLocalDate(toDate), [toDate]);
-
-  const today = new Date();
-  const todayYear = today.getFullYear();
-  const todayMonth = today.getMonth();
-  const todayDay = today.getDate();
+  const noSpendDays = useMemo(() => {
+    let count = 0;
+    const end = parseLocalDate(toDate < todayKey ? toDate : todayKey);
+    for (
+      let d = parseLocalDate(fromDate);
+      d <= end;
+      d = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1)
+    ) {
+      if (!((spendByDate.get(toLocalDateString(d)) ?? 0) > 0)) count++;
+    }
+    return count;
+  }, [fromDate, toDate, todayKey, spendByDate]);
 
   if (isLoading) {
     return (
-      <Card>
+      <Card aria-busy="true">
         <CardHeader>
-          <CardTitle className="text-base">Daily activity</CardTitle>
+          <CardTitle className="text-base">Daily spending</CardTitle>
         </CardHeader>
         <CardContent>
-          <Skeleton className="h-[340px] w-full" />
+          <Skeleton className="h-[300px] w-full" />
         </CardContent>
       </Card>
     );
@@ -166,113 +107,120 @@ export function DailySpendingCalendar({
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-base">Daily activity</CardTitle>
+        <CardTitle className="text-base">Daily spending</CardTitle>
         <CardDescription>
-          {isMultiMonth
-            ? "Income and expenses by day"
-            : "Income and expenses by day this month"}
-          {` · ${currency}`}
+          Amounts in {currency}. Click a day to see what you spent.
         </CardDescription>
         <FxNotice fxMissing={anyFxMissing} variant="inline" className="mt-1" />
       </CardHeader>
-      <CardContent className={cn(isMultiMonth && "space-y-6")}>
-        {monthGrids.map(({ year, month, cells }) => {
-          const isCurrentCalendarMonth =
-            todayYear === year && todayMonth === month;
-
-          // Month sub-heading for multi-month view.
-          const monthLabel = new Date(year, month, 1).toLocaleDateString(
-            "en-US",
-            { month: "long", year: "numeric" }
-          );
-
-          return (
-            <div key={`${year}-${month}`}>
-              {isMultiMonth && (
-                <p className="mb-2 text-xs font-medium text-muted-foreground">
-                  {monthLabel}
-                </p>
-              )}
-              {/* Weekday header */}
-              <div className="grid grid-cols-7 gap-1 text-center text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-                {WEEKDAY_LABELS.map((w) => (
-                  <div key={w} className="py-1">
-                    {w}
-                  </div>
-                ))}
-              </div>
-              {/* Day grid */}
-              <div className="grid grid-cols-7 gap-1">
-                {cells.map((cell, i) => {
-                  if (!cell) {
-                    return <div key={`blank-${i}`} className="aspect-square" />;
-                  }
-
-                  // Determine whether this day is within the selected range.
-                  const cellDate = new Date(year, month, cell.day);
-                  const inRange =
-                    cellDate >= rangeFrom && cellDate <= rangeTo;
-
-                  const entry = inRange ? byDate.get(cell.dateKey) : undefined;
-                  const income = entry?.income ?? 0;
-                  const expenses = entry?.expenses ?? 0;
-                  const hasActivity = income > 0 || expenses > 0;
-                  const isToday =
-                    isCurrentCalendarMonth && cell.day === todayDay;
-
-                  return (
-                    <div
-                      key={cell.dateKey}
-                      className={cn(
-                        "flex aspect-square flex-col items-center justify-center gap-0.5 rounded-lg border p-1 text-center",
-                        !inRange && "opacity-30",
-                        inRange && hasActivity
-                          ? "border-transparent bg-muted/50"
-                          : "border-transparent",
-                        isToday && "border-primary/50"
-                      )}
-                    >
-                      <span
-                        className={cn(
-                          "text-[11px]",
-                          isToday
-                            ? "font-semibold text-primary"
-                            : "text-muted-foreground"
+      <CardContent className={cn("space-y-5")}>
+        {isError ? (
+          <p role="alert" className="text-muted-foreground py-8 text-center text-sm">
+            Couldn&apos;t load daily spending.
+          </p>
+        ) : (
+          months.map(({ year, month }) => {
+            const daysInMonth = new Date(year, month + 1, 0).getDate();
+            const lead = new Date(year, month, 1).getDay();
+            const label = new Date(year, month, 1).toLocaleDateString("en-US", {
+              month: "long",
+              year: "numeric",
+            });
+            return (
+              <div key={`${year}-${month}`}>
+                {multi && (
+                  <p className="text-muted-foreground mb-2 text-xs font-medium">
+                    {label}
+                  </p>
+                )}
+                <div className="text-muted-foreground mb-1 grid grid-cols-7 gap-1 text-center text-[10px] font-medium">
+                  {WEEKDAY_LABELS.map((w, i) => (
+                    <span key={i} aria-hidden>
+                      {w}
+                    </span>
+                  ))}
+                </div>
+                <div className="grid grid-cols-7 gap-1">
+                  {Array.from({ length: lead }).map((_, i) => (
+                    <span key={`lead-${i}`} />
+                  ))}
+                  {Array.from({ length: daysInMonth }).map((_, i) => {
+                    const day = i + 1;
+                    const key = dateKey(year, month, day);
+                    const inRange = key >= fromDate && key <= toDate;
+                    const cents = inRange ? (spendByDate.get(key) ?? 0) : 0;
+                    const alpha = heatIntensity(cents);
+                    const isToday = key === todayKey;
+                    const cell = (
+                      <>
+                        <b className="text-[11px] leading-none font-medium">
+                          {day}
+                        </b>
+                        {cents > 0 && !hideBalances && (
+                          <em className="money mt-0.5 text-[10px] leading-none not-italic">
+                            {formatCompactAmount(cents)}
+                          </em>
                         )}
-                      >
-                        {cell.day}
+                      </>
+                    );
+                    const className = cn(
+                      "flex aspect-square min-w-0 flex-col items-center justify-center rounded-md border border-transparent p-0.5",
+                      !inRange && "opacity-25",
+                      isToday && "border-primary/60",
+                      cents > 0 ? "text-foreground" : "text-muted-foreground"
+                    );
+                    const style = {
+                      backgroundColor:
+                        cents > 0
+                          ? `color-mix(in oklab, var(--primary) ${Math.round(alpha * 55)}%, transparent)`
+                          : "var(--muted)",
+                    };
+                    if (cents > 0) {
+                      return (
+                        <Link
+                          key={key}
+                          href={transactionsHref({
+                            from: key,
+                            to: key,
+                            type: "expense",
+                          })}
+                          className={cn(
+                            className,
+                            "focus-visible:ring-ring/50 outline-none hover:brightness-110 focus-visible:ring-[3px]"
+                          )}
+                          style={style}
+                          aria-label={`${label.split(" ")[0]} ${day}: spent ${(cents / 100).toFixed(2)} ${currency}`}
+                        >
+                          {cell}
+                        </Link>
+                      );
+                    }
+                    return (
+                      <span key={key} className={className} style={style}>
+                        {cell}
                       </span>
-                      {inRange &&
-                        (hideBalances ? (
-                          <div className="flex gap-1">
-                            {income > 0 && (
-                              <span className="size-1.5 rounded-full bg-positive" />
-                            )}
-                            {expenses > 0 && (
-                              <span className="size-1.5 rounded-full bg-muted-foreground" />
-                            )}
-                          </div>
-                        ) : (
-                          <div className="flex flex-col leading-tight">
-                            {income > 0 && (
-                              <span className="money text-[10px] font-medium text-positive">
-                                {signedCompact(income, "+")}
-                              </span>
-                            )}
-                            {expenses > 0 && (
-                              <span className="money text-[10px] font-medium text-foreground">
-                                {signedCompact(expenses, "-")}
-                              </span>
-                            )}
-                          </div>
-                        ))}
-                    </div>
-                  );
-                })}
+                    );
+                  })}
+                </div>
               </div>
-            </div>
-          );
-        })}
+            );
+          })
+        )}
+        <div className="text-muted-foreground flex items-center gap-2 text-xs">
+          <span>Less</span>
+          <span
+            aria-hidden
+            className="h-2 w-16 rounded-full"
+            style={{
+              background:
+                "linear-gradient(90deg, color-mix(in oklab, var(--primary) 8%, transparent), color-mix(in oklab, var(--primary) 55%, transparent))",
+            }}
+          />
+          <span>More</span>
+          <span className="ml-auto">
+            {noSpendDays} no-spend {noSpendDays === 1 ? "day" : "days"}
+          </span>
+        </div>
       </CardContent>
     </Card>
   );

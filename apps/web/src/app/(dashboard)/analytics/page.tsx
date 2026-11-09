@@ -1,102 +1,135 @@
 "use client";
 
-import { DollarSign, Receipt, Calculator, TrendingDown } from "lucide-react";
+import Link from "next/link";
 import { useAuth } from "@/hooks/use-auth";
 import { useAnalyticsPeriod } from "@/hooks/use-analytics-period";
-import {
-  useSpendingByCategory,
-  useTopExpenses,
-} from "@/hooks/use-transactions";
-import { StatCard } from "@/components/ui/stat-card";
-import { SpendingCard } from "@/components/dashboard/spending-card";
-import { CashflowCard } from "@/components/dashboard/cashflow-card";
+import { useCashflow, useTopExpenses } from "@/hooks/use-transactions";
+import { useBaseCurrency } from "@/hooks/use-profile";
+import { Money } from "@/components/ui/money";
+import { Skeleton } from "@/components/ui/skeleton";
+import { StatStrip, type StatStripItem } from "@/components/ui/stat-strip";
+import { FxNotice } from "@/components/ui/fx-notice";
 import { TopExpensesList } from "@/components/analytics/top-expenses-list";
 import { DailySpendingCalendar } from "@/components/analytics/daily-spending-calendar";
 import { CashflowSankeyCard } from "@/components/analytics/cashflow-sankey-card";
+import { CategoryBreakdownCard } from "@/components/analytics/category-breakdown-card";
+import { MonthlyTrendCard } from "@/components/analytics/monthly-trend-card";
 import { PeriodSelector } from "@/components/analytics/period-selector";
-import { Skeleton } from "@/components/ui/skeleton";
-import { formatMoney } from "@/lib/format";
-import { useBaseCurrency } from "@/hooks/use-profile";
-import { FxNotice } from "@/components/ui/fx-notice";
+import { formatDate } from "@/lib/format";
+import { savingsRate, transactionsHref } from "@/lib/insights";
 
-export default function AnalyticsPage() {
+export default function InsightsPage() {
   const { hideBalances } = useAuth();
   const baseCurrency = useBaseCurrency();
   const period = useAnalyticsPeriod();
   const { fromDate, toDate, label, isActiveMonthDefault } = period;
 
-  const { data: spending, isLoading: spendingLoading } = useSpendingByCategory(
-    fromDate,
-    toDate
-  );
-  const { data: topExpense, isLoading: topExpenseLoading } = useTopExpenses(
-    fromDate,
-    toDate,
-    1
-  );
+  const cashflow = useCashflow(fromDate, toDate);
+  const top = useTopExpenses(fromDate, toDate, 1);
 
-  // Both totals are in the response's currency (the user's base).
-  const spendCurrency = spending?.currency ?? baseCurrency;
-  const topCurrency = topExpense?.currency ?? baseCurrency;
-  const totalSpent = spending?.total_spent ?? 0;
-  // Count only expenses with a non-zero effective amount (personal share).
-  const totalItems = topExpense?.total_count ?? 0;
-  const avgAmount = totalItems > 0 ? Math.round(totalSpent / totalItems) : 0;
-  const topItem = topExpense?.items[0];
-  // amount_base is 0 when the expense had no rate, so show a dash instead.
-  const largestText = !topItem
-    ? formatMoney(0, topCurrency, hideBalances)
-    : topItem.fx_missing
-      ? "—"
-      : formatMoney(topItem.amount_base, topCurrency, hideBalances);
+  const flow = cashflow.data;
+  const currency = flow?.currency ?? baseCurrency;
+  const topItem = top.data?.items[0];
+  const saved = flow ? flow.total_income - flow.total_expenses : 0;
+  const rate = flow ? savingsRate(flow.total_income, flow.total_expenses) : null;
+  const incomeSources = (flow?.income ?? [])
+    .filter((i) => i.total > 0)
+    .slice(0, 2)
+    .map((i) => i.category_name)
+    .join(" + ");
+  const statsLoading = cashflow.isLoading || top.isLoading;
 
-  const statsLoading = spendingLoading || topExpenseLoading;
+  const items: StatStripItem[] = flow
+    ? [
+        {
+          label: "Spent",
+          value: (
+            <Link
+              href={transactionsHref({ from: fromDate, to: toDate, type: "expense" })}
+              className="focus-visible:ring-ring/50 rounded-sm outline-none hover:underline focus-visible:ring-[3px]"
+            >
+              <Money amount={flow.total_expenses} currency={currency} sign="never" />
+            </Link>
+          ),
+          sub: top.data
+            ? `${top.data.total_count} ${top.data.total_count === 1 ? "expense" : "expenses"}`
+            : undefined,
+        },
+        {
+          label: "Earned",
+          value: (
+            <Link
+              href={transactionsHref({ from: fromDate, to: toDate, type: "income" })}
+              className="focus-visible:ring-ring/50 rounded-sm outline-none hover:underline focus-visible:ring-[3px]"
+            >
+              <Money amount={flow.total_income} currency={currency} sign="never" />
+            </Link>
+          ),
+          tone: flow.total_income > 0 ? "pos" : "default",
+          sub: incomeSources || undefined,
+        },
+        {
+          label: "Saved",
+          value: rate === null ? "—" : `${rate}%`,
+          tone: rate === null ? "default" : rate >= 0 ? "pos" : "neg",
+          sub:
+            rate === null ? undefined : (
+              <Money amount={saved} currency={currency} sign="auto" />
+            ),
+        },
+        {
+          label: "Biggest",
+          value: topItem ? (
+            topItem.fx_missing ? (
+              "—"
+            ) : (
+              <Money amount={topItem.amount_base} currency={currency} sign="never" />
+            )
+          ) : (
+            "—"
+          ),
+          sub: topItem
+            ? `${topItem.category_name} · ${formatDate(topItem.date)}`
+            : undefined,
+        },
+      ]
+    : [];
 
   return (
     <div className="space-y-5">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <h1 className="font-display text-3xl leading-tight">
-          Expense Analytics
-        </h1>
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <p className="text-muted-foreground text-xs">Where your money went</p>
+          <h1 className="font-display hidden text-3xl leading-tight md:block">
+            Insights
+          </h1>
+        </div>
         <PeriodSelector period={period} />
       </div>
 
       {statsLoading ? (
-        <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-          {Array.from({ length: 4 }).map((_, i) => (
-            <Skeleton key={i} className="h-[112px] w-full" />
-          ))}
+        <Skeleton className="h-[88px] w-full rounded-card" />
+      ) : cashflow.isError ? (
+        <div
+          role="alert"
+          className="rounded-card border border-dashed p-6 text-center text-sm"
+        >
+          <p className="font-medium">Couldn&apos;t load your insights.</p>
+          <button
+            type="button"
+            className="text-primary mt-1 underline underline-offset-2"
+            onClick={() => void cashflow.refetch()}
+          >
+            Try again
+          </button>
         </div>
       ) : (
-        <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-          <StatCard
-            label="Total spent"
-            value={formatMoney(totalSpent, spendCurrency, hideBalances)}
-            icon={DollarSign}
-            tone="negative"
-          />
-          <StatCard
-            label="Transactions"
-            value={String(totalItems)}
-            icon={Receipt}
-          />
-          <StatCard
-            label="Average expense"
-            value={formatMoney(avgAmount, spendCurrency, hideBalances)}
-            icon={Calculator}
-          />
-          <StatCard
-            label="Largest expense"
-            value={largestText}
-            icon={TrendingDown}
-            tone="negative"
-          />
-        </div>
+        <StatStrip items={items} />
       )}
 
       <FxNotice
-        fxMissing={spending?.fx_missing}
-        unconverted={spending?.unconverted}
+        fxMissing={flow?.fx_missing}
+        unconverted={flow?.unconverted}
         variant="inline"
       />
 
@@ -107,33 +140,18 @@ export default function AnalyticsPage() {
         isActiveMonthDefault={isActiveMonthDefault}
       />
 
-      <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-3">
-        <div className="min-w-0 space-y-4 lg:col-span-2">
-          <TopExpensesList
-            fromDate={fromDate}
-            toDate={toDate}
-            hideBalances={hideBalances}
-          />
-          <CashflowCard
-            title="Monthly trend"
-            label="Last 6 months"
-            isActiveMonthDefault={false}
-          />
-        </div>
+      <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-2">
+        <DailySpendingCalendar
+          fromDate={fromDate}
+          toDate={toDate}
+          hideBalances={hideBalances}
+        />
+        <CategoryBreakdownCard fromDate={fromDate} toDate={toDate} />
+      </div>
 
-        <div className="min-w-0 space-y-4">
-          <DailySpendingCalendar
-            fromDate={fromDate}
-            toDate={toDate}
-            hideBalances={hideBalances}
-          />
-          <SpendingCard
-            fromDate={fromDate}
-            toDate={toDate}
-            label={label}
-            isActiveMonthDefault={isActiveMonthDefault}
-          />
-        </div>
+      <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-2">
+        <TopExpensesList fromDate={fromDate} toDate={toDate} />
+        <MonthlyTrendCard />
       </div>
     </div>
   );

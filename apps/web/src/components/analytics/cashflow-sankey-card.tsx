@@ -1,6 +1,8 @@
 "use client";
 
-import { useMemo } from "react";
+import { useCallback, useMemo } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 import type {
   SankeyLinkInput,
   SankeyNodeInput,
@@ -19,6 +21,10 @@ import { useCashflow } from "@/hooks/use-transactions";
 import { useActiveMonth } from "@/hooks/use-active-month";
 import { useAuth } from "@/hooks/use-auth";
 import { formatMoney } from "@/lib/format";
+import { useIsMobile } from "@/hooks/use-mobile";
+import { Money } from "@/components/ui/money";
+import { rankedFlow, transactionsHref } from "@/lib/insights";
+import { cn } from "@/lib/utils";
 import { useBaseCurrency } from "@/hooks/use-profile";
 import { FxNotice } from "@/components/ui/fx-notice";
 import type { SpendingByCategoryItem } from "@/types/api";
@@ -45,7 +51,11 @@ function sideNodes(
   prefix: string,
   otherLabel: string,
   ditherOffset: number
-): { nodes: SankeyNodeInput[]; amounts: number[] } {
+): {
+  nodes: SankeyNodeInput[];
+  amounts: number[];
+  refs: Map<string, string | null>;
+} {
   const align = prefix === "in" ? "left" : "right";
   const top = items.slice(0, topN);
   const rest = items.slice(topN);
@@ -58,6 +68,10 @@ function sideNodes(
     align,
   }));
   const amounts = top.map((item) => item.total);
+  // Node id -> category id (null: uncategorised); the "Other" bucket is absent.
+  const refs = new Map<string, string | null>(
+    top.map((item, i) => [`${prefix}-${i}`, item.category_id])
+  );
 
   if (rest.length > 0) {
     nodes.push({
@@ -70,7 +84,7 @@ function sideNodes(
     amounts.push(rest.reduce((sum, item) => sum + item.total, 0));
   }
 
-  return { nodes, amounts };
+  return { nodes, amounts, refs };
 }
 
 interface CashflowSankeyCardProps {
@@ -81,6 +95,8 @@ interface CashflowSankeyCardProps {
 }
 
 export function CashflowSankeyCard(props: CashflowSankeyCardProps) {
+  const router = useRouter();
+  const isMobile = useIsMobile();
   const active = useActiveMonth();
   const fromDate = props.fromDate ?? active.fromDate;
   const toDate = props.toDate ?? active.toDate;
@@ -162,19 +178,44 @@ export function CashflowSankeyCard(props: CashflowSankeyCardProps) {
     );
     const height = Math.min(620, Math.max(300, rows * 58 + 52));
 
-    return { nodes, links, height };
+    const refs = new Map<string, { type: "income" | "expense"; categoryId: string | null }>();
+    income.refs.forEach((categoryId, id) => refs.set(id, { type: "income", categoryId }));
+    expense.refs.forEach((categoryId, id) => refs.set(id, { type: "expense", categoryId }));
+
+    return { nodes, links, height, refs };
   }, [data]);
+
+  const openNode = useCallback(
+    (node: SankeyNodeInput) => {
+      const ref = graph?.refs.get(node.id);
+      if (ref) {
+        router.push(
+          transactionsHref({
+            from: fromDate,
+            to: toDate,
+            type: ref.type,
+            categoryId: ref.categoryId,
+          })
+        );
+      } else if (node.id === "ex-other") {
+        router.push(transactionsHref({ from: fromDate, to: toDate, type: "expense" }));
+      } else if (node.id === "in-other") {
+        router.push(transactionsHref({ from: fromDate, to: toDate, type: "income" }));
+      }
+    },
+    [graph, router, fromDate, toDate]
+  );
 
   const money = (value: number) => formatMoney(value, currency, hideBalances);
 
   if (isLoading) {
     return (
-      <Card>
+      <Card aria-busy="true">
         <CardHeader>
-          <CardTitle className="text-base">Cash flow</CardTitle>
+          <CardTitle className="text-base">Income to spending</CardTitle>
         </CardHeader>
         <CardContent>
-          <Skeleton className="h-[360px] w-full" />
+          <Skeleton className="h-[260px] w-full md:h-[360px]" />
         </CardContent>
       </Card>
     );
@@ -182,15 +223,17 @@ export function CashflowSankeyCard(props: CashflowSankeyCardProps) {
 
   const hasFlow =
     data && (data.total_income > 0 || data.total_expenses > 0) && graph;
+  const ranked = data && hasFlow ? rankedFlow(data) : [];
+  const rankedMax = Math.max(1, ...ranked.map((r) => r.amount));
 
   return (
     <Card>
       <CardHeader>
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <CardTitle className="text-base">Cash flow</CardTitle>
+            <CardTitle className="text-base">Income to spending</CardTitle>
             <CardDescription>
-              Income sources → spending · {monthLabel}
+              {monthLabel}
               {showLatestActivityHint && " · latest activity"}
             </CardDescription>
             <FxNotice
@@ -205,31 +248,99 @@ export function CashflowSankeyCard(props: CashflowSankeyCardProps) {
               <div>
                 <p className="text-xs text-muted-foreground">In</p>
                 <p className="money text-sm font-semibold text-positive">
-                  {money(data.total_income)}
+                  <Money amount={data.total_income} currency={currency} sign="never" />
                 </p>
               </div>
               <div>
                 <p className="text-xs text-muted-foreground">Out</p>
                 <p className="money text-sm font-semibold">
-                  {money(data.total_expenses)}
+                  <Money amount={data.total_expenses} currency={currency} sign="never" />
                 </p>
               </div>
             </div>
           )}
         </div>
       </CardHeader>
-      <CardContent>
-        {hasFlow ? (
+      <CardContent className="space-y-3">
+        {!hasFlow ? (
+          <div className="py-12 text-center text-sm text-muted-foreground">
+            No income or expenses recorded for this period.
+          </div>
+        ) : isMobile ? (
+          <ul className="space-y-3">
+            {ranked.map((r) => {
+              const body = (
+                <>
+                  <span className="flex items-baseline justify-between gap-3 text-sm">
+                    <span className="truncate">{r.label}</span>
+                    <Money
+                      amount={r.amount}
+                      currency={currency}
+                      sign="never"
+                      className="money shrink-0"
+                    />
+                  </span>
+                  <span className="bg-muted block h-2 overflow-hidden rounded-full">
+                    <span
+                      className={cn(
+                        "block h-full rounded-full",
+                        r.kind === "saved" && "bg-positive",
+                        r.kind === "deficit" && "bg-negative"
+                      )}
+                      style={{
+                        width: `${(r.amount / rankedMax) * 100}%`,
+                        backgroundColor:
+                          r.kind === "expense"
+                            ? r.color || OTHER_CLEAN
+                            : r.kind === "other"
+                              ? OTHER_CLEAN
+                              : undefined,
+                      }}
+                    />
+                  </span>
+                </>
+              );
+              const href =
+                r.kind === "expense"
+                  ? transactionsHref({
+                      from: fromDate,
+                      to: toDate,
+                      type: "expense",
+                      categoryId: r.categoryId,
+                    })
+                  : r.kind === "other"
+                    ? transactionsHref({ from: fromDate, to: toDate, type: "expense" })
+                    : null;
+              return (
+                <li key={r.key}>
+                  {href ? (
+                    <Link
+                      href={href}
+                      className="focus-visible:ring-ring/50 grid gap-1.5 rounded-md outline-none focus-visible:ring-[3px]"
+                    >
+                      {body}
+                    </Link>
+                  ) : (
+                    <div className="grid gap-1.5">{body}</div>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        ) : (
           <ThemedSankey
             nodes={graph.nodes}
             links={graph.links}
             valueFormatter={money}
             height={graph.height}
+            onNodeClick={openNode}
           />
-        ) : (
-          <div className="py-16 text-center text-sm text-muted-foreground">
-            No income or expenses recorded for this period
-          </div>
+        )}
+        {hasFlow && (
+          <p className="text-xs text-muted-foreground">
+            Opening balances and transfers between your own accounts are left
+            out.{!isMobile && " Click a band to see its transactions."}
+          </p>
         )}
       </CardContent>
     </Card>

@@ -34,6 +34,8 @@ export type ThemedSankeyProps = {
   valueFormatter: (value: number) => string;
   /** Chart height in px. */
   height?: number;
+  /** Called when a node, or a ribbon (via its non-hub endpoint), is clicked. */
+  onNodeClick?: (node: SankeyNodeInput) => void;
   className?: string;
 };
 
@@ -59,6 +61,7 @@ export function ThemedSankey({
   links,
   valueFormatter,
   height = 360,
+  onNodeClick,
   className,
 }: ThemedSankeyProps) {
   const { chartTheme } = useChartTheme();
@@ -158,7 +161,16 @@ export function ThemedSankey({
                   strokeOpacity={dimmed ? 0.12 : activeLink === key ? 0.72 : 0.42}
                   strokeWidth={Math.max(1, l.width ?? 1)}
                   className="transition-[stroke-opacity] duration-150"
-                  style={{ pointerEvents: "stroke" }}
+                  style={{
+                    pointerEvents: "stroke",
+                    cursor: onNodeClick ? "pointer" : undefined,
+                  }}
+                  onClick={() => {
+                    if (!onNodeClick) return;
+                    const src = l.source as LayoutNode;
+                    const tgt = l.target as LayoutNode;
+                    onNodeClick(src.align === "center" ? tgt : src);
+                  }}
                   onMouseEnter={() => setActiveLink(key)}
                   onMouseMove={(e) => {
                     const src = (l.source as LayoutNode).label;
@@ -182,7 +194,13 @@ export function ThemedSankey({
             return (
               <div
                 key={node.id}
-                className="absolute overflow-hidden rounded-[3px]"
+                className={cn(
+                  "absolute overflow-hidden rounded-[3px]",
+                  onNodeClick && node.align !== "center" && "cursor-pointer"
+                )}
+                onClick={() => {
+                  if (onNodeClick && node.align !== "center") onNodeClick(node);
+                }}
                 style={{
                   left: node.x0,
                   top: node.y0,
