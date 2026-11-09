@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { CategoryIcon } from "@/components/categories/category-icon";
-import { Plus, Trash2 } from "lucide-react";
+import { Check, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { ApiClientError } from "@/lib/api-client";
 import {
@@ -24,6 +24,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 import { CurrencyInput } from "@/components/ui/currency-input";
 import {
   Dialog,
@@ -131,6 +132,7 @@ export function RuleDialog({
   const [categoryId, setCategoryId] = useState("");
   const [error, setError] = useState("");
   const [previewCount, setPreviewCount] = useState<number | null>(null);
+  const [recategorise, setRecategorise] = useState(false);
 
   const createRule = useCreateRule();
   const updateRule = useUpdateRule(rule?.id ?? "");
@@ -164,6 +166,7 @@ export function RuleDialog({
     }
     setError("");
     setPreviewCount(null);
+    setRecategorise(false);
   }, [open, rule, initialConditions, initialCategoryId]);
 
   // Live "matches N existing" preview, debounced, once all conditions are complete.
@@ -250,11 +253,40 @@ export function RuleDialog({
     }
   }
 
+  // "Recategorise them too": move every existing match into the rule's category.
+  async function recategoriseExisting(ruleId: string, saved: string) {
+    try {
+      const res = await applyRule.mutateAsync({
+        ruleId,
+        scope: "all",
+        overwrite: true,
+        dry_run: false,
+      });
+      toast.success(saved, {
+        description: `Recategorised ${res.applied} transaction${res.applied === 1 ? "" : "s"}.`,
+      });
+    } catch (err) {
+      toast.error(`${saved}, but recategorising failed`, {
+        description: getErrorMessage(err),
+      });
+    }
+  }
+
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError("");
 
-    const trimmedName = name.trim();
+    // A rule needs a name; derive one from its first text condition (or the
+    // category) when the field is left empty.
+    const firstText = conditions.find(
+      (c) => c.field === "description" && c.value_text.trim()
+    )?.value_text;
+    const trimmedName = (
+      name.trim() ||
+      firstText?.trim() ||
+      categories.find((c) => c.id === categoryId)?.name ||
+      ""
+    );
     if (!trimmedName) {
       setError("Name is required");
       return;
@@ -280,9 +312,10 @@ export function RuleDialog({
 
     if (isEdit && rule) {
       updateRule.mutate(payload, {
-        onSuccess: () => {
-          toast.success("Rule updated");
+        onSuccess: (updated) => {
           handleClose(false);
+          if (recategorise) void recategoriseExisting(updated.id, "Rule updated");
+          else toast.success("Rule updated");
         },
         onError: (err) => setError(getErrorMessage(err)),
       });
@@ -290,7 +323,8 @@ export function RuleDialog({
       createRule.mutate(payload, {
         onSuccess: (created) => {
           handleClose(false);
-          void offerBackfill(created.id);
+          if (recategorise) void recategoriseExisting(created.id, "Rule created");
+          else void offerBackfill(created.id);
         },
         onError: (err) => setError(getErrorMessage(err)),
       });
@@ -299,27 +333,30 @@ export function RuleDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent className="max-h-[92dvh] overflow-y-auto sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>{isEdit ? "Edit rule" : "New rule"}</DialogTitle>
           <DialogDescription>
             When a new income or expense transaction matches all conditions, it is
-            categorized automatically.
+            categorised automatically.
           </DialogDescription>
         </DialogHeader>
 
         {error && (
-          <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
+          <div
+            role="alert"
+            className="rounded-md bg-destructive/10 p-3 text-sm text-destructive"
+          >
             {error}
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="flex flex-col gap-5">
+        <form onSubmit={handleSubmit} className="flex flex-col gap-4">
           <div className="flex flex-col gap-2">
             <Label htmlFor="rule-name">Name</Label>
             <Input
               id="rule-name"
-              placeholder="e.g. Grab rides"
+              placeholder="e.g. Petrol (optional)"
               value={name}
               onChange={(e) => setName(e.target.value)}
               disabled={isSubmitting}
@@ -327,38 +364,41 @@ export function RuleDialog({
             />
           </div>
 
-          <div className="flex flex-col gap-2">
-            <div className="flex items-center justify-between">
-              <Label>Conditions (all must match)</Label>
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={addCondition}
+          <fieldset className="bg-background flex flex-col gap-2 rounded-xl border p-3">
+            <legend className="sr-only">Conditions</legend>
+            <span className="text-muted-foreground text-xs font-medium tracking-wide uppercase">
+              When all of these match
+            </span>
+            {conditions.map((c, i) => (
+              <ConditionRow
+                key={i}
+                condition={c}
                 disabled={isSubmitting}
-              >
-                <Plus className="size-4" />
-                Add
-              </Button>
-            </div>
-            <div className="flex flex-col gap-2">
-              {conditions.map((c, i) => (
-                <ConditionRow
-                  key={i}
-                  condition={c}
-                  disabled={isSubmitting}
-                  removable={conditions.length > 1}
-                  accounts={accounts}
-                  onFieldChange={(field) => handleFieldChange(i, field)}
-                  onChange={(patch) => updateCondition(i, patch)}
-                  onRemove={() => removeCondition(i)}
-                />
-              ))}
-            </div>
-          </div>
+                removable={conditions.length > 1}
+                accounts={accounts}
+                onFieldChange={(field) => handleFieldChange(i, field)}
+                onChange={(patch) => updateCondition(i, patch)}
+                onRemove={() => removeCondition(i)}
+              />
+            ))}
+            <button
+              type="button"
+              onClick={addCondition}
+              disabled={isSubmitting}
+              className="text-primary focus-visible:ring-ring/50 flex w-fit items-center gap-1 rounded text-sm outline-none hover:underline focus-visible:ring-[3px]"
+            >
+              <Plus className="size-3.5" aria-hidden />
+              Add condition
+            </button>
+          </fieldset>
 
-          <div className="flex flex-col gap-2">
-            <Label htmlFor="rule-category">Assign category</Label>
+          <div className="bg-background flex flex-col gap-2 rounded-xl border p-3">
+            <Label
+              htmlFor="rule-category"
+              className="text-muted-foreground text-xs font-medium tracking-wide uppercase"
+            >
+              Then set category
+            </Label>
             <Select
               value={categoryId}
               onValueChange={setCategoryId}
@@ -384,24 +424,63 @@ export function RuleDialog({
           </div>
 
           {allComplete && (
-            <p className="text-sm text-muted-foreground">
-              {preview.isPending
-                ? "Checking existing transactions…"
-                : previewCount != null
-                  ? `Matches ${previewCount} existing transaction${previewCount === 1 ? "" : "s"}.`
-                  : ""}
-            </p>
+            <div
+              aria-live="polite"
+              className="bg-background flex flex-col gap-2 rounded-xl border p-3 text-sm"
+            >
+              {preview.isPending && previewCount == null ? (
+                <span className="text-muted-foreground">
+                  Checking existing transactions…
+                </span>
+              ) : previewCount != null ? (
+                <>
+                  <span className="flex items-center gap-2">
+                    <Check className="text-positive size-4 shrink-0" aria-hidden />
+                    <span>
+                      Matches{" "}
+                      <b className="font-medium">
+                        {previewCount} existing transaction
+                        {previewCount === 1 ? "" : "s"}
+                      </b>
+                      .
+                    </span>
+                  </span>
+                  {previewCount > 0 && categoryId && (
+                    <span className="flex items-start gap-2">
+                      <Checkbox
+                        id="rule-recategorise"
+                        checked={recategorise}
+                        onCheckedChange={(v) => setRecategorise(v === true)}
+                        disabled={isSubmitting}
+                        className="mt-0.5"
+                      />
+                      <Label
+                        htmlFor="rule-recategorise"
+                        className="flex-col items-start gap-0.5 font-normal"
+                      >
+                        Recategorise them too
+                        <span className="text-muted-foreground text-xs">
+                          Replaces their current category when you save.
+                        </span>
+                      </Label>
+                    </span>
+                  )}
+                </>
+              ) : null}
+            </div>
           )}
 
-          <DialogFooter>
+          <DialogFooter className="sm:items-center">
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => handleClose(false)}
+              disabled={isSubmitting}
+            >
+              Cancel
+            </Button>
             <Button type="submit" disabled={isSubmitting}>
-              {isSubmitting
-                ? isEdit
-                  ? "Saving…"
-                  : "Creating…"
-                : isEdit
-                  ? "Save rule"
-                  : "Create rule"}
+              {isSubmitting ? "Saving…" : "Save rule"}
             </Button>
           </DialogFooter>
         </form>
@@ -432,14 +511,14 @@ function ConditionRow({
   const operators = OPERATORS_BY_FIELD[condition.field];
 
   return (
-    <div className="flex flex-col gap-2 rounded-lg border p-3">
+    <div className="flex flex-col gap-2 rounded-lg border bg-card p-2.5">
       <div className="flex items-center gap-2">
         <Select
           value={condition.field}
           onValueChange={(v) => onFieldChange(v as RuleField)}
           disabled={disabled}
         >
-          <SelectTrigger className="w-full">
+          <SelectTrigger className="w-full" aria-label="Field">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -456,7 +535,7 @@ function ConditionRow({
           onValueChange={(v) => onChange({ operator: v as RuleOperator })}
           disabled={disabled || operators.length === 1}
         >
-          <SelectTrigger className="w-full">
+          <SelectTrigger className="w-full" aria-label="Operator">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -476,6 +555,7 @@ function ConditionRow({
             className="size-9 shrink-0 text-muted-foreground hover:text-destructive"
             onClick={onRemove}
             disabled={disabled}
+            aria-label="Remove condition"
           >
             <Trash2 className="size-4" />
           </Button>
@@ -507,6 +587,7 @@ function ConditionValue({
   if (condition.field === "description") {
     return (
       <Input
+        aria-label="Text to match"
         placeholder="e.g. GRAB"
         value={condition.value_text}
         onChange={(e) => onChange({ value_text: e.target.value })}

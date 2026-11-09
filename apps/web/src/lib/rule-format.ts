@@ -78,6 +78,38 @@ export function isConditionComplete(c: RuleConditionInput): boolean {
 }
 
 /**
+ * A condition split for sentence-style rendering: `lead` is the fixed wording
+ * ("Description contains"), `value` the part to emphasise ("GRAB").
+ */
+export function conditionParts(
+  c: RuleCondition,
+  accountName?: (id: string) => string,
+  currency?: string
+): { lead: string; value: string } {
+  const lead = `${FIELD_LABELS[c.field]} ${OPERATOR_LABELS[c.operator]}`;
+  if (c.field === "amount") {
+    if (c.operator === "between") {
+      return {
+        lead,
+        value: `${formatRuleAmount(c.amount_min ?? 0, currency)} and ${formatRuleAmount(
+          c.amount_max ?? 0,
+          currency
+        )}`,
+      };
+    }
+    const amount = c.operator === "gt" ? c.amount_min : c.amount_max;
+    return { lead, value: formatRuleAmount(amount ?? 0, currency) };
+  }
+  if (c.field === "account_id") {
+    return {
+      lead,
+      value: accountName ? accountName(c.value_text ?? "") : (c.value_text ?? ""),
+    };
+  }
+  return { lead, value: c.value_text ?? "" };
+}
+
+/**
  * Human-readable one-line summary of a condition, e.g.
  * "Description contains GRAB" or "Amount between RM10.00 and RM50.00".
  * accountName resolves an account_id condition's value to a label.
