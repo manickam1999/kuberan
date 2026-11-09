@@ -270,20 +270,42 @@ export function nextDueDate(
   today: Date,
 ): number | null {
   if (!dueISO) return null;
-  const day = new Date(utcDay(dueISO)).getUTCDate();
+  return nextDueByDay(new Date(utcDay(dueISO)).getUTCDate(), today);
+}
+
+/**
+ * The next occurrence of a due day of the month (1-31), clamped to short
+ * months. Returns a UTC-midnight timestamp.
+ */
+export function nextDueByDay(dueDay: number, today: Date): number {
   const now = localDayAsUtc(today);
   const nowDate = new Date(now);
   let y = nowDate.getUTCFullYear();
   let m = nowDate.getUTCMonth();
   for (let i = 0; i < 2; i++) {
     const lastDay = new Date(Date.UTC(y, m + 1, 0)).getUTCDate();
-    const candidate = Date.UTC(y, m, Math.min(day, lastDay));
+    const candidate = Date.UTC(y, m, Math.min(dueDay, lastDay));
     if (candidate >= now) return candidate;
     m += 1;
     if (m > 11) {
       m = 0;
       y += 1;
     }
+  }
+  return now;
+}
+
+/**
+ * The day of the month a card or loan falls due: the `due_day` set on the
+ * account, else the day of a legacy single `due_date`. Null when neither.
+ */
+export function dueDayOf(
+  account: Pick<Account, "due_day" | "due_date">,
+): number | null {
+  if (account.due_day) return account.due_day;
+  // The API sends an unset due_date as the zero time (0001-01-01).
+  if (account.due_date && !account.due_date.startsWith("0001-")) {
+    return new Date(utcDay(account.due_date)).getUTCDate();
   }
   return null;
 }
@@ -390,4 +412,84 @@ export function fixedDepositProjection(
     projected,
     maturityValue: fd.principal + projected,
   };
+}
+
+// ---- Loans ----
+
+/** Longest payoff worth projecting; beyond it the loan "never" clears. */
+const MAX_PAYOFF_MONTHS = 1200;
+
+export interface LoanPayoff {
+  /** Payments left, the last one possibly smaller. */
+  months: number;
+  /** Interest paid over those payments, in cents. */
+  totalInterest: number;
+  /** The size of the final (partial) payment, in cents. */
+  finalPayment: number;
+  /** UTC-midnight timestamp of the last payment. */
+  payoffDate: number;
+}
+
+/**
+ * When a loan is paid off at its monthly payment: month by month, interest of
+ * APR / 12 on the balance is added and the payment taken off. First payment on
+ * the next due day (today when no due day is set). Returns null when there is
+ * nothing to project (no balance or payment) or when the payment does not
+ * cover the interest, so the balance never falls. An estimate: no fees, a
+ * fixed rate, payments always on time.
+ */
+export function loanPayoff(
+  owed: number,
+  aprPercent: number | null | undefined,
+  monthlyPayment: number | null | undefined,
+  dueDay: number | null,
+  today: Date,
+): LoanPayoff | null {
+  if (owed <= 0 || !monthlyPayment || monthlyPayment <= 0) return null;
+  const rate = aprPercent && aprPercent > 0 ? aprPercent : 0;
+  if (rate > 0 && monthlyInterestEstimate(owed, rate) >= monthlyPayment) {
+    return null;
+  }
+
+  let balance = owed;
+  let totalInterest = 0;
+  let months = 0;
+  let finalPayment = 0;
+  while (balance > 0 && months < MAX_PAYOFF_MONTHS) {
+    const interest = monthlyInterestEstimate(balance, rate);
+    totalInterest += interest;
+    balance += interest;
+    months += 1;
+    finalPayment = Math.min(monthlyPayment, balance);
+    balance -= finalPayment;
+  }
+  if (balance > 0) return null;
+
+  const first =
+    dueDay !== null ? nextDueByDay(dueDay, today) : localDayAsUtc(today);
+  const firstDate = new Date(first);
+  const target = new Date(
+    Date.UTC(firstDate.getUTCFullYear(), firstDate.getUTCMonth() + months - 1, 1),
+  );
+  const lastDay = new Date(
+    Date.UTC(target.getUTCFullYear(), target.getUTCMonth() + 1, 0),
+  ).getUTCDate();
+  const payoffDate = Date.UTC(
+    target.getUTCFullYear(),
+    target.getUTCMonth(),
+    Math.min(dueDay ?? firstDate.getUTCDate(), lastDay),
+  );
+  return { months, totalInterest, finalPayment, payoffDate };
+}
+
+/** "3 years 2 months", "7 months", "1 month". */
+export function formatDuration(months: number): string {
+  const years = Math.floor(months / 12);
+  const rest = months % 12;
+  const parts: string[] = [];
+  if (years > 0) parts.push(`${years} ${years === 1 ? "year" : "years"}`);
+  if (rest > 0 || years === 0) {
+    parts.push(`${rest} ${rest === 1 ? "month" : "months"}`);
+  }
+  return parts.join(" ");
 }

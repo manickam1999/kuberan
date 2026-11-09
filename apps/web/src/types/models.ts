@@ -88,6 +88,8 @@ export interface Account extends BaseModel {
   interest_rate?: number; // debt/credit_card/fixed_deposit accounts (float, annual %)
   due_date?: string; // debt/credit_card accounts, ISO 8601
   credit_limit?: number; // credit_card accounts (cents)
+  monthly_payment?: number; // debt accounts: loan instalment (cents)
+  due_day?: number; // credit_card/debt accounts: day of the month (1-31) a payment falls due
   fixed_deposit?: FixedDepositDetails; // fixed_deposit accounts only
   /** Balance converted to the user's base currency now; absent when no rate exists (see fx_missing). */
   balance_base?: number; // cents, base currency
@@ -434,4 +436,22 @@ export interface PortfolioSummary {
   fx_stale: boolean;
   /** Holdings that could not be valued (no rate); excluded from the totals. May be null/absent when none. */
   unconverted?: UnconvertedValue[] | null;
+}
+
+// Reminders (card due dates, loan instalments, deposit maturities)
+export type ReminderKind = "card_due" | "loan_due" | "fd_maturity";
+
+/** One upcoming occurrence of a due date; the Telegram bot sends it. */
+export interface Reminder extends BaseModel {
+  user_id: string;
+  kind: ReminderKind;
+  /** The account the reminder is about. */
+  ref_id: string;
+  /** The date it falls due, ISO 8601 (UTC midnight). */
+  due_on: string;
+  /** When it becomes sendable. */
+  remind_at: string;
+  sent_at?: string;
+  /** Switched on for this account. */
+  enabled: boolean;
 }

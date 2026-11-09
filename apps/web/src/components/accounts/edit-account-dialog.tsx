@@ -25,6 +25,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { formatMoney, formatDate } from "@/lib/format";
+import { DueDaySelect } from "@/components/accounts/reminder-control";
+import { dueDayOf } from "@/lib/account-math";
 import type { Account, PayoutType, PayoutFrequency, Compounding } from "@/types/models";
 import type { UpdateAccountRequest } from "@/types/api";
 
@@ -68,7 +70,8 @@ export function EditAccountDialog({
   const [broker, setBroker] = useState("");
   const [accountNumber, setAccountNumber] = useState("");
   const [interestRate, setInterestRate] = useState("");
-  const [dueDate, setDueDate] = useState("");
+  const [dueDay, setDueDay] = useState(0);
+  const [monthlyPayment, setMonthlyPayment] = useState(0);
   const [creditLimit, setCreditLimit] = useState(0);
   // Fixed deposit fields
   const [fdMaturityDate, setFdMaturityDate] = useState("");
@@ -96,7 +99,8 @@ export function EditAccountDialog({
       setBroker(account.broker ?? "");
       setAccountNumber(account.account_number ?? "");
       setInterestRate(account.interest_rate?.toString() ?? "");
-      setDueDate(account.due_date ? account.due_date.split("T")[0] : "");
+      setDueDay(dueDayOf(account) ?? 0);
+      setMonthlyPayment(account.monthly_payment ?? 0);
       setCreditLimit(account.credit_limit ?? 0);
       if (account.type === "fixed_deposit" && account.fixed_deposit) {
         setFdMaturityDate(account.fixed_deposit.maturity_date.split("T")[0]);
@@ -149,12 +153,19 @@ export function EditAccountDialog({
       const parsedRate = interestRate ? parseFloat(interestRate) : 0;
       if (parsedRate !== (account.interest_rate ?? 0))
         payload.interest_rate = parsedRate;
-      const origDueDate = account.due_date
-        ? account.due_date.split("T")[0]
-        : "";
-      if (dueDate !== origDueDate) payload.due_date = dueDate || undefined;
+      if (dueDay !== (dueDayOf(account) ?? 0)) payload.due_day = dueDay;
       if (creditLimit !== (account.credit_limit ?? 0))
         payload.credit_limit = creditLimit;
+    }
+
+    // Loan-specific fields
+    if (account.type === "debt") {
+      const parsedRate = interestRate ? parseFloat(interestRate) : 0;
+      if (parsedRate !== (account.interest_rate ?? 0))
+        payload.interest_rate = parsedRate;
+      if (dueDay !== (dueDayOf(account) ?? 0)) payload.due_day = dueDay;
+      if (monthlyPayment !== (account.monthly_payment ?? 0))
+        payload.monthly_payment = monthlyPayment;
     }
 
     // Fixed deposit-specific fields
@@ -325,13 +336,54 @@ export function EditAccountDialog({
                 />
               </div>
               <div className="flex flex-col gap-2">
-                <Label htmlFor="edit-account-due-date">Due Date</Label>
-                <Input
-                  id="edit-account-due-date"
-                  type="date"
-                  value={dueDate}
-                  onChange={(e) => setDueDate(e.target.value)}
+                <Label htmlFor="edit-account-due-day">Payment due day</Label>
+                <DueDaySelect
+                  id="edit-account-due-day"
+                  value={dueDay}
+                  onChange={setDueDay}
                   disabled={isSubmitting}
+                  allowNone
+                />
+              </div>
+            </>
+          )}
+
+          {account?.type === "debt" && (
+            <>
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="edit-loan-payment">Monthly payment</Label>
+                <CurrencyInput
+                  id="edit-loan-payment"
+                  value={monthlyPayment}
+                  onChange={setMonthlyPayment}
+                  currency={account.currency}
+                  disabled={isSubmitting}
+                />
+              </div>
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="edit-loan-interest-rate">
+                  Interest Rate (%)
+                </Label>
+                <Input
+                  id="edit-loan-interest-rate"
+                  type="number"
+                  min="0"
+                  max="100"
+                  step="0.01"
+                  placeholder="e.g., 3.5"
+                  value={interestRate}
+                  onChange={(e) => setInterestRate(e.target.value)}
+                  disabled={isSubmitting}
+                />
+              </div>
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="edit-loan-due-day">Payment due day</Label>
+                <DueDaySelect
+                  id="edit-loan-due-day"
+                  value={dueDay}
+                  onChange={setDueDay}
+                  disabled={isSubmitting}
+                  allowNone
                 />
               </div>
             </>

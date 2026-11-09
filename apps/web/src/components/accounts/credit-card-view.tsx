@@ -5,14 +5,16 @@ import { ArrowLeftRight, Plus } from "lucide-react";
 import { AccountActivity } from "@/components/accounts/account-activity";
 import { AccountHeader } from "@/components/accounts/account-header";
 import { EditAccountDialog } from "@/components/accounts/edit-account-dialog";
+import { ReminderControl } from "@/components/accounts/reminder-control";
 import { CreateTransactionDialog } from "@/components/transactions/create-transaction-dialog";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Money } from "@/components/ui/money";
 import {
   daysUntil,
+  dueDayOf,
   monthlyInterestEstimate,
-  nextDueDate,
+  nextDueByDay,
   utilisation,
 } from "@/lib/account-math";
 import { formatPercentage } from "@/lib/format";
@@ -51,7 +53,8 @@ export function CreditCardView({ account }: { account: Account }) {
   const limit = account.credit_limit ?? 0;
   const used = utilisation(owed, limit);
   const available = limit > 0 ? Math.max(limit - owed, 0) : null;
-  const due = nextDueDate(account.due_date, today);
+  const dueDay = dueDayOf(account);
+  const due = dueDay !== null ? nextDueByDay(dueDay, today) : null;
   const dueDays = due !== null ? daysUntil(due, today) : null;
   const interest = monthlyInterestEstimate(owed, account.interest_rate);
 
@@ -131,11 +134,11 @@ export function CreditCardView({ account }: { account: Account }) {
           )}
         </Card>
 
-        {due !== null && dueDays !== null && (
-          <Card className="gap-3 px-5">
-            <span className="text-muted-foreground text-xs font-medium tracking-wide uppercase">
-              Next payment
-            </span>
+        <Card className="gap-3 px-5">
+          <span className="text-muted-foreground text-xs font-medium tracking-wide uppercase">
+            Next payment
+          </span>
+          {due !== null && dueDays !== null ? (
             <div className="flex items-center gap-4">
               <div
                 aria-hidden
@@ -169,8 +172,14 @@ export function CreditCardView({ account }: { account: Account }) {
                 )}
               </div>
             </div>
-          </Card>
-        )}
+          ) : (
+            <p className="text-muted-foreground text-sm">
+              Set the day of the month the card is due to see the next payment
+              here and get a reminder.
+            </p>
+          )}
+          <ReminderControl account={account} />
+        </Card>
       </div>
 
       <AccountActivity accountId={account.id} />

@@ -193,6 +193,20 @@ export interface CreateCreditCardAccountRequest {
   current_balance?: number;
   interest_rate?: number;
   due_date?: string;
+  /** Day of the month (1-31) the statement falls due; drives the Telegram reminder. */
+  due_day?: number;
+}
+
+/** POST /api/v1/accounts/debt (a loan) */
+export interface CreateDebtAccountRequest {
+  name: string;
+  description?: string;
+  currency?: string; // defaults to the user's base currency
+  /** Amount owed, in cents; recorded as an opening balance. */
+  amount_owed?: number;
+  interest_rate?: number; // annual %
+  monthly_payment?: number; // cents
+  due_day?: number; // 1-31
 }
 
 /** POST /api/v1/accounts/fixed-deposit */
@@ -228,6 +242,10 @@ export interface UpdateAccountRequest {
   interest_rate?: number;
   due_date?: string;
   credit_limit?: number;
+  /** Day of the month (1-31) for credit cards and loans; 0 clears it. */
+  due_day?: number;
+  /** Loan instalment in cents; 0 clears it. */
+  monthly_payment?: number;
   // Fixed deposit mutable fields
   maturity_date?: string; // "YYYY-MM-DD"
   payout_type?: PayoutType;
@@ -963,4 +981,20 @@ export interface TypicalMonth {
   by_category: SpendingByCategoryItem[];
   fx_missing: boolean;
   unconverted: UnconvertedAmount[];
+}
+
+// Reminders
+export interface RemindersResponse {
+  reminders: import("./models").Reminder[];
+}
+
+export interface ReminderResponse {
+  reminder: import("./models").Reminder;
+}
+
+/** PUT /api/v1/telegram/reminder-settings; omitted fields keep their value. */
+export interface UpdateReminderSettingsRequest {
+  card_due?: boolean;
+  loan_due?: boolean;
+  fd_maturity?: boolean;
 }

@@ -7,6 +7,7 @@ import {
   useCreateCashAccount,
   useCreateInvestmentAccount,
   useCreateCreditCardAccount,
+  useCreateDebtAccount,
   useCreateFixedDepositAccount,
   useAccounts,
 } from "@/hooks/use-accounts";
@@ -16,6 +17,7 @@ import { Label } from "@/components/ui/label";
 import { useBaseCurrency } from "@/hooks/use-profile";
 import { REPORTING_CURRENCIES } from "@/lib/currencies";
 import { CurrencyInput } from "@/components/ui/currency-input";
+import { DueDaySelect } from "@/components/accounts/reminder-control";
 import {
   Dialog,
   DialogContent,
@@ -28,6 +30,7 @@ import { Tile, type TileTone } from "@/components/ui/tile";
 import {
   ArrowLeft,
   Banknote,
+  Building2,
   CreditCard,
   Landmark,
   Vault,
@@ -42,7 +45,12 @@ import {
 } from "@/components/ui/select";
 import type { PayoutType, PayoutFrequency, Compounding } from "@/types/models";
 
-type AccountKind = "cash" | "credit-card" | "investment" | "fixed-deposit";
+type AccountKind =
+  | "cash"
+  | "credit-card"
+  | "investment"
+  | "fixed-deposit"
+  | "loan";
 
 const KIND_OPTIONS: {
   kind: AccountKind;
@@ -78,6 +86,13 @@ const KIND_OPTIONS: {
     hint: "Locked until maturity",
     icon: Vault,
     tone: "info",
+  },
+  {
+    kind: "loan",
+    title: "Loan",
+    hint: "Mortgage, car or personal loan",
+    icon: Building2,
+    tone: "neutral",
   },
 ];
 
@@ -122,7 +137,18 @@ export function CreateAccountDialog({
   const [ccCreditLimit, setCcCreditLimit] = useState(0);
   const [ccCurrentBalance, setCcCurrentBalance] = useState(0);
   const [ccInterestRate, setCcInterestRate] = useState("");
-  const [ccDueDate, setCcDueDate] = useState("");
+  // 0 = no due day (no reminder).
+  const [ccDueDay, setCcDueDay] = useState(0);
+
+  // Loan fields
+  const [loanName, setLoanName] = useState("");
+  const [loanDescription, setLoanDescription] = useState("");
+  // null = follow the reporting currency until the user picks one.
+  const [loanCurrencyPick, setLoanCurrency] = useState<string | null>(null);
+  const [loanOwed, setLoanOwed] = useState(0);
+  const [loanInterestRate, setLoanInterestRate] = useState("");
+  const [loanPayment, setLoanPayment] = useState(0);
+  const [loanDueDay, setLoanDueDay] = useState(0);
 
   // Fixed deposit account fields
   const [fdName, setFdName] = useState("");
@@ -143,12 +169,14 @@ export function CreateAccountDialog({
   const createCash = useCreateCashAccount();
   const createInvestment = useCreateInvestmentAccount();
   const createCreditCard = useCreateCreditCardAccount();
+  const createLoan = useCreateDebtAccount();
   const createFD = useCreateFixedDepositAccount();
 
   const baseCurrency = useBaseCurrency();
   const cashCurrency = cashCurrencyPick ?? baseCurrency;
   const investCurrency = investCurrencyPick ?? baseCurrency;
   const ccCurrency = ccCurrencyPick ?? baseCurrency;
+  const loanCurrency = loanCurrencyPick ?? baseCurrency;
   const currencyOptions = (selected: string) =>
     Array.from(
       new Set([
@@ -169,6 +197,7 @@ export function CreateAccountDialog({
     createCash.isPending ||
     createInvestment.isPending ||
     createCreditCard.isPending ||
+    createLoan.isPending ||
     createFD.isPending;
 
   function resetForm() {
@@ -187,7 +216,14 @@ export function CreateAccountDialog({
     setCcCreditLimit(0);
     setCcCurrentBalance(0);
     setCcInterestRate("");
-    setCcDueDate("");
+    setCcDueDay(0);
+    setLoanName("");
+    setLoanDescription("");
+    setLoanCurrency(null);
+    setLoanOwed(0);
+    setLoanInterestRate("");
+    setLoanPayment(0);
+    setLoanDueDay(0);
     setFdName("");
     setFdDescription("");
     setFdSourceAccountId("");
@@ -321,11 +357,54 @@ export function CreateAccountDialog({
         credit_limit: ccCreditLimit > 0 ? ccCreditLimit : undefined,
         current_balance: ccCurrentBalance > 0 ? ccCurrentBalance : undefined,
         interest_rate: interestRate > 0 ? interestRate : undefined,
-        due_date: ccDueDate || undefined,
+        due_day: ccDueDay > 0 ? ccDueDay : undefined,
       },
       {
         onSuccess: (account) => {
           toast.success(`Account "${account.name}" created`);
+          handleOpenChange(false);
+        },
+        onError: (err) => setError(getErrorMessage(err)),
+      },
+    );
+  }
+
+  async function handleSubmitLoan(e: React.FormEvent) {
+    e.preventDefault();
+    setError("");
+
+    const name = loanName.trim();
+    if (!name) {
+      setError("Name is required");
+      return;
+    }
+    if (name.length > 100) {
+      setError("Name must be 100 characters or less");
+      return;
+    }
+    if (loanDescription.length > 500) {
+      setError("Description must be 500 characters or less");
+      return;
+    }
+    const interestRate = loanInterestRate ? parseFloat(loanInterestRate) : 0;
+    if (isNaN(interestRate) || interestRate < 0 || interestRate > 100) {
+      setError("Interest rate must be between 0 and 100");
+      return;
+    }
+
+    createLoan.mutate(
+      {
+        name,
+        description: loanDescription.trim() || undefined,
+        currency: loanCurrency,
+        amount_owed: loanOwed > 0 ? loanOwed : undefined,
+        interest_rate: interestRate > 0 ? interestRate : undefined,
+        monthly_payment: loanPayment > 0 ? loanPayment : undefined,
+        due_day: loanDueDay > 0 ? loanDueDay : undefined,
+      },
+      {
+        onSuccess: (account) => {
+          toast.success(`Loan "${account.name}" created`);
           handleOpenChange(false);
         },
         onError: (err) => setError(getErrorMessage(err)),
@@ -716,18 +795,130 @@ export function CreateAccountDialog({
                 />
               </div>
               <div className="flex flex-col gap-2">
-                <Label htmlFor="cc-due-date">Due Date</Label>
-                <Input
-                  id="cc-due-date"
-                  type="date"
-                  value={ccDueDate}
-                  onChange={(e) => setCcDueDate(e.target.value)}
+                <Label htmlFor="cc-due-day">
+                  Payment due day
+                  <span className="ml-2 text-xs font-normal text-muted-foreground">
+                    (we&apos;ll remind you on Telegram)
+                  </span>
+                </Label>
+                <DueDaySelect
+                  id="cc-due-day"
+                  value={ccDueDay}
+                  onChange={setCcDueDay}
                   disabled={isSubmitting}
+                  allowNone
                 />
               </div>
               <DialogFooter>
                 <Button type="submit" disabled={isSubmitting}>
                   {isSubmitting ? "Creating..." : "Create Account"}
+                </Button>
+              </DialogFooter>
+            </form>
+          )}
+
+          {kind === "loan" && (
+            <form onSubmit={handleSubmitLoan} className="flex flex-col gap-5">
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="loan-name">Name</Label>
+                <Input
+                  id="loan-name"
+                  placeholder="e.g. Car loan"
+                  value={loanName}
+                  onChange={(e) => setLoanName(e.target.value)}
+                  disabled={isSubmitting}
+                  maxLength={100}
+                />
+              </div>
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="loan-description">Description</Label>
+                <Input
+                  id="loan-description"
+                  placeholder="Optional description"
+                  value={loanDescription}
+                  onChange={(e) => setLoanDescription(e.target.value)}
+                  disabled={isSubmitting}
+                  maxLength={500}
+                />
+              </div>
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="loan-currency">Currency</Label>
+                <Select
+                  value={loanCurrency}
+                  onValueChange={setLoanCurrency}
+                  disabled={isSubmitting}
+                >
+                  <SelectTrigger id="loan-currency" className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {currencyOptions(loanCurrency).map((c) => (
+                      <SelectItem key={c} value={c}>
+                        {c}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="loan-owed">
+                  Amount owed
+                  <span className="ml-2 text-xs font-normal text-muted-foreground">
+                    (what&apos;s left to pay)
+                  </span>
+                </Label>
+                <CurrencyInput
+                  id="loan-owed"
+                  value={loanOwed}
+                  onChange={setLoanOwed}
+                  currency={loanCurrency}
+                  placeholder="0.00"
+                  disabled={isSubmitting}
+                />
+              </div>
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="loan-interest-rate">Interest rate (% a year)</Label>
+                <Input
+                  id="loan-interest-rate"
+                  type="number"
+                  placeholder="e.g. 3.5"
+                  value={loanInterestRate}
+                  onChange={(e) => setLoanInterestRate(e.target.value)}
+                  disabled={isSubmitting}
+                  min={0}
+                  max={100}
+                  step={0.01}
+                />
+              </div>
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="loan-payment">Monthly payment</Label>
+                <CurrencyInput
+                  id="loan-payment"
+                  value={loanPayment}
+                  onChange={setLoanPayment}
+                  currency={loanCurrency}
+                  placeholder="0.00"
+                  disabled={isSubmitting}
+                />
+              </div>
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="loan-due-day">
+                  Payment due day
+                  <span className="ml-2 text-xs font-normal text-muted-foreground">
+                    (we&apos;ll remind you on Telegram)
+                  </span>
+                </Label>
+                <DueDaySelect
+                  id="loan-due-day"
+                  value={loanDueDay}
+                  onChange={setLoanDueDay}
+                  disabled={isSubmitting}
+                  allowNone
+                />
+              </div>
+              <DialogFooter>
+                <Button type="submit" disabled={isSubmitting}>
+                  {isSubmitting ? "Creating..." : "Create Loan"}
                 </Button>
               </DialogFooter>
             </form>

@@ -7,8 +7,9 @@ import { accountVisual } from "@/lib/domain-visuals";
 import { formatDate } from "@/lib/format";
 import {
   daysUntil,
+  dueDayOf,
   isLiability,
-  nextDueDate,
+  nextDueByDay,
   signedBalance,
   utilisation,
 } from "@/lib/account-math";
@@ -41,13 +42,16 @@ function subtitle(
     else if (fd.status === "closed") parts.push("Closed");
     else parts.push(`Matures ${formatDate(fd.maturity_date)}`);
   }
-  if (account.type === "credit_card") {
-    const due = nextDueDate(account.due_date, today);
-    if (due !== null) {
+  if (account.type === "credit_card" || account.type === "debt") {
+    const dueDay = dueDayOf(account);
+    if (dueDay !== null) {
+      const due = nextDueByDay(dueDay, today);
       const days = daysUntil(due, today);
       parts.push(`Due ${formatDate(new Date(due).toISOString())}`);
       if (days <= 7 && account.balance > 0) warn = true;
     }
+  }
+  if (account.type === "credit_card") {
     const used = utilisation(account.balance, account.credit_limit);
     if (used !== null) parts.push(`${Math.round(used)}% of limit`);
   }

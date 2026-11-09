@@ -8,6 +8,7 @@ import { CashAccountView } from "@/components/accounts/cash-account-view";
 import { CreditCardView } from "@/components/accounts/credit-card-view";
 import { FixedDepositView } from "@/components/accounts/fixed-deposit-view";
 import { InvestmentAccountView } from "@/components/accounts/investment-account-view";
+import { LoanView } from "@/components/accounts/loan-view";
 import { Button } from "@/components/ui/button";
 
 /** Account detail: picks the screen for the account's type. */
@@ -63,6 +64,8 @@ export default function AccountDetailPage() {
       return <FixedDepositView account={account} />;
     case "investment":
       return <InvestmentAccountView account={account} />;
+    case "debt":
+      return <LoanView account={account} />;
     default:
       return <CashAccountView account={account} />;
   }

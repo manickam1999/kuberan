@@ -31,7 +31,12 @@ import {
   useTelegramLink,
   useGenerateLinkCode,
   useUnlinkTelegram,
+  useUpdateReminderSettings,
 } from "@/hooks/use-telegram";
+import { Switch } from "@/components/ui/switch";
+import { SettingsRow } from "@/components/settings/settings-section";
+import { REMINDER_LEAD_DAYS } from "@/lib/reminders";
+import type { UpdateReminderSettingsRequest } from "@/types/api";
 import { ApiClientError } from "@/lib/api-client";
 import { formatDate } from "@/lib/format";
 import { formatRelativeTime } from "@/lib/relative-time";
@@ -97,6 +102,76 @@ function CommandsCard() {
             </code>
             <span className="text-xs text-muted-foreground">{c.text}</span>
           </div>
+        ))}
+      </div>
+    </SettingsSection>
+  );
+}
+
+const REMINDER_ROWS: {
+  field: keyof UpdateReminderSettingsRequest;
+  link: "remind_card_due" | "remind_loan_due" | "remind_fd_maturity";
+  title: string;
+  description: string;
+}[] = [
+  {
+    field: "card_due",
+    link: "remind_card_due",
+    title: "Credit card due dates",
+    description: `${REMINDER_LEAD_DAYS.card_due} days before a card payment is due`,
+  },
+  {
+    field: "loan_due",
+    link: "remind_loan_due",
+    title: "Loan payments",
+    description: `${REMINDER_LEAD_DAYS.loan_due} days before a loan payment is due`,
+  },
+  {
+    field: "fd_maturity",
+    link: "remind_fd_maturity",
+    title: "Fixed deposit maturity",
+    description: `${REMINDER_LEAD_DAYS.fd_maturity} days before a deposit matures`,
+  },
+];
+
+/** Per-kind reminder switches; the bot sends only the kinds left on. */
+function ReminderSettings({
+  link,
+}: {
+  link: {
+    remind_card_due?: boolean;
+    remind_loan_due?: boolean;
+    remind_fd_maturity?: boolean;
+  };
+}) {
+  const update = useUpdateReminderSettings();
+  return (
+    <SettingsSection
+      title="Reminders"
+      description="Due dates and maturities the bot messages you about. You can also switch one account's reminder off on its page."
+    >
+      <div className="divide-y">
+        {REMINDER_ROWS.map((row) => (
+          <SettingsRow
+            key={row.field}
+            title={row.title}
+            description={row.description}
+          >
+            <Switch
+              aria-label={row.title}
+              checked={link[row.link] ?? true}
+              disabled={update.isPending}
+              onCheckedChange={(checked) =>
+                update.mutate(
+                  { [row.field]: checked },
+                  {
+                    onError: () =>
+                      toast.error("Couldn't update the reminder setting"),
+                  },
+                )
+              }
+            />
+          </SettingsRow>
         ))}
       </div>
     </SettingsSection>
@@ -353,6 +428,8 @@ export function TelegramSettings() {
           )}
         </div>
       </SettingsSection>
+
+      {isLinked && link && <ReminderSettings link={link} />}
 
       <CommandsCard />
 

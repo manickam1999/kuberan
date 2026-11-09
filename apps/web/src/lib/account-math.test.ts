@@ -4,7 +4,11 @@ import {
   buildAccountsOverview,
   daysUntil,
   fixedDepositProjection,
+  dueDayOf,
+  formatDuration,
+  loanPayoff,
   monthlyInterestEstimate,
+  nextDueByDay,
   nextDueDate,
   utilisation,
 } from "./account-math";
@@ -159,5 +163,99 @@ describe("fixedDepositProjection", () => {
     expect(fixedDepositProjection(fd, 0, new Date(2026, 5, 1)).projected).toBe(
       0,
     );
+  });
+});
+
+describe("nextDueByDay", () => {
+  const today = new Date(2026, 10, 9); // 9 Nov 2026
+
+  it("is this month when the day is still ahead, or today", () => {
+    expect(nextDueByDay(20, today)).toBe(Date.UTC(2026, 10, 20));
+    expect(nextDueByDay(9, today)).toBe(Date.UTC(2026, 10, 9));
+  });
+
+  it("rolls to next month once the day has passed, across the year end", () => {
+    expect(nextDueByDay(1, today)).toBe(Date.UTC(2026, 11, 1));
+    expect(nextDueByDay(5, new Date(2026, 11, 20))).toBe(Date.UTC(2027, 0, 5));
+  });
+
+  it("clamps to short months", () => {
+    expect(nextDueByDay(31, today)).toBe(Date.UTC(2026, 10, 30));
+    expect(nextDueByDay(31, new Date(2027, 1, 10))).toBe(Date.UTC(2027, 1, 28));
+  });
+});
+
+describe("dueDayOf", () => {
+  it("prefers due_day, falls back to the day of a legacy due_date", () => {
+    expect(dueDayOf({ due_day: 15, due_date: "2026-01-03T00:00:00Z" })).toBe(15);
+    expect(dueDayOf({ due_date: "2026-01-03T00:00:00Z" })).toBe(3);
+    expect(dueDayOf({})).toBeNull();
+    // An unset date arrives as the zero time.
+    expect(dueDayOf({ due_date: "0001-01-01T00:00:00Z" })).toBeNull();
+  });
+});
+
+describe("loanPayoff", () => {
+  const today = new Date(2026, 10, 9);
+
+  it("pays off an interest-free loan in whole payments, the last one smaller", () => {
+    // 1,000.00 at 300.00 a month: 300 + 300 + 300 + 100.
+    expect(loanPayoff(100_000, 0, 30_000, 15, today)).toEqual({
+      months: 4,
+      totalInterest: 0,
+      finalPayment: 10_000,
+      // First payment 15 Nov, fourth on 15 Feb 2027.
+      payoffDate: Date.UTC(2027, 1, 15),
+    });
+  });
+
+  it("adds interest of APR / 12 on the remaining balance each month", () => {
+    // 12% APR is 1% a month. 1,000.00: +10.00, -300.00 -> 710.00; +7.10 -> 417.10;
+    // +4.17 -> 121.27; +1.21 -> final payment 122.48.
+    expect(loanPayoff(100_000, 12, 30_000, 1, today)).toEqual({
+      months: 4,
+      totalInterest: 1000 + 710 + 417 + 121,
+      finalPayment: 12_248,
+      payoffDate: Date.UTC(2027, 2, 1),
+    });
+  });
+
+  it("is null when the payment does not cover the interest", () => {
+    // 1% a month on 100,000.00 is 1,000.00 of interest.
+    expect(loanPayoff(10_000_000, 12, 50_000, 1, today)).toBeNull();
+    expect(loanPayoff(10_000_000, 12, 100_000, 1, today)).toBeNull();
+  });
+
+  it("is null without a balance or a payment", () => {
+    expect(loanPayoff(0, 5, 10_000, 1, today)).toBeNull();
+    expect(loanPayoff(10_000, 5, 0, 1, today)).toBeNull();
+    expect(loanPayoff(10_000, 5, undefined, 1, today)).toBeNull();
+  });
+
+  it("clamps the payoff day to short months", () => {
+    const p = loanPayoff(20_000, 0, 10_000, 31, new Date(2027, 0, 10));
+    expect(p?.months).toBe(2);
+    expect(p?.payoffDate).toBe(Date.UTC(2027, 1, 28));
+  });
+
+  it("uses today's day when no due day is set", () => {
+    expect(loanPayoff(20_000, 0, 10_000, null, today)?.payoffDate).toBe(
+      Date.UTC(2026, 11, 9),
+    );
+  });
+
+  it("clears a balance smaller than one instalment in a single payment", () => {
+    const p = loanPayoff(5_000, 0, 10_000, 20, today);
+    expect(p).toMatchObject({ months: 1, finalPayment: 5_000 });
+    expect(p?.payoffDate).toBe(Date.UTC(2026, 10, 20));
+  });
+});
+
+describe("formatDuration", () => {
+  it("words years and months", () => {
+    expect(formatDuration(1)).toBe("1 month");
+    expect(formatDuration(7)).toBe("7 months");
+    expect(formatDuration(12)).toBe("1 year");
+    expect(formatDuration(38)).toBe("3 years 2 months");
   });
 });

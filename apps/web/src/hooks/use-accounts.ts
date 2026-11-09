@@ -15,6 +15,7 @@ import type {
   CreateCashAccountRequest,
   CreateInvestmentAccountRequest,
   CreateCreditCardAccountRequest,
+  CreateDebtAccountRequest,
   CreateFixedDepositAccountRequest,
   CloseFixedDepositRequest,
   UpdateAccountRequest,
@@ -146,6 +147,23 @@ export function useCreateCreditCardAccount() {
   });
 }
 
+/** Create a loan (a `debt` account). */
+export function useCreateDebtAccount() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (data: CreateDebtAccountRequest) => {
+      const res = await apiClient.post<AccountResponse>(
+        "/api/v1/accounts/debt",
+        data
+      );
+      return res.account;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: accountKeys.lists() });
+    },
+  });
+}
+
 export function useUpdateAccount(id: string) {
   const queryClient = useQueryClient();
   return useMutation({
@@ -159,6 +177,8 @@ export function useUpdateAccount(id: string) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: accountKeys.lists() });
       queryClient.invalidateQueries({ queryKey: accountKeys.detail(id) });
+      // A due day or a deactivation changes the account's reminders.
+      queryClient.invalidateQueries({ queryKey: ["reminders"] });
     },
   });
 }
