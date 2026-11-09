@@ -56,6 +56,13 @@ func (s *portfolioSnapshotService) ComputeAndRecordSnapshots(recordedAt time.Tim
 				fmt.Errorf("all %d portfolio snapshot upserts failed", failed))
 		}
 	}
+
+	// Per-account daily balances (plan 023, 5.1). A failure here is logged and
+	// never fails the net worth snapshots; the next run (30 minutes later)
+	// writes the same day's rows.
+	if err := recordAccountBalances(s.db, s.fxService, recordedAt); err != nil {
+		logger.Get().Errorw("account balance snapshots failed", "recorded_at", recordedAt, "error", err)
+	}
 	return recorded, nil
 }
 

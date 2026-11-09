@@ -24,6 +24,7 @@ var allModels = []interface{}{
 	&models.SecurityPrice{},
 	&models.FXRate{},
 	&models.PortfolioSnapshot{},
+	&models.AccountBalanceSnapshot{},
 	&models.AuditLog{},
 	&models.TelegramLink{},
 	&models.OAuthClientGrant{},

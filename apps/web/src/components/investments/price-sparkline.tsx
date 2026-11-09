@@ -8,12 +8,15 @@ export function PriceSparkline({
   values,
   width = 110,
   height = 28,
+  tone = "trend",
   className,
 }: {
   /** Prices, oldest first (any unit). */
   values: readonly number[];
   width?: number;
   height?: number;
+  /** "trend" colours by direction; "neutral" is a quiet grey line (balances). */
+  tone?: "trend" | "neutral";
   className?: string;
 }) {
   if (values.length < 2) return null;
@@ -41,7 +44,13 @@ export function PriceSparkline({
       <polyline
         points={points}
         fill="none"
-        stroke={up ? "var(--positive)" : "var(--negative)"}
+        stroke={
+          tone === "neutral"
+            ? "var(--muted-foreground)"
+            : up
+              ? "var(--positive)"
+              : "var(--negative)"
+        }
         strokeWidth={1.5}
         strokeLinejoin="round"
         strokeLinecap="round"

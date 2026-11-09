@@ -919,3 +919,48 @@ export interface IbkrImportReport {
   errors: IbkrImportIssue[] | null;
   warnings: string[] | null;
 }
+
+// Per-account balance history (plan 023, 5.1)
+
+/** One recorded day of an account's balance, in the account's own currency. */
+export interface BalancePoint {
+  day: string; // "2026-02-01" (UTC day)
+  balance: number; // cents, account currency
+}
+
+/** GET /accounts/:id/balance-history (inside `data`). */
+export interface AccountBalanceHistory {
+  account_id: string;
+  currency: string;
+  from: string; // "2026-02-01"
+  to: string; // "2026-02-01"
+  points: BalancePoint[];
+}
+
+/** One element of GET /accounts/sparklines (inside `data`). */
+export interface AccountSparkline {
+  account_id: string;
+  currency: string;
+  points: BalancePoint[];
+}
+
+// Insights summary (plan 023, 5.4)
+
+/** GET /analytics/typical (inside `data`): a typical month, in the base currency. */
+export interface TypicalMonth {
+  /** Months asked for. */
+  months: number;
+  /** Months the averages cover; 0 means there is no history yet. */
+  months_used: number;
+  currency: string;
+  avg_income: number; // cents per month
+  avg_spending: number; // cents per month
+  /** (income - spending) / income over the window, percent with one decimal. */
+  saved_percent: number;
+  /** Average cumulative spending after day 1..31 of a month (31 points, cents). */
+  daily_cumulative: number[];
+  /** Average spending per month by category, largest first. */
+  by_category: SpendingByCategoryItem[];
+  fx_missing: boolean;
+  unconverted: UnconvertedAmount[];
+}

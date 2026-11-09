@@ -72,6 +72,11 @@ export type ThemedAreaChartProps = {
    * pass a smaller number for series of small values such as share prices.
    */
   yPadding?: number;
+  /**
+   * A second, dashed comparison line (e.g. a typical month), one value per
+   * point of `data` in the same units. Clean theme only.
+   */
+  reference?: readonly number[];
 };
 
 const MARKER_STROKE: Record<NonNullable<ChartMarker["tone"]>, string> = {
@@ -102,6 +107,7 @@ export function ThemedAreaChart({
   margin,
   hideXAxis = false,
   yPadding = 100,
+  reference,
 }: ThemedAreaChartProps) {
   const { chartTheme } = useChartTheme();
   const isMobile = useIsMobile();
@@ -139,6 +145,9 @@ export function ThemedAreaChart({
   }
 
   const valueByLabel = new Map(data.map((d) => [d.label, d.value]));
+  const chartData = reference
+    ? data.map((d, i) => ({ ...d, reference: reference[i] }))
+    : data;
   const last = data[data.length - 1];
   const config = {
     value: { label: seriesLabel, color: cleanColor },
@@ -146,7 +155,7 @@ export function ThemedAreaChart({
 
   return (
     <ChartContainer config={config} className={className}>
-      <RechartsAreaChart accessibilityLayer data={data} margin={margin}>
+      <RechartsAreaChart accessibilityLayer data={chartData} margin={margin}>
         <defs>
           <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
             <stop offset="0%" stopColor="var(--color-value)" stopOpacity={0.4} />
@@ -198,6 +207,20 @@ export function ThemedAreaChart({
           fill={`url(#${gradientId})`}
           strokeWidth={2}
         />
+        {reference && (
+          <RechartsArea
+            type="monotone"
+            dataKey="reference"
+            stroke="var(--muted-foreground)"
+            strokeDasharray="3 3"
+            strokeWidth={1.4}
+            fill="none"
+            dot={false}
+            activeDot={false}
+            isAnimationActive={false}
+            legendType="none"
+          />
+        )}
         {baseline !== undefined && (
           <ReferenceLine
             y={baseline}

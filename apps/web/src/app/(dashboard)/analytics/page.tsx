@@ -5,6 +5,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { useAnalyticsPeriod } from "@/hooks/use-analytics-period";
 import { useCashflow, useTopExpenses } from "@/hooks/use-transactions";
 import { useBaseCurrency } from "@/hooks/use-profile";
+import { useTypical } from "@/hooks/use-typical";
 import { Money } from "@/components/ui/money";
 import { Skeleton } from "@/components/ui/skeleton";
 import { StatStrip, type StatStripItem } from "@/components/ui/stat-strip";
@@ -17,6 +18,13 @@ import { MonthlyTrendCard } from "@/components/analytics/monthly-trend-card";
 import { PeriodSelector } from "@/components/analytics/period-selector";
 import { formatDate } from "@/lib/format";
 import { savingsRate, transactionsHref } from "@/lib/insights";
+import {
+  typicalSpendFor,
+  vsTypicalLabel,
+  vsTypicalPercent,
+  vsTypicalTone,
+} from "@/lib/typical";
+import { cn } from "@/lib/utils";
 
 export default function InsightsPage() {
   const { hideBalances } = useAuth();
@@ -26,6 +34,7 @@ export default function InsightsPage() {
 
   const cashflow = useCashflow(fromDate, toDate);
   const top = useTopExpenses(fromDate, toDate, 1);
+  const typical = useTypical(6);
 
   const flow = cashflow.data;
   const currency = flow?.currency ?? baseCurrency;
@@ -37,6 +46,15 @@ export default function InsightsPage() {
     .slice(0, 2)
     .map((i) => i.category_name)
     .join(" + ");
+  // Only a whole calendar month has a typical to compare with.
+  const typicalSpend =
+    period.mode === "month"
+      ? typicalSpendFor(typical.data, fromDate, new Date())
+      : null;
+  const spentVsTypical =
+    flow && typicalSpend !== null
+      ? vsTypicalPercent(flow.total_expenses, typicalSpend)
+      : null;
   const statsLoading = cashflow.isLoading || top.isLoading;
 
   const items: StatStripItem[] = flow
@@ -51,9 +69,19 @@ export default function InsightsPage() {
               <Money amount={flow.total_expenses} currency={currency} sign="never" />
             </Link>
           ),
-          sub: top.data
-            ? `${top.data.total_count} ${top.data.total_count === 1 ? "expense" : "expenses"}`
-            : undefined,
+          sub:
+            spentVsTypical !== null ? (
+              <span
+                className={cn(
+                  vsTypicalTone(spentVsTypical) === "pos" && "text-positive",
+                  vsTypicalTone(spentVsTypical) === "neg" && "text-negative"
+                )}
+              >
+                {vsTypicalLabel(spentVsTypical)}
+              </span>
+            ) : top.data ? (
+              `${top.data.total_count} ${top.data.total_count === 1 ? "expense" : "expenses"}`
+            ) : undefined,
         },
         {
           label: "Earned",
@@ -146,7 +174,11 @@ export default function InsightsPage() {
           toDate={toDate}
           hideBalances={hideBalances}
         />
-        <CategoryBreakdownCard fromDate={fromDate} toDate={toDate} />
+        <CategoryBreakdownCard
+          fromDate={fromDate}
+          toDate={toDate}
+          wholeMonth={period.mode === "month"}
+        />
       </div>
 
       <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-2">

@@ -167,6 +167,8 @@ func run() error {
 	telegramHandler := handlers.NewTelegramHandler(telegramService, auditService)
 	fxHandler := handlers.NewFXHandler(fxService, auditService)
 	importHandler := handlers.NewImportHandler(importService, auditService, appConfig.MaxUploadBytes)
+	accountHistoryHandler := handlers.NewAccountHistoryHandler(services.NewAccountBalanceHistoryService(db))
+	analyticsHandler := handlers.NewAnalyticsHandler(services.NewTypicalService(db, fxService))
 	exportHandler := handlers.NewExportHandler(services.NewExportService(db), services.NewSystemStatusService(db), auditService)
 
 	// Register custom validators before routes
@@ -228,6 +230,8 @@ func run() error {
 		FX:                   fxHandler,
 		Import:               importHandler,
 		Export:               exportHandler,
+		AccountHistory:       accountHistoryHandler,
+		Analytics:            analyticsHandler,
 		Limits:               handlers.NewRouteLimits(appConfig.RateLimits),
 	}, handlers.RouteSecrets{
 		BotInternalSecret: appConfig.BotInternalSecret,

@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { Handshake, Plus } from "lucide-react";
 import { useAccountTransactions } from "@/hooks/use-transactions";
 import { AccountActivity } from "@/components/accounts/account-activity";
+import { BalanceHistoryCard } from "@/components/accounts/balance-history-card";
 import { AccountHeader } from "@/components/accounts/account-header";
 import { EditAccountDialog } from "@/components/accounts/edit-account-dialog";
 import { LendMoneyDialog } from "@/components/receivables/lend-money-dialog";
@@ -110,6 +111,8 @@ export function CashAccountView({ account }: { account: Account }) {
           dimCents
         />
       </Card>
+
+      <BalanceHistoryCard accountId={account.id} currency={account.currency} />
 
       <StatStrip items={stats} />
 

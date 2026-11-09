@@ -31,6 +31,8 @@ type Routes struct {
 	FX                   *FXHandler
 	Import               *ImportHandler
 	Export               *ExportHandler
+	AccountHistory       *AccountHistoryHandler
+	Analytics            *AnalyticsHandler
 
 	// Limits rate-limits the public auth endpoints. The zero value applies no
 	// limits (used by tests that don't exercise them).
@@ -156,6 +158,9 @@ func RegisterRoutes(router *gin.Engine, h Routes, secrets RouteSecrets) {
 	registerSecurityRoutes(protected, h)
 	registerCategoryRoutes(protected, h)
 
+	// Insights summary (plan 023, 5.4).
+	protected.GET("/analytics/typical", h.Analytics.GetTypical)
+
 	// Exchange rates (plan 024). Static /latest is registered beside the list route.
 	protected.GET("/fx-rates", h.FX.ListRates)
 	protected.GET("/fx-rates/latest", h.FX.LatestRate)
@@ -211,8 +216,10 @@ func registerAccountRoutes(protected *gin.RouterGroup, h Routes) {
 	accounts.POST("/credit-card", h.Account.CreateCreditCardAccount)
 	accounts.POST("/fixed-deposit", h.Account.CreateFixedDepositAccount)
 	accounts.GET("", h.Account.GetUserAccounts)
+	accounts.GET("/sparklines", h.AccountHistory.GetSparklines)
 	accounts.GET("/:id", h.Account.GetAccountByID)
 	accounts.PUT("/:id", h.Account.UpdateAccount)
+	accounts.GET("/:id/balance-history", h.AccountHistory.GetBalanceHistory)
 	accounts.GET("/:id/transactions", h.Transaction.GetAccountTransactions)
 	accounts.GET("/:id/investments", h.Investment.GetAccountInvestments)
 	accounts.POST("/:id/fixed-deposit/close", h.Account.CloseFixedDeposit)

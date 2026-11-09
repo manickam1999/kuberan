@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { Plus, Wallet } from "lucide-react";
-import { useAccounts } from "@/hooks/use-accounts";
+import { useAccountSparklines, useAccounts } from "@/hooks/use-accounts";
 import { useBaseCurrency } from "@/hooks/use-profile";
 import { useReceivablesSummary } from "@/hooks/use-receivables";
 import { WealthSwitch } from "@/components/layout/wealth-switch";
@@ -48,6 +48,8 @@ export default function AccountsPage() {
   const { data, isLoading, isError, refetch } = useAccounts({ page_size: 100, include_inactive: true });
   const baseCurrency = useBaseCurrency();
   const { data: owed } = useReceivablesSummary();
+  // Absent until the first pipeline run; rows simply draw no line then.
+  const { data: sparklines = new Map<string, number[]>() } = useAccountSparklines(30);
 
   const accounts = useMemo(() => data?.data ?? [], [data]);
   const overview = useMemo(
@@ -188,6 +190,7 @@ export default function AccountsPage() {
                       key={account.id}
                       account={account}
                       today={today}
+                      sparkline={sparklines.get(account.id)}
                     />
                   ))}
                 </Card>

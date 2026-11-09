@@ -18,6 +18,8 @@ import type {
   CreateFixedDepositAccountRequest,
   CloseFixedDepositRequest,
   UpdateAccountRequest,
+  AccountSparkline,
+  AccountBalanceHistory,
 } from "@/types/api";
 
 export const accountKeys = {
@@ -191,5 +193,52 @@ export function useCloseFixedDeposit(id: string) {
       queryClient.invalidateQueries({ queryKey: accountKeys.lists() });
       queryClient.invalidateQueries({ queryKey: accountKeys.detail(id) });
     },
+  });
+}
+
+/** Sparkline and balance-history query keys (plan 023, 5.1). */
+export const accountHistoryKeys = {
+  sparklines: (days: number) =>
+    [...accountKeys.all, "sparklines", days] as const,
+  history: (id: string, from?: string, to?: string) =>
+    [...accountKeys.all, "balance-history", id, from, to] as const,
+};
+
+/**
+ * Recent daily balances of every active account, keyed by account id (each in
+ * the account's own currency). Accounts with no recorded history are absent.
+ */
+export function useAccountSparklines(days = 30) {
+  return useQuery({
+    queryKey: accountHistoryKeys.sparklines(days),
+    queryFn: () =>
+      apiClient.get<{ data: AccountSparkline[] }>(
+        "/api/v1/accounts/sparklines",
+        { days }
+      ),
+    select: (res) =>
+      new Map(
+        res.data
+          .filter((s) => s.points.length > 0)
+          .map((s) => [s.account_id, s.points.map((p) => p.balance)])
+      ),
+    staleTime: 5 * 60_000,
+  });
+}
+
+/** One account's recorded daily balances; `from`/`to` are YYYY-MM-DD. */
+export function useAccountBalanceHistory(
+  id: string,
+  range: { from?: string; to?: string } = {}
+) {
+  return useQuery({
+    queryKey: accountHistoryKeys.history(id, range.from, range.to),
+    queryFn: () =>
+      apiClient.get<{ data: AccountBalanceHistory }>(
+        `/api/v1/accounts/${id}/balance-history`,
+        { ...range }
+      ),
+    select: (res) => res.data,
+    staleTime: 5 * 60_000,
   });
 }

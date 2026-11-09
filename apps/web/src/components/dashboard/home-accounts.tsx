@@ -1,9 +1,11 @@
 "use client";
 
 import Link from "next/link";
+import { PriceSparkline } from "@/components/investments/price-sparkline";
 import { HomeCard } from "@/components/dashboard/home-bits";
 import { Money } from "@/components/ui/money";
 import { Tile } from "@/components/ui/tile";
+import { useAccountSparklines } from "@/hooks/use-accounts";
 import { useBaseCurrency } from "@/hooks/use-profile";
 import { accountVisual } from "@/lib/domain-visuals";
 import type { Account } from "@/types/models";
@@ -21,6 +23,7 @@ const ACCOUNT_TONE = {
 /** Pinned accounts, else the largest by base-currency balance. */
 export function HomeAccounts({ accounts }: { accounts: readonly Account[] }) {
   const baseCurrency = useBaseCurrency();
+  const { data: sparklines } = useAccountSparklines(30);
   // Rank by the base-currency balance; accounts with no rate sort last.
   const baseOf = (a: Account): number | undefined =>
     a.balance_base ?? (a.currency === baseCurrency ? a.balance : undefined);
@@ -57,7 +60,15 @@ export function HomeAccounts({ accounts }: { accounts: readonly Account[] }) {
                   {sub}
                 </span>
               </span>
-              <span className="shrink-0 text-right text-sm font-medium">
+              {(sparklines?.get(account.id)?.length ?? 0) > 1 && (
+                <PriceSparkline
+                  values={sparklines?.get(account.id) ?? []}
+                  tone="neutral"
+                  width={56}
+                  height={22}
+                />
+              )}
+              <span className="min-w-28 shrink-0 text-right text-sm font-medium">
                 <Money
                   amount={account.balance}
                   currency={account.currency}

@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { ChevronRight, Pin } from "lucide-react";
+import { PriceSparkline } from "@/components/investments/price-sparkline";
 import { Money } from "@/components/ui/money";
 import { Tile, type TileTone } from "@/components/ui/tile";
 import { accountVisual } from "@/lib/domain-visuals";
@@ -62,9 +63,12 @@ function subtitle(
 export function AccountRow({
   account,
   today,
+  sparkline,
 }: {
   account: Account;
   today: Date;
+  /** Recent daily balances (cents, oldest first); drawn from `md` up. */
+  sparkline?: readonly number[];
 }) {
   const v = accountVisual(account.type);
   const Icon = v.icon;
@@ -101,9 +105,16 @@ export function AccountRow({
           {sub.text}
         </span>
       </span>
+      {sparkline && sparkline.length > 1 && (
+        <PriceSparkline
+          values={sparkline}
+          tone="neutral"
+          className="hidden md:block"
+        />
+      )}
       <span
         className={cn(
-          "money shrink-0 text-right text-sm font-medium",
+          "money shrink-0 text-right text-sm font-medium md:min-w-36",
           liability && "text-warning",
         )}
       >

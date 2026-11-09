@@ -69,6 +69,7 @@ func setupIsolatedDB(t *testing.T) *gorm.DB {
 		&models.SecurityPrice{},
 		&models.FXRate{},
 		&models.PortfolioSnapshot{},
+		&models.AccountBalanceSnapshot{},
 		&models.Investment{},
 		&models.InvestmentTransaction{},
 		&models.AuditLog{},
@@ -157,6 +158,8 @@ func setupApp(t *testing.T) *testApp {
 		FX:                   handlers.NewFXHandler(fxService, auditService),
 		Import:               handlers.NewImportHandler(importService, auditService, testMaxUploadBytes),
 		Export:               handlers.NewExportHandler(services.NewExportService(db), services.NewSystemStatusService(db), auditService),
+		AccountHistory:       handlers.NewAccountHistoryHandler(services.NewAccountBalanceHistoryService(db)),
+		Analytics:            handlers.NewAnalyticsHandler(services.NewTypicalService(db, fxService)),
 		Limits:               handlers.NewRouteLimits(config.RateLimits{}), // auth limits off; export keeps its fixed 1/min
 	}, handlers.RouteSecrets{
 		BotInternalSecret: "test-bot-secret",
