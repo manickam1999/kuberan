@@ -455,7 +455,7 @@ export function CreateTransactionDialog({
               currency={amountCurrency}
               placeholder="0.00"
               disabled={isSubmitting}
-              className="money h-14 pl-20 text-2xl font-semibold"
+              className="money h-14 pl-20 text-2xl font-semibold md:text-2xl"
             />
           </div>
 
