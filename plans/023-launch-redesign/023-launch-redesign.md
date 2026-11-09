@@ -1,8 +1,12 @@
 # Plan 023 — Launch Redesign
 
-**Status: Phases 0 and 1 implemented** (migrations `000048` notes/source, `000049` backup runs, `000050` audit
-source, `000051` grant client host, `000052` appearance), plus 2.1's palettes. Phase 2 is in progress; later phases
-are proposed. Phase 1 notes:
+**Status: Phases 0–4 implemented** (migrations `000048` notes/source, `000049` backup runs, `000050` audit
+source, `000051` grant client host, `000052` appearance). Phases 5–7 are proposed. Phase 4 screens render without
+the Phase 5 data they don't have yet (sparklines, pace vs typical, loans, reminders, demo data, CSV import, rule
+match counts and suggestions). Phase 4 additions beyond the table: `GET /accounts?include_inactive=true`, and
+`NEXT_PUBLIC_MCP_URL` (optional) for the "Connect an assistant" steps.
+
+Phase 1 notes:
 
 - Wrong current passwords return 400 `INVALID_CURRENT_PASSWORD`, not 401, so the web client doesn't mistake them
   for an expired token. The current device is found from the refresh cookie; no token claim was added.

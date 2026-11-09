@@ -46,6 +46,12 @@ const docTemplate = `{
                         "description": "Items per page (default 20, max 100)",
                         "name": "page_size",
                         "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Also list deactivated accounts",
+                        "name": "include_inactive",
+                        "in": "query"
                     }
                 ],
                 "responses": {

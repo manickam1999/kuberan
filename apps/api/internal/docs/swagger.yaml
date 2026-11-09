@@ -3101,6 +3101,10 @@ paths:
         in: query
         name: page_size
         type: integer
+      - description: Also list deactivated accounts
+        in: query
+        name: include_inactive
+        type: boolean
       produces:
       - application/json
       responses:
