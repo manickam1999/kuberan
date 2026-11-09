@@ -1,6 +1,7 @@
 # Plan 023 — Launch Redesign
 
-**Status: Phase 0 implemented.** Later phases are proposed. Where Phase 0's code differs from the plan below:
+**Status: Phase 0 implemented; Phase 1 items 1.1, 1.3, 1.4, 1.5, 1.7 and 1.9 implemented** (migrations `000048`
+notes/source, `000049` backup runs). Later items are proposed. Where Phase 0's code differs from the plan below:
 
 - **0.3 steps down, not up.** A new account's few days of snapshots look the same at 6M and 1M (both grouped
   by day), so a longer range never helps. The chart defaults to 6M and, until the user picks a range, falls back
@@ -369,9 +370,9 @@ How it works today (checked against `main` at `3b3bea4`):
   which reads them from the token.
 - A disconnect then stops reads within a minute. Writes keep the uncached check in `Authorize`. The Connected apps
   screen says "Disconnected. Requests already under way may finish within a minute."
-- **Legacy connections** (a Hydra consent but no grant row) would be refused by this check. Decide before
-  shipping: either refuse them and say in the upgrade notes that those apps must reconnect (cleanest; the screen
-  already labels them "reconnect to choose permissions"), or let them read until they reconnect.
+- **Legacy connections** (a Hydra consent but no grant row) are **refused** (decided 9 Nov). Those apps must
+  reconnect once after the deploy; the screen already labels them "reconnect to choose permissions", and the
+  upgrade notes say so.
 
 **Where the app connects from**
 

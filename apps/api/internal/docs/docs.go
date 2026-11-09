@@ -649,6 +649,24 @@ const docTemplate = `{
                         "description": "Filter by maximum amount (cents)",
                         "name": "max_amount",
                         "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Search description and notes (case-insensitive, max 100 chars); a numeric value such as 64.73 also matches the amount",
+                        "name": "q",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "true keeps only transactions with receivables, false only those without",
+                        "name": "shared",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "true keeps only transactions with receipts, false only those without",
+                        "name": "has_attachment",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -770,6 +788,75 @@ const docTemplate = `{
                 }
             }
         },
+        "/auth/password": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Verify the current password, set a new one and end every other device session (the current one stays signed in). Wrong current passwords count toward the login lockout.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "auth"
+                ],
+                "summary": "Change password",
+                "parameters": [
+                    {
+                        "description": "Current and new password",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ChangePasswordRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Password changed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.RevokedSessionsResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid input, or INVALID_CURRENT_PASSWORD",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "423": {
+                        "description": "ACCOUNT_LOCKED",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Too many attempts",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Server error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/auth/refresh": {
             "post": {
                 "description": "Exchange the refresh cookie for a new access token and rotated refresh cookie",
@@ -854,6 +941,147 @@ const docTemplate = `{
                     },
                     "400": {
                         "description": "Invalid input (UNSUPPORTED_CURRENCY for a bad base_currency)",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Server error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/auth/sessions": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "List the authenticated user's live refresh sessions; current marks the one whose refresh cookie the request carries",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "auth"
+                ],
+                "summary": "List device sessions",
+                "responses": {
+                    "200": {
+                        "description": "sessions",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "array",
+                                "items": {
+                                    "$ref": "#/definitions/internal_handlers.SessionResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Server error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/auth/sessions/revoke-others": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "End every refresh session of the user except the one making the request",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "auth"
+                ],
+                "summary": "Revoke all other device sessions",
+                "responses": {
+                    "200": {
+                        "description": "Other sessions revoked",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.RevokedSessionsResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Current session unknown (no refresh cookie sent)",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Server error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/auth/sessions/{id}": {
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "End another device's refresh session. The current session cannot be revoked here; use logout.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "auth"
+                ],
+                "summary": "Revoke a device session",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Session ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "Session revoked"
+                    },
+                    "400": {
+                        "description": "CURRENT_SESSION or invalid ID",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "SESSION_NOT_FOUND",
                         "schema": {
                             "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
@@ -1603,6 +1831,49 @@ const docTemplate = `{
                     },
                     "500": {
                         "description": "Server error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/export": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Streams a zip archive with one CSV per table (accounts, categories, transactions, budgets, investments, investment_transactions, securities, receivables, receivable_settlements, rules). Scoped to the caller; soft-deleted rows are included with deleted_at. Money columns carry the integer cents, a formatted decimal and the currency, plus the base-currency (_base) and FX columns. Limited to 1 request per minute per user.",
+                "produces": [
+                    "application/zip"
+                ],
+                "tags": [
+                    "export"
+                ],
+                "summary": "Export all data",
+                "responses": {
+                    "200": {
+                        "description": "kuberan-export-YYYY-MM-DD.zip",
+                        "schema": {
+                            "type": "file"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Rate limited (Retry-After seconds)",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
                         "schema": {
                             "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
@@ -3515,7 +3786,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Update the authenticated user's profile settings (dashboard balance visibility, default transaction account, base currency)",
+                "description": "Update the authenticated user's profile: name, email (needs current_password), dashboard balance visibility, default transaction account, base currency",
                 "consumes": [
                     "application/json"
                 ],
@@ -3545,13 +3816,25 @@ const docTemplate = `{
                         }
                     },
                     "400": {
-                        "description": "Invalid input",
+                        "description": "Invalid input, or INVALID_CURRENT_PASSWORD",
                         "schema": {
                             "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "DUPLICATE_EMAIL or BASE_CURRENCY_LOCKED",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "423": {
+                        "description": "ACCOUNT_LOCKED after too many wrong current passwords",
                         "schema": {
                             "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
@@ -4730,6 +5013,43 @@ const docTemplate = `{
                 }
             }
         },
+        "/system/status": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Freshness timestamps for the host-status chip. Each field is an RFC 3339 time or null when it has never happened. latest_snapshot_at is the caller's own latest portfolio snapshot.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "system"
+                ],
+                "summary": "System status",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.SystemStatusResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/telegram/generate-code": {
             "post": {
                 "security": [
@@ -4922,6 +5242,24 @@ const docTemplate = `{
                         "description": "Filter by maximum amount (cents)",
                         "name": "max_amount",
                         "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Search description and notes (case-insensitive, max 100 chars); a numeric value such as 64.73 also matches the amount",
+                        "name": "q",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "true keeps only transactions with receivables, false only those without",
+                        "name": "shared",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "true keeps only transactions with receipts, false only those without",
+                        "name": "has_attachment",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -4994,6 +5332,69 @@ const docTemplate = `{
                     },
                     "401": {
                         "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Server error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/transactions/bulk": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Apply one change set (category, notes_append, shared=false) to, or delete, up to 200 transactions in a single database transaction. Every id must belong to the user (otherwise 404 TRANSACTION_NOT_FOUND and nothing changes); a category must match each transaction's type (400 CATEGORY_TYPE_MISMATCH); opening balances are rejected (400 TRANSACTION_NOT_EDITABLE). One audit row is written per changed transaction.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "transactions"
+                ],
+                "summary": "Bulk edit or delete transactions",
+                "parameters": [
+                    {
+                        "description": "Ids and the changes to apply",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.BulkTransactionsRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Counts of updated and deleted transactions",
+                        "schema": {
+                            "$ref": "#/definitions/kuberan_internal_services.BulkTransactionResult"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid input, category type mismatch or non-editable transaction",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Transaction or category not found",
                         "schema": {
                             "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
@@ -6170,6 +6571,44 @@ const docTemplate = `{
                 }
             }
         },
+        "internal_handlers.BulkTransactionSet": {
+            "type": "object",
+            "properties": {
+                "category_id": {
+                    "type": "string"
+                },
+                "notes_append": {
+                    "type": "string",
+                    "maxLength": 2000
+                },
+                "shared": {
+                    "description": "Shared may only be false: it removes the receivables of the selected expenses.",
+                    "type": "boolean"
+                }
+            }
+        },
+        "internal_handlers.BulkTransactionsRequest": {
+            "type": "object",
+            "required": [
+                "ids"
+            ],
+            "properties": {
+                "delete": {
+                    "type": "boolean"
+                },
+                "ids": {
+                    "type": "array",
+                    "maxItems": 200,
+                    "minItems": 1,
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "set": {
+                    "$ref": "#/definitions/internal_handlers.BulkTransactionSet"
+                }
+            }
+        },
         "internal_handlers.CategoryResponse": {
             "type": "object",
             "properties": {
@@ -6196,6 +6635,24 @@ const docTemplate = `{
                 },
                 "user_id": {
                     "type": "integer"
+                }
+            }
+        },
+        "internal_handlers.ChangePasswordRequest": {
+            "type": "object",
+            "required": [
+                "current_password",
+                "new_password"
+            ],
+            "properties": {
+                "current_password": {
+                    "type": "string",
+                    "maxLength": 1024
+                },
+                "new_password": {
+                    "type": "string",
+                    "maxLength": 72,
+                    "minLength": 8
                 }
             }
         },
@@ -6649,6 +7106,10 @@ const docTemplate = `{
                             "$ref": "#/definitions/kuberan_internal_services.ShareMode"
                         }
                     ]
+                },
+                "notes": {
+                    "type": "string",
+                    "maxLength": 2000
                 }
             }
         },
@@ -6676,6 +7137,10 @@ const docTemplate = `{
                     "type": "string",
                     "maxLength": 500
                 },
+                "notes": {
+                    "type": "string",
+                    "maxLength": 2000
+                },
                 "type": {
                     "$ref": "#/definitions/kuberan_internal_models.TransactionType"
                 }
@@ -6701,6 +7166,10 @@ const docTemplate = `{
                 },
                 "from_account_id": {
                     "type": "string"
+                },
+                "notes": {
+                    "type": "string",
+                    "maxLength": 2000
                 },
                 "to_account_id": {
                     "type": "string"
@@ -7218,6 +7687,14 @@ const docTemplate = `{
                 }
             }
         },
+        "internal_handlers.RevokedSessionsResponse": {
+            "type": "object",
+            "properties": {
+                "revoked_sessions": {
+                    "type": "integer"
+                }
+            }
+        },
         "internal_handlers.RuleActionDTO": {
             "type": "object",
             "required": [
@@ -7255,6 +7732,31 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "value_text": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_handlers.SessionResponse": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "current": {
+                    "description": "Current is true for the session the request's access token belongs to.",
+                    "type": "boolean"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "ip_address": {
+                    "type": "string"
+                },
+                "last_seen_at": {
+                    "description": "LastSeenAt is the last token rotation, or CreatedAt before the first.",
+                    "type": "string"
+                },
+                "user_agent": {
                     "type": "string"
                 }
             }
@@ -7306,6 +7808,23 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "name": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_handlers.SystemStatusResponse": {
+            "type": "object",
+            "properties": {
+                "last_backup_at": {
+                    "type": "string"
+                },
+                "latest_fx_rate_at": {
+                    "type": "string"
+                },
+                "latest_price_at": {
+                    "type": "string"
+                },
+                "latest_snapshot_at": {
                     "type": "string"
                 }
             }
@@ -7474,12 +7993,31 @@ const docTemplate = `{
                     "description": "BaseCurrency sets the currency aggregates are reported in (ISO 4217,\nupper-case). It must be a supported currency with an exchange rate to USD.",
                     "type": "string"
                 },
+                "current_password": {
+                    "description": "CurrentPassword confirms an email change. A wrong value is 400\nINVALID_CURRENT_PASSWORD and counts toward the login lockout.",
+                    "type": "string",
+                    "maxLength": 1024
+                },
                 "default_account_id": {
                     "description": "DefaultAccountID sets the account preselected for new transactions;\nnull or \"\" clears it. Must be a UUID otherwise.",
                     "type": "string"
                 },
+                "email": {
+                    "description": "Email replaces the login email (trimmed and lower-cased). Changing it\nrequires CurrentPassword; an email held by another user is 409\nDUPLICATE_EMAIL.",
+                    "type": "string",
+                    "maxLength": 254
+                },
+                "first_name": {
+                    "description": "FirstName and LastName replace the user's names (empty clears).",
+                    "type": "string",
+                    "maxLength": 100
+                },
                 "hide_balances": {
                     "type": "boolean"
+                },
+                "last_name": {
+                    "type": "string",
+                    "maxLength": 100
                 }
             }
         },
@@ -7581,6 +8119,10 @@ const docTemplate = `{
                 "description": {
                     "type": "string",
                     "maxLength": 500
+                },
+                "notes": {
+                    "type": "string",
+                    "maxLength": 2000
                 },
                 "type": {
                     "$ref": "#/definitions/kuberan_internal_models.TransactionType"
@@ -8724,6 +9266,10 @@ const docTemplate = `{
                     "description": "ImportRef marks a row written by an importer (\"ibkr:\u003caccount\u003e:\u003cevent key\u003e\")\nso that re-running the import replaces rather than duplicates it. NULL for\nevery row that was entered by hand.",
                     "type": "string"
                 },
+                "notes": {
+                    "description": "Notes is free text the user attaches to the row (max 2000 characters).",
+                    "type": "string"
+                },
                 "personal_amount": {
                     "description": "PersonalAmount is the user's own share of an expense, in cents. NULL means\nthe whole Amount is theirs. It is server-maintained (plan 021, D6) and is\nalways serialized (null when unset). Reports aggregate\nCOALESCE(personal_amount, amount).",
                     "type": "integer"
@@ -8734,6 +9280,18 @@ const docTemplate = `{
                     "items": {
                         "$ref": "#/definitions/kuberan_internal_models.Receivable"
                     }
+                },
+                "source": {
+                    "description": "Source is where the row came from, one of the TransactionSource values.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/kuberan_internal_models.TransactionSource"
+                        }
+                    ]
+                },
+                "source_client_id": {
+                    "description": "SourceClientID is the OAuth client that wrote the row when Source is\n\"mcp\". NULL otherwise.",
+                    "type": "string"
                 },
                 "to_account": {
                     "$ref": "#/definitions/kuberan_internal_models.Account"
@@ -8907,6 +9465,23 @@ const docTemplate = `{
                     "type": "string"
                 }
             }
+        },
+        "kuberan_internal_models.TransactionSource": {
+            "type": "string",
+            "enum": [
+                "web",
+                "telegram",
+                "mcp",
+                "import",
+                "system"
+            ],
+            "x-enum-varnames": [
+                "TransactionSourceWeb",
+                "TransactionSourceTelegram",
+                "TransactionSourceMCP",
+                "TransactionSourceImport",
+                "TransactionSourceSystem"
+            ]
         },
         "kuberan_internal_models.TransactionType": {
             "type": "string",
@@ -9201,6 +9776,17 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "spent": {
+                    "type": "integer"
+                }
+            }
+        },
+        "kuberan_internal_services.BulkTransactionResult": {
+            "type": "object",
+            "properties": {
+                "deleted": {
+                    "type": "integer"
+                },
+                "updated": {
                     "type": "integer"
                 }
             }

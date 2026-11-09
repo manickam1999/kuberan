@@ -9,23 +9,6 @@ import (
 	"kuberan/internal/models"
 )
 
-// ensureCategoryMatchesType returns CATEGORY_NOT_FOUND unless categoryID (when
-// set) is a live category owned by userID, and CATEGORY_TYPE_MISMATCH unless
-// its type (income/expense) equals txType.
-func ensureCategoryMatchesType(db *gorm.DB, userID string, categoryID *string, txType models.TransactionType) error {
-	if categoryID == nil {
-		return nil
-	}
-	var category models.Category
-	if err := db.Where("id = ? AND user_id = ?", *categoryID, userID).First(&category).Error; err != nil {
-		return apperrors.ErrCategoryNotFound
-	}
-	if string(category.Type) != string(txType) {
-		return apperrors.ErrCategoryTypeMismatch
-	}
-	return nil
-}
-
 // ensureCategoryOwned returns ErrCategoryNotFound unless categoryID (when set)
 // is a live category owned by userID. Transactions reference categories by ID,
 // so without this check a caller could attach, and then read back the name of,

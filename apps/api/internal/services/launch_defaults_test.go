@@ -147,6 +147,9 @@ func TestCreateCreditCardAccount_CurrentBalance(t *testing.T) {
 				if row.Type != models.TransactionTypeOpeningBalance || row.Amount != tt.balance {
 					t.Errorf("row = %s %d, want opening_balance %d", row.Type, row.Amount, tt.balance)
 				}
+				if row.Source != models.TransactionSourceSystem {
+					t.Errorf("source = %q, want system", row.Source)
+				}
 			}
 
 			// An opening balance is never income.
@@ -182,7 +185,7 @@ func TestUpdateTransaction_CategoryTypeCheck(t *testing.T) {
 			user := testutil.CreateTestUser(t, db)
 			account := testutil.CreateTestCashAccountWithBalance(t, db, user.ID, 100000)
 			cat := testutil.CreateTestCategory(t, db, user.ID, tt.catType)
-			tx, err := txSvc.CreateTransaction(user.ID, account.ID, nil, tt.txType, 1000, "x", time.Now())
+			tx, err := txSvc.CreateTransaction(user.ID, account.ID, nil, tt.txType, 1000, "x", time.Now(), TransactionMeta{})
 			testutil.AssertNoError(t, err)
 
 			catID := &cat.ID
@@ -208,7 +211,7 @@ func TestUpdateTransaction_CategoryTypeCheck(t *testing.T) {
 		user := testutil.CreateTestUser(t, db)
 		account := testutil.CreateTestCashAccountWithBalance(t, db, user.ID, 100000)
 		cat := testutil.CreateTestCategory(t, db, user.ID, models.CategoryTypeExpense)
-		tx, err := txSvc.CreateTransaction(user.ID, account.ID, &cat.ID, models.TransactionTypeExpense, 1000, "x", time.Now())
+		tx, err := txSvc.CreateTransaction(user.ID, account.ID, &cat.ID, models.TransactionTypeExpense, 1000, "x", time.Now(), TransactionMeta{})
 		testutil.AssertNoError(t, err)
 
 		var none *string
@@ -228,7 +231,7 @@ func TestUpdateTransaction_CategoryTypeCheck(t *testing.T) {
 		account := testutil.CreateTestCashAccountWithBalance(t, db, user.ID, 100000)
 		expenseCat := testutil.CreateTestCategory(t, db, user.ID, models.CategoryTypeExpense)
 		incomeCat := testutil.CreateTestCategory(t, db, user.ID, models.CategoryTypeIncome)
-		tx, err := txSvc.CreateTransaction(user.ID, account.ID, &expenseCat.ID, models.TransactionTypeExpense, 1000, "x", time.Now())
+		tx, err := txSvc.CreateTransaction(user.ID, account.ID, &expenseCat.ID, models.TransactionTypeExpense, 1000, "x", time.Now(), TransactionMeta{})
 		testutil.AssertNoError(t, err)
 
 		income := models.TransactionTypeIncome

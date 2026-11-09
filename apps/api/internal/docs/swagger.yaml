@@ -95,6 +95,33 @@ definitions:
       user:
         $ref: '#/definitions/internal_handlers.UserResponse'
     type: object
+  internal_handlers.BulkTransactionSet:
+    properties:
+      category_id:
+        type: string
+      notes_append:
+        maxLength: 2000
+        type: string
+      shared:
+        description: 'Shared may only be false: it removes the receivables of the
+          selected expenses.'
+        type: boolean
+    type: object
+  internal_handlers.BulkTransactionsRequest:
+    properties:
+      delete:
+        type: boolean
+      ids:
+        items:
+          type: string
+        maxItems: 200
+        minItems: 1
+        type: array
+      set:
+        $ref: '#/definitions/internal_handlers.BulkTransactionSet'
+    required:
+    - ids
+    type: object
   internal_handlers.CategoryResponse:
     properties:
       color:
@@ -113,6 +140,19 @@ definitions:
         $ref: '#/definitions/kuberan_internal_models.CategoryType'
       user_id:
         type: integer
+    type: object
+  internal_handlers.ChangePasswordRequest:
+    properties:
+      current_password:
+        maxLength: 1024
+        type: string
+      new_password:
+        maxLength: 72
+        minLength: 8
+        type: string
+    required:
+    - current_password
+    - new_password
     type: object
   internal_handlers.CloseFixedDepositRequest:
     properties:
@@ -430,6 +470,9 @@ definitions:
         - equal
         - custom
         - full
+      notes:
+        maxLength: 2000
+        type: string
     required:
     - account_id
     - amount
@@ -449,6 +492,9 @@ definitions:
       description:
         maxLength: 500
         type: string
+      notes:
+        maxLength: 2000
+        type: string
       type:
         $ref: '#/definitions/kuberan_internal_models.TransactionType'
     required:
@@ -466,6 +512,9 @@ definitions:
         maxLength: 500
         type: string
       from_account_id:
+        type: string
+      notes:
+        maxLength: 2000
         type: string
       to_account_id:
         type: string
@@ -847,6 +896,11 @@ definitions:
     required:
     - rule_ids
     type: object
+  internal_handlers.RevokedSessionsResponse:
+    properties:
+      revoked_sessions:
+        type: integer
+    type: object
   internal_handlers.RuleActionDTO:
     properties:
       action_type:
@@ -873,6 +927,25 @@ definitions:
     required:
     - field
     - operator
+    type: object
+  internal_handlers.SessionResponse:
+    properties:
+      created_at:
+        type: string
+      current:
+        description: Current is true for the session the request's access token belongs
+          to.
+        type: boolean
+      id:
+        type: string
+      ip_address:
+        type: string
+      last_seen_at:
+        description: LastSeenAt is the last token rotation, or CreatedAt before the
+          first.
+        type: string
+      user_agent:
+        type: string
     type: object
   internal_handlers.SettleReceivableRequest:
     properties:
@@ -908,6 +981,17 @@ definitions:
       amount:
         type: integer
       name:
+        type: string
+    type: object
+  internal_handlers.SystemStatusResponse:
+    properties:
+      last_backup_at:
+        type: string
+      latest_fx_rate_at:
+        type: string
+      latest_price_at:
+        type: string
+      latest_snapshot_at:
         type: string
     type: object
   internal_handlers.TransactionEnvelope:
@@ -1032,13 +1116,33 @@ definitions:
           BaseCurrency sets the currency aggregates are reported in (ISO 4217,
           upper-case). It must be a supported currency with an exchange rate to USD.
         type: string
+      current_password:
+        description: |-
+          CurrentPassword confirms an email change. A wrong value is 400
+          INVALID_CURRENT_PASSWORD and counts toward the login lockout.
+        maxLength: 1024
+        type: string
       default_account_id:
         description: |-
           DefaultAccountID sets the account preselected for new transactions;
           null or "" clears it. Must be a UUID otherwise.
         type: string
+      email:
+        description: |-
+          Email replaces the login email (trimmed and lower-cased). Changing it
+          requires CurrentPassword; an email held by another user is 409
+          DUPLICATE_EMAIL.
+        maxLength: 254
+        type: string
+      first_name:
+        description: FirstName and LastName replace the user's names (empty clears).
+        maxLength: 100
+        type: string
       hide_balances:
         type: boolean
+      last_name:
+        maxLength: 100
+        type: string
     type: object
   internal_handlers.UpdateReceivablesRequest:
     properties:
@@ -1108,6 +1212,9 @@ definitions:
         type: string
       description:
         maxLength: 500
+        type: string
+      notes:
+        maxLength: 2000
         type: string
       type:
         $ref: '#/definitions/kuberan_internal_models.TransactionType'
@@ -1934,6 +2041,9 @@ definitions:
           so that re-running the import replaces rather than duplicates it. NULL for
           every row that was entered by hand.
         type: string
+      notes:
+        description: Notes is free text the user attaches to the row (max 2000 characters).
+        type: string
       personal_amount:
         description: |-
           PersonalAmount is the user's own share of an expense, in cents. NULL means
@@ -1948,6 +2058,16 @@ definitions:
         items:
           $ref: '#/definitions/kuberan_internal_models.Receivable'
         type: array
+      source:
+        allOf:
+        - $ref: '#/definitions/kuberan_internal_models.TransactionSource'
+        description: Source is where the row came from, one of the TransactionSource
+          values.
+      source_client_id:
+        description: |-
+          SourceClientID is the OAuth client that wrote the row when Source is
+          "mcp". NULL otherwise.
+        type: string
       to_account:
         $ref: '#/definitions/kuberan_internal_models.Account'
       to_account_id:
@@ -2069,6 +2189,20 @@ definitions:
         description: text / account uuid / type value
         type: string
     type: object
+  kuberan_internal_models.TransactionSource:
+    enum:
+    - web
+    - telegram
+    - mcp
+    - import
+    - system
+    type: string
+    x-enum-varnames:
+    - TransactionSourceWeb
+    - TransactionSourceTelegram
+    - TransactionSourceMCP
+    - TransactionSourceImport
+    - TransactionSourceSystem
   kuberan_internal_models.TransactionType:
     enum:
     - income
@@ -2267,6 +2401,13 @@ definitions:
       remaining:
         type: integer
       spent:
+        type: integer
+    type: object
+  kuberan_internal_services.BulkTransactionResult:
+    properties:
+      deleted:
+        type: integer
+      updated:
         type: integer
     type: object
   kuberan_internal_services.Cashflow:
@@ -3043,6 +3184,21 @@ paths:
         in: query
         name: max_amount
         type: integer
+      - description: Search description and notes (case-insensitive, max 100 chars);
+          a numeric value such as 64.73 also matches the amount
+        in: query
+        name: q
+        type: string
+      - description: true keeps only transactions with receivables, false only those
+          without
+        in: query
+        name: shared
+        type: boolean
+      - description: true keeps only transactions with receipts, false only those
+          without
+        in: query
+        name: has_attachment
+        type: boolean
       produces:
       - application/json
       responses:
@@ -3273,6 +3429,52 @@ paths:
       summary: Logout
       tags:
       - auth
+  /auth/password:
+    post:
+      consumes:
+      - application/json
+      description: Verify the current password, set a new one and end every other
+        device session (the current one stays signed in). Wrong current passwords
+        count toward the login lockout.
+      parameters:
+      - description: Current and new password
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_handlers.ChangePasswordRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Password changed
+          schema:
+            $ref: '#/definitions/internal_handlers.RevokedSessionsResponse'
+        "400":
+          description: Invalid input, or INVALID_CURRENT_PASSWORD
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "423":
+          description: ACCOUNT_LOCKED
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "429":
+          description: Too many attempts
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "500":
+          description: Server error
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Change password
+      tags:
+      - auth
   /auth/refresh:
     post:
       consumes:
@@ -3335,6 +3537,98 @@ paths:
           schema:
             $ref: '#/definitions/internal_handlers.ErrorResponse'
       summary: Register a new user
+      tags:
+      - auth
+  /auth/sessions:
+    get:
+      description: List the authenticated user's live refresh sessions; current marks
+        the one whose refresh cookie the request carries
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: sessions
+          schema:
+            additionalProperties:
+              items:
+                $ref: '#/definitions/internal_handlers.SessionResponse'
+              type: array
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "500":
+          description: Server error
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List device sessions
+      tags:
+      - auth
+  /auth/sessions/{id}:
+    delete:
+      description: End another device's refresh session. The current session cannot
+        be revoked here; use logout.
+      parameters:
+      - description: Session ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: Session revoked
+        "400":
+          description: CURRENT_SESSION or invalid ID
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "404":
+          description: SESSION_NOT_FOUND
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "500":
+          description: Server error
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Revoke a device session
+      tags:
+      - auth
+  /auth/sessions/revoke-others:
+    post:
+      description: End every refresh session of the user except the one making the
+        request
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Other sessions revoked
+          schema:
+            $ref: '#/definitions/internal_handlers.RevokedSessionsResponse'
+        "400":
+          description: Current session unknown (no refresh cookie sent)
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "500":
+          description: Server error
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Revoke all other device sessions
       tags:
       - auth
   /budgets:
@@ -3815,6 +4109,38 @@ paths:
       summary: Update category
       tags:
       - categories
+  /export:
+    get:
+      description: Streams a zip archive with one CSV per table (accounts, categories,
+        transactions, budgets, investments, investment_transactions, securities, receivables,
+        receivable_settlements, rules). Scoped to the caller; soft-deleted rows are
+        included with deleted_at. Money columns carry the integer cents, a formatted
+        decimal and the currency, plus the base-currency (_base) and FX columns. Limited
+        to 1 request per minute per user.
+      produces:
+      - application/zip
+      responses:
+        "200":
+          description: kuberan-export-YYYY-MM-DD.zip
+          schema:
+            type: file
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "429":
+          description: Rate limited (Retry-After seconds)
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Export all data
+      tags:
+      - export
   /fx-rates:
     get:
       description: Stored observations of the direct pair (no inverse or pivot), oldest
@@ -5082,8 +5408,8 @@ paths:
     patch:
       consumes:
       - application/json
-      description: Update the authenticated user's profile settings (dashboard balance
-        visibility, default transaction account, base currency)
+      description: 'Update the authenticated user''s profile: name, email (needs current_password),
+        dashboard balance visibility, default transaction account, base currency'
       parameters:
       - description: Profile settings to update
         in: body
@@ -5099,11 +5425,19 @@ paths:
           schema:
             $ref: '#/definitions/internal_handlers.UserResponse'
         "400":
-          description: Invalid input
+          description: Invalid input, or INVALID_CURRENT_PASSWORD
           schema:
             $ref: '#/definitions/internal_handlers.ErrorResponse'
         "401":
           description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "409":
+          description: DUPLICATE_EMAIL or BASE_CURRENCY_LOCKED
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "423":
+          description: ACCOUNT_LOCKED after too many wrong current passwords
           schema:
             $ref: '#/definitions/internal_handlers.ErrorResponse'
         "500":
@@ -5866,6 +6200,31 @@ paths:
       summary: Get price history
       tags:
       - securities
+  /system/status:
+    get:
+      description: Freshness timestamps for the host-status chip. Each field is an
+        RFC 3339 time or null when it has never happened. latest_snapshot_at is the
+        caller's own latest portfolio snapshot.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_handlers.SystemStatusResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: System status
+      tags:
+      - system
   /telegram/generate-code:
     post:
       consumes:
@@ -5984,6 +6343,21 @@ paths:
         in: query
         name: max_amount
         type: integer
+      - description: Search description and notes (case-insensitive, max 100 chars);
+          a numeric value such as 64.73 also matches the amount
+        in: query
+        name: q
+        type: string
+      - description: true keeps only transactions with receivables, false only those
+          without
+        in: query
+        name: shared
+        type: boolean
+      - description: true keeps only transactions with receipts, false only those
+          without
+        in: query
+        name: has_attachment
+        type: boolean
       produces:
       - application/json
       responses:
@@ -6390,6 +6764,51 @@ paths:
       summary: Update an expense's receivables
       tags:
       - receivables
+  /transactions/bulk:
+    post:
+      consumes:
+      - application/json
+      description: Apply one change set (category, notes_append, shared=false) to,
+        or delete, up to 200 transactions in a single database transaction. Every
+        id must belong to the user (otherwise 404 TRANSACTION_NOT_FOUND and nothing
+        changes); a category must match each transaction's type (400 CATEGORY_TYPE_MISMATCH);
+        opening balances are rejected (400 TRANSACTION_NOT_EDITABLE). One audit row
+        is written per changed transaction.
+      parameters:
+      - description: Ids and the changes to apply
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_handlers.BulkTransactionsRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Counts of updated and deleted transactions
+          schema:
+            $ref: '#/definitions/kuberan_internal_services.BulkTransactionResult'
+        "400":
+          description: Invalid input, category type mismatch or non-editable transaction
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "404":
+          description: Transaction or category not found
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "500":
+          description: Server error
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Bulk edit or delete transactions
+      tags:
+      - transactions
   /transactions/cashflow:
     get:
       consumes:

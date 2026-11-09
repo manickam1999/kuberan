@@ -193,6 +193,7 @@ func (s *accountService) CreateCreditCardAccount(userID, name, description, curr
 				Amount:      currentBalance,
 				Description: "Initial balance",
 				Date:        time.Now(),
+				Source:      models.TransactionSourceSystem,
 			}
 			if err := tx.Create(opening).Error; err != nil {
 				return apperrors.Wrap(apperrors.ErrInternalServer, err)
