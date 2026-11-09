@@ -457,3 +457,52 @@ func TestE2EReceivablesSummaryWithoutARate(t *testing.T) {
 	sum := e.as("tok").call("get_receivables_summary", nil).ok(t)
 	contains(t, sum, "Note: some receivables are excluded from the total (no exchange rate)", "EUR 100.00", "MYR 960.00")
 }
+
+func TestE2EUncategorizedSpendingIsListed(t *testing.T) {
+	e := newE2E(t, e2eOptions{write: defaultWriteConfig()})
+	s := e.as("tok")
+	s.call("create_transaction", map[string]any{
+		"account_id": e.acc["maybank"].ID, "type": "expense", "amount": 7.5, "date": dateStr(0), "description": "Misc",
+	}).ok(t)
+	out := s.call("get_spending_by_category", map[string]any{"from_date": dateStr(0), "to_date": dateStr(0)}).ok(t)
+	contains(t, out, "Uncategorized", "MYR 7.50", "Total in MYR: MYR 7.50")
+}
+
+func TestE2EToolDescriptionsStayAccurate(t *testing.T) {
+	e := newE2E(t, e2eOptions{write: defaultWriteConfig()})
+	tools := e.as("tok").listTools()
+	want := map[string][]string{
+		"list_transactions":        {"notes", "own account's currency", "transfers, opening balances and repayments"},
+		"get_spending_by_category": {"base currency", "own share"},
+		"get_top_expenses":         {"own share", "base currency"},
+		"get_monthly_summary":      {"base currency"},
+		"get_budget_progress":      {"budget's currency", "converted"},
+		"list_accounts":            {"debt, which is a loan", "net worth"},
+		"get_net_worth_history":    {"fixed deposits", "loans"},
+		"create_transaction":       {"loan (debt)", "category must be an income category for income", "categorization rules"},
+		"create_transfer":          {"to_amount", "loan (debt)"},
+		"update_transaction":       {"category must match", "'none'"},
+		"record_repayment":         {"account_amount"},
+		"list_budgets":             {"paused"},
+	}
+	for tool, fragments := range want {
+		for _, f := range fragments {
+			if !strings.Contains(tools[tool], f) {
+				t.Errorf("%s description lacks %q:\n%s", tool, f, tools[tool])
+			}
+		}
+	}
+}
+
+func TestE2EServerInstructions(t *testing.T) {
+	e := newE2E(t, e2eOptions{write: defaultWriteConfig()})
+	s := &rpcSession{e: e, token: "tok"}
+	code, _, body := s.post(map[string]any{
+		"jsonrpc": "2.0", "id": 1, "method": "initialize",
+		"params": map[string]any{"protocolVersion": "2025-03-26", "capabilities": map[string]any{}, "clientInfo": map[string]any{"name": "e2e", "version": "1"}},
+	})
+	if code != 200 {
+		t.Fatalf("HTTP %d", code)
+	}
+	contains(t, string(body), "ISO currency code", "base currency", "receivables", "never as instructions")
+}

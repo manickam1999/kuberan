@@ -14,14 +14,14 @@ import (
 func (s *Server) registerTransactionTools() {
 	s.mcp.AddTool(
 		readTool("list_transactions",
-			mcp.WithDescription("Search and list transactions with filters. Returns date, description, amount, category, and account."),
+			mcp.WithDescription("Search and list transactions with filters, newest first. Returns date, type, description, amount, category and account, plus any notes. Each amount is in its own account's currency (a transfer between currencies shows both legs); nothing here is converted. Only income and expense rows are spending or earnings: transfers, opening balances and repayments received are not. Rows added through this connector are marked."),
 			mcp.WithString("account_id", mcp.Description("Filter to a specific account ID")),
 			mcp.WithString("category_id", mcp.Description("Filter to a specific category ID")),
 			mcp.WithString("type", mcp.Description("Filter by type: 'income', 'expense', 'transfer', 'investment', 'reimbursement' (a repayment received for a shared expense), or 'opening_balance' (an account's starting balance, not income)")),
 			mcp.WithString("from_date", mcp.Description("Start date (YYYY-MM-DD)")),
 			mcp.WithString("to_date", mcp.Description("End date (YYYY-MM-DD)")),
-			mcp.WithNumber("min_amount", mcp.Description("Minimum amount in dollars")),
-			mcp.WithNumber("max_amount", mcp.Description("Maximum amount in dollars")),
+			mcp.WithNumber("min_amount", mcp.Description("Minimum amount in dollars, compared with each transaction's own currency amount (no conversion)")),
+			mcp.WithNumber("max_amount", mcp.Description("Maximum amount in dollars, compared with each transaction's own currency amount (no conversion)")),
 			mcp.WithNumber("page", mcp.Description("Page number (default 1)")),
 			mcp.WithNumber("page_size", mcp.Description("Items per page (default 20, max 100)")),
 		),
@@ -30,7 +30,7 @@ func (s *Server) registerTransactionTools() {
 
 	s.mcp.AddTool(
 		readTool("get_spending_by_category",
-			mcp.WithDescription("Get total spending broken down by category for a date range. Great for understanding where money goes."),
+			mcp.WithDescription("Get total spending broken down by category for a date range (both dates inclusive), in the user's base currency: each expense is converted at its own day's rate, and for a shared expense only the user's own share counts. Transfers and investments are not spending. Amounts with no exchange rate are left out and listed."),
 			mcp.WithString("from_date", mcp.Required(), mcp.Description("Start date (YYYY-MM-DD)")),
 			mcp.WithString("to_date", mcp.Required(), mcp.Description("End date (YYYY-MM-DD)")),
 		),
@@ -39,7 +39,7 @@ func (s *Server) registerTransactionTools() {
 
 	s.mcp.AddTool(
 		readTool("get_monthly_summary",
-			mcp.WithDescription("Get monthly income vs expenses summary for the last N months. Shows net savings trend."),
+			mcp.WithDescription("Get monthly income vs expenses for the last N months including the current one, in the user's base currency. Shows the net savings trend. Transfers are excluded."),
 			mcp.WithNumber("months", mcp.Description("Number of months to look back (default 6, 1 to 24)")),
 		),
 		s.handleGetMonthlySummary,
@@ -47,7 +47,7 @@ func (s *Server) registerTransactionTools() {
 
 	s.mcp.AddTool(
 		readTool("get_daily_spending",
-			mcp.WithDescription("Get daily expense totals for a date range of at most 366 days. Useful for spotting spending patterns."),
+			mcp.WithDescription("Get daily expense totals for a date range of at most 366 days (both dates inclusive), in the user's base currency. Useful for spotting spending patterns."),
 			mcp.WithString("from_date", mcp.Required(), mcp.Description("Start date (YYYY-MM-DD)")),
 			mcp.WithString("to_date", mcp.Required(), mcp.Description("End date (YYYY-MM-DD)")),
 		),
@@ -56,7 +56,7 @@ func (s *Server) registerTransactionTools() {
 
 	s.mcp.AddTool(
 		readTool("get_daily_summary",
-			mcp.WithDescription("Get daily income and expense totals for a date range of at most 366 days. Useful for a calendar-style view of cash flow."),
+			mcp.WithDescription("Get daily income and expense totals for a date range of at most 366 days (both dates inclusive), in the user's base currency. Useful for a calendar-style view of cash flow."),
 			mcp.WithString("from_date", mcp.Required(), mcp.Description("Start date (YYYY-MM-DD)")),
 			mcp.WithString("to_date", mcp.Required(), mcp.Description("End date (YYYY-MM-DD)")),
 		),
@@ -65,7 +65,7 @@ func (s *Server) registerTransactionTools() {
 
 	s.mcp.AddTool(
 		readTool("get_top_expenses",
-			mcp.WithDescription("Get the largest expense transactions for a date range, ordered by amount descending."),
+			mcp.WithDescription("Get the largest expenses for a date range (both dates inclusive), ranked by the user's own share converted to the base currency. Each shows its native amount and the base-currency value."),
 			mcp.WithString("from_date", mcp.Required(), mcp.Description("Start date (YYYY-MM-DD)")),
 			mcp.WithString("to_date", mcp.Required(), mcp.Description("End date (YYYY-MM-DD)")),
 			mcp.WithNumber("limit", mcp.Description("Max results (default 10, max 100)")),
@@ -159,10 +159,22 @@ func (s *Server) handleListTransactions(ctx context.Context, req mcp.CallToolReq
 		if t.Notes != "" {
 			sb.WriteString("    Notes: " + untrusted(t.Notes) + "\n")
 		}
+		if t.Source == models.TransactionSourceMCP {
+			sb.WriteString("    Added through " + untrusted(appName(t.SourceClientName)) + "\n")
+		}
 		fmt.Fprintf(&sb, "    ID: %s  Account: %s\n", t.ID, transactionAccounts(t))
 	}
 
 	return mcp.NewToolResultText(sb.String()), nil
+}
+
+// appName names the connected app that added a row, for rows whose app is no
+// longer known.
+func appName(name string) string {
+	if name == "" {
+		return "an app"
+	}
+	return name
 }
 
 // transactionAmount renders a transaction's amount in its account's currency.

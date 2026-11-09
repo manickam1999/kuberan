@@ -294,9 +294,18 @@ func changeInt(changes map[string]any, key string) (int64, bool) {
 	return int64(v), true
 }
 
+// changeText reads a text value from an audit row's changes: stored as-is (a
+// create) or as a {from, to} pair (an update), in which case the new value is
+// returned.
 func changeText(changes map[string]any, key string) (string, bool) {
-	v, ok := changes[key].(string)
-	return v, ok
+	switch v := changes[key].(type) {
+	case string:
+		return v, true
+	case map[string]any:
+		to, ok := v["to"].(string)
+		return to, ok
+	}
+	return "", false
 }
 
 // joinSummary joins the non-empty parts with " · ".

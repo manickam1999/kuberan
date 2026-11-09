@@ -21,7 +21,7 @@ func (s *Server) registerBudgetTools() {
 
 	s.mcp.AddTool(
 		readTool("get_budget_progress",
-			mcp.WithDescription("Get spending progress against a specific budget. Shows budgeted amount, spent, remaining, and percentage used."),
+			mcp.WithDescription("Get spending progress against a budget for its current month or year, in the budget's currency: budgeted, spent, remaining and percentage used. Spending in other currencies is converted at each day's rate; amounts with no rate are left out and flagged."),
 			mcp.WithString("budget_id", mcp.Required(), mcp.Description("The budget ID")),
 		),
 		s.handleGetBudgetProgress,

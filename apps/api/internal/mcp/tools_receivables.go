@@ -22,7 +22,7 @@ func (s *Server) registerReceivableTools() {
 		readTool("list_receivables",
 			mcp.WithDescription("List money owed to the user (shared expenses, loans, claims, deposits, refunds), newest expense first. "+
 				"Each entry shows counterparty, kind, amount, paid, written off, outstanding, status and the originating expense. "+
-				"Receivables are not counted in net worth until repaid."),
+				"Amounts are in the receivable's own currency (its expense account's). Receivables are not counted in net worth until repaid."),
 			mcp.WithString("status", mcp.Description("Filter by status: 'pending', 'partially_paid', 'settled', 'written_off', or 'open' (pending or partially_paid)")),
 			mcp.WithString("kind", mcp.Description("Filter by kind: 'split', 'on_behalf', 'claim', 'loan', 'deposit', or 'refund'")),
 			mcp.WithString("counterparty", mcp.Description("Filter by counterparty name (case-insensitive exact match)")),
