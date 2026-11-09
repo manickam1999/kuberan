@@ -110,6 +110,20 @@ jobs:
       - run: pip install -r requirements-dev.txt
       - run: pytest -q
 
+  compose:
+    name: compose (config)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # `docker compose config -q` on both files (prod with dummy values for the
+      # required variables and every profile enabled). Catches YAML errors such
+      # as a duplicate key before a deploy does. Run locally: scripts/check-compose.sh
+      - name: docker compose config
+        run: ./scripts/check-compose.sh
+
   security:
     name: security (dependency audit)
     runs-on: ubuntu-latest

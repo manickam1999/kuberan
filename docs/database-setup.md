@@ -144,6 +144,11 @@ DB_NAME=postgres
 DB_SSLMODE=require
 ```
 
+> **Which host?** `DB_HOST` is the host from the dashboard's connection string for the mode you pick. For the Supavisor pooler
+> (port 6543) that is the pooler host (`aws-0-<region>.pooler.supabase.com`, with the user `postgres.<project-ref>`), not
+> the direct `db.<project-ref>.supabase.co` host; the same pooler host also serves port 5432 (session mode), which the deploy
+> and the backups use. Copy the host and user exactly as the dashboard shows them.
+>
 > **Why port 6543?** The app connects via Supavisor (connection pooler, transaction mode) for efficiency. The deploy script automatically uses port 5432 (direct connection) for migrations, since `golang-migrate` requires advisory locks that Supavisor's transaction mode does not support.
 
 ### 4. Set up Hydra's schema
@@ -166,7 +171,7 @@ HYDRA_DSN=postgres://hydra_svc.<project-ref>:<pw>@<region>.pooler.supabase.com:5
 ### 5. Deploy
 
 ```bash
-cd /opt/kuberan
+cd <your install directory>   # for example /opt/kuberan or ~/kuberan
 ./deploy/deploy.sh
 ```
 
@@ -229,7 +234,9 @@ Kuberan includes a `backup` service that runs `pg_dump` on a schedule and stores
 - Stores compressed custom-format (`.dump`) backups in `./backups/` on the host, verified with `pg_restore --list` and readable only by the backup user
 - Also dumps the self-hosted `hydra` database (`hydra_<ts>.dump`); on Supabase the hydra schema is already part of the main dump
 - Automatically prunes backups older than **30 days**
-- Runs an initial backup immediately on container start
+- Runs an initial backup immediately on container start (an **unlabelled** dump, so after a deploy the newest unlabelled dump is
+  taken *after* the migrations; it is not a pre-deploy restore point. Use the `predeploy` dump, or take a labelled one with
+  `BACKUP_LABEL`, and list backups newest first with `ls -lt backups/`)
 - Optional weekly automated restore test (`RESTORE_TEST_ENABLED=true`)
 - All output is logged to stdout (visible via `docker logs`)
 
@@ -274,11 +281,13 @@ Set these in `.env.prod`.
 # Check backup logs
 docker compose -f docker-compose.prod.yml logs backup
 
-# Run a manual backup (outside the daily schedule)
+# Run a manual backup (outside the daily schedule). For a labelled one (kuberan_<label>_<ts>.dump):
+#   docker compose -f docker-compose.prod.yml run --rm --no-deps -e BACKUP_LABEL=<label> --entrypoint /backup.sh backup
+# (no postgres container is needed, so this works on Supabase too)
 docker compose -f docker-compose.prod.yml exec backup /backup.sh
 
-# List all backups
-ls -lah backups/
+# List all backups, newest first (ls | tail sorts by name, not by time)
+ls -lat backups/
 
 # Stop the backup service
 docker compose -f docker-compose.prod.yml --profile backup stop backup
