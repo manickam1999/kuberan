@@ -5890,7 +5890,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Get the current Telegram link for the authenticated user",
+                "description": "Get the current Telegram link for the authenticated user; \"link\" is null when none exists",
                 "consumes": [
                     "application/json"
                 ],
@@ -5910,12 +5910,6 @@ const docTemplate = `{
                     },
                     "401": {
                         "description": "Unauthorized",
-                        "schema": {
-                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
-                        }
-                    },
-                    "404": {
-                        "description": "Not found",
                         "schema": {
                             "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }

@@ -7317,7 +7317,8 @@ paths:
     get:
       consumes:
       - application/json
-      description: Get the current Telegram link for the authenticated user
+      description: Get the current Telegram link for the authenticated user; "link"
+        is null when none exists
       produces:
       - application/json
       responses:
@@ -7327,10 +7328,6 @@ paths:
             type: object
         "401":
           description: Unauthorized
-          schema:
-            $ref: '#/definitions/internal_handlers.ErrorResponse'
-        "404":
-          description: Not found
           schema:
             $ref: '#/definitions/internal_handlers.ErrorResponse'
       security:
