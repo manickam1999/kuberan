@@ -536,6 +536,8 @@ type ProfileSettingsUpdate struct {
 	LastName          *string
 	Email             *string
 	CurrentPassword   string
+	// Appearance is a partial update merged into users.appearance.
+	Appearance *AppearancePatch
 }
 
 // UpdateProfileSettings applies the given settings in a single update, so a
@@ -553,6 +555,9 @@ func (s *userService) UpdateProfileSettings(userID string, update ProfileSetting
 	changes := map[string]interface{}{}
 	if update.HideBalances != nil {
 		changes["hide_balances"] = *update.HideBalances
+	}
+	if err := update.Appearance.validate(); err != nil {
+		return err
 	}
 	if update.SetDefaultAccount {
 		if update.DefaultAccountID != nil {
@@ -584,20 +589,14 @@ func (s *userService) UpdateProfileSettings(userID string, update ProfileSetting
 			changes["email"] = email
 		}
 	}
-	if len(changes) == 0 {
+	if len(changes) == 0 && update.Appearance.IsEmpty() {
 		if update.Email != nil {
 			return nil // the address is unchanged: nothing to write
 		}
 		return apperrors.WithMessage(apperrors.ErrInvalidInput, "no profile settings to update")
 	}
 
-	if err := s.db.Model(&models.User{}).Where("id = ?", userID).Updates(changes).Error; err != nil {
-		if isUniqueViolation(err) {
-			return apperrors.ErrDuplicateEmail
-		}
-		return apperrors.Wrap(apperrors.ErrInternalServer, err)
-	}
-	return nil
+	return s.applyProfileChanges(userID, changes, update.Appearance)
 }
 
 // validateEmailChange normalises newEmail and, when it differs from the user's

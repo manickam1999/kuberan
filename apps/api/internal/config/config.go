@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"kuberan/internal/appearance"
 	"kuberan/internal/logger"
 	"kuberan/internal/storage"
 
@@ -49,6 +50,10 @@ type Config struct {
 	// FXMaxStaleness is how old an exchange rate may be before FX quotes are
 	// flagged stale (FX_MAX_STALENESS, a Go duration; default 168h).
 	FXMaxStaleness time.Duration
+
+	// DefaultPalette is the UI palette users without a personal choice get
+	// (DEFAULT_PALETTE; unset or unknown falls back to catppuccin).
+	DefaultPalette string
 
 	// CORSOrigins is the exact-match allowlist of browser origins allowed to
 	// make credentialed cross-origin requests (CORS_ORIGIN, comma-separated).
@@ -216,6 +221,8 @@ func Load() (*Config, error) {
 	}
 	config.JWTExpirationDur = expDur
 
+	config.DefaultPalette = loadDefaultPalette(os.Getenv("DEFAULT_PALETTE"))
+
 	config.FXMaxStaleness = getEnvDuration("FX_MAX_STALENESS", DefaultFXMaxStaleness)
 
 	// Validate production configuration
@@ -227,6 +234,19 @@ func Load() (*Config, error) {
 
 	appConfig = config
 	return config, nil
+}
+
+// loadDefaultPalette validates a DEFAULT_PALETTE value against the shared
+// palette list. An unknown value logs a warning and falls back to the built-in
+// default, so a typo never stops the server.
+func loadDefaultPalette(raw string) string {
+	raw = strings.ToLower(strings.TrimSpace(raw))
+	id, ok := appearance.ResolveDefault(raw)
+	if !ok {
+		logger.Get().Warnf("Unknown DEFAULT_PALETTE '%s' (known: %s), falling back to %s",
+			raw, strings.Join(appearance.PaletteIDs(), ", "), id)
+	}
+	return id
 }
 
 // Get returns the application configuration

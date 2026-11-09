@@ -10,6 +10,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"kuberan/internal/appearance"
 	apperrors "kuberan/internal/errors"
 	"kuberan/internal/middleware"
 	"kuberan/internal/models"
@@ -32,6 +33,8 @@ type AuthHandler struct {
 	userService  services.UserServicer
 	auditService services.AuditServicer
 	secureCookie bool
+	// defaultPalette is the validated DEFAULT_PALETTE (WithDefaultPalette).
+	defaultPalette string
 }
 
 // AuthHandlerOption configures an AuthHandler.
@@ -43,9 +46,20 @@ func WithSecureCookie(secure bool) AuthHandlerOption {
 	return func(h *AuthHandler) { h.secureCookie = secure }
 }
 
+// WithDefaultPalette sets the server-wide default palette (DEFAULT_PALETTE).
+// An unknown id is ignored and the built-in default stays.
+func WithDefaultPalette(id string) AuthHandlerOption {
+	return func(h *AuthHandler) {
+		if appearance.IsPalette(id) {
+			h.defaultPalette = id
+		}
+	}
+}
+
 // NewAuthHandler creates a new AuthHandler.
 func NewAuthHandler(userService services.UserServicer, auditService services.AuditServicer, opts ...AuthHandlerOption) *AuthHandler {
-	h := &AuthHandler{userService: userService, auditService: auditService, secureCookie: true}
+	h := &AuthHandler{userService: userService, auditService: auditService, secureCookie: true,
+		defaultPalette: appearance.DefaultPalette}
 	for _, opt := range opts {
 		opt(h)
 	}
@@ -85,6 +99,11 @@ type UserResponse struct {
 	LastName  string `json:"last_name"`
 	// BaseCurrency is the ISO 4217 currency the user's aggregates are reported in.
 	BaseCurrency string `json:"base_currency"`
+	// Appearance holds the user's UI preferences; a missing key means default.
+	Appearance models.Appearance `json:"appearance"`
+	// ResolvedPalette is the palette to render: the user's choice, else the
+	// server's DEFAULT_PALETTE, else catppuccin.
+	ResolvedPalette string `json:"resolved_palette" example:"catppuccin"`
 }
 
 // AuthResponse represents the authentication response. The refresh token is
@@ -130,7 +149,7 @@ func (h *AuthHandler) Register(c *gin.Context) {
 	h.setRefreshCookie(c, refreshToken)
 	c.JSON(http.StatusCreated, gin.H{
 		"access_token": accessToken,
-		"user":         userPayload(user),
+		"user":         h.userPayload(user),
 	})
 }
 
@@ -172,7 +191,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	h.setRefreshCookie(c, refreshToken)
 	c.JSON(http.StatusOK, gin.H{
 		"access_token": accessToken,
-		"user":         userPayload(user),
+		"user":         h.userPayload(user),
 	})
 }
 
@@ -273,7 +292,7 @@ func (h *AuthHandler) RefreshToken(c *gin.Context) {
 	h.setRefreshCookie(c, refreshToken)
 	c.JSON(http.StatusOK, gin.H{
 		"access_token": accessToken,
-		"user":         userPayload(user),
+		"user":         h.userPayload(user),
 	})
 }
 
@@ -351,6 +370,25 @@ func (h *AuthHandler) clearRefreshCookie(c *gin.Context) {
 	})
 }
 
+// AppearanceDefaultResponse is the public, unauthenticated appearance payload.
+type AppearanceDefaultResponse struct {
+	// DefaultPalette is the server-wide palette id (DEFAULT_PALETTE).
+	DefaultPalette string `json:"default_palette" example:"catppuccin"`
+}
+
+// GetAppearance returns the server's default palette. It is public because the
+// sign-in, register and OAuth consent pages render before anyone is signed in,
+// and exposes nothing else.
+// @Summary     Get the server's default palette
+// @Description Public. Returns only the palette used by users who have not picked one.
+// @Tags        appearance
+// @Produce     json
+// @Success     200 {object} AppearanceDefaultResponse "Server default palette"
+// @Router      /appearance [get]
+func (h *AuthHandler) GetAppearance(c *gin.Context) {
+	c.JSON(http.StatusOK, AppearanceDefaultResponse{DefaultPalette: h.defaultPalette})
+}
+
 // GetProfile returns the user's profile
 // @Summary     Get user profile
 // @Description Get the authenticated user's profile information
@@ -376,12 +414,12 @@ func (h *AuthHandler) GetProfile(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"user": userPayload(user),
+		"user": h.userPayload(user),
 	})
 }
 
 // userPayload is the user object embedded in auth and profile responses.
-func userPayload(user *models.User) gin.H {
+func (h *AuthHandler) userPayload(user *models.User) gin.H {
 	return gin.H{
 		"id":                 user.ID,
 		"email":              user.Email,
@@ -390,6 +428,8 @@ func userPayload(user *models.User) gin.H {
 		"hide_balances":      user.HideBalances,
 		"default_account_id": user.DefaultAccountID,
 		"base_currency":      user.BaseCurrency,
+		"appearance":         user.Appearance,
+		"resolved_palette":   appearance.Resolve(user.Appearance.Palette, h.defaultPalette),
 		"last_login_at":      user.LastLoginAt,
 	}
 }
@@ -414,6 +454,10 @@ type UpdateProfileSettingsRequest struct {
 	// CurrentPassword confirms an email change. A wrong value is 400
 	// INVALID_CURRENT_PASSWORD and counts toward the login lockout.
 	CurrentPassword string `json:"current_password" binding:"max=1024"`
+	// Appearance is a partial update of the UI preferences (palette, mode,
+	// chart_style, density, show_cents). Only the keys sent change; unknown
+	// keys and values are rejected.
+	Appearance *services.AppearancePatch `json:"appearance"`
 }
 
 // optionalString distinguishes an absent JSON field (Set=false) from an
@@ -431,7 +475,7 @@ func (o *optionalString) UnmarshalJSON(data []byte) error {
 
 // UpdateProfileSettings updates the authenticated user's profile settings.
 // @Summary     Update profile settings
-// @Description Update the authenticated user's profile: name, email (needs current_password), dashboard balance visibility, default transaction account, base currency
+// @Description Update the authenticated user's profile: name, email (needs current_password), dashboard balance visibility, default transaction account, base currency, appearance preferences (partial merge)
 // @Tags        user
 // @Accept      json
 // @Produce     json
@@ -458,9 +502,9 @@ func (h *AuthHandler) UpdateProfileSettings(c *gin.Context) {
 	}
 
 	if req.HideBalances == nil && !req.DefaultAccountID.Set && req.BaseCurrency == nil &&
-		req.FirstName == nil && req.LastName == nil && req.Email == nil {
+		req.FirstName == nil && req.LastName == nil && req.Email == nil && req.Appearance.IsEmpty() {
 		respondWithError(c, apperrors.WithMessage(apperrors.ErrInvalidInput,
-			"at least one of hide_balances, default_account_id, base_currency, first_name, last_name or email is required"))
+			"at least one of hide_balances, default_account_id, base_currency, first_name, last_name, email or appearance is required"))
 		return
 	}
 
@@ -472,6 +516,7 @@ func (h *AuthHandler) UpdateProfileSettings(c *gin.Context) {
 		LastName:          req.LastName,
 		Email:             req.Email,
 		CurrentPassword:   req.CurrentPassword,
+		Appearance:        req.Appearance,
 	}
 	if req.DefaultAccountID.Set {
 		update.DefaultAccountID, err = optionalUUID(req.DefaultAccountID.Value, "default_account_id")
@@ -510,6 +555,9 @@ func (h *AuthHandler) UpdateProfileSettings(c *gin.Context) {
 	if update.LastName != nil {
 		changes["last_name"] = strings.TrimSpace(*update.LastName)
 	}
+	if !req.Appearance.IsEmpty() {
+		changes["appearance"] = req.Appearance
+	}
 	if len(changes) > 0 {
 		h.auditService.Log(userID, "UPDATE_PROFILE", "user", userID, c.ClientIP(), changes)
 	}
@@ -531,7 +579,7 @@ func (h *AuthHandler) UpdateProfileSettings(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"user": userPayload(user),
+		"user": h.userPayload(user),
 	})
 }
 

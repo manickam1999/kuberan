@@ -141,7 +141,8 @@ func run() error {
 	}()
 
 	// Initialize handlers
-	authHandler := handlers.NewAuthHandler(userService, auditService, handlers.WithSecureCookie(appConfig.CookieSecure))
+	authHandler := handlers.NewAuthHandler(userService, auditService, handlers.WithSecureCookie(appConfig.CookieSecure),
+		handlers.WithDefaultPalette(appConfig.DefaultPalette))
 	oauthHandler := handlers.NewOAuthHandler(hydraAdmin, userService, oauthGrantService, auditService, appConfig.OAuthScopes, appConfig.MCPResourceURL,
 		handlers.WithPinnedClientID(appConfig.HydraPinnedClientID),
 		handlers.WithAppActivity(services.NewAppActivityService(db)),

@@ -106,6 +106,7 @@ func RegisterRoutes(router *gin.Engine, h Routes, secrets RouteSecrets) {
 	v1 := router.Group("/api/v1")
 
 	// Public routes
+	v1.GET("/appearance", h.Auth.GetAppearance)
 	auth := v1.Group("/auth")
 	auth.POST("/register", with(h.Limits.Register, h.Auth.Register)...)
 	auth.POST("/login", with(h.Limits.Login, h.Auth.Login)...)

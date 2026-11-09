@@ -4,6 +4,8 @@ package validator
 import (
 	"regexp"
 
+	"kuberan/internal/appearance"
+
 	"github.com/gin-gonic/gin/binding"
 	"github.com/go-playground/validator/v10"
 )
@@ -56,6 +58,7 @@ func Register() {
 		_ = v.RegisterValidation("account_type", validateAccountType)
 		_ = v.RegisterValidation("budget_period", validateBudgetPeriod)
 		_ = v.RegisterValidation("asset_type", validateAssetType)
+		_ = v.RegisterValidation("palette", validatePalette)
 	}
 }
 
@@ -111,4 +114,9 @@ func validateAssetType(fl validator.FieldLevel) bool {
 // hex_color binding accepts. Exported for callers outside Gin binding (MCP).
 func IsHexColor(s string) bool {
 	return hexColorRegex.MatchString(s)
+}
+
+// validatePalette accepts "default" or a palette id from the shared list.
+func validatePalette(fl validator.FieldLevel) bool {
+	return appearance.IsPaletteChoice(fl.Field().String())
 }

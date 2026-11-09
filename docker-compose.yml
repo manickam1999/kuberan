@@ -21,6 +21,8 @@ services:
       - JWT_SECRET=${JWT_SECRET:-fallback-secret-key-for-dev-only}
       - PIPELINE_API_KEY=${PIPELINE_API_KEY}
       - BOT_INTERNAL_SECRET=${BOT_INTERNAL_SECRET}
+      # Palette for users who have not picked one (unset = catppuccin).
+      - DEFAULT_PALETTE=${DEFAULT_PALETTE:-}
       # Receipt attachments (plan 017): the api reaches MinIO over the private
       # Docker network. These match the bucket + scoped service account that
       # minio-init provisions below.
