@@ -178,6 +178,9 @@ func (s *receivableService) CreateSharedExpense(userID string, in CreateSharedEx
 		if txErr != nil {
 			return txErr
 		}
+		if txErr := ensureSpendingAccount(accounts[in.AccountID]); txErr != nil {
+			return txErr
+		}
 		expense, txErr := insertTransaction(tx, s.accountService, userID, accounts[in.AccountID],
 			categoryID, models.TransactionTypeExpense, in.Amount, in.Description, date, meta)
 		if txErr != nil {

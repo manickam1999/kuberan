@@ -256,6 +256,9 @@ var (
 	// ErrAccountCurrencyMismatch is returned when an operation would reinterpret cents in another currency.
 	ErrAccountCurrencyMismatch = &AppError{Code: "ACCOUNT_CURRENCY_MISMATCH", Message: "A transaction can't move to an account in a different currency", StatusCode: http.StatusBadRequest}
 
+	// ErrAccountTypeNotAllowed is returned when a plain income, expense or transfer targets an account whose balance is derived (investment) or locked (fixed deposit).
+	ErrAccountTypeNotAllowed = &AppError{Code: "ACCOUNT_TYPE_NOT_ALLOWED", Message: "Income, expenses and transfers can't be recorded on investment or fixed deposit accounts", StatusCode: http.StatusBadRequest}
+
 	// ErrImportedTransactionLocked is returned when an imported row's type, amount or account is edited.
 	ErrImportedTransactionLocked = &AppError{Code: "IMPORTED_TRANSACTION_LOCKED", Message: "Imported transactions can't be changed; re-run the import instead", StatusCode: http.StatusConflict}
 )

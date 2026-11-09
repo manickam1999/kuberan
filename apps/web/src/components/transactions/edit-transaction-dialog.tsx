@@ -1,5 +1,6 @@
 "use client";
 
+import { takesPlainActivity } from "@/lib/default-account";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Filter } from "lucide-react";
@@ -499,7 +500,13 @@ export function EditTransactionDialog({
                           <SelectValue placeholder="Select account" />
                         </SelectTrigger>
                         <SelectContent>
-                          {accounts.map((a) => (
+                          {accounts
+                            .filter(
+                              (a) =>
+                                takesPlainActivity(a) ||
+                                a.id === transaction?.account_id
+                            )
+                            .map((a) => (
                             <SelectItem key={a.id} value={a.id}>
                               {a.name} ({a.currency})
                             </SelectItem>

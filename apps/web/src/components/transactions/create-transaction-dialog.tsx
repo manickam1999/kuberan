@@ -59,6 +59,7 @@ import { toRFC3339 } from "@/lib/format";
 import {
   canBeDefaultAccount,
   resolveDefaultAccountId,
+  takesPlainActivity,
 } from "@/lib/default-account";
 import { receivableErrorMessage } from "@/lib/receivable-format";
 import type { TransactionType } from "@/types/models";
@@ -223,7 +224,7 @@ export function CreateTransactionDialog({
 
   // For transfer: filter to accounts, exclude selected from-account for to-account
   const toAccounts = accounts.filter(
-    (a) => a.is_active && a.id !== selectedFromAccountId
+    (a) => a.is_active && takesPlainActivity(a) && a.id !== selectedFromAccountId
   );
 
   function resetForm() {
@@ -621,7 +622,7 @@ export function CreateTransactionDialog({
                   </SelectTrigger>
                   <SelectContent>
                     {accounts
-                      .filter((a) => a.is_active)
+                      .filter((a) => a.is_active && takesPlainActivity(a))
                       .map((a) => (
                         <SelectItem key={a.id} value={a.id}>
                           {a.name} ({a.currency})
@@ -696,7 +697,9 @@ export function CreateTransactionDialog({
                     <SelectValue placeholder="Select account" />
                   </SelectTrigger>
                   <SelectContent>
-                    {accounts.map((a) => (
+                    {accounts
+                      .filter((a) => a.is_active && takesPlainActivity(a))
+                      .map((a) => (
                       <SelectItem key={a.id} value={a.id}>
                         {a.name} ({a.currency})
                       </SelectItem>

@@ -106,6 +106,9 @@ func (s *transactionService) CreateTransaction(
 		if txErr != nil {
 			return txErr
 		}
+		if txErr := ensureSpendingAccount(accounts[accountID]); txErr != nil {
+			return txErr
+		}
 		result, txErr = insertTransaction(tx, s.accountService, userID, accounts[accountID],
 			categoryID, transactionType, amount, description, date, meta)
 		if txErr != nil {
@@ -161,6 +164,12 @@ func (s *transactionService) CreateTransfer(
 			return txErr
 		}
 		fromAccount, toAccount := accounts[fromAccountID], accounts[toAccountID]
+		if txErr := ensureSpendingAccount(fromAccount); txErr != nil {
+			return txErr
+		}
+		if txErr := ensureSpendingAccount(toAccount); txErr != nil {
+			return txErr
+		}
 		if txErr := guardDemoTransfer(tx, userID, fromAccountID, toAccountID); txErr != nil {
 			return txErr
 		}
@@ -569,6 +578,13 @@ func (s *transactionService) UpdateTransaction(userID, transactionID string, upd
 			return err
 		}
 		oldAccount, targetAccount := accounts[oldAccountID], accounts[newAccountID]
+		// Moving a row onto an investment or fixed deposit account is refused;
+		// rows already there (opening balances, imports) stay editable in place.
+		if oldAccountID != newAccountID {
+			if err := ensureSpendingAccount(targetAccount); err != nil {
+				return err
+			}
+		}
 		if oldAccountID != newAccountID && !strings.EqualFold(oldAccount.Currency, targetAccount.Currency) {
 			return apperrors.ErrAccountCurrencyMismatch
 		}

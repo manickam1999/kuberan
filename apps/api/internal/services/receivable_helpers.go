@@ -359,3 +359,15 @@ func truncateRunes(s string, limit int) string {
 	}
 	return string(r[:limit])
 }
+
+// ensureSpendingAccount rejects accounts that don't take day-to-day activity.
+// An investment account's balance is derived from its holdings and a fixed
+// deposit's principal is locked, so a plain income, expense or transfer row
+// there would be a phantom. Trades, deposits, payouts and imports write their
+// rows through their own services and never reach this check.
+func ensureSpendingAccount(a *models.Account) error {
+	if a == nil || !a.Type.IsSpending() {
+		return apperrors.ErrAccountTypeNotAllowed
+	}
+	return nil
+}
