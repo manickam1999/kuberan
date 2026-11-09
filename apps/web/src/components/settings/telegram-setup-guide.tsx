@@ -97,7 +97,7 @@ export function TelegramSetupGuide() {
                 <ul className="list-none space-y-2 ml-2">
                   <li><code className="bg-muted px-1 py-0.5 rounded">/help</code> - See all available commands</li>
                   <li><code className="bg-muted px-1 py-0.5 rounded">/balance</code> - View your account balances</li>
-                  <li><code className="bg-muted px-1 py-0.5 rounded">coffee 18.40</code> - Quick add an expense (the amount can come first or last)</li>
+                  <li><code className="bg-muted px-1 py-0.5 rounded">coffee 18.40</code> - Quick add an expense (the amount can come first or last); tap Add to confirm</li>
                   <li><code className="bg-muted px-1 py-0.5 rounded">/undo</code> - Remove the entry you just added (within 10 minutes)</li>
                   <li><code className="bg-muted px-1 py-0.5 rounded">Photo or PDF</code> - Attach a receipt to your latest entry</li>
                   <li><code className="bg-muted px-1 py-0.5 rounded">/expense 50 Coffee</code> - Record an RM50 expense</li>

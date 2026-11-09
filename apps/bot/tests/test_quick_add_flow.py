@@ -147,9 +147,29 @@ def quick_add_handler(user_client):
     return quick_add.quick_add_entry_point(FakeAPI(user_client)).callback
 
 
+def pending_id_of(message):
+    """The pending id embedded in the preview's Add button."""
+    return button_data(message.replies[-1].markup)[0].split(":")[2]
+
+
+def preview(client, text, context=None, update_id=1):
+    """Send the text; returns (context, preview message, pending id)."""
+    update, message = make_update(text, update_id=update_id)
+    context = context or make_context()
+    run(quick_add_handler(client)(update, context))
+    return context, message, pending_id_of(message)
+
+
+def tap(client, context, data):
+    handler = quick_add.quick_add_callbacks(FakeAPI(client)).callback
+    query = FakeQuery(data)
+    run(handler(SimpleNamespace(callback_query=query), context))
+    return query
+
+
 # --- 6.1 quick add ------------------------------------------------------------
 
-def test_quick_add_records_expense_in_the_default_account():
+def test_quick_add_shows_a_preview_and_creates_nothing():
     client = FakeUserClient(suggestion={"category_id": "cat-din", "category_name": "Dining", "reason": "history"})
     update, message = make_update("coffee 18.40")
     context = make_context()
@@ -157,34 +177,75 @@ def test_quick_add_records_expense_in_the_default_account():
     state = run(quick_add_handler(client)(update, context))
 
     assert state == ConversationHandler.END
+    assert client.created == []
+    reply = message.replies[-1]
+    assert reply.text == "<b>Add RM 18.40</b> · Dining · DBS Everyday?"
+    pid = pending_id_of(message)
+    assert button_data(reply.markup) == [f"qa:pa:{pid}", f"qa:pc:{pid}", f"qa:pk:{pid}", f"qa:px:{pid}"]
+    assert [b.text for row in reply.markup.inline_keyboard for b in row] == [
+        "Add", "Change category", "Change account", "Cancel"]
+    assert TXN_KEY not in context.user_data  # nothing left behind in the conversation
+
+
+def test_add_creates_the_expense_once_and_offers_undo():
+    client = FakeUserClient(suggestion={"category_id": "cat-din", "category_name": "Dining", "reason": "history"})
+    context, message, pid = preview(client, "coffee 18.40")
+
+    query = tap(client, context, f"qa:pa:{pid}")
+
     assert client.created == [{
         "type": "expense", "account_id": "acc-dbs", "amount": 1840,
         "description": "coffee", "category_id": "cat-din",
     }]
-    reply = message.replies[-1]
-    assert reply.text == "<b>Added RM 18.40</b> · Dining · DBS Everyday"
-    assert button_data(reply.markup) == ["qa:c:tx-1", "qa:a:tx-1", "qa:u:tx-1"]
-    assert TXN_KEY not in context.user_data  # nothing left behind in the conversation
+    assert query.edits[-1].text == "<b>Added RM 18.40</b> · Dining · DBS Everyday"
+    assert button_data(query.edits[-1].markup) == ["qa:u:tx-1"]
 
 
-def test_rule_suggestion_is_not_sent_but_shown():
+def test_double_tap_on_add_never_creates_twice():
+    client = FakeUserClient()
+    context, _, pid = preview(client, "coffee 18.40")
+
+    tap(client, context, f"qa:pa:{pid}")
+    second = tap(client, context, f"qa:pa:{pid}")
+
+    assert len(client.created) == 1
+    assert second.edits == []  # the "Added" message is not overwritten
+    assert second.alerts == [quick_add.EXPIRED_MESSAGE]
+
+
+def test_concurrent_add_taps_create_once():
+    client = FakeUserClient()
+    context, _, pid = preview(client, "coffee 18.40")
+    handler = quick_add.quick_add_callbacks(FakeAPI(client)).callback
+
+    async def both():
+        await asyncio.gather(*(
+            handler(SimpleNamespace(callback_query=FakeQuery(f"qa:pa:{pid}")), context) for _ in range(2)
+        ))
+
+    run(both())
+    assert len(client.created) == 1
+
+
+def test_rule_suggestion_is_shown_but_not_sent():
     client = FakeUserClient(suggestion={"category_id": "cat-tra", "category_name": "Transport", "reason": "rule"})
-    update, message = make_update("18.40 grab")
+    context, message, pid = preview(client, "18.40 grab")
+    assert message.replies[-1].text == "<b>Add RM 18.40</b> · Transport · DBS Everyday?"
 
-    run(quick_add_handler(client)(update, make_context()))
+    query = tap(client, context, f"qa:pa:{pid}")
 
     assert "category_id" not in client.created[0]  # POST /transactions applies the rule itself
-    assert message.replies[-1].text == "<b>Added RM 18.40</b> · Transport · DBS Everyday"
+    assert query.edits[-1].text == "<b>Added RM 18.40</b> · Transport · DBS Everyday"
 
 
 def test_no_suggestion_means_uncategorized():
     client = FakeUserClient()
-    update, message = make_update("coffee 18.40")
+    context, message, pid = preview(client, "coffee 18.40")
+    assert message.replies[-1].text == "<b>Add RM 18.40</b> · Uncategorized · DBS Everyday?"
 
-    run(quick_add_handler(client)(update, make_context()))
+    tap(client, context, f"qa:pa:{pid}")
 
     assert "category_id" not in client.created[0]
-    assert message.replies[-1].text == "<b>Added RM 18.40</b> · Uncategorized · DBS Everyday"
 
 
 def test_trailing_account_and_category_names_are_matched():
@@ -192,35 +253,150 @@ def test_trailing_account_and_category_names_are_matched():
         {"id": "acc-dbs", "name": "dbs", "type": "cash", "currency": "MYR", "is_active": True},
         {"id": "acc-maybank", "name": "maybank", "type": "cash", "currency": "MYR", "is_active": True},
     ], default_account_id="acc-dbs")
-    update, message = make_update("18.40 coffee dining maybank")  # account last, then category
+    context, _, pid = preview(client, "18.40 coffee dining maybank")  # account last, then category
 
-    run(quick_add_handler(client)(update, make_context()))
+    assert client.suggest_calls == []  # an explicit category needs no suggestion
+    tap(client, context, f"qa:pa:{pid}")
 
     assert client.created[0]["account_id"] == "acc-maybank"
     assert client.created[0]["category_id"] == "cat-din"
     assert client.created[0]["description"] == "coffee"
-    assert client.suggest_calls == []  # an explicit category needs no suggestion
 
 
 def test_typed_currency_different_from_the_account_is_called_out():
     client = FakeUserClient()
-    update, message = make_update("lunch USD 12")
+    context, message, pid = preview(client, "lunch USD 12")
 
-    run(quick_add_handler(client)(update, make_context()))
-
-    assert client.created[0]["amount"] == 1200
     text = message.replies[-1].text
-    assert text.startswith("<b>Added RM 12.00</b>")
+    assert text.startswith("<b>Add RM 12.00</b>")
     assert "You typed USD" in text and "MYR" in text and "not converted" in text
+    query = tap(client, context, f"qa:pa:{pid}")
+    assert client.created[0]["amount"] == 1200
+    assert "not converted" in query.edits[-1].text
 
 
 def test_matching_currency_adds_no_note():
     client = FakeUserClient()
-    update, message = make_update("RM18.40 coffee")
+    _, message, _ = preview(client, "RM18.40 coffee")
+
+    assert "not converted" not in message.replies[-1].text
+
+
+def test_see_you_at_5_only_produces_a_preview():
+    client = FakeUserClient()
+    update, message = make_update("see you at 5")
 
     run(quick_add_handler(client)(update, make_context()))
 
-    assert "not converted" not in message.replies[-1].text
+    assert client.created == []
+    assert message.replies[-1].text.startswith("<b>Add RM 5.00</b>")
+    assert "?" in message.replies[-1].text
+
+
+def test_cancel_creates_nothing_and_removes_the_buttons():
+    client = FakeUserClient()
+    context, _, pid = preview(client, "coffee 18.40")
+
+    query = tap(client, context, f"qa:px:{pid}")
+
+    assert query.edits[-1].text == "Not added."
+    assert query.edits[-1].markup is None
+    assert client.created == []
+    late = tap(client, context, f"qa:pa:{pid}")  # a tap on the old Add button
+    assert client.created == []
+    assert late.alerts == [quick_add.EXPIRED_MESSAGE]
+
+
+def test_change_category_then_add_sends_the_picked_category():
+    client = FakeUserClient()
+    context, _, pid = preview(client, "coffee 18.40")
+
+    picker = tap(client, context, f"qa:pc:{pid}")
+    assert button_data(picker.markups[-1]) == [f"qa:psc:{pid}:0", f"qa:psc:{pid}:1", f"qa:pb:{pid}"]
+    picked = tap(client, context, f"qa:psc:{pid}:1")
+    assert picked.edits[-1].text == "<b>Add RM 18.40</b> · Transport · DBS Everyday?"
+    assert button_data(picked.edits[-1].markup)[0] == f"qa:pa:{pid}"
+    assert client.created == []
+
+    tap(client, context, f"qa:pa:{pid}")
+
+    assert client.created[0]["category_id"] == "cat-tra"
+
+
+def test_change_account_then_add_sends_the_picked_account():
+    client = FakeUserClient()
+    context, _, pid = preview(client, "coffee 18.40")
+
+    picker = tap(client, context, f"qa:pk:{pid}")
+    assert button_data(picker.markups[-1]) == [f"qa:psk:{pid}:0", f"qa:psk:{pid}:1", f"qa:pb:{pid}"]
+    picked = tap(client, context, f"qa:psk:{pid}:1")
+    assert picked.edits[-1].text.startswith("<b>Add US$18.40</b> · Uncategorized · Wise?")
+    assert "not converted" not in picked.edits[-1].text
+    assert client.created == []
+
+    tap(client, context, f"qa:pa:{pid}")
+
+    assert client.created[0]["account_id"] == "acc-usd"
+
+
+def test_back_returns_to_the_preview():
+    client = FakeUserClient()
+    context, _, pid = preview(client, "coffee 18.40")
+    query = tap(client, context, f"qa:pb:{pid}")
+    assert query.edits[-1].text == "<b>Add RM 18.40</b> · Uncategorized · DBS Everyday?"
+
+
+def test_pending_entry_expires_after_ten_minutes(monkeypatch):
+    client = FakeUserClient()
+    clock = [1000.0]
+    monkeypatch.setattr(quick_add, "_now", lambda: clock[0])
+    context, _, pid = preview(client, "coffee 18.40")
+
+    clock[0] += quick_add.PENDING_TTL_SECONDS + 1
+    query = tap(client, context, f"qa:pa:{pid}")
+
+    assert query.edits[-1].text == "This entry expired — send it again."
+    assert client.created == []
+    assert pid not in context.user_data[quick_add.PENDING_KEY]
+
+
+def test_change_buttons_also_respect_expiry(monkeypatch):
+    client = FakeUserClient()
+    clock = [1000.0]
+    monkeypatch.setattr(quick_add, "_now", lambda: clock[0])
+    context, _, pid = preview(client, "coffee 18.40")
+    clock[0] += quick_add.PENDING_TTL_SECONDS + 1
+    query = tap(client, context, f"qa:pc:{pid}")
+    assert query.edits[-1].text == quick_add.EXPIRED_MESSAGE
+
+
+def test_failed_create_keeps_the_entry_retryable():
+    client = FakeUserClient()
+    context, _, pid = preview(client, "coffee 18.40")
+
+    client.fail_create = True
+    failed = tap(client, context, f"qa:pa:{pid}")
+    assert failed.alerts == ["Failed to record that. Please try again."]
+    assert failed.edits == []  # the preview and its buttons stay
+    assert pid in context.user_data[quick_add.PENDING_KEY]
+
+    client.fail_create = False
+    tap(client, context, f"qa:pa:{pid}")
+    assert len(client.created) == 1
+
+
+def test_unknown_pending_id_is_refused():
+    client = FakeUserClient()
+    query = tap(client, make_context(), "qa:pa:nope")
+    assert client.created == []
+    assert query.alerts == [quick_add.EXPIRED_MESSAGE]
+
+
+def test_pending_entries_are_capped():
+    context = make_context()
+    for i in range(quick_add.MAX_PENDING + 5):
+        quick_add._store_pending(context, {"categories": [], "n": i})
+    assert len(context.user_data[quick_add.PENDING_KEY]) == quick_add.MAX_PENDING
 
 
 def test_no_default_account_falls_back_to_asking_for_the_account():
@@ -239,11 +415,10 @@ def test_no_default_account_falls_back_to_asking_for_the_account():
 
 def test_a_single_spending_account_needs_no_default():
     client = FakeUserClient(accounts=[ACCOUNTS[0], ACCOUNTS[2]], default_account_id=None)
-    update, _ = make_update("coffee 18.40")
+    context, _, pid = preview(client, "coffee 18.40")
 
-    state = run(quick_add_handler(client)(update, make_context()))
-
-    assert state == ConversationHandler.END
+    assert client.created == []
+    tap(client, context, f"qa:pa:{pid}")
     assert client.created[0]["account_id"] == "acc-dbs"
 
 
@@ -263,7 +438,7 @@ def test_unusable_text_is_answered_without_creating_anything(text, fragment):
     assert fragment in message.replies[-1].text
 
 
-def test_same_update_is_never_recorded_twice():
+def test_same_update_is_never_previewed_twice():
     client = FakeUserClient()
     handler = quick_add_handler(client)
     context = make_context()
@@ -272,8 +447,8 @@ def test_same_update_is_never_recorded_twice():
     run(handler(update, context))
     run(handler(update, context))
 
-    assert len(client.created) == 1
     assert len(message.replies) == 1
+    assert len(context.user_data[quick_add.PENDING_KEY]) == 1
 
 
 def test_text_while_another_entry_is_in_progress_does_not_create_a_second_one():
@@ -287,19 +462,7 @@ def test_text_while_another_entry_is_in_progress_does_not_create_a_second_one():
     assert client.created == []
     assert "middle of another entry" in message.replies[-1].text
     assert context.user_data[TXN_KEY] == {"type": "income"}  # untouched
-
-
-def test_create_failure_is_reported_and_cleans_up():
-    client = FakeUserClient()
-    client.fail_create = True
-    update, message = make_update("coffee 18.40")
-    context = make_context()
-
-    state = run(quick_add_handler(client)(update, context))
-
-    assert state == ConversationHandler.END
-    assert "Failed to record" in message.replies[-1].text
-    assert TXN_KEY not in context.user_data
+    assert quick_add.PENDING_KEY not in context.user_data
 
 
 def test_quick_add_is_an_entry_point_of_the_expense_conversation_only():

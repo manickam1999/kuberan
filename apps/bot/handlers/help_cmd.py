@@ -14,6 +14,7 @@ HELP_TEXT = """
 
 <b>Quick add</b>
 Just type an expense: <code>coffee 18.40</code> or <code>18.40 coffee</code>
+The bot replies with a preview: nothing is saved until you tap Add
 End the description with a category and/or account name to pick them (<code>18.40 coffee dining maybank</code>)
 /undo - Remove the last entry you added here (within 10 minutes)
 Send a photo or PDF right after an entry to attach it as a receipt

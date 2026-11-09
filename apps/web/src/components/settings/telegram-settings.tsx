@@ -45,7 +45,7 @@ const BOT_USERNAME = process.env.NEXT_PUBLIC_BOT_USERNAME ?? "KuberanFinBot";
 
 /** Commands the bot really handles (apps/bot/main.py). */
 const COMMANDS: { cmd: string; text: string }[] = [
-  { cmd: "coffee 18.40", text: "Quick add: type what you spent, no command needed" },
+  { cmd: "coffee 18.40", text: "Quick add: type what you spent, then tap Add to confirm" },
   { cmd: "/undo", text: "Remove the entry you just added (within 10 minutes)" },
   { cmd: "Send a photo or PDF", text: "Attach a receipt to your latest entry" },
   { cmd: "/spent", text: "This month's spending by category" },
@@ -75,10 +75,16 @@ function SampleChat() {
       </div>
       <div className="flex">
         <p className={`${bubble} rounded-bl-sm border bg-card`}>
-          Added RM 18.40 · Dining · DBS Everyday
+          Add RM 18.40 · Dining · DBS Everyday?
           <span className="mt-1 block text-xs text-muted-foreground">
-            Change category · Change account · Undo
+            Add · Change category · Change account · Cancel
           </span>
+        </p>
+      </div>
+      <div className="flex">
+        <p className={`${bubble} rounded-bl-sm border bg-card`}>
+          After you tap Add: Added RM 18.40 · Dining · DBS Everyday
+          <span className="mt-1 block text-xs text-muted-foreground">Undo</span>
         </p>
       </div>
       <div className="flex justify-end">

@@ -69,7 +69,7 @@ the bot out: unlink it explicitly if a phone is lost.
 | `/budgets` | Budget status with progress for the current period. |
 | `/summary` | This month's income and spending summary. |
 | `/owed` | Who owes you money (shared expenses and loans), from the receivables summary. |
-| `coffee 18.40` (no command) | Quick add: an expense on your default account, with the amount first or last (`18.40 coffee`). The category comes from your rules, or from the last one you used for that description. The reply has buttons to change the category or account, or undo. Any message that ends in a number is recorded this way. |
+| `coffee 18.40` (no command) | Quick add: an expense on your default account, with the amount first or last (`18.40 coffee`). The category comes from your rules, or from the last one you used for that description. The bot replies with a preview to confirm; nothing is saved until you tap **Add**. The preview has buttons to change the category or account, or cancel, and expires after 10 minutes. After you add, the reply has an **Undo** button. |
 | `/undo` | Remove the transaction the bot added most recently, within the last 10 minutes. |
 | A photo or PDF | Attaches a receipt to the entry you made in the last 10 minutes; otherwise the bot asks which recent transaction it belongs to. JPEG, PNG, WebP or PDF, up to 10 MB. Receipts aren't read (no OCR). |
 | `/spent` | This month's spending by category, in your reporting currency. |
