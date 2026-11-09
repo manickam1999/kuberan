@@ -75,8 +75,10 @@ function Amount({ amount, currency, sign, size, dimCents, compact }: AmountProps
   const d = moneyDisplay(amount, currency, sign, compact);
   const raised = hasRaisedCurrency(size);
   const prefix = raised ? d.prefix.trim() : d.prefix;
+  // One span, so a flex parent's gap (between the amount and its base-currency
+  // twin) never separates the symbol from the number.
   return (
-    <>
+    <span className="whitespace-nowrap">
       {prefix && (
         <span
           className={cn(
@@ -92,7 +94,7 @@ function Amount({ amount, currency, sign, size, dimCents, compact }: AmountProps
       {d.fraction &&
         (dimCents ? <span className="opacity-55">{d.fraction}</span> : d.fraction)}
       {d.suffix}
-    </>
+    </span>
   );
 }
 

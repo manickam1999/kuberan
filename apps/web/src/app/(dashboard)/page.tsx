@@ -10,6 +10,7 @@ import { useAccounts } from "@/hooks/use-accounts";
 import { useTransactions } from "@/hooks/use-transactions";
 import { useBaseCurrency } from "@/hooks/use-profile";
 import { formatMoney, formatDate } from "@/lib/format";
+import { moneyText } from "@/lib/money-display";
 import { accountVisual, transactionVisual } from "@/lib/domain-visuals";
 import {
   Card,
@@ -169,8 +170,13 @@ function TransactionRow({
       </div>
       <span className="shrink-0 text-right">
         <span className={`money block text-sm font-semibold ${v.text}`}>
-          {v.sign}
-          {formatMoney(transaction.amount, currency, hideBalances)}
+          {moneyText(
+            v.sign === "-" ? -transaction.amount : transaction.amount,
+            currency,
+            v.sign === "+" ? "always" : "auto",
+            false,
+            hideBalances
+          )}
         </span>
         <YourShareText transaction={transaction} />
       </span>

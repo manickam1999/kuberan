@@ -1244,7 +1244,10 @@ html[data-chart-theme="dither"] body {
  * Plan 023 phase 2.2 / 2.3 (type, money): font stacks and utilities.
  * Self-contained block; the variables come from next/font in layout.tsx.
  * ======================================================================== */
-:root {
+/* On body, not :root: next/font sets --font-instrument-serif and
+ * --font-source-serif on <body>, and a custom property resolves its var()
+ * references where it is declared. */
+body {
   --font-display: var(--font-instrument-serif), "Iowan Old Style", Georgia, serif;
   --font-figures: var(--font-source-serif), "Iowan Old Style", Georgia, serif;
 }

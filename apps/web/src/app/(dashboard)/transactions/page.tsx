@@ -86,8 +86,7 @@ function TransactionRow({
       </div>
       <span className="shrink-0 text-right">
         <span className={`money block text-sm font-semibold ${v.text}`}>
-          {v.sign}
-          <TransactionAmount transaction={transaction} />
+          <TransactionAmount transaction={transaction} direction={v.sign} />
         </span>
         <YourShareText transaction={transaction} />
       </span>
