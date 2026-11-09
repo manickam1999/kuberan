@@ -112,6 +112,7 @@ services:
       RATE_LIMIT_REGISTER_PER_HOUR: ${RATE_LIMIT_REGISTER_PER_HOUR:-}
       RATE_LIMIT_REFRESH_PER_MINUTE: ${RATE_LIMIT_REFRESH_PER_MINUTE:-}
       RATE_LIMIT_DCR_PER_HOUR: ${RATE_LIMIT_DCR_PER_HOUR:-}
+      RATE_LIMIT_PASSWORD_PER_HOUR: ${RATE_LIMIT_PASSWORD_PER_HOUR:-}
       # OAuth login/consent bridge + DCR proxy (plan 015). The admin API is
       # reached ONLY via the hydra-admin network alias; the value is fixed here
       # (an old HYDRA_ADMIN_URL=http://hydra:4445 in .env.prod is ignored).

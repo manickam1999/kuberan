@@ -18,9 +18,13 @@ type UserServicer interface {
 	GetUserByID(id string) (*models.User, error)
 	VerifyPassword(user *models.User, password string) bool
 	AttemptLogin(email, password string) (*models.User, error)
-	CreateRefreshSession(userID, tokenHash, userAgent, ipAddress string, expiresAt time.Time) error
-	RotateRefreshSession(userID, oldHash, newHash string, expiresAt time.Time) error
+	CreateRefreshSession(userID, tokenHash, userAgent, ipAddress string, expiresAt time.Time) (sessionID string, err error)
+	RotateRefreshSession(userID, oldHash, newHash string, expiresAt time.Time) (sessionID string, err error)
 	RevokeRefreshSession(userID, tokenHash string) error
+	ListRefreshSessions(userID string) ([]models.RefreshSession, error)
+	RevokeRefreshSessionByID(userID, sessionID, currentSessionID string) error
+	RevokeOtherRefreshSessions(userID, currentSessionID string) (int64, error)
+	ChangePassword(userID, currentPassword, newPassword, keepSessionID string) (revoked int64, err error)
 	UpdateProfileSettings(userID string, update ProfileSettingsUpdate) error
 }
 

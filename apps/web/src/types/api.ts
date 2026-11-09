@@ -97,6 +97,39 @@ export interface UpdateProfileSettingsRequest {
   default_account_id?: string | null; // null clears the default
   /** ISO 4217 reporting currency; 400 UNSUPPORTED_CURRENCY if it can't be converted. */
   base_currency?: string;
+  first_name?: string;
+  last_name?: string;
+  /** Changing the email requires `current_password`; 409 DUPLICATE_EMAIL if taken. */
+  email?: string;
+  /** Confirms an email change; 400 INVALID_CURRENT_PASSWORD if wrong (counts toward lockout). */
+  current_password?: string;
+}
+
+// POST /auth/password. Wrong current password: 400 INVALID_CURRENT_PASSWORD;
+// 423 ACCOUNT_LOCKED after too many; 429 RATE_LIMITED.
+export interface ChangePasswordRequest {
+  current_password: string;
+  new_password: string; // 8-72 bytes
+}
+
+// Response of POST /auth/password and POST /auth/sessions/revoke-others
+export interface RevokedSessionsResponse {
+  revoked_sessions: number;
+}
+
+// One signed-in device (GET /auth/sessions)
+export interface AuthSession {
+  id: string;
+  created_at: string; // ISO 8601
+  last_seen_at: string; // ISO 8601
+  user_agent: string; // parse into a device label on the client
+  ip_address: string;
+  /** True for the session making the request; it cannot be revoked here. */
+  current: boolean;
+}
+
+export interface SessionsResponse {
+  sessions: AuthSession[];
 }
 
 // Single-item response wrappers (backend wraps single items in a key)

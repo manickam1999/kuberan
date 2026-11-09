@@ -96,6 +96,16 @@ var (
 var (
 	ErrUserNotFound   = &AppError{Code: "USER_NOT_FOUND", Message: "User not found", StatusCode: http.StatusNotFound}
 	ErrDuplicateEmail = &AppError{Code: "DUPLICATE_EMAIL", Message: "A user with this email already exists", StatusCode: http.StatusConflict}
+	// ErrInvalidCurrentPassword is a wrong current_password on an authenticated
+	// route. It is a 400, not a 401, so clients do not mistake it for an
+	// expired access token.
+	ErrInvalidCurrentPassword = &AppError{Code: "INVALID_CURRENT_PASSWORD", Message: "Current password is incorrect", StatusCode: http.StatusBadRequest}
+	// ErrSessionNotFound is a device session that does not exist, is not the
+	// caller's, or has already ended.
+	ErrSessionNotFound = &AppError{Code: "SESSION_NOT_FOUND", Message: "Session not found", StatusCode: http.StatusNotFound}
+	// ErrCurrentSession is returned when the current device's own session is
+	// targeted by an endpoint that only revokes other devices.
+	ErrCurrentSession = &AppError{Code: "CURRENT_SESSION", Message: "This is your current session; log out to end it", StatusCode: http.StatusBadRequest}
 )
 
 // Account errors.

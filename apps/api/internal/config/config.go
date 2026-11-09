@@ -120,6 +120,7 @@ type RateLimits struct {
 	RegisterPerHour     int // per client IP: /auth/register (RATE_LIMIT_REGISTER_PER_HOUR, 5)
 	RefreshPerMinute    int // per client IP: /auth/refresh (RATE_LIMIT_REFRESH_PER_MINUTE, 60)
 	RegistrationPerHour int // per client IP: OAuth DCR (RATE_LIMIT_DCR_PER_HOUR, 10)
+	PasswordPerHour     int // per user: POST /auth/password (RATE_LIMIT_PASSWORD_PER_HOUR, 10)
 }
 
 // DefaultFXMaxStaleness is the default for FX_MAX_STALENESS.
@@ -173,6 +174,7 @@ func Load() (*Config, error) {
 			RegisterPerHour:     int(getEnvInt64("RATE_LIMIT_REGISTER_PER_HOUR", 5)),
 			RefreshPerMinute:    int(getEnvInt64("RATE_LIMIT_REFRESH_PER_MINUTE", 60)),
 			RegistrationPerHour: int(getEnvInt64("RATE_LIMIT_DCR_PER_HOUR", 10)),
+			PasswordPerHour:     int(getEnvInt64("RATE_LIMIT_PASSWORD_PER_HOUR", 10)),
 		},
 
 		// Bot

@@ -416,23 +416,23 @@ func TestRefreshSessions(t *testing.T) {
 		svc, user, done := setup(t)
 		defer done()
 
-		testutil.AssertNoError(t, svc.CreateRefreshSession(user.ID, hashA, "phone", "1.1.1.1", expires()))
-		testutil.AssertNoError(t, svc.CreateRefreshSession(user.ID, hashB, "laptop", "2.2.2.2", expires()))
+		testutil.AssertNoError(t, errOnly(svc.CreateRefreshSession(user.ID, hashA, "phone", "1.1.1.1", expires())))
+		testutil.AssertNoError(t, errOnly(svc.CreateRefreshSession(user.ID, hashB, "laptop", "2.2.2.2", expires())))
 
-		testutil.AssertNoError(t, svc.RotateRefreshSession(user.ID, hashA, hashA2, expires()))
-		testutil.AssertNoError(t, svc.RotateRefreshSession(user.ID, hashB, hashB2, expires()))
+		testutil.AssertNoError(t, errOnly(svc.RotateRefreshSession(user.ID, hashA, hashA2, expires())))
+		testutil.AssertNoError(t, errOnly(svc.RotateRefreshSession(user.ID, hashB, hashB2, expires())))
 	})
 
 	t.Run("rotated-out token is accepted within the grace period", func(t *testing.T) {
 		svc, user, done := setup(t)
 		defer done()
 
-		testutil.AssertNoError(t, svc.CreateRefreshSession(user.ID, hashA, "", "", expires()))
-		testutil.AssertNoError(t, svc.RotateRefreshSession(user.ID, hashA, hashA2, expires()))
+		testutil.AssertNoError(t, errOnly(svc.CreateRefreshSession(user.ID, hashA, "", "", expires())))
+		testutil.AssertNoError(t, errOnly(svc.RotateRefreshSession(user.ID, hashA, hashA2, expires())))
 		// A second tab presents the original token right after the first rotated it.
-		testutil.AssertNoError(t, svc.RotateRefreshSession(user.ID, hashA, hashA3, expires()))
+		testutil.AssertNoError(t, errOnly(svc.RotateRefreshSession(user.ID, hashA, hashA3, expires())))
 		// The session continues from the latest token.
-		testutil.AssertNoError(t, svc.RotateRefreshSession(user.ID, hashA3, hashA2+"x", expires()))
+		testutil.AssertNoError(t, errOnly(svc.RotateRefreshSession(user.ID, hashA3, hashA2+"x", expires())))
 	})
 
 	t.Run("rotated-out token is rejected after the grace period", func(t *testing.T) {
@@ -441,13 +441,13 @@ func TestRefreshSessions(t *testing.T) {
 		svc := NewUserService(db, NewFXService(db, testFXStaleness))
 		user := testutil.CreateTestUser(t, db)
 
-		testutil.AssertNoError(t, svc.CreateRefreshSession(user.ID, hashA, "", "", expires()))
-		testutil.AssertNoError(t, svc.RotateRefreshSession(user.ID, hashA, hashA2, expires()))
+		testutil.AssertNoError(t, errOnly(svc.CreateRefreshSession(user.ID, hashA, "", "", expires())))
+		testutil.AssertNoError(t, errOnly(svc.RotateRefreshSession(user.ID, hashA, hashA2, expires())))
 		past := time.Now().Add(-refreshRotationGrace - time.Second)
 		db.Model(&models.RefreshSession{}).Where("user_id = ?", user.ID).Update("rotated_at", past)
 
-		testutil.AssertAppError(t, svc.RotateRefreshSession(user.ID, hashA, hashA3, expires()), "UNAUTHORIZED")
-		testutil.AssertNoError(t, svc.RotateRefreshSession(user.ID, hashA2, hashA3, expires()))
+		testutil.AssertAppError(t, errOnly(svc.RotateRefreshSession(user.ID, hashA, hashA3, expires())), "UNAUTHORIZED")
+		testutil.AssertNoError(t, errOnly(svc.RotateRefreshSession(user.ID, hashA2, hashA3, expires())))
 	})
 
 	t.Run("rejects unknown, expired, and other users' tokens", func(t *testing.T) {
@@ -457,24 +457,24 @@ func TestRefreshSessions(t *testing.T) {
 		user := testutil.CreateTestUser(t, db)
 		other := testutil.CreateTestUser(t, db)
 
-		testutil.AssertNoError(t, svc.CreateRefreshSession(user.ID, hashA, "", "", expires()))
-		testutil.AssertNoError(t, svc.CreateRefreshSession(user.ID, hashB, "", "", time.Now().Add(-time.Minute)))
+		testutil.AssertNoError(t, errOnly(svc.CreateRefreshSession(user.ID, hashA, "", "", expires())))
+		testutil.AssertNoError(t, errOnly(svc.CreateRefreshSession(user.ID, hashB, "", "", time.Now().Add(-time.Minute))))
 
-		testutil.AssertAppError(t, svc.RotateRefreshSession(user.ID, hashA3, hashA2, expires()), "UNAUTHORIZED")
-		testutil.AssertAppError(t, svc.RotateRefreshSession(user.ID, hashB, hashB2, expires()), "UNAUTHORIZED")
-		testutil.AssertAppError(t, svc.RotateRefreshSession(other.ID, hashA, hashA2, expires()), "UNAUTHORIZED")
+		testutil.AssertAppError(t, errOnly(svc.RotateRefreshSession(user.ID, hashA3, hashA2, expires())), "UNAUTHORIZED")
+		testutil.AssertAppError(t, errOnly(svc.RotateRefreshSession(user.ID, hashB, hashB2, expires())), "UNAUTHORIZED")
+		testutil.AssertAppError(t, errOnly(svc.RotateRefreshSession(other.ID, hashA, hashA2, expires())), "UNAUTHORIZED")
 	})
 
 	t.Run("revoke ends only that device's session", func(t *testing.T) {
 		svc, user, done := setup(t)
 		defer done()
 
-		testutil.AssertNoError(t, svc.CreateRefreshSession(user.ID, hashA, "", "", expires()))
-		testutil.AssertNoError(t, svc.CreateRefreshSession(user.ID, hashB, "", "", expires()))
+		testutil.AssertNoError(t, errOnly(svc.CreateRefreshSession(user.ID, hashA, "", "", expires())))
+		testutil.AssertNoError(t, errOnly(svc.CreateRefreshSession(user.ID, hashB, "", "", expires())))
 		testutil.AssertNoError(t, svc.RevokeRefreshSession(user.ID, hashA))
 
-		testutil.AssertAppError(t, svc.RotateRefreshSession(user.ID, hashA, hashA2, expires()), "UNAUTHORIZED")
-		testutil.AssertNoError(t, svc.RotateRefreshSession(user.ID, hashB, hashB2, expires()))
+		testutil.AssertAppError(t, errOnly(svc.RotateRefreshSession(user.ID, hashA, hashA2, expires())), "UNAUTHORIZED")
+		testutil.AssertNoError(t, errOnly(svc.RotateRefreshSession(user.ID, hashB, hashB2, expires())))
 	})
 
 	t.Run("prunes expired sessions and caps sessions per user", func(t *testing.T) {
@@ -483,9 +483,9 @@ func TestRefreshSessions(t *testing.T) {
 		svc := NewUserService(db, NewFXService(db, testFXStaleness))
 		user := testutil.CreateTestUser(t, db)
 
-		testutil.AssertNoError(t, svc.CreateRefreshSession(user.ID, hashB, "", "", time.Now().Add(-time.Minute)))
+		testutil.AssertNoError(t, errOnly(svc.CreateRefreshSession(user.ID, hashB, "", "", time.Now().Add(-time.Minute))))
 		for i := 0; i < maxRefreshSessionsPerUser+5; i++ {
-			testutil.AssertNoError(t, svc.CreateRefreshSession(user.ID, fmt.Sprintf("%064d", i), "", "", expires()))
+			testutil.AssertNoError(t, errOnly(svc.CreateRefreshSession(user.ID, fmt.Sprintf("%064d", i), "", "", expires())))
 		}
 
 		var count int64
@@ -495,7 +495,7 @@ func TestRefreshSessions(t *testing.T) {
 		}
 		// The newest session survives the cap.
 		last := fmt.Sprintf("%064d", maxRefreshSessionsPerUser+4)
-		testutil.AssertNoError(t, svc.RotateRefreshSession(user.ID, last, hashA, expires()))
+		testutil.AssertNoError(t, errOnly(svc.RotateRefreshSession(user.ID, last, hashA, expires())))
 	})
 }
 
@@ -824,3 +824,6 @@ func TestAttemptLogin_keeps_concurrent_profile_changes(t *testing.T) {
 		}
 	}
 }
+
+// errOnly drops the session ID from a CreateRefreshSession/RotateRefreshSession result.
+func errOnly(_ string, err error) error { return err }

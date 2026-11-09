@@ -14,6 +14,7 @@ import (
 	"kuberan/internal/middleware"
 	"kuberan/internal/models"
 	"kuberan/internal/services"
+	"kuberan/internal/uuid"
 )
 
 // RefreshCookieName is the HttpOnly cookie that carries the refresh token.
@@ -249,15 +250,16 @@ func (h *AuthHandler) RefreshToken(c *gin.Context) {
 		return
 	}
 
-	accessToken, refreshToken, err := issueTokenPair(user)
+	refreshToken, err := middleware.GenerateRefreshToken(user)
 	if err != nil {
-		respondWithError(c, err)
+		respondWithError(c, apperrors.Wrap(apperrors.ErrInternalServer, err))
 		return
 	}
 
 	// Rotate within this device's session only; other devices are unaffected.
-	if err := h.userService.RotateRefreshSession(user.ID, middleware.HashToken(presented),
-		middleware.HashToken(refreshToken), time.Now().Add(middleware.RefreshTokenExpiry)); err != nil {
+	sessionID, err := h.userService.RotateRefreshSession(user.ID, middleware.HashToken(presented),
+		middleware.HashToken(refreshToken), time.Now().Add(middleware.RefreshTokenExpiry))
+	if err != nil {
 		if errors.Is(err, apperrors.ErrUnauthorized) {
 			// A validly signed token that matches no live session: revoked
 			// (logout), rotated out past the grace window, or replayed.
@@ -266,6 +268,12 @@ func (h *AuthHandler) RefreshToken(c *gin.Context) {
 			h.clearRefreshCookie(c)
 		}
 		respondWithError(c, err)
+		return
+	}
+
+	accessToken, err := middleware.GenerateAccessTokenForSession(user, sessionID)
+	if err != nil {
+		respondWithError(c, apperrors.Wrap(apperrors.ErrInternalServer, err))
 		return
 	}
 
@@ -389,6 +397,7 @@ func userPayload(user *models.User) gin.H {
 		"hide_balances":      user.HideBalances,
 		"default_account_id": user.DefaultAccountID,
 		"base_currency":      user.BaseCurrency,
+		"last_login_at":      user.LastLoginAt,
 	}
 }
 
@@ -402,6 +411,16 @@ type UpdateProfileSettingsRequest struct {
 	// BaseCurrency sets the currency aggregates are reported in (ISO 4217,
 	// upper-case). It must be a supported currency with an exchange rate to USD.
 	BaseCurrency *string `json:"base_currency" binding:"omitempty,iso4217"`
+	// FirstName and LastName replace the user's names (empty clears).
+	FirstName *string `json:"first_name" binding:"omitempty,max=100"`
+	LastName  *string `json:"last_name" binding:"omitempty,max=100"`
+	// Email replaces the login email (trimmed and lower-cased). Changing it
+	// requires CurrentPassword; an email held by another user is 409
+	// DUPLICATE_EMAIL.
+	Email *string `json:"email" binding:"omitempty,email,max=254"`
+	// CurrentPassword confirms an email change. A wrong value is 400
+	// INVALID_CURRENT_PASSWORD and counts toward the login lockout.
+	CurrentPassword string `json:"current_password" binding:"max=1024"`
 }
 
 // optionalString distinguishes an absent JSON field (Set=false) from an
@@ -419,15 +438,17 @@ func (o *optionalString) UnmarshalJSON(data []byte) error {
 
 // UpdateProfileSettings updates the authenticated user's profile settings.
 // @Summary     Update profile settings
-// @Description Update the authenticated user's profile settings (dashboard balance visibility, default transaction account, base currency)
+// @Description Update the authenticated user's profile: name, email (needs current_password), dashboard balance visibility, default transaction account, base currency
 // @Tags        user
 // @Accept      json
 // @Produce     json
 // @Security    BearerAuth
 // @Param       request body UpdateProfileSettingsRequest true "Profile settings to update"
 // @Success     200 {object} UserResponse "Updated user profile"
-// @Failure     400 {object} ErrorResponse "Invalid input"
+// @Failure     400 {object} ErrorResponse "Invalid input, or INVALID_CURRENT_PASSWORD"
 // @Failure     401 {object} ErrorResponse "Unauthorized"
+// @Failure     409 {object} ErrorResponse "DUPLICATE_EMAIL or BASE_CURRENCY_LOCKED"
+// @Failure     423 {object} ErrorResponse "ACCOUNT_LOCKED after too many wrong current passwords"
 // @Failure     500 {object} ErrorResponse "Server error"
 // @Router      /profile [patch]
 func (h *AuthHandler) UpdateProfileSettings(c *gin.Context) {
@@ -443,9 +464,10 @@ func (h *AuthHandler) UpdateProfileSettings(c *gin.Context) {
 		return
 	}
 
-	if req.HideBalances == nil && !req.DefaultAccountID.Set && req.BaseCurrency == nil {
+	if req.HideBalances == nil && !req.DefaultAccountID.Set && req.BaseCurrency == nil &&
+		req.FirstName == nil && req.LastName == nil && req.Email == nil {
 		respondWithError(c, apperrors.WithMessage(apperrors.ErrInvalidInput,
-			"at least one of hide_balances, default_account_id or base_currency is required"))
+			"at least one of hide_balances, default_account_id, base_currency, first_name, last_name or email is required"))
 		return
 	}
 
@@ -453,6 +475,10 @@ func (h *AuthHandler) UpdateProfileSettings(c *gin.Context) {
 		HideBalances:      req.HideBalances,
 		SetDefaultAccount: req.DefaultAccountID.Set,
 		BaseCurrency:      req.BaseCurrency,
+		FirstName:         req.FirstName,
+		LastName:          req.LastName,
+		Email:             req.Email,
+		CurrentPassword:   req.CurrentPassword,
 	}
 	if req.DefaultAccountID.Set {
 		update.DefaultAccountID, err = optionalUUID(req.DefaultAccountID.Value, "default_account_id")
@@ -462,18 +488,18 @@ func (h *AuthHandler) UpdateProfileSettings(c *gin.Context) {
 		}
 	}
 
-	// The previous base currency goes into the audit entry.
-	oldBaseCurrency := ""
-	if update.BaseCurrency != nil {
-		before, err := h.userService.GetUserByID(userID)
-		if err != nil {
-			respondWithError(c, err)
-			return
-		}
-		oldBaseCurrency = before.BaseCurrency
+	// The previous values go into the audit entries.
+	before, err := h.userService.GetUserByID(userID)
+	if err != nil {
+		respondWithError(c, err)
+		return
 	}
 
 	if err := h.userService.UpdateProfileSettings(userID, update); err != nil {
+		if update.Email != nil && errors.Is(err, apperrors.ErrAccountLocked) {
+			h.auditService.Log(userID, "ACCOUNT_LOCKED", "user", userID, c.ClientIP(),
+				map[string]interface{}{"reason": "email_change_password"})
+		}
 		respondWithError(c, err)
 		return
 	}
@@ -485,12 +511,24 @@ func (h *AuthHandler) UpdateProfileSettings(c *gin.Context) {
 	if update.SetDefaultAccount {
 		changes["default_account_id"] = update.DefaultAccountID
 	}
+	if update.FirstName != nil {
+		changes["first_name"] = strings.TrimSpace(*update.FirstName)
+	}
+	if update.LastName != nil {
+		changes["last_name"] = strings.TrimSpace(*update.LastName)
+	}
 	if len(changes) > 0 {
 		h.auditService.Log(userID, "UPDATE_PROFILE", "user", userID, c.ClientIP(), changes)
 	}
 	if update.BaseCurrency != nil {
 		h.auditService.Log(userID, "UPDATE_BASE_CURRENCY", "user", userID, c.ClientIP(),
-			map[string]interface{}{"old": oldBaseCurrency, "new": strings.ToUpper(strings.TrimSpace(*update.BaseCurrency))})
+			map[string]interface{}{"old": before.BaseCurrency, "new": strings.ToUpper(strings.TrimSpace(*update.BaseCurrency))})
+	}
+	if update.Email != nil {
+		if newEmail := services.NormalizeEmail(*update.Email); newEmail != before.Email {
+			h.auditService.Log(userID, "UPDATE_EMAIL", "user", userID, c.ClientIP(),
+				map[string]interface{}{"old": before.Email, "new": newEmail})
+		}
 	}
 
 	user, err := h.userService.GetUserByID(userID)
@@ -505,29 +543,21 @@ func (h *AuthHandler) UpdateProfileSettings(c *gin.Context) {
 }
 
 // startSession issues a token pair for a fresh login and records a new
-// per-device refresh session for it.
+// per-device refresh session for it. The access token carries the new
+// session's ID as its sid claim.
 func (h *AuthHandler) startSession(c *gin.Context, user *models.User) (accessToken, refreshToken string, err error) {
-	accessToken, refreshToken, err = issueTokenPair(user)
-	if err != nil {
-		return "", "", err
-	}
-
-	if err := h.userService.CreateRefreshSession(user.ID, middleware.HashToken(refreshToken),
-		c.Request.UserAgent(), c.ClientIP(), time.Now().Add(middleware.RefreshTokenExpiry)); err != nil {
-		return "", "", err
-	}
-
-	return accessToken, refreshToken, nil
-}
-
-// issueTokenPair signs a new access/refresh token pair without persisting it.
-func issueTokenPair(user *models.User) (accessToken, refreshToken string, err error) {
-	accessToken, err = middleware.GenerateAccessToken(user)
+	refreshToken, err = middleware.GenerateRefreshToken(user)
 	if err != nil {
 		return "", "", apperrors.Wrap(apperrors.ErrInternalServer, err)
 	}
 
-	refreshToken, err = middleware.GenerateRefreshToken(user)
+	sessionID, err := h.userService.CreateRefreshSession(user.ID, middleware.HashToken(refreshToken),
+		c.Request.UserAgent(), c.ClientIP(), time.Now().Add(middleware.RefreshTokenExpiry))
+	if err != nil {
+		return "", "", err
+	}
+
+	accessToken, err = middleware.GenerateAccessTokenForSession(user, sessionID)
 	if err != nil {
 		return "", "", apperrors.Wrap(apperrors.ErrInternalServer, err)
 	}
@@ -545,4 +575,182 @@ type ErrorDetail struct {
 // ErrorResponse represents an error response.
 type ErrorResponse struct {
 	Error ErrorDetail `json:"error"`
+}
+
+// ChangePasswordRequest is the POST /auth/password payload. NewPassword
+// follows the registration rules (8 to 72 bytes).
+type ChangePasswordRequest struct {
+	CurrentPassword string `json:"current_password" binding:"required,max=1024"`
+	NewPassword     string `json:"new_password" binding:"required,min=8,max=72"`
+}
+
+// RevokedSessionsResponse reports how many other device sessions were ended.
+type RevokedSessionsResponse struct {
+	RevokedSessions int64 `json:"revoked_sessions"`
+}
+
+// SessionResponse is one signed-in device in GET /auth/sessions.
+type SessionResponse struct {
+	ID        string    `json:"id"`
+	CreatedAt time.Time `json:"created_at"`
+	// LastSeenAt is the last token rotation, or CreatedAt before the first.
+	LastSeenAt time.Time `json:"last_seen_at"`
+	UserAgent  string    `json:"user_agent"`
+	IPAddress  string    `json:"ip_address"`
+	// Current is true for the session the request's access token belongs to.
+	Current bool `json:"current"`
+}
+
+// ChangePassword changes the authenticated user's password.
+// @Summary     Change password
+// @Description Verify the current password, set a new one and end every other device session (the current one stays signed in). Wrong current passwords count toward the login lockout.
+// @Tags        auth
+// @Accept      json
+// @Produce     json
+// @Security    BearerAuth
+// @Param       request body ChangePasswordRequest true "Current and new password"
+// @Success     200 {object} RevokedSessionsResponse "Password changed"
+// @Failure     400 {object} ErrorResponse "Invalid input, or INVALID_CURRENT_PASSWORD"
+// @Failure     401 {object} ErrorResponse "Unauthorized"
+// @Failure     423 {object} ErrorResponse "ACCOUNT_LOCKED"
+// @Failure     429 {object} ErrorResponse "Too many attempts"
+// @Failure     500 {object} ErrorResponse "Server error"
+// @Router      /auth/password [post]
+func (h *AuthHandler) ChangePassword(c *gin.Context) {
+	userID, err := getUserID(c)
+	if err != nil {
+		respondWithError(c, err)
+		return
+	}
+
+	var req ChangePasswordRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		respondWithError(c, apperrors.WithMessage(apperrors.ErrInvalidInput, err.Error()))
+		return
+	}
+
+	revoked, err := h.userService.ChangePassword(userID, req.CurrentPassword, req.NewPassword, getSessionID(c))
+	if err != nil {
+		if errors.Is(err, apperrors.ErrInvalidCurrentPassword) || errors.Is(err, apperrors.ErrAccountLocked) {
+			reason := "invalid_current_password"
+			if errors.Is(err, apperrors.ErrAccountLocked) {
+				reason = "account_locked"
+			}
+			h.auditService.Log(userID, "CHANGE_PASSWORD_FAILED", "user", userID, c.ClientIP(),
+				map[string]interface{}{"reason": reason})
+		}
+		respondWithError(c, err)
+		return
+	}
+
+	h.auditService.Log(userID, "CHANGE_PASSWORD", "user", userID, c.ClientIP(),
+		map[string]interface{}{"revoked_sessions": revoked})
+	c.JSON(http.StatusOK, RevokedSessionsResponse{RevokedSessions: revoked})
+}
+
+// ListSessions lists the user's signed-in devices.
+// @Summary     List device sessions
+// @Description List the authenticated user's live refresh sessions; current marks the one making the request
+// @Tags        auth
+// @Produce     json
+// @Security    BearerAuth
+// @Success     200 {object} map[string][]SessionResponse "sessions"
+// @Failure     401 {object} ErrorResponse "Unauthorized"
+// @Failure     500 {object} ErrorResponse "Server error"
+// @Router      /auth/sessions [get]
+func (h *AuthHandler) ListSessions(c *gin.Context) {
+	userID, err := getUserID(c)
+	if err != nil {
+		respondWithError(c, err)
+		return
+	}
+
+	sessions, err := h.userService.ListRefreshSessions(userID)
+	if err != nil {
+		respondWithError(c, err)
+		return
+	}
+
+	currentID := getSessionID(c)
+	out := make([]SessionResponse, 0, len(sessions))
+	for i := range sessions {
+		session := &sessions[i]
+		lastSeen := session.CreatedAt
+		if session.RotatedAt != nil {
+			lastSeen = *session.RotatedAt
+		}
+		out = append(out, SessionResponse{
+			ID:         session.ID,
+			CreatedAt:  session.CreatedAt,
+			LastSeenAt: lastSeen,
+			UserAgent:  session.UserAgent,
+			IPAddress:  session.IPAddress,
+			Current:    currentID != "" && session.ID == currentID,
+		})
+	}
+	c.JSON(http.StatusOK, gin.H{"sessions": out})
+}
+
+// RevokeSession ends one other device's session.
+// @Summary     Revoke a device session
+// @Description End another device's refresh session. The current session cannot be revoked here; use logout.
+// @Tags        auth
+// @Produce     json
+// @Security    BearerAuth
+// @Param       id path string true "Session ID"
+// @Success     204 "Session revoked"
+// @Failure     400 {object} ErrorResponse "CURRENT_SESSION or invalid ID"
+// @Failure     401 {object} ErrorResponse "Unauthorized"
+// @Failure     404 {object} ErrorResponse "SESSION_NOT_FOUND"
+// @Failure     500 {object} ErrorResponse "Server error"
+// @Router      /auth/sessions/{id} [delete]
+func (h *AuthHandler) RevokeSession(c *gin.Context) {
+	userID, err := getUserID(c)
+	if err != nil {
+		respondWithError(c, err)
+		return
+	}
+
+	sessionID := c.Param("id")
+	if !uuid.IsValid(sessionID) {
+		respondWithError(c, apperrors.WithMessage(apperrors.ErrInvalidInput, "Invalid session ID format"))
+		return
+	}
+
+	if err := h.userService.RevokeRefreshSessionByID(userID, sessionID, getSessionID(c)); err != nil {
+		respondWithError(c, err)
+		return
+	}
+
+	h.auditService.Log(userID, "REVOKE_SESSION", "refresh_session", sessionID, c.ClientIP(), nil)
+	c.Status(http.StatusNoContent)
+}
+
+// RevokeOtherSessions ends every device session except the current one.
+// @Summary     Revoke all other device sessions
+// @Description End every refresh session of the user except the one making the request
+// @Tags        auth
+// @Produce     json
+// @Security    BearerAuth
+// @Success     200 {object} RevokedSessionsResponse "Other sessions revoked"
+// @Failure     400 {object} ErrorResponse "Current session unknown (token predates device sessions); sign in again"
+// @Failure     401 {object} ErrorResponse "Unauthorized"
+// @Failure     500 {object} ErrorResponse "Server error"
+// @Router      /auth/sessions/revoke-others [post]
+func (h *AuthHandler) RevokeOtherSessions(c *gin.Context) {
+	userID, err := getUserID(c)
+	if err != nil {
+		respondWithError(c, err)
+		return
+	}
+
+	revoked, err := h.userService.RevokeOtherRefreshSessions(userID, getSessionID(c))
+	if err != nil {
+		respondWithError(c, err)
+		return
+	}
+
+	h.auditService.Log(userID, "REVOKE_OTHER_SESSIONS", "user", userID, c.ClientIP(),
+		map[string]interface{}{"revoked_sessions": revoked})
+	c.JSON(http.StatusOK, RevokedSessionsResponse{RevokedSessions: revoked})
 }

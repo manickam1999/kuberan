@@ -52,6 +52,7 @@ type RouteLimits struct {
 	Refresh      []gin.HandlerFunc // /auth/refresh
 	Registration []gin.HandlerFunc // OAuth DCR (/oauth2/register and its alias)
 	Export       []gin.HandlerFunc // GET /export (runs after AuthMiddleware)
+	Password     []gin.HandlerFunc // POST /auth/password (runs after AuthMiddleware)
 }
 
 // NewRouteLimits builds the rate limiters from configuration. Logins are
@@ -74,6 +75,9 @@ func NewRouteLimits(cfg config.RateLimits) RouteLimits {
 		},
 		Export: []gin.HandlerFunc{
 			middleware.RateLimit(middleware.NewRateLimiter(exportPerMinute, time.Minute), middleware.UserIDKey),
+		},
+		Password: []gin.HandlerFunc{
+			middleware.RateLimit(middleware.NewRateLimiter(cfg.PasswordPerHour, time.Hour), middleware.UserIDKey),
 		},
 	}
 }
@@ -107,6 +111,13 @@ func RegisterRoutes(router *gin.Engine, h Routes, secrets RouteSecrets) {
 	auth.POST("/login", with(h.Limits.Login, h.Auth.Login)...)
 	auth.POST("/refresh", with(h.Limits.Refresh, h.Auth.RefreshToken)...)
 	auth.POST("/logout", h.Auth.Logout)
+
+	// Authenticated account-security routes. They live under /auth so the
+	// browser sends the refresh cookie, but need a Bearer access token.
+	auth.POST("/password", with(append([]gin.HandlerFunc{middleware.AuthMiddleware()}, h.Limits.Password...), h.Auth.ChangePassword)...)
+	auth.GET("/sessions", middleware.AuthMiddleware(), h.Auth.ListSessions)
+	auth.POST("/sessions/revoke-others", middleware.AuthMiddleware(), h.Auth.RevokeOtherSessions)
+	auth.DELETE("/sessions/:id", middleware.AuthMiddleware(), h.Auth.RevokeSession)
 
 	// OAuth login/consent bridge (public: driven by the apps/web pages during the
 	// Hydra authorization flow, before a Kuberan session exists). See plan 15.
