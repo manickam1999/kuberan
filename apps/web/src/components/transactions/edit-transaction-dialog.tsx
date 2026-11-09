@@ -1,7 +1,7 @@
 "use client";
 
 import { takesPlainActivity } from "@/lib/default-account";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Filter } from "lucide-react";
 import { ApiClientError } from "@/lib/api-client";
@@ -99,6 +99,7 @@ export function EditTransactionDialog({
   const [notes, setNotes] = useState("");
   const [date, setDate] = useState("");
   const [error, setError] = useState("");
+  const shownId = useRef<string | null>(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [ruleOpen, setRuleOpen] = useState(false);
   const [ruleSeed, setRuleSeed] = useState<{
@@ -196,10 +197,22 @@ export function EditTransactionDialog({
       setDescription(live.description ?? "");
       setNotes(live.notes ?? "");
       setDate(live.date ? live.date.split("T")[0] : "");
-      setError("");
+      // Keep a failed save's message: the optimistic update rolling back
+      // changes the signature too, and clearing here made errors vanish.
+      // A different transaction starts clean.
+      if (shownId.current !== live.id) setError("");
+      shownId.current = live.id;
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- syncSignature captures every field read from `live`
   }, [syncSignature]);
+
+  // A closed dialog forgets its last error and the transaction it showed.
+  useEffect(() => {
+    if (!open) {
+      setError("");
+      shownId.current = null;
+    }
+  }, [open]);
 
   function handleTypeChange(newType: TransactionType) {
     setType(newType);
