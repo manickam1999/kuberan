@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { Divide, Equal, Minus, Plus, X } from "lucide-react";
 import { currencySymbol } from "@/lib/currencies";
 import {
   AMOUNT_INPUT_PATTERN,
@@ -28,11 +29,16 @@ interface CurrencyInputProps
 
 const LEGACY_PATTERN = /^\d*\.?\d{0,2}$/;
 const OPERATOR_PATTERN = /[+\-*/×÷xX()−]/;
-const CHIPS: { label: string; insert: string }[] = [
-  { label: "+", insert: "+" },
-  { label: "−", insert: "-" },
-  { label: "×", insert: "*" },
-  { label: "÷", insert: "/" },
+const CHIPS: {
+  label: string;
+  name: string;
+  insert: string;
+  Icon: React.ComponentType<{ className?: string }>;
+}[] = [
+  { label: "+", name: "Plus", insert: "+", Icon: Plus },
+  { label: "−", name: "Minus", insert: "-", Icon: Minus },
+  { label: "×", name: "Times", insert: "*", Icon: X },
+  { label: "÷", name: "Divide", insert: "/", Icon: Divide },
 ];
 
 const previewFormatter = new Intl.NumberFormat("en-MY", {
@@ -207,7 +213,7 @@ function CurrencyInput({
             "focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px]",
             "aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive",
             className,
-            showPreview && "pr-32"
+            showPreview && "pr-28"
           )}
           value={displayValue}
           onChange={handleChange}
@@ -219,40 +225,50 @@ function CurrencyInput({
         />
         <span
           aria-live="polite"
-          className="text-muted-foreground pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm tabular-nums"
+          className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2"
         >
-          {showPreview
-            ? `= ${currencySymbol(currency)} ${previewFormatter.format(previewCents / 100)}`
-            : null}
+          {showPreview && (
+            <span className="money bg-primary/10 text-primary animate-in fade-in-0 zoom-in-95 block rounded-md px-2 py-0.5 text-sm font-semibold tabular-nums duration-150">
+              <span aria-hidden="true">
+                = {previewFormatter.format(previewCents / 100)}
+              </span>
+              <span className="sr-only">
+                equals {currencySymbol(currency)}{" "}
+                {previewFormatter.format(previewCents / 100)}
+              </span>
+            </span>
+          )}
         </span>
       </div>
       {invalidReason && (
-        <p role="alert" className="text-destructive mt-1 text-xs">
+        <p role="alert" className="text-destructive mt-1.5 text-xs">
           {invalidReason}
         </p>
       )}
       {showChips && (
-        <div className="mt-1.5 flex gap-1.5">
-          {CHIPS.map((chip) => (
+        <div className="bg-muted animate-in fade-in-0 slide-in-from-top-1 mt-2 grid grid-cols-5 gap-1 rounded-xl p-1 duration-150">
+          {CHIPS.map(({ label, name, insert, Icon }) => (
             <button
-              key={chip.label}
+              key={label}
               type="button"
               tabIndex={-1}
+              aria-label={name}
               onPointerDown={(e) => e.preventDefault()}
-              onClick={() => insertOperator(chip.insert)}
-              className="border-input bg-background hover:bg-accent h-8 min-w-10 rounded-md border px-3 text-sm"
+              onClick={() => insertOperator(insert)}
+              className="text-muted-foreground active:bg-background active:text-foreground flex h-10 items-center justify-center rounded-lg transition-colors"
             >
-              {chip.label}
+              <Icon className="size-4" />
             </button>
           ))}
           <button
             type="button"
             tabIndex={-1}
+            aria-label="Equals"
             onPointerDown={(e) => e.preventDefault()}
             onClick={commit}
-            className="border-input bg-background hover:bg-accent h-8 min-w-10 rounded-md border px-3 text-sm"
+            className="bg-primary/15 text-primary active:bg-background flex h-10 items-center justify-center rounded-lg transition-colors"
           >
-            =
+            <Equal className="size-4" />
           </button>
         </div>
       )}
