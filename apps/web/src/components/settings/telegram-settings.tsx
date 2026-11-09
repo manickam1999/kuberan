@@ -45,6 +45,10 @@ const BOT_USERNAME = process.env.NEXT_PUBLIC_BOT_USERNAME ?? "KuberanFinBot";
 
 /** Commands the bot really handles (apps/bot/main.py). */
 const COMMANDS: { cmd: string; text: string }[] = [
+  { cmd: "coffee 18.40", text: "Quick add: type what you spent, no command needed" },
+  { cmd: "/undo", text: "Remove the entry you just added (within 10 minutes)" },
+  { cmd: "Send a photo or PDF", text: "Attach a receipt to your latest entry" },
+  { cmd: "/spent", text: "This month's spending by category" },
   { cmd: "/expense 12.50 lunch", text: "Record an expense" },
   { cmd: "/income 3000 salary", text: "Record income" },
   { cmd: "/balance", text: "Account balances" },
@@ -66,12 +70,25 @@ function SampleChat() {
     >
       <div className="flex justify-end">
         <p className={`${bubble} rounded-br-sm bg-primary text-primary-foreground`}>
-          /expense 12.50 lunch
+          coffee 18.40
         </p>
       </div>
       <div className="flex">
         <p className={`${bubble} rounded-bl-sm border bg-card`}>
-          Pick a category for your 12.50 lunch.
+          Added RM 18.40 · Dining · DBS Everyday
+          <span className="mt-1 block text-xs text-muted-foreground">
+            Change category · Change account · Undo
+          </span>
+        </p>
+      </div>
+      <div className="flex justify-end">
+        <p className={`${bubble} rounded-br-sm bg-primary text-primary-foreground`}>
+          /spent
+        </p>
+      </div>
+      <div className="flex">
+        <p className={`${bubble} rounded-bl-sm border bg-card`}>
+          This month by category, in your reporting currency.
         </p>
       </div>
       <div className="flex justify-end">

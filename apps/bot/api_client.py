@@ -13,6 +13,8 @@ logger = logging.getLogger(__name__)
 # Generous enough for a slow API, short enough that a hung request cannot pin
 # a handler forever.
 DEFAULT_TIMEOUT = httpx.Timeout(10.0, connect=5.0)
+# Receipt uploads move up to 10 MiB, so they get more time than a JSON call.
+UPLOAD_TIMEOUT_SECONDS = 30.0
 
 
 class KuberanAPIClient:
@@ -130,6 +132,35 @@ class UserAPIClient:
         response.raise_for_status()
         return response.json()
 
+    async def _put(self, path: str, payload: Dict[str, Any]) -> Any:
+        response = await self.http.put(path, json=payload, headers=self.headers)
+        response.raise_for_status()
+        return response.json()
+
+    async def _delete(self, path: str) -> Any:
+        """DELETE a resource; returns the JSON body, or {} when there is none."""
+        response = await self.http.delete(path, headers=self.headers)
+        response.raise_for_status()
+        if not response.content:
+            return {}
+        try:
+            return response.json()
+        except ValueError:
+            return {}
+
+    async def _post_file(self, path: str, content: bytes, filename: str,
+                         content_type: str, field: str = "file",
+                         timeout: float = UPLOAD_TIMEOUT_SECONDS) -> Any:
+        """POST one file as multipart/form-data under ``field``."""
+        response = await self.http.post(
+            path,
+            files={field: (filename, content, content_type)},
+            headers=self.headers,
+            timeout=timeout,
+        )
+        response.raise_for_status()
+        return response.json()
+
     async def get_accounts(self):
         """Get user accounts"""
         result = await self._get("/api/v1/accounts", {"page_size": 100})
@@ -143,6 +174,60 @@ class UserAPIClient:
     async def create_transaction(self, data: Dict[str, Any]):
         """Create a transaction"""
         return await self._post("/api/v1/transactions", data)
+
+    async def update_transaction(self, transaction_id: str, data: Dict[str, Any]) -> Dict[str, Any]:
+        """Update a transaction (category_id / account_id ...); returns the transaction."""
+        result = await self._put(f"/api/v1/transactions/{transaction_id}", data)
+        return result.get('transaction', {})
+
+    async def get_transaction(self, transaction_id: str) -> Dict[str, Any]:
+        """Get one transaction."""
+        result = await self._get(f"/api/v1/transactions/{transaction_id}")
+        return result.get('transaction', {})
+
+    async def delete_transaction(self, transaction_id: str) -> None:
+        """Delete (soft) a transaction; the API reverses its balance effect."""
+        await self._delete(f"/api/v1/transactions/{transaction_id}")
+
+    async def get_recent_transactions(self, page_size: int = 50) -> List[Dict[str, Any]]:
+        """Newest transactions first (the API orders by date, then creation time).
+
+        The list endpoint cannot filter by source, so callers filter this page
+        client-side (see handlers/recent.py).
+        """
+        result = await self._get("/api/v1/transactions", {"page": 1, "page_size": page_size})
+        return result.get('data', [])
+
+    async def suggest_category(self, description: str, txn_type: str,
+                               amount: Optional[int] = None,
+                               account_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
+        """Ask the API for a category: {category_id, category_name, reason}.
+
+        Returns None when nothing applies (category_id is null).
+        """
+        payload: Dict[str, Any] = {"description": description, "type": txn_type}
+        if amount:
+            payload["amount"] = amount
+        if account_id:
+            payload["account_id"] = account_id
+        result = await self._post("/api/v1/transactions/suggest-category", payload)
+        return result if result.get('category_id') else None
+
+    async def upload_attachment(self, transaction_id: str, content: bytes,
+                                filename: str, content_type: str) -> Dict[str, Any]:
+        """Attach a receipt (JPEG, PNG, WebP or PDF) to a transaction."""
+        result = await self._post_file(
+            f"/api/v1/transactions/{transaction_id}/attachments",
+            content, filename, content_type,
+        )
+        return result.get('attachment', {})
+
+    async def get_spending_by_category(self, from_date: str, to_date: str) -> Dict[str, Any]:
+        """Spending by category in the base currency for [from_date, to_date]."""
+        return await self._get(
+            "/api/v1/transactions/spending-by-category",
+            {"from_date": from_date, "to_date": to_date},
+        )
 
     async def get_budgets(self):
         """Get user budgets"""
