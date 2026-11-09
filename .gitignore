@@ -70,6 +70,8 @@ apps/api/mcp
 # Database dumps (may contain personal financial data)
 *.sql
 !apps/api/migrations/*.sql
+# The demo reset job ships a sample-history query, not a dump.
+!deploy/demo/*.sql
 
 .playwright-mcp/*
 current-*.png
