@@ -58,6 +58,14 @@ export type ThemedAreaChartProps = {
    * dither theme ignores them until dither-kit has an equivalent.
    */
   markers?: readonly ChartMarker[];
+  /**
+   * Clean theme only: Recharts plot margins in px. Pass a right margin of
+   * about 10 so the endpoint dot and its halo are not clipped at the edge.
+   * Omitted: Recharts' default, so existing charts do not change.
+   */
+  margin?: { top?: number; right?: number; bottom?: number; left?: number };
+  /** Hide the x axis labels (phone-width hero charts). Both themes. */
+  hideXAxis?: boolean;
 };
 
 const MARKER_STROKE: Record<NonNullable<ChartMarker["tone"]>, string> = {
@@ -85,6 +93,8 @@ export function ThemedAreaChart({
   axisFormatter = formatCompact,
   baseline,
   markers,
+  margin,
+  hideXAxis = false,
 }: ThemedAreaChartProps) {
   const { chartTheme } = useChartTheme();
   const isMobile = useIsMobile();
@@ -99,10 +109,17 @@ export function ThemedAreaChart({
           yDomain="auto"
           bloom="low"
           bloomOnHover
-          margins={{ top: 10, right: 10, bottom: 22, left: 44 }}
+          margins={{
+            top: 10,
+            right: 10,
+            bottom: hideXAxis ? 6 : 22,
+            left: 44,
+          }}
         >
           <Grid />
-          <XAxis dataKey="label" maxTicks={isMobile ? 4 : 7} />
+          {!hideXAxis && (
+            <XAxis dataKey="label" maxTicks={isMobile ? 4 : 7} />
+          )}
           <YAxis tickFormatter={(v) => axisFormatter(v)} tickCount={4} />
           <Area dataKey="value" variant="gradient" />
           <Tooltip
@@ -122,7 +139,7 @@ export function ThemedAreaChart({
 
   return (
     <ChartContainer config={config} className={className}>
-      <RechartsAreaChart accessibilityLayer data={data}>
+      <RechartsAreaChart accessibilityLayer data={data} margin={margin}>
         <defs>
           <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
             <stop offset="0%" stopColor="var(--color-value)" stopOpacity={0.4} />
@@ -136,6 +153,7 @@ export function ThemedAreaChart({
         <CartesianGrid vertical={false} />
         <RechartsXAxis
           dataKey="label"
+          hide={hideXAxis}
           tickLine={false}
           axisLine={false}
           tickMargin={8}
