@@ -6,7 +6,7 @@ Kuberan is a personal finance application that helps users manage their finances
 
 ## Repository Structure
 
-Monorepo with five applications:
+Monorepo with six applications:
 
 ```
 /
@@ -15,14 +15,16 @@ Monorepo with five applications:
 │   ├── web/          # Next.js frontend (React 19 + Tailwind CSS v4)
 │   ├── bot/          # Python Telegram bot (talks to the API over HTTP)
 │   ├── oracle/       # Go price-ingestion + snapshot worker (own Go module, uses the pipeline API)
-│   └── backup/       # Cron-based pg_dump backup service (shell + supercronic)
-├── deploy/           # Deployment scripts (deploy.sh)
-├── docs/             # Documentation (mcp-oauth.md, database-setup.md, receipts.md, ibkr-import.md, multi-currency.md)
+│   ├── backup/       # Cron-based pg_dump backup service (shell + supercronic)
+│   └── site/         # Static landing page (plain HTML/CSS, no build; deployed separately so a self-hosted instance never serves marketing)
+├── deploy/           # Deployment scripts (deploy.sh, setup-vps.sh) and deploy/demo/ (nightly reset job for the public demo)
+├── docs/             # Documentation: self-hosting.md, telegram-bot.md, connect-ai-assistant.md, mcp-oauth.md, database-setup.md, backup-and-dr.md, receipts.md, csv-import.md, ibkr-import.md, multi-currency.md, public-demo.md, screenshots.md
 ├── ory/              # Ory Hydra (OAuth 2.1 authorization server) config
 ├── plans/            # Architecture and upgrade plans
 ├── scripts/          # Shared scripts (check-go.sh, etc.)
 ├── docker-compose.yml       # Development environment
-└── docker-compose.prod.yml  # Production environment (adds Hydra prod wiring, backup, oracle)
+├── docker-compose.prod.yml  # Production environment (adds Hydra prod wiring, MinIO, backup, oracle)
+└── docker-compose.demo.yml  # Public demo: postgres + api (DEMO_ENABLED) + web + nightly reset; no MCP, Hydra or MinIO
 ```
 
 ## Technology Stack
@@ -112,15 +114,17 @@ apps/web/src/
 │   │   ├── categories/           # Category management
 │   │   ├── investments/          # Portfolio overview + [id] detail
 │   │   ├── securities/           # Securities browse + [id] detail
-│   │   ├── analytics/            # Monthly/daily summaries, cashflow, top expenses
-│   │   ├── budgets/              # Budget list + progress
+│   │   ├── analytics/            # "Insights": typical-month summary, income-to-spending flow, daily/monthly summaries, top expenses
+│   │   ├── more/                 # Mobile "More" tab (secondary destinations)
+│   │   ├── budgets/              # Budget list, pace and progress against typical spending
 │   │   ├── receivables/          # Money lent out and owed back, settlements, write-offs
 │   │   ├── rules/                # Transaction rules (conditions + set-category actions)
 │   │   └── settings/             # Settings (profile, appearance, Telegram, connected apps)
 │   └── layout.tsx                # Root layout (providers chain)
 ├── components/
-│   ├── ui/                       # ShadCN UI primitives (28 components, incl. custom stat-card, currency-input, color-palette)
-│   ├── layout/                   # App sidebar, header (with theme toggle), command palette
+│   ├── ui/                       # ShadCN UI primitives (~39 files, incl. custom stat-card, currency-input, color-palette)
+│   ├── layout/                   # App sidebar, header, mobile tab bar (Home, Activity, +, Wealth, More), command palette, status chip
+│   ├── brand/                    # RingMark (the logo) and brand assets
 │   ├── accounts/                 # Account dialogs (create, edit)
 │   ├── transactions/             # Transaction dialogs (create, edit)
 │   ├── categories/               # Category dialogs (create, edit, delete)
@@ -137,6 +141,7 @@ apps/web/src/
 │   ├── domain-visuals.ts         # Shared icon/color mappings for domain entities
 │   ├── format.ts                 # Money (cents->display), date, percentage formatters
 │   ├── currencies.ts             # REPORTING_CURRENCIES (the one currency list), currencySymbol (en-MY)
+│   ├── palettes.ts               # The eight palettes (default Catppuccin) as light/dark token sets; applied as CSS variables
 │   └── utils.ts                  # cn() Tailwind utility
 ├── types/
 │   ├── models.ts                 # Domain model types matching backend
@@ -145,6 +150,7 @@ apps/web/src/
 ```
 
 ### Frontend Patterns
+- **Look and feel**: tokens (ink/line/fg/accent/pos/neg/k1..k8) come from `lib/palettes.ts`; a user picks a palette in Settings > Appearance (stored in `users.appearance`), otherwise the server's `DEFAULT_PALETTE` (public `GET /appearance`), otherwise Catppuccin. Fonts: Instrument Serif (display and money), Source Serif 4, Geist. Phones get a bottom tab bar and a quick-add sheet; the app has a web manifest (installable)
 - **Route groups**: `(auth)` for public pages, `(oauth)` for the Hydra login/consent pages (MCP OAuth flow), `(dashboard)` for protected pages with sidebar layout
 - **Provider chain**: Root layout wraps `ThemeProvider` > `QueryProvider` > `AuthProvider` > `Toaster`
 - **Data fetching**: All API calls go through `lib/api-client.ts`, consumed by React Query hooks in `src/hooks/`. Each hook file exports a query key factory for structured cache management
@@ -248,6 +254,12 @@ cd apps/api && swag init -g cmd/api/main.go -d . --output internal/docs --parseD
 # Lint
 cd apps/api && golangci-lint run ./...
 
+# Screenshots of every route, light/dark, 1440 and 390 (needs a running instance; docs/screenshots.md)
+cd apps/web && pnpm screenshots --email <demo login> --password <pw> --out ./shots --seed
+
+# Public demo stack (docs/public-demo.md)
+docker compose -f docker-compose.demo.yml --env-file .env.demo up -d --build
+
 # Oracle subcommands (one-off migration tools; plain `oracle` is the scheduled run).
 # Production: reconcile is a dry run unless --apply; backfill --dry-run posts nothing.
 docker compose -f docker-compose.prod.yml --profile oracle run --rm oracle reconcile
@@ -285,12 +297,15 @@ When using AI coding agents (Claude Code, Cursor, Copilot, etc.) to modify this 
 
 ## API Endpoints
 
+The route table lives in one place, `apps/api/internal/handlers/routes.go` (shared by `cmd/api` and the integration tests).
+
 ### Public
 ```
-POST /api/v1/auth/register     # Register new user
-POST /api/v1/auth/login        # Login, returns access + refresh tokens
+POST /api/v1/auth/register     # Register new user (optional base_currency)
+POST /api/v1/auth/login        # Login, returns access token + user; refresh token set as an HttpOnly cookie
 POST /api/v1/auth/refresh      # Refresh access token (rotates this device's session)
 POST /api/v1/auth/logout       # Revoke this device's refresh session
+GET  /api/v1/appearance        # Server default palette (DEFAULT_PALETTE) for signed-out screens
 GET  /api/health               # Health check (includes DB ping)
 GET  /swagger/*                # Swagger UI (not served in production)
 
@@ -305,30 +320,59 @@ POST /oauth2/register          # Hardened RFC 7591 DCR proxy (alias: POST /api/v
 
 ### Protected (require Bearer token)
 ```
+# Account security (under /auth so the refresh cookie is sent; Bearer token still required)
+POST   /api/v1/auth/password                 # Change password (rate limited per user: RATE_LIMIT_PASSWORD_PER_HOUR)
+GET    /api/v1/auth/sessions                 # This user's signed-in devices
+POST   /api/v1/auth/sessions/revoke-others
+DELETE /api/v1/auth/sessions/:id
+
 # User
 GET    /api/v1/profile
-PATCH  /api/v1/profile               # hide_balances, default_account_id, base_currency (must be supported: 2-decimal, USD or has a USD rate)
+PATCH  /api/v1/profile               # name, email (needs current_password), hide_balances, default_account_id, base_currency (must be supported: 2-decimal, USD or has a USD rate), appearance (palette; partial merge)
 
 # Accounts
 POST   /api/v1/accounts/cash
 POST   /api/v1/accounts/investment
 POST   /api/v1/accounts/credit-card
+POST   /api/v1/accounts/debt
+POST   /api/v1/accounts/fixed-deposit
 GET    /api/v1/accounts
+GET    /api/v1/accounts/sparklines
 GET    /api/v1/accounts/:id
 PUT    /api/v1/accounts/:id
+GET    /api/v1/accounts/:id/balance-history
 GET    /api/v1/accounts/:id/transactions
 GET    /api/v1/accounts/:id/investments
+POST   /api/v1/accounts/:id/fixed-deposit/close
 
 # Transactions
-GET    /api/v1/transactions
+GET    /api/v1/transactions                  # search/filter/paginate
 POST   /api/v1/transactions
-POST   /api/v1/transactions/transfer     # + to_amount (required when the accounts' currencies differ)
+POST   /api/v1/transactions/transfer         # + to_amount (required when the accounts' currencies differ)
+POST   /api/v1/transactions/shared           # shared expense creating receivables
+POST   /api/v1/transactions/bulk             # bulk edit
 GET    /api/v1/transactions/spending-by-category
+GET    /api/v1/transactions/cashflow
 GET    /api/v1/transactions/monthly-summary
 GET    /api/v1/transactions/daily-spending
+GET    /api/v1/transactions/daily-summary
+GET    /api/v1/transactions/top-expenses
 GET    /api/v1/transactions/:id
 PUT    /api/v1/transactions/:id
+PUT    /api/v1/transactions/:id/receivables
 DELETE /api/v1/transactions/:id
+POST   /api/v1/transactions/:id/attachments  # + GET list, GET/DELETE /:aid (receipts, docs/receipts.md)
+
+# Receivables (money lent or shared; plan 021)
+GET    /api/v1/receivables
+GET    /api/v1/receivables/summary
+GET    /api/v1/receivables/counterparties
+POST   /api/v1/receivables/counterparties/rename
+GET    /api/v1/receivables/:id
+POST   /api/v1/receivables/:id/settle        # + account_amount when the receiving account's currency differs
+POST   /api/v1/receivables/:id/write-off
+DELETE /api/v1/receivables/:id/write-off     # undo a write-off
+DELETE /api/v1/receivables/settlements/:id
 
 # Categories
 POST   /api/v1/categories
@@ -340,10 +384,25 @@ DELETE /api/v1/categories/:id
 # Budgets
 POST   /api/v1/budgets
 GET    /api/v1/budgets
+GET    /api/v1/budgets/progress              # all budgets at once
 GET    /api/v1/budgets/:id
 PUT    /api/v1/budgets/:id
 DELETE /api/v1/budgets/:id
 GET    /api/v1/budgets/:id/progress
+
+# Rules (plan 018: conditions + set-category actions)
+POST   /api/v1/rules
+GET    /api/v1/rules
+POST   /api/v1/rules/reorder
+POST   /api/v1/rules/preview
+GET    /api/v1/rules/suggestions
+GET    /api/v1/rules/:id
+PUT    /api/v1/rules/:id
+DELETE /api/v1/rules/:id
+POST   /api/v1/rules/:id/apply
+
+# Insights
+GET    /api/v1/analytics/typical             # "typical month" baseline for the Insights summary
 
 # Investments
 POST   /api/v1/investments
@@ -366,17 +425,33 @@ GET    /api/v1/securities/:id/prices
 GET    /api/v1/fx-rates?base=&quote=&from=&to=   # direct-pair history (default last 30 days, max 3700)
 GET    /api/v1/fx-rates/latest?base=&quote=      # direct, inverse or USD-pivot quote; 503 FX_RATE_UNAVAILABLE
 
-# Imports (multipart; plan 024 phase 3b; see docs/ibkr-import.md)
-POST   /api/v1/imports/ibkr    # IBKR Activity Statement CSVs (files x1-10, investment_account_id, cash_account_id, cash_start_date, legacy_cash_account_id?, deactivate_legacy_cash_account?, apply?). Dry run unless apply=true; apply is one DB transaction, refused with 400 IMPORT_INVALID (report in error.details) on report errors or a failed quantity checkpoint; idempotent via transactions.import_ref; in memory only, counts-only logs
+# Imports (multipart; each enforces its own size cap)
+POST   /api/v1/imports/ibkr    # plan 024 phase 3b, docs/ibkr-import.md: IBKR Activity Statement CSVs (files x1-10, investment_account_id, cash_account_id, cash_start_date, legacy_cash_account_id?, deactivate_legacy_cash_account?, apply?). Dry run unless apply=true; apply is one DB transaction, refused with 400 IMPORT_INVALID (report in error.details) on report errors or a failed quantity checkpoint; idempotent via transactions.import_ref; in memory only, counts-only logs
+POST   /api/v1/imports/csv     # plan 023 5.8, docs/csv-import.md: bank-statement CSV (preview/apply)
 
-# Connected apps (OAuth client grants)
+# Sample household (plan 023 5.7): 404 unless DEMO_ENABLED=true
+POST   /api/v1/demo/load       # creates sample data, every row listed in demo_rows; 409 DEMO_HAS_DATA / DEMO_ALREADY_LOADED
+DELETE /api/v1/demo            # removes exactly those rows; 409 DEMO_IN_USE
+
+# Data export and status
+GET    /api/v1/export          # streamed zip of CSVs, 1 per minute per user
+GET    /api/v1/system/status   # freshness timestamps (prices, FX, snapshot, backup) and demo flags for the UI
+
+# Connected apps (OAuth client grants; plans 022, 023 1.6)
 GET    /api/v1/oauth/clients
+GET    /api/v1/oauth/clients/activity               # changes made by all apps
+GET    /api/v1/oauth/clients/:client_id/activity
 DELETE /api/v1/oauth/clients/:client_id
 
 # Telegram
 GET    /api/v1/telegram/link
 POST   /api/v1/telegram/generate-code
 DELETE /api/v1/telegram/unlink
+PUT    /api/v1/telegram/reminder-settings
+
+# Reminders (card due, loan due, deposit maturity; plan 023 5.6)
+GET    /api/v1/reminders
+PATCH  /api/v1/reminders/:id                 # enable/disable one account's reminder
 ```
 
 ### Internal (require bot secret via InternalAuthMiddleware)
@@ -384,6 +459,8 @@ DELETE /api/v1/telegram/unlink
 POST   /api/v1/internal/telegram/complete-link
 GET    /api/v1/internal/telegram/resolve/:telegram_user_id
 POST   /api/v1/internal/telegram/activity/:telegram_user_id
+GET    /api/v1/internal/telegram/reminders/due        # polled by the bot (REMINDER_POLL_SECONDS)
+POST   /api/v1/internal/telegram/reminders/:id/sent
 ```
 
 ### Pipeline (require API key via X-API-Key header)
@@ -392,7 +469,8 @@ GET    /api/v1/pipeline/securities          # List all securities
 POST   /api/v1/pipeline/securities          # Create security
 PATCH  /api/v1/pipeline/securities/:id      # Correct currency/exchange/provider_symbol/name; a currency change on a security with prices needs reset_prices (409 SECURITY_CURRENCY_LOCKED), which deletes them in one transaction
 POST   /api/v1/pipeline/securities/prices   # Record security prices in the security's own currency (optional per-entry `currency`); 200 {"recorded": n, "rejected": [...]} - unknown_security / currency_mismatch entries are skipped, never fail the request
-POST   /api/v1/pipeline/snapshots           # Compute portfolio snapshots for all users
+POST   /api/v1/pipeline/snapshots           # Compute portfolio snapshots for all users (body: recorded_at)
+POST   /api/v1/pipeline/fixed-deposits/process  # Accrue interest / mature fixed deposits
 POST   /api/v1/pipeline/fx-rates            # Upsert exchange rates (decimal-string rates, <= 5000 per call)
 GET    /api/v1/pipeline/fx-pairs            # Pairs to publish + users' base currencies
 ```
@@ -443,11 +521,14 @@ CORS_ORIGIN=http://localhost:3000 # comma-separated exact-origin allowlist (defa
 COOKIE_SECURE=true               # Secure flag on the refresh cookie; defaults to false only when ENV=development
 API_TRUSTED_PROXY_CIDRS=         # CIDRs whose CF-Connecting-IP/X-Forwarded-For the api trusts for ClientIP (prod: tunnel network)
 MAX_BODY_BYTES=1048576           # JSON body cap (the attachment upload uses MAX_UPLOAD_BYTES)
+DEFAULT_PALETTE=catppuccin       # palette for users who have not picked one: gold|cobalt|saffron|graphite|lagoon|nord|catppuccin|gruvbox (unset/unknown = catppuccin)
+DEMO_ENABLED=false               # POST /demo/load + DELETE /demo (404 when off). Only the public demo instance (docker-compose.demo.yml) turns it on
 RATE_LIMIT_LOGIN_PER_MINUTE=10   # per IP, /auth/login + /oauth/login (0 disables)
 RATE_LIMIT_LOGIN_EMAIL_PER_HOUR=20
 RATE_LIMIT_REGISTER_PER_HOUR=5
 RATE_LIMIT_REFRESH_PER_MINUTE=60
 RATE_LIMIT_DCR_PER_HOUR=10
+RATE_LIMIT_PASSWORD_PER_HOUR=10  # per user, POST /auth/password
 HYDRA_ISSUER_URL=http://localhost:4444   # default
 HYDRA_ADMIN_URL=http://localhost:4445    # default
 MCP_RESOURCE_URL=http://localhost:8081   # default; must match the aud in Hydra tokens
@@ -460,6 +541,6 @@ MCP_TRUSTED_PROXY_CIDRS=         # CIDRs whose CF-Connecting-IP the mcp server t
 HYDRA_PINNED_CLIENT_ID=<optional pinned OAuth client>
 ```
 
-The MCP server additionally reads `MCP_PORT` (default `8081`). Hydra itself is configured via `HYDRA_DSN`, `HYDRA_SECRETS_SYSTEM`, `HYDRA_LOGIN_URL`, `HYDRA_CONSENT_URL`, and `HYDRA_TLS_TERMINATION_CIDR` (see `.env.prod.example` and `docker-compose.prod.yml`). The bot service reads `TELEGRAM_BOT_TOKEN`, `API_BASE_URL`, and `LOG_LEVEL` (see `apps/bot/.env.example`).
+The web app reads `NEXT_PUBLIC_API_URL` (required, build-time), `NEXT_PUBLIC_BOT_USERNAME` (default `KuberanFinBot`) and `NEXT_PUBLIC_MCP_URL` (build-time; the connector address Settings > Connected apps shows, usually `MCP_RESOURCE_URL` + `/mcp`; empty links to the docs instead). The MCP server additionally reads `MCP_PORT` (default `8081`). Hydra itself is configured via `HYDRA_DSN`, `HYDRA_SECRETS_SYSTEM`, `HYDRA_LOGIN_URL`, `HYDRA_CONSENT_URL`, and `HYDRA_TLS_TERMINATION_CIDR` (see `.env.prod.example` and `docker-compose.prod.yml`). The bot service reads `TELEGRAM_BOT_TOKEN`, `BOT_INTERNAL_SECRET`, `API_BASE_URL`, `LOG_LEVEL` and `REMINDER_POLL_SECONDS` (default `300`: how often it polls the api for due reminders; not forwarded by the production compose file, so add it to the `bot` service's `environment:` to change it; see `apps/bot/.env.example`). The demo stack reads `.env.demo` (see `.env.demo.example` and `docs/public-demo.md`).
 
 In production, `JWT_SECRET` must be explicitly set (not the default, at least 32 bytes), `CORS_ORIGIN` must list explicit origins (no `*`), and `DB_PASSWORD` must not be the development default; startup warns when `DB_SSLMODE=disable` or `PIPELINE_API_KEY`/`BOT_INTERNAL_SECRET` are shorter than 32 characters.
