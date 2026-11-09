@@ -8,7 +8,8 @@ import { useAuth } from "@/hooks/use-auth";
 import { useReceivablesSummary } from "@/hooks/use-receivables";
 import { useAccounts } from "@/hooks/use-accounts";
 import { useTransactions } from "@/hooks/use-transactions";
-import { formatCurrency, formatDate } from "@/lib/format";
+import { useBaseCurrency } from "@/hooks/use-profile";
+import { formatMoney, formatDate } from "@/lib/format";
 import { accountVisual, transactionVisual } from "@/lib/domain-visuals";
 import {
   Card,
@@ -19,6 +20,8 @@ import {
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Money } from "@/components/ui/money";
+import { FxNotice } from "@/components/ui/fx-notice";
 import { CreateTransactionDialog } from "@/components/transactions/create-transaction-dialog";
 import { EditTransactionDialog } from "@/components/transactions/edit-transaction-dialog";
 import { NetWorthChart } from "@/components/dashboard/net-worth-chart";
@@ -70,16 +73,14 @@ function SectionCardHeader({
   );
 }
 
-function AccountsPanel({
-  accounts,
-  hideBalances,
-}: {
-  accounts: Account[];
-  hideBalances: boolean;
-}) {
+function AccountsPanel({ accounts }: { accounts: Account[] }) {
+  const baseCurrency = useBaseCurrency();
+  // Rank by the base-currency balance; accounts with no rate sort last.
+  const baseOf = (a: Account): number | undefined =>
+    a.balance_base ?? (a.currency === baseCurrency ? a.balance : undefined);
   const pinned = accounts.filter((a) => a.is_pinned);
   const shown = (pinned.length > 0 ? pinned : [...accounts])
-    .sort((a, b) => Math.abs(b.balance) - Math.abs(a.balance))
+    .sort((a, b) => Math.abs(baseOf(b) ?? 0) - Math.abs(baseOf(a) ?? 0))
     .slice(0, 5);
 
   return (
@@ -107,8 +108,18 @@ function AccountsPanel({
                 <p className="truncate text-sm font-medium">{account.name}</p>
                 <p className="text-xs text-muted-foreground">{v.label}</p>
               </div>
-              <span className="money shrink-0 text-sm font-medium">
-                {formatCurrency(account.balance, account.currency, hideBalances)}
+              <span className="shrink-0 text-right">
+                <Money
+                  amount={account.balance}
+                  currency={account.currency}
+                  baseAmount={account.balance_base}
+                  baseCurrency={baseCurrency}
+                  fxRate={account.fx_rate}
+                  fxStale={account.fx_stale}
+                  fxMissing={account.fx_missing}
+                  layout="stacked"
+                  className="text-sm font-medium"
+                />
               </span>
             </Link>
           );
@@ -121,12 +132,16 @@ function AccountsPanel({
 function TransactionRow({
   transaction,
   accountName,
+  currency,
   onClick,
 }: {
   transaction: Transaction;
   accountName?: string;
+  /** Currency of the transaction's account, which `amount` is in. */
+  currency: string;
   onClick?: () => void;
 }) {
+  const { hideBalances } = useAuth();
   const v = transactionVisual(transaction.type);
   const Icon = v.icon;
 
@@ -155,7 +170,7 @@ function TransactionRow({
       <span className="shrink-0 text-right">
         <span className={`money block text-sm font-semibold ${v.text}`}>
           {v.sign}
-          {formatCurrency(transaction.amount)}
+          {formatMoney(transaction.amount, currency, hideBalances)}
         </span>
         <YourShareText transaction={transaction} />
       </span>
@@ -173,6 +188,8 @@ export default function DashboardPage() {
   // Informational only: receivables are NOT part of net worth (plan 021, D4).
   const { data: receivablesSummary } = useReceivablesSummary();
   const owedToYou = receivablesSummary?.total_outstanding ?? 0;
+  const baseCurrency = useBaseCurrency();
+  const owedCurrency = receivablesSummary?.currency ?? baseCurrency;
 
   const accounts = accountsData?.data ?? [];
 
@@ -181,6 +198,7 @@ export default function DashboardPage() {
   const transactions = transactionsData?.data ?? [];
 
   const accountNameMap = new Map(accounts.map((a) => [a.id, a.name]));
+  const accountCurrencyMap = new Map(accounts.map((a) => [a.id, a.currency]));
 
   const today = new Date().toLocaleDateString("en-US", {
     weekday: "long",
@@ -237,17 +255,23 @@ export default function DashboardPage() {
           <div className="min-w-0 space-y-4 lg:col-span-2">
             <NetWorthChart />
             {owedToYou > 0 && (
-              <Link
-                href="/receivables"
-                className="flex items-center justify-between rounded-xl border bg-card px-4 py-2.5 text-sm shadow-sm transition-colors hover:border-primary/40 hover:bg-accent/40"
-              >
-                <span className="text-muted-foreground">
-                  Owed to you (not included in net worth)
-                </span>
-                <span className="money font-semibold">
-                  {formatCurrency(owedToYou, undefined, hideBalances)}
-                </span>
-              </Link>
+              <>
+                <Link
+                  href="/receivables"
+                  className="flex items-center justify-between rounded-xl border bg-card px-4 py-2.5 text-sm shadow-sm transition-colors hover:border-primary/40 hover:bg-accent/40"
+                >
+                  <span className="text-muted-foreground">
+                    Owed to you (not included in net worth)
+                  </span>
+                  <span className="money font-semibold">
+                    {formatMoney(owedToYou, owedCurrency, hideBalances)}
+                  </span>
+                </Link>
+                <FxNotice
+                  fxMissing={receivablesSummary?.fx_missing}
+                  variant="inline"
+                />
+              </>
             )}
             <SpendingCard />
             <CashflowCard />
@@ -281,6 +305,7 @@ export default function DashboardPage() {
                         key={tx.id}
                         transaction={tx}
                         accountName={accountNameMap.get(tx.account_id)}
+                        currency={accountCurrencyMap.get(tx.account_id) ?? baseCurrency}
                         onClick={() => {
                           setSelectedTransaction(tx);
                           setEditTxOpen(true);
@@ -292,7 +317,7 @@ export default function DashboardPage() {
               </CardContent>
             </Card>
 
-            <AccountsPanel accounts={accounts} hideBalances={hideBalances} />
+            <AccountsPanel accounts={accounts} />
           </div>
         </div>
       )}

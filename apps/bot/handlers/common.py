@@ -5,7 +5,7 @@ from typing import Any, Dict, Optional
 import httpx
 from telegram import Update
 
-from api_client import KuberanAPIClient
+from api_client import KuberanAPIClient, UserAPIClient
 
 logger = logging.getLogger(__name__)
 
@@ -16,6 +16,8 @@ NOT_LINKED_MESSAGE = (
 SERVICE_UNAVAILABLE_MESSAGE = (
     "❌ Kuberan is unreachable right now. Please try again later."
 )
+# Used only when the profile cannot be read; totals are then labelled MYR.
+FALLBACK_BASE_CURRENCY = "MYR"
 
 
 def describe_error(e: BaseException) -> str:
@@ -23,6 +25,20 @@ def describe_error(e: BaseException) -> str:
     if isinstance(e, httpx.HTTPStatusError):
         return f"HTTP {e.response.status_code}"
     return type(e).__name__
+
+
+async def get_base_currency(user_client: UserAPIClient) -> str:
+    """Return the user's base (reporting) currency from the profile.
+
+    Totals are always expressed in this currency. Falls back to
+    FALLBACK_BASE_CURRENCY, with a warning, if the profile call fails.
+    """
+    try:
+        profile = await user_client.get_profile()
+    except httpx.HTTPError as e:
+        logger.warning("Failed to fetch profile for base currency: %s", describe_error(e))
+        return FALLBACK_BASE_CURRENCY
+    return profile.get('base_currency') or FALLBACK_BASE_CURRENCY
 
 
 async def resolve_linked_user(api_client: KuberanAPIClient, update: Update,

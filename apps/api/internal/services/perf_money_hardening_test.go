@@ -52,6 +52,7 @@ func TestDailySummary_GroupedBucketsAndInitialBalance(t *testing.T) {
 	defer testutil.TeardownTestDB(t, db)
 	svc := NewTransactionService(db, NewAccountService(db), nil)
 	user := testutil.CreateTestUser(t, db)
+	setBaseUSD(t, db, user.ID)
 	acct := testutil.CreateTestCashAccount(t, db, user.ID)
 
 	day1 := time.Date(2026, 3, 1, 9, 0, 0, 0, time.UTC)
@@ -74,9 +75,9 @@ func TestDailySummary_GroupedBucketsAndInitialBalance(t *testing.T) {
 	items, err := svc.GetDailySummary(user.ID, day1, day3)
 	testutil.AssertNoError(t, err)
 	want := []DailySummaryItem{
-		{Date: "2026-03-01", Income: 1000, Expenses: 300},
-		{Date: "2026-03-02", Income: 0, Expenses: 0},
-		{Date: "2026-03-03", Income: 0, Expenses: 600},
+		{Date: "2026-03-01", Income: 1000, Expenses: 300, Currency: "USD"},
+		{Date: "2026-03-02", Income: 0, Expenses: 0, Currency: "USD"},
+		{Date: "2026-03-03", Income: 0, Expenses: 600, Currency: "USD"},
 	}
 	if len(items) != len(want) {
 		t.Fatalf("got %d items, want %d: %v", len(items), len(want), items)
@@ -94,70 +95,46 @@ func TestDailySummary_GroupedBucketsAndInitialBalance(t *testing.T) {
 	}
 }
 
-func TestCreateTransfer_RejectsCurrencyMismatch(t *testing.T) {
-	db := testutil.SetupTestDB(t)
-	defer testutil.TeardownTestDB(t, db)
-	svc := NewTransactionService(db, NewAccountService(db), nil)
-	user := testutil.CreateTestUser(t, db)
-	usd := testutil.CreateTestCashAccountWithBalance(t, db, user.ID, 10000)
-	eur := testutil.CreateTestCashAccountWithBalance(t, db, user.ID, 0)
-	if err := db.Model(&models.Account{}).Where("id = ?", eur.ID).Update("currency", "EUR").Error; err != nil {
-		t.Fatal(err)
-	}
-
-	_, err := svc.CreateTransfer(user.ID, usd.ID, eur.ID, 500, "fx", time.Now())
-	testutil.AssertAppError(t, err, apperrors.ErrTransferCurrencyMismatch.Code)
-
-	// Balances are untouched.
-	var got models.Account
-	if err := db.First(&got, "id = ?", usd.ID).Error; err != nil {
-		t.Fatal(err)
-	}
-	if got.Balance != 10000 {
-		t.Errorf("balance changed to %d", got.Balance)
-	}
-}
-
 func TestInvestmentRoundingAndOverflowGuard(t *testing.T) {
 	db := testutil.SetupTestDB(t)
 	defer testutil.TeardownTestDB(t, db)
 	acctSvc := NewAccountService(db)
-	svc := NewInvestmentService(db, acctSvc)
+	svc := NewInvestmentService(db, acctSvc, nil)
 	user := testutil.CreateTestUser(t, db)
 	account := testutil.CreateTestInvestmentAccount(t, db, user.ID)
 	sec := testutil.CreateTestSecurity(t, db)
 
 	// 0.29 * 100 = 28.999999999999996 in float64; truncation would give 28.
-	inv, err := svc.AddInvestment(user.ID, account.ID, sec.ID, 0.29, 100, "", nil, 0, "")
+	inv, err := svc.AddInvestment(user.ID, AddInvestmentParams{AccountID: account.ID, SecurityID: sec.ID, Quantity: 0.29, PurchasePrice: 100})
 	testutil.AssertNoError(t, err)
 	if inv.CostBasis != 29 {
 		t.Errorf("cost basis = %d, want 29", inv.CostBasis)
 	}
 
-	buy, err := svc.RecordBuy(user.ID, inv.ID, time.Now(), 1.5, 3, 0, "", "")
+	buy, err := svc.RecordBuy(user.ID, inv.ID, BuyParams{Date: time.Now(), Quantity: 1.5, PricePerUnit: 3})
 	testutil.AssertNoError(t, err)
 	if buy.TotalAmount != 5 { // 4.5 rounds half away from zero
 		t.Errorf("buy total = %d, want 5", buy.TotalAmount)
 	}
 
-	_, err = svc.AddInvestment(user.ID, account.ID, sec.ID, 1e12, 1_000_000, "", nil, 0, "")
+	_, err = svc.AddInvestment(user.ID, AddInvestmentParams{AccountID: account.ID, SecurityID: sec.ID, Quantity: 1e12, PurchasePrice: 1_000_000})
 	testutil.AssertAppError(t, err, apperrors.ErrInvalidInput.Code)
-	_, err = svc.RecordBuy(user.ID, inv.ID, time.Now(), 1e12, 1_000_000, 0, "", "")
+	_, err = svc.RecordBuy(user.ID, inv.ID, BuyParams{Date: time.Now(), Quantity: 1e12, PricePerUnit: 1_000_000})
 	testutil.AssertAppError(t, err, apperrors.ErrInvalidInput.Code)
 }
 
 func TestRecordSell_RevalidatesLockedQuantity(t *testing.T) {
 	db := testutil.SetupTestDB(t)
 	defer testutil.TeardownTestDB(t, db)
-	svc := NewInvestmentService(db, NewAccountService(db))
+	svc := NewInvestmentService(db, NewAccountService(db), nil)
 	user := testutil.CreateTestUser(t, db)
 	account := testutil.CreateTestInvestmentAccount(t, db, user.ID)
 	sec := testutil.CreateTestSecurity(t, db)
 	inv := testutil.CreateTestInvestment(t, db, account.ID, sec.ID) // qty 10, cost 100000
 
-	_, err := svc.RecordSell(user.ID, inv.ID, time.Now(), 6, 20000, 0, "", "")
+	_, err := svc.RecordSell(user.ID, inv.ID, SellParams{Date: time.Now(), Quantity: 6, PricePerUnit: 20000})
 	testutil.AssertNoError(t, err)
-	_, err = svc.RecordSell(user.ID, inv.ID, time.Now(), 6, 20000, 0, "", "")
+	_, err = svc.RecordSell(user.ID, inv.ID, SellParams{Date: time.Now(), Quantity: 6, PricePerUnit: 20000})
 	testutil.AssertAppError(t, err, apperrors.ErrInsufficientShares.Code)
 
 	var got models.Investment
@@ -178,14 +155,14 @@ func TestRecordPrices_BatchedSkipsDuplicates(t *testing.T) {
 	t2 := t1.Add(time.Hour)
 	testutil.CreateTestSecurityPrice(t, db, sec.ID, 100, t1)
 
-	n, err := svc.RecordPrices([]SecurityPriceInput{
-		{SecurityID: sec.ID, Price: 101, RecordedAt: t1}, // already stored
-		{SecurityID: sec.ID, Price: 102, RecordedAt: t2},
-		{SecurityID: sec.ID, Price: 103, RecordedAt: t2}, // duplicate within the batch
+	res, err := svc.RecordPrices([]SecurityPriceInput{
+		{SecurityID: sec.ID, Price: 101, Currency: "MYR", RecordedAt: t1}, // already stored
+		{SecurityID: sec.ID, Price: 102, Currency: "MYR", RecordedAt: t2},
+		{SecurityID: sec.ID, Price: 103, Currency: "MYR", RecordedAt: t2}, // duplicate within the batch
 	})
 	testutil.AssertNoError(t, err)
-	if n != 1 {
-		t.Errorf("recorded = %d, want 1", n)
+	if res.Recorded != 1 {
+		t.Errorf("recorded = %d, want 1", res.Recorded)
 	}
 	var count int64
 	db.Model(&models.SecurityPrice{}).Where("security_id = ?", sec.ID).Count(&count)
@@ -206,9 +183,9 @@ func TestLatestPrices_PicksNewestPerSecurity(t *testing.T) {
 	testutil.CreateTestSecurityPrice(t, db, a.ID, 200, base.Add(time.Hour))
 	testutil.CreateTestSecurityPrice(t, db, b.ID, 50, base)
 
-	prices, err := getLatestPrices(db, []string{a.ID, b.ID, c.ID, a.ID})
+	prices, err := latestNativePrices(db, []string{a.ID, b.ID, c.ID, a.ID})
 	testutil.AssertNoError(t, err)
-	if prices[a.ID] != 300 || prices[b.ID] != 50 {
+	if prices[a.ID].Price != 300 || prices[b.ID].Price != 50 || prices[a.ID].Currency != "MYR" {
 		t.Errorf("prices = %v", prices)
 	}
 	if _, ok := prices[c.ID]; ok {
@@ -219,12 +196,13 @@ func TestLatestPrices_PicksNewestPerSecurity(t *testing.T) {
 func TestComputeAndRecordSnapshots_SetBasedUpsert(t *testing.T) {
 	db := testutil.SetupTestDB(t)
 	defer testutil.TeardownTestDB(t, db)
-	svc := NewPortfolioSnapshotService(db)
+	svc := NewPortfolioSnapshotService(db, nil)
 
 	u1 := testutil.CreateTestUser(t, db)
 	u2 := testutil.CreateTestUserWithEmail(t, db, "second@example.com")
-	testutil.CreateTestCashAccountWithBalance(t, db, u1.ID, 10000)
-	testutil.CreateTestCreditCardAccount(t, db, u1.ID, 2500)
+	// The users' base is MYR (the default): keep the balances in MYR too.
+	p4Account(t, db, testutil.CreateTestCashAccountWithBalance(t, db, u1.ID, 10000), "MYR")
+	p4Account(t, db, testutil.CreateTestCreditCardAccount(t, db, u1.ID, 2500), "MYR")
 	inv := testutil.CreateTestInvestmentAccount(t, db, u1.ID)
 	sec := testutil.CreateTestSecurity(t, db)
 	holding := testutil.CreateTestInvestment(t, db, inv.ID, sec.ID) // qty 10
@@ -232,7 +210,7 @@ func TestComputeAndRecordSnapshots_SetBasedUpsert(t *testing.T) {
 		t.Fatal(err)
 	}
 	testutil.CreateTestSecurityPrice(t, db, sec.ID, 100, time.Now().Add(-time.Hour))
-	testutil.CreateTestCashAccountWithBalance(t, db, u2.ID, 700)
+	p4Account(t, db, testutil.CreateTestCashAccountWithBalance(t, db, u2.ID, 700), "MYR")
 
 	at := time.Date(2026, 2, 1, 12, 0, 0, 0, time.UTC)
 	n, err := svc.ComputeAndRecordSnapshots(at)
@@ -276,7 +254,7 @@ func TestComputeAndRecordSnapshots_SetBasedUpsert(t *testing.T) {
 func TestGetGroupedSnapshots_RangeCap(t *testing.T) {
 	db := testutil.SetupTestDB(t)
 	defer testutil.TeardownTestDB(t, db)
-	svc := NewPortfolioSnapshotService(db)
+	svc := NewPortfolioSnapshotService(db, nil)
 	user := testutil.CreateTestUser(t, db)
 	from := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 

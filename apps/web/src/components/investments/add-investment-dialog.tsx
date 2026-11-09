@@ -5,8 +5,13 @@ import { Check, ChevronsUpDown } from "lucide-react";
 import { toast } from "sonner";
 import { ApiClientError } from "@/lib/api-client";
 import { toRFC3339 } from "@/lib/format";
+import {
+  FxRateField,
+  isValidFxRate,
+} from "@/components/investments/cross-currency-field";
 import { useAddInvestment } from "@/hooks/use-investments";
 import { useSecurities } from "@/hooks/use-securities";
+import { useBaseCurrency } from "@/hooks/use-profile";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -64,6 +69,7 @@ export function AddInvestmentDialog({
   open,
   onOpenChange,
 }: AddInvestmentDialogProps) {
+  const baseCurrency = useBaseCurrency();
   const [selectedSecurity, setSelectedSecurity] = useState<Security | null>(
     null
   );
@@ -76,6 +82,7 @@ export function AddInvestmentDialog({
   const [date, setDate] = useState(new Date().toISOString().split("T")[0]);
   const [fee, setFee] = useState(0);
   const [notes, setNotes] = useState("");
+  const [fxRate, setFxRate] = useState("");
   const [error, setError] = useState("");
 
   const addInvestment = useAddInvestment();
@@ -107,6 +114,7 @@ export function AddInvestmentDialog({
     setDate(new Date().toISOString().split("T")[0]);
     setFee(0);
     setNotes("");
+    setFxRate("");
     setError("");
   }
 
@@ -137,6 +145,11 @@ export function AddInvestmentDialog({
       return;
     }
 
+    if (!isValidFxRate(fxRate)) {
+      setError("Exchange rate must be a positive number");
+      return;
+    }
+
     addInvestment.mutate(
       {
         account_id: accountId,
@@ -147,6 +160,7 @@ export function AddInvestmentDialog({
         date: date ? toRFC3339(date) : undefined,
         fee: fee > 0 ? fee : undefined,
         notes: notes.trim() || undefined,
+        fx_rate: fxRate.trim() || undefined,
       },
       {
         onSuccess: () => {
@@ -280,6 +294,7 @@ export function AddInvestmentDialog({
               id="inv-price"
               value={purchasePrice}
               onChange={setPurchasePrice}
+              currency={selectedSecurity?.currency ?? baseCurrency}
               placeholder="0.00"
               disabled={isSubmitting}
             />
@@ -304,10 +319,19 @@ export function AddInvestmentDialog({
               id="inv-fee"
               value={fee}
               onChange={setFee}
+              currency={selectedSecurity?.currency ?? baseCurrency}
               placeholder="0.00"
               disabled={isSubmitting}
             />
           </div>
+
+          <FxRateField
+            id="inv-fx-rate"
+            securityCurrency={selectedSecurity?.currency ?? ""}
+            value={fxRate}
+            onChange={setFxRate}
+            disabled={isSubmitting}
+          />
 
           {/* Notes (optional) */}
           <div className="flex flex-col gap-2">

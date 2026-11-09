@@ -3,10 +3,12 @@
 import { useMemo, useState } from "react";
 import { ChevronLeft, ChevronRight, Paperclip, Plus, X } from "lucide-react";
 
-import { useAccounts } from "@/hooks/use-accounts";
+import { useAccounts, useAccountCurrencies } from "@/hooks/use-accounts";
 import { useTransactions } from "@/hooks/use-transactions";
 import { useCategories } from "@/hooks/use-categories";
-import { formatCurrency, formatDate } from "@/lib/format";
+import { formatMoney, formatDate } from "@/lib/format";
+import { useAuth } from "@/hooks/use-auth";
+import { TransactionAmount } from "@/components/transactions/transaction-amount";
 import { transactionVisual } from "@/lib/domain-visuals";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -85,7 +87,7 @@ function TransactionRow({
       <span className="shrink-0 text-right">
         <span className={`money block text-sm font-semibold ${v.text}`}>
           {v.sign}
-          {formatCurrency(transaction.amount)}
+          <TransactionAmount transaction={transaction} />
         </span>
         <YourShareText transaction={transaction} />
       </span>
@@ -139,20 +141,29 @@ export default function TransactionsPage() {
       if (arr) arr.push(tx);
       else map.set(key, [tx]);
     }
-    return Array.from(map.entries()).map(([date, txs]) => {
-      const net = txs.reduce(
-        (s, t) =>
-          // Repayments are inflows to the account (cash flow, not income or spending).
-          t.type === "income" || t.type === "reimbursement"
-            ? s + t.amount
-            : t.type === "expense"
-              ? s - t.amount
-              : s,
-        0
-      );
-      return { date, txs, net };
-    });
+    return Array.from(map.entries()).map(([date, txs]) => ({ date, txs }));
   }, [transactions]);
+
+  // Net cash flow of a day, per currency: amounts in different currencies are
+  // never added together.
+  const currencyOf = useAccountCurrencies();
+  const { hideBalances } = useAuth();
+  const dayNets = (txs: Transaction[]) => {
+    const nets = new Map<string, number>();
+    for (const t of txs) {
+      // Repayments are inflows to the account (cash flow, not income or spending).
+      const delta =
+        t.type === "income" || t.type === "reimbursement"
+          ? t.amount
+          : t.type === "expense"
+            ? -t.amount
+            : 0;
+      if (delta === 0) continue;
+      const ccy = currencyOf(t.account_id, t.account);
+      nets.set(ccy, (nets.get(ccy) ?? 0) + delta);
+    }
+    return Array.from(nets).filter(([, n]) => n !== 0);
+  };
 
   const activeFilterCount = [
     accountFilter !== "all",
@@ -320,17 +331,22 @@ export default function TransactionsPage() {
                 <span className="text-xs font-medium text-muted-foreground">
                   {group.date}
                 </span>
-                {group.net !== 0 && (
-                  <span
-                    title="Net cash flow for the day (includes repayments)"
-                    className={`money text-xs font-medium ${
-                      group.net > 0 ? "text-positive" : "text-muted-foreground"
-                    }`}
-                  >
-                    {group.net > 0 ? "+" : "−"}
-                    {formatCurrency(Math.abs(group.net))}
-                  </span>
-                )}
+                <span
+                  title="Net cash flow for the day (includes repayments)"
+                  className="money flex gap-2 text-xs font-medium"
+                >
+                  {dayNets(group.txs).map(([ccy, net]) => (
+                    <span
+                      key={ccy}
+                      className={
+                        net > 0 ? "text-positive" : "text-muted-foreground"
+                      }
+                    >
+                      {net > 0 ? "+" : "−"}
+                      {formatMoney(Math.abs(net), ccy, hideBalances)}
+                    </span>
+                  ))}
+                </span>
               </div>
               <div className="divide-y divide-border/50">
                 {group.txs.map((tx) => (

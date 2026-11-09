@@ -3,8 +3,13 @@
 import { useState } from "react";
 import { toast } from "sonner";
 import { useAccounts } from "@/hooks/use-accounts";
+import { getFxAmountRequired, type FxAmountRequired } from "@/lib/api-client";
+import {
+  CrossCurrencyAmount,
+  useCrossAmount,
+} from "@/components/transactions/cross-currency-amount";
 import { useSettleReceivable } from "@/hooks/use-receivables";
-import { formatCurrency, toLocalDateString, toRFC3339 } from "@/lib/format";
+import { formatMoney, toLocalDateString, toRFC3339 } from "@/lib/format";
 import {
   isSettlementAccountType,
   receivableApiErrorMessage,
@@ -78,6 +83,9 @@ function SettleForm({
   const [date, setDate] = useState(toLocalDateString());
   const [writeOffRest, setWriteOffRest] = useState(false);
   const [error, setError] = useState("");
+  // Set when the API asked for account_amount although the cached accounts
+  // looked like the same currency.
+  const [fxRequired, setFxRequired] = useState<FxAmountRequired | null>(null);
 
   const { data: accountData } = useAccounts({ page_size: 100 });
   const settle = useSettleReceivable();
@@ -89,6 +97,14 @@ function SettleForm({
   const defaultAccountId =
     accounts.find((a) => a.id === expenseAccountId)?.id ?? accounts[0]?.id ?? "";
   const effectiveAccountId = accountId || defaultAccountId;
+
+  const currency = receivable.currency;
+  const targetAccount = accounts.find((a) => a.id === effectiveAccountId);
+  const accountCurrency =
+    fxRequired?.currency || targetAccount?.currency || currency;
+  // The repayment is in the receivable's currency; when the account holds
+  // another one, the amount credited to it is asked for separately.
+  const received = useCrossAmount(currency, accountCurrency, amount);
 
   const remainder = receivable.outstanding - amount;
   const impact = writeOffRest ? writeOffImpactText(receivable, remainder) : null;
@@ -103,8 +119,12 @@ function SettleForm({
     }
     if (!amountValid) {
       setError(
-        `Amount must be between 0.01 and ${formatCurrency(receivable.outstanding)}`
+        `Amount must be between 0.01 and ${formatMoney(receivable.outstanding, currency)}`
       );
+      return;
+    }
+    if (received.needed && received.value <= 0) {
+      setError(`Enter the amount received in ${accountCurrency}`);
       return;
     }
     settle.mutate(
@@ -112,6 +132,7 @@ function SettleForm({
         id: receivable.id,
         account_id: effectiveAccountId,
         amount,
+        account_amount: received.needed ? received.value : undefined,
         date: date ? toRFC3339(date) : undefined,
         write_off_remainder: writeOffRest && remainder > 0 ? true : undefined,
       },
@@ -120,7 +141,18 @@ function SettleForm({
           toast.success("Repayment recorded");
           onDone();
         },
-        onError: (err) => setError(receivableApiErrorMessage(err)),
+        onError: (err) => {
+          const need = getFxAmountRequired(err);
+          if (need && need.field === "account_amount") {
+            setFxRequired(need);
+            if (need.suggestedAmount) received.setValue(need.suggestedAmount);
+            setError(
+              `This account holds a different currency. Confirm the amount received in ${need.currency}.`
+            );
+            return;
+          }
+          setError(receivableApiErrorMessage(err));
+        },
       }
     );
   }
@@ -131,7 +163,7 @@ function SettleForm({
         <DialogTitle>Record repayment</DialogTitle>
         <DialogDescription>
           {receivable.counterparty_name} owes{" "}
-          {formatCurrency(receivable.outstanding)}
+          {formatMoney(receivable.outstanding, currency)}
           {receivable.transaction?.description
             ? ` for ${receivable.transaction.description}`
             : ""}
@@ -143,7 +175,10 @@ function SettleForm({
         <Label htmlFor="settle-account">Received into</Label>
         <Select
           value={effectiveAccountId}
-          onValueChange={setAccountId}
+          onValueChange={(v) => {
+            setAccountId(v);
+            setFxRequired(null);
+          }}
           disabled={settle.isPending}
         >
           <SelectTrigger id="settle-account" className="w-full">
@@ -152,7 +187,7 @@ function SettleForm({
           <SelectContent>
             {accounts.map((a) => (
               <SelectItem key={a.id} value={a.id}>
-                {a.name}
+                {a.name} ({a.currency})
               </SelectItem>
             ))}
           </SelectContent>
@@ -166,6 +201,7 @@ function SettleForm({
             id="settle-amount"
             value={amount}
             onChange={setAmount}
+            currency={currency}
             disabled={settle.isPending}
           />
         </div>
@@ -181,6 +217,20 @@ function SettleForm({
         </div>
       </div>
 
+      {received.needed && (
+        <CrossCurrencyAmount
+          id="settle-account-amount"
+          label={`Amount received in ${targetAccount?.name ?? "account"} (${accountCurrency})`}
+          fromCurrency={currency}
+          fromAmount={amount}
+          toCurrency={accountCurrency}
+          value={received.value}
+          onChange={received.setValue}
+          rate={received.rate}
+          disabled={settle.isPending}
+        />
+      )}
+
       {amountValid && remainder > 0 && (
         <div className="space-y-1">
           <div className="flex items-center gap-2">
@@ -191,7 +241,7 @@ function SettleForm({
               disabled={settle.isPending}
             />
             <Label htmlFor="settle-write-off-rest" className="font-normal">
-              Write off the rest ({formatCurrency(remainder)})
+              Write off the rest ({formatMoney(remainder, currency)})
             </Label>
           </div>
           {impact && (

@@ -2,7 +2,7 @@ from telegram import Update
 from telegram.constants import ParseMode
 from telegram.ext import ContextTypes
 from api_client import KuberanAPIClient
-from handlers.common import describe_error, resolve_linked_user
+from handlers.common import describe_error, get_base_currency, resolve_linked_user
 from utils.formatting import esc, format_currency
 from datetime import datetime
 import logging
@@ -30,20 +30,18 @@ def handle(api_client: KuberanAPIClient):
                 return
 
             # Parse summary data
-            income = 0
-            expenses = 0
+            item = {}
 
             if isinstance(summary, list) and len(summary) > 0:
-                current_month_data = summary[0]
-                income = current_month_data.get('income', 0)
-                expenses = current_month_data.get('expenses', 0)
+                item = summary[0]
             elif isinstance(summary, dict):
-                income = summary.get('income', 0)
-                expenses = summary.get('expenses', 0)
-
+                item = summary
+            income = item.get('income', 0)
+            expenses = item.get('expenses', 0)
             net = income - expenses
 
-            currency = user_data.get('default_currency', 'MYR')
+            # The month's totals are in the item's currency (the base currency).
+            currency = item.get('currency') or await get_base_currency(user_client)
             month_name = now.strftime("%B %Y")
 
             message = f"📈 <b>Monthly Summary - {esc(month_name)}</b>\n\n"
@@ -53,6 +51,8 @@ def handle(api_client: KuberanAPIClient):
 
             status = "✅" if net >= 0 else "⚠️"
             message += f"{status} Net (income − spending): {esc(format_currency(net, currency))}"
+            if item.get('fx_missing'):
+                message += "\n<i>Some amounts have no exchange rate and are left out.</i>"
 
             await update.message.reply_text(message, parse_mode=ParseMode.HTML)
 

@@ -18,7 +18,7 @@ func TestCreateUser(t *testing.T) {
 	t.Run("valid", func(t *testing.T) {
 		db := testutil.SetupTestDB(t)
 		defer testutil.TeardownTestDB(t, db)
-		svc := NewUserService(db)
+		svc := NewUserService(db, NewFXService(db, testFXStaleness))
 
 		user, err := svc.CreateUser("alice@example.com", "password123", "Alice", "Smith")
 		testutil.AssertNoError(t, err)
@@ -40,7 +40,7 @@ func TestCreateUser(t *testing.T) {
 	t.Run("duplicate_email", func(t *testing.T) {
 		db := testutil.SetupTestDB(t)
 		defer testutil.TeardownTestDB(t, db)
-		svc := NewUserService(db)
+		svc := NewUserService(db, NewFXService(db, testFXStaleness))
 
 		_, err := svc.CreateUser("dup@example.com", "password123", "", "")
 		testutil.AssertNoError(t, err)
@@ -52,7 +52,7 @@ func TestCreateUser(t *testing.T) {
 	t.Run("empty_email", func(t *testing.T) {
 		db := testutil.SetupTestDB(t)
 		defer testutil.TeardownTestDB(t, db)
-		svc := NewUserService(db)
+		svc := NewUserService(db, NewFXService(db, testFXStaleness))
 
 		_, err := svc.CreateUser("", "password123", "", "")
 		testutil.AssertAppError(t, err, "INVALID_INPUT")
@@ -61,7 +61,7 @@ func TestCreateUser(t *testing.T) {
 	t.Run("empty_password", func(t *testing.T) {
 		db := testutil.SetupTestDB(t)
 		defer testutil.TeardownTestDB(t, db)
-		svc := NewUserService(db)
+		svc := NewUserService(db, NewFXService(db, testFXStaleness))
 
 		_, err := svc.CreateUser("test@example.com", "", "", "")
 		testutil.AssertAppError(t, err, "INVALID_INPUT")
@@ -70,7 +70,7 @@ func TestCreateUser(t *testing.T) {
 	t.Run("email_normalized_to_lowercase", func(t *testing.T) {
 		db := testutil.SetupTestDB(t)
 		defer testutil.TeardownTestDB(t, db)
-		svc := NewUserService(db)
+		svc := NewUserService(db, NewFXService(db, testFXStaleness))
 
 		user, err := svc.CreateUser("Alice@EXAMPLE.COM", "password123", "", "")
 		testutil.AssertNoError(t, err)
@@ -83,7 +83,7 @@ func TestCreateUser(t *testing.T) {
 	t.Run("duplicate_email_differs_only_in_case", func(t *testing.T) {
 		db := testutil.SetupTestDB(t)
 		defer testutil.TeardownTestDB(t, db)
-		svc := NewUserService(db)
+		svc := NewUserService(db, NewFXService(db, testFXStaleness))
 
 		_, err := svc.CreateUser("alice@x.com", "password123", "", "")
 		testutil.AssertNoError(t, err)
@@ -94,7 +94,7 @@ func TestCreateUser(t *testing.T) {
 	t.Run("password_over_72_bytes_rejected", func(t *testing.T) {
 		db := testutil.SetupTestDB(t)
 		defer testutil.TeardownTestDB(t, db)
-		svc := NewUserService(db)
+		svc := NewUserService(db, NewFXService(db, testFXStaleness))
 
 		// 25 three-byte runes = 75 bytes, under any rune-count limit.
 		_, err := svc.CreateUser("long@example.com", strings.Repeat("€", 25), "", "")
@@ -108,7 +108,7 @@ func TestGetUserByEmail(t *testing.T) {
 	t.Run("found", func(t *testing.T) {
 		db := testutil.SetupTestDB(t)
 		defer testutil.TeardownTestDB(t, db)
-		svc := NewUserService(db)
+		svc := NewUserService(db, NewFXService(db, testFXStaleness))
 
 		created := testutil.CreateTestUserWithEmail(t, db, "found@example.com")
 		user, err := svc.GetUserByEmail("found@example.com")
@@ -122,7 +122,7 @@ func TestGetUserByEmail(t *testing.T) {
 	t.Run("not_found", func(t *testing.T) {
 		db := testutil.SetupTestDB(t)
 		defer testutil.TeardownTestDB(t, db)
-		svc := NewUserService(db)
+		svc := NewUserService(db, NewFXService(db, testFXStaleness))
 
 		_, err := svc.GetUserByEmail("nonexistent@example.com")
 		testutil.AssertAppError(t, err, "USER_NOT_FOUND")
@@ -131,7 +131,7 @@ func TestGetUserByEmail(t *testing.T) {
 	t.Run("inactive_user", func(t *testing.T) {
 		db := testutil.SetupTestDB(t)
 		defer testutil.TeardownTestDB(t, db)
-		svc := NewUserService(db)
+		svc := NewUserService(db, NewFXService(db, testFXStaleness))
 
 		user := testutil.CreateTestUserWithEmail(t, db, "inactive@example.com")
 		db.Model(user).Update("is_active", false)
@@ -145,7 +145,7 @@ func TestGetUserByID(t *testing.T) {
 	t.Run("found", func(t *testing.T) {
 		db := testutil.SetupTestDB(t)
 		defer testutil.TeardownTestDB(t, db)
-		svc := NewUserService(db)
+		svc := NewUserService(db, NewFXService(db, testFXStaleness))
 
 		created := testutil.CreateTestUser(t, db)
 		user, err := svc.GetUserByID(created.ID)
@@ -159,7 +159,7 @@ func TestGetUserByID(t *testing.T) {
 	t.Run("not_found", func(t *testing.T) {
 		db := testutil.SetupTestDB(t)
 		defer testutil.TeardownTestDB(t, db)
-		svc := NewUserService(db)
+		svc := NewUserService(db, NewFXService(db, testFXStaleness))
 
 		_, err := svc.GetUserByID("99999")
 		testutil.AssertAppError(t, err, "USER_NOT_FOUND")
@@ -170,7 +170,7 @@ func TestVerifyPassword(t *testing.T) {
 	t.Run("correct", func(t *testing.T) {
 		db := testutil.SetupTestDB(t)
 		defer testutil.TeardownTestDB(t, db)
-		svc := NewUserService(db)
+		svc := NewUserService(db, NewFXService(db, testFXStaleness))
 
 		// Fixture uses "password123" with bcrypt.MinCost
 		user := testutil.CreateTestUser(t, db)
@@ -182,7 +182,7 @@ func TestVerifyPassword(t *testing.T) {
 	t.Run("incorrect", func(t *testing.T) {
 		db := testutil.SetupTestDB(t)
 		defer testutil.TeardownTestDB(t, db)
-		svc := NewUserService(db)
+		svc := NewUserService(db, NewFXService(db, testFXStaleness))
 
 		user := testutil.CreateTestUser(t, db)
 		if svc.VerifyPassword(user, "wrongpassword") {
@@ -195,7 +195,7 @@ func TestAttemptLogin(t *testing.T) {
 	t.Run("success_resets_attempts", func(t *testing.T) {
 		db := testutil.SetupTestDB(t)
 		defer testutil.TeardownTestDB(t, db)
-		svc := NewUserService(db)
+		svc := NewUserService(db, NewFXService(db, testFXStaleness))
 
 		// Create user via service so password is hashed with DefaultCost
 		_, err := svc.CreateUser("login@example.com", "password123", "", "")
@@ -218,7 +218,7 @@ func TestAttemptLogin(t *testing.T) {
 	t.Run("wrong_password_increments_attempts", func(t *testing.T) {
 		db := testutil.SetupTestDB(t)
 		defer testutil.TeardownTestDB(t, db)
-		svc := NewUserService(db)
+		svc := NewUserService(db, NewFXService(db, testFXStaleness))
 
 		_, err := svc.CreateUser("fail@example.com", "password123", "", "")
 		testutil.AssertNoError(t, err)
@@ -236,7 +236,7 @@ func TestAttemptLogin(t *testing.T) {
 	t.Run("lockout_after_5_failures", func(t *testing.T) {
 		db := testutil.SetupTestDB(t)
 		defer testutil.TeardownTestDB(t, db)
-		svc := NewUserService(db)
+		svc := NewUserService(db, NewFXService(db, testFXStaleness))
 
 		_, err := svc.CreateUser("lockout@example.com", "password123", "", "")
 		testutil.AssertNoError(t, err)
@@ -260,7 +260,7 @@ func TestAttemptLogin(t *testing.T) {
 	t.Run("locked_account_returns_error", func(t *testing.T) {
 		db := testutil.SetupTestDB(t)
 		defer testutil.TeardownTestDB(t, db)
-		svc := NewUserService(db)
+		svc := NewUserService(db, NewFXService(db, testFXStaleness))
 
 		_, err := svc.CreateUser("locked@example.com", "password123", "", "")
 		testutil.AssertNoError(t, err)
@@ -281,7 +281,7 @@ func TestAttemptLogin(t *testing.T) {
 	t.Run("fifth_failure_reports_lockout_triggered", func(t *testing.T) {
 		db := testutil.SetupTestDB(t)
 		defer testutil.TeardownTestDB(t, db)
-		svc := NewUserService(db)
+		svc := NewUserService(db, NewFXService(db, testFXStaleness))
 
 		testutil.CreateTestUserWithEmail(t, db, "trigger@example.com")
 		var err error
@@ -304,7 +304,7 @@ func TestAttemptLogin(t *testing.T) {
 	t.Run("expired_lock_restarts_count", func(t *testing.T) {
 		db := testutil.SetupTestDB(t)
 		defer testutil.TeardownTestDB(t, db)
-		svc := NewUserService(db)
+		svc := NewUserService(db, NewFXService(db, testFXStaleness))
 
 		testutil.CreateTestUserWithEmail(t, db, "expired@example.com")
 		var err error
@@ -327,7 +327,7 @@ func TestAttemptLogin(t *testing.T) {
 		sqlDB, err := db.DB()
 		testutil.AssertNoError(t, err)
 		sqlDB.SetMaxOpenConns(1)
-		svc := NewUserService(db)
+		svc := NewUserService(db, NewFXService(db, testFXStaleness))
 
 		testutil.CreateTestUserWithEmail(t, db, "race@example.com")
 
@@ -351,7 +351,7 @@ func TestAttemptLogin(t *testing.T) {
 	t.Run("password_over_72_bytes_fails", func(t *testing.T) {
 		db := testutil.SetupTestDB(t)
 		defer testutil.TeardownTestDB(t, db)
-		svc := NewUserService(db)
+		svc := NewUserService(db, NewFXService(db, testFXStaleness))
 
 		testutil.CreateTestUserWithEmail(t, db, "long@example.com")
 		var err error
@@ -362,7 +362,7 @@ func TestAttemptLogin(t *testing.T) {
 	t.Run("nonexistent_user", func(t *testing.T) {
 		db := testutil.SetupTestDB(t)
 		defer testutil.TeardownTestDB(t, db)
-		svc := NewUserService(db)
+		svc := NewUserService(db, NewFXService(db, testFXStaleness))
 
 		_, err := svc.AttemptLogin("nobody@example.com", "password123")
 		testutil.AssertAppError(t, err, "INVALID_CREDENTIALS")
@@ -379,7 +379,7 @@ func TestAttemptLogin(t *testing.T) {
 		// this test fails and flags that the login-time mitigation regressed.
 		db := testutil.SetupTestDB(t)
 		defer testutil.TeardownTestDB(t, db)
-		svc := NewUserService(db)
+		svc := NewUserService(db, NewFXService(db, testFXStaleness))
 
 		_, err := svc.CreateUser("inactive@example.com", "password123", "", "")
 		testutil.AssertNoError(t, err)
@@ -409,7 +409,7 @@ func TestRefreshSessions(t *testing.T) {
 
 	setup := func(t *testing.T) (UserServicer, *models.User, func()) {
 		db := testutil.SetupTestDB(t)
-		return NewUserService(db), testutil.CreateTestUser(t, db), func() { testutil.TeardownTestDB(t, db) }
+		return NewUserService(db, NewFXService(db, testFXStaleness)), testutil.CreateTestUser(t, db), func() { testutil.TeardownTestDB(t, db) }
 	}
 
 	t.Run("logging in on another device keeps the first signed in", func(t *testing.T) {
@@ -438,7 +438,7 @@ func TestRefreshSessions(t *testing.T) {
 	t.Run("rotated-out token is rejected after the grace period", func(t *testing.T) {
 		db := testutil.SetupTestDB(t)
 		defer testutil.TeardownTestDB(t, db)
-		svc := NewUserService(db)
+		svc := NewUserService(db, NewFXService(db, testFXStaleness))
 		user := testutil.CreateTestUser(t, db)
 
 		testutil.AssertNoError(t, svc.CreateRefreshSession(user.ID, hashA, "", "", expires()))
@@ -453,7 +453,7 @@ func TestRefreshSessions(t *testing.T) {
 	t.Run("rejects unknown, expired, and other users' tokens", func(t *testing.T) {
 		db := testutil.SetupTestDB(t)
 		defer testutil.TeardownTestDB(t, db)
-		svc := NewUserService(db)
+		svc := NewUserService(db, NewFXService(db, testFXStaleness))
 		user := testutil.CreateTestUser(t, db)
 		other := testutil.CreateTestUser(t, db)
 
@@ -480,7 +480,7 @@ func TestRefreshSessions(t *testing.T) {
 	t.Run("prunes expired sessions and caps sessions per user", func(t *testing.T) {
 		db := testutil.SetupTestDB(t)
 		defer testutil.TeardownTestDB(t, db)
-		svc := NewUserService(db)
+		svc := NewUserService(db, NewFXService(db, testFXStaleness))
 		user := testutil.CreateTestUser(t, db)
 
 		testutil.AssertNoError(t, svc.CreateRefreshSession(user.ID, hashB, "", "", time.Now().Add(-time.Minute)))
@@ -502,7 +502,7 @@ func TestRefreshSessions(t *testing.T) {
 func TestCreateUser_password_is_hashed(t *testing.T) {
 	db := testutil.SetupTestDB(t)
 	defer testutil.TeardownTestDB(t, db)
-	svc := NewUserService(db)
+	svc := NewUserService(db, NewFXService(db, testFXStaleness))
 
 	user, err := svc.CreateUser("hash@example.com", "mypassword", "", "")
 	testutil.AssertNoError(t, err)
@@ -532,7 +532,7 @@ func TestUpdateProfileSettings(t *testing.T) {
 	t.Run("sets_and_clears_default_account", func(t *testing.T) {
 		db := testutil.SetupTestDB(t)
 		defer testutil.TeardownTestDB(t, db)
-		svc := NewUserService(db)
+		svc := NewUserService(db, NewFXService(db, testFXStaleness))
 		user := testutil.CreateTestUser(t, db)
 		account := testutil.CreateTestCreditCardAccount(t, db, user.ID, 0)
 
@@ -550,7 +550,7 @@ func TestUpdateProfileSettings(t *testing.T) {
 	t.Run("hide_balances_only_keeps_default_account", func(t *testing.T) {
 		db := testutil.SetupTestDB(t)
 		defer testutil.TeardownTestDB(t, db)
-		svc := NewUserService(db)
+		svc := NewUserService(db, NewFXService(db, testFXStaleness))
 		user := testutil.CreateTestUser(t, db)
 		account := testutil.CreateTestCashAccount(t, db, user.ID)
 		testutil.AssertNoError(t, svc.UpdateProfileSettings(user.ID, setDefault(&account.ID)))
@@ -569,7 +569,7 @@ func TestUpdateProfileSettings(t *testing.T) {
 	t.Run("updates_both_settings_together", func(t *testing.T) {
 		db := testutil.SetupTestDB(t)
 		defer testutil.TeardownTestDB(t, db)
-		svc := NewUserService(db)
+		svc := NewUserService(db, NewFXService(db, testFXStaleness))
 		user := testutil.CreateTestUser(t, db)
 		account := testutil.CreateTestCashAccount(t, db, user.ID)
 
@@ -586,7 +586,7 @@ func TestUpdateProfileSettings(t *testing.T) {
 	t.Run("rejected_default_account_applies_nothing", func(t *testing.T) {
 		db := testutil.SetupTestDB(t)
 		defer testutil.TeardownTestDB(t, db)
-		svc := NewUserService(db)
+		svc := NewUserService(db, NewFXService(db, testFXStaleness))
 		user := testutil.CreateTestUser(t, db)
 		account := testutil.CreateTestInvestmentAccount(t, db, user.ID)
 
@@ -601,10 +601,150 @@ func TestUpdateProfileSettings(t *testing.T) {
 		}
 	})
 
+	t.Run("base_currency_defaults_to_MYR", func(t *testing.T) {
+		db := testutil.SetupTestDB(t)
+		defer testutil.TeardownTestDB(t, db)
+		svc := NewUserService(db, NewFXService(db, testFXStaleness))
+		user := testutil.CreateTestUser(t, db)
+
+		if got := getUser(t, svc, user.ID).BaseCurrency; got != "MYR" {
+			t.Errorf("expected default base currency MYR, got %q", got)
+		}
+	})
+
+	t.Run("base_currency_is_upper_cased_and_needs_a_rate", func(t *testing.T) {
+		db := testutil.SetupTestDB(t)
+		defer testutil.TeardownTestDB(t, db)
+		fxSvc := NewFXService(db, testFXStaleness)
+		svc := NewUserService(db, fxSvc)
+		user := testutil.CreateTestUser(t, db)
+
+		err := svc.UpdateProfileSettings(user.ID, ProfileSettingsUpdate{BaseCurrency: strPtr("sgd")})
+		testutil.AssertAppError(t, err, "UNSUPPORTED_CURRENCY")
+		if got := getUser(t, svc, user.ID).BaseCurrency; got != "MYR" {
+			t.Errorf("a rejected change must not apply, got %q", got)
+		}
+
+		seedRate(t, fxSvc, "USD", "SGD", "1.3", time.Now().Add(-time.Hour))
+		testutil.AssertNoError(t, svc.UpdateProfileSettings(user.ID, ProfileSettingsUpdate{BaseCurrency: strPtr("sgd")}))
+		if got := getUser(t, svc, user.ID).BaseCurrency; got != "SGD" {
+			t.Errorf("expected SGD, got %q", got)
+		}
+	})
+
+	t.Run("base_currency_USD_needs_no_rate", func(t *testing.T) {
+		db := testutil.SetupTestDB(t)
+		defer testutil.TeardownTestDB(t, db)
+		svc := NewUserService(db, NewFXService(db, testFXStaleness))
+		user := testutil.CreateTestUser(t, db)
+
+		testutil.AssertNoError(t, svc.UpdateProfileSettings(user.ID, ProfileSettingsUpdate{BaseCurrency: strPtr("USD")}))
+		if got := getUser(t, svc, user.ID).BaseCurrency; got != "USD" {
+			t.Errorf("expected USD, got %q", got)
+		}
+	})
+
+	t.Run("keeping_the_current_base_currency_is_always_allowed", func(t *testing.T) {
+		db := testutil.SetupTestDB(t)
+		defer testutil.TeardownTestDB(t, db)
+		svc := NewUserService(db, NewFXService(db, testFXStaleness))
+		user := testutil.CreateTestUser(t, db) // MYR, and no MYR rate exists
+
+		testutil.AssertNoError(t, svc.UpdateProfileSettings(user.ID, ProfileSettingsUpdate{BaseCurrency: strPtr("MYR")}))
+	})
+
+	t.Run("base_currency_locked_with_investment_history", func(t *testing.T) {
+		db := testutil.SetupTestDB(t)
+		defer testutil.TeardownTestDB(t, db)
+		svc := NewUserService(db, NewFXService(db, testFXStaleness))
+		user := testutil.CreateTestUser(t, db)
+		account := testutil.CreateTestInvestmentAccount(t, db, user.ID)
+		sec := testutil.CreateTestSecurity(t, db)
+		inv := testutil.CreateTestInvestment(t, db, account.ID, sec.ID)
+		testutil.AssertNoError(t, db.Create(&models.InvestmentTransaction{
+			InvestmentID: inv.ID, Type: models.InvestmentTransactionBuy, Date: time.Now(),
+			Quantity: 10, PricePerUnit: 10000, TotalAmount: 100000,
+		}).Error)
+
+		err := svc.UpdateProfileSettings(user.ID, ProfileSettingsUpdate{BaseCurrency: strPtr("USD")})
+		testutil.AssertAppError(t, err, "BASE_CURRENCY_LOCKED")
+		if got := getUser(t, svc, user.ID).BaseCurrency; got != "MYR" {
+			t.Errorf("a locked change must not apply, got %q", got)
+		}
+
+		// Setting the same value stays allowed.
+		testutil.AssertNoError(t, svc.UpdateProfileSettings(user.ID, ProfileSettingsUpdate{BaseCurrency: strPtr("myr")}))
+
+		// Another user without history is unaffected.
+		other := testutil.CreateTestUserWithEmail(t, db, "other-base@example.com")
+		testutil.AssertNoError(t, svc.UpdateProfileSettings(other.ID, ProfileSettingsUpdate{BaseCurrency: strPtr("USD")}))
+	})
+
+	t.Run("base_currency_changes_without_investment_history", func(t *testing.T) {
+		db := testutil.SetupTestDB(t)
+		defer testutil.TeardownTestDB(t, db)
+		svc := NewUserService(db, NewFXService(db, testFXStaleness))
+		user := testutil.CreateTestUser(t, db)
+		// Holdings without any transaction do not lock the currency.
+		account := testutil.CreateTestInvestmentAccount(t, db, user.ID)
+		testutil.CreateTestInvestment(t, db, account.ID, testutil.CreateTestSecurity(t, db).ID)
+
+		testutil.AssertNoError(t, svc.UpdateProfileSettings(user.ID, ProfileSettingsUpdate{BaseCurrency: strPtr("USD")}))
+		if got := getUser(t, svc, user.ID).BaseCurrency; got != "USD" {
+			t.Errorf("expected USD, got %q", got)
+		}
+	})
+
+	for name, code := range map[string]string{
+		"rejects_non_two_decimal_base_currency": "JPY",
+		"rejects_malformed_base_currency":       "US",
+		"rejects_empty_base_currency":           "",
+		"rejects_digits_in_base_currency":       "U5D",
+	} {
+		t.Run(name, func(t *testing.T) {
+			db := testutil.SetupTestDB(t)
+			defer testutil.TeardownTestDB(t, db)
+			fxSvc := NewFXService(db, testFXStaleness)
+			svc := NewUserService(db, fxSvc)
+			user := testutil.CreateTestUser(t, db)
+			seedRate(t, fxSvc, "JPY", "USD", "0.0066", time.Now().Add(-time.Hour))
+
+			err := svc.UpdateProfileSettings(user.ID, ProfileSettingsUpdate{BaseCurrency: strPtr(code)})
+			testutil.AssertAppError(t, err, "UNSUPPORTED_CURRENCY")
+		})
+	}
+
+	t.Run("base_currency_for_unknown_user", func(t *testing.T) {
+		db := testutil.SetupTestDB(t)
+		defer testutil.TeardownTestDB(t, db)
+		svc := NewUserService(db, NewFXService(db, testFXStaleness))
+
+		err := svc.UpdateProfileSettings("01a15c66-0000-7000-8000-000000000000", ProfileSettingsUpdate{BaseCurrency: strPtr("USD")})
+		testutil.AssertAppError(t, err, "USER_NOT_FOUND")
+	})
+
+	t.Run("base_currency_applies_with_other_settings_atomically", func(t *testing.T) {
+		db := testutil.SetupTestDB(t)
+		defer testutil.TeardownTestDB(t, db)
+		svc := NewUserService(db, NewFXService(db, testFXStaleness))
+		user := testutil.CreateTestUser(t, db)
+
+		err := svc.UpdateProfileSettings(user.ID, ProfileSettingsUpdate{HideBalances: boolPtr(true), BaseCurrency: strPtr("ZZ")})
+		testutil.AssertAppError(t, err, "UNSUPPORTED_CURRENCY")
+		if got := getUser(t, svc, user.ID); got.HideBalances || got.BaseCurrency != "MYR" {
+			t.Errorf("expected nothing applied, got hide=%v base=%q", got.HideBalances, got.BaseCurrency)
+		}
+
+		testutil.AssertNoError(t, svc.UpdateProfileSettings(user.ID, ProfileSettingsUpdate{HideBalances: boolPtr(true), BaseCurrency: strPtr("USD")}))
+		if got := getUser(t, svc, user.ID); !got.HideBalances || got.BaseCurrency != "USD" {
+			t.Errorf("expected both applied, got hide=%v base=%q", got.HideBalances, got.BaseCurrency)
+		}
+	})
+
 	t.Run("requires_a_setting", func(t *testing.T) {
 		db := testutil.SetupTestDB(t)
 		defer testutil.TeardownTestDB(t, db)
-		svc := NewUserService(db)
+		svc := NewUserService(db, NewFXService(db, testFXStaleness))
 		user := testutil.CreateTestUser(t, db)
 
 		err := svc.UpdateProfileSettings(user.ID, ProfileSettingsUpdate{})
@@ -638,7 +778,7 @@ func TestUpdateProfileSettings(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			db := testutil.SetupTestDB(t)
 			defer testutil.TeardownTestDB(t, db)
-			svc := NewUserService(db)
+			svc := NewUserService(db, NewFXService(db, testFXStaleness))
 			user := testutil.CreateTestUser(t, db)
 
 			err := svc.UpdateProfileSettings(user.ID, setDefault(strPtr(tc.account(t, db, user.ID))))
@@ -653,7 +793,7 @@ func TestUpdateProfileSettings(t *testing.T) {
 func TestAttemptLogin_keeps_concurrent_profile_changes(t *testing.T) {
 	db := testutil.SetupTestDB(t)
 	defer testutil.TeardownTestDB(t, db)
-	svc := NewUserService(db)
+	svc := NewUserService(db, NewFXService(db, testFXStaleness))
 	user, err := svc.CreateUser("race@example.com", "password123", "Race", "User")
 	testutil.AssertNoError(t, err)
 

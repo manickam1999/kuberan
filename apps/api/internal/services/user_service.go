@@ -27,11 +27,13 @@ const (
 // userService handles user-related business logic.
 type userService struct {
 	db *gorm.DB
+	fx FXServicer
 }
 
-// NewUserService creates a new UserServicer.
-func NewUserService(db *gorm.DB) UserServicer {
-	return &userService{db: db}
+// NewUserService creates a new UserServicer. fxService validates the currency
+// a user picks as their base currency.
+func NewUserService(db *gorm.DB, fxService FXServicer) UserServicer {
+	return &userService{db: db, fx: fxService}
 }
 
 // MaxPasswordBytes is the longest password accepted. bcrypt only uses the first
@@ -350,11 +352,13 @@ func (s *userService) RevokeRefreshSession(userID, tokenHash string) error {
 
 // ProfileSettingsUpdate lists the profile settings to change. A nil
 // HideBalances leaves it as is; DefaultAccountID is only applied when
-// SetDefaultAccount is true, and a nil DefaultAccountID then clears it.
+// SetDefaultAccount is true, and a nil DefaultAccountID then clears it. A nil
+// BaseCurrency leaves the base currency as is.
 type ProfileSettingsUpdate struct {
 	HideBalances      *bool
 	SetDefaultAccount bool
 	DefaultAccountID  *string
+	BaseCurrency      *string
 }
 
 // UpdateProfileSettings applies the given settings in a single update, so a
@@ -363,6 +367,11 @@ type ProfileSettingsUpdate struct {
 // A default account is the one preselected when the user records a new
 // transaction. It must belong to the user, be active, and be a spending
 // account (cash, credit card or debt).
+//
+// The base currency is upper-cased and must be supported (see
+// FXServicer.IsSupportedCurrency) unless it equals the user's current one. A
+// different base is refused with BASE_CURRENCY_LOCKED once the user has any
+// investment transaction (cost basis is frozen in the base currency).
 func (s *userService) UpdateProfileSettings(userID string, update ProfileSettingsUpdate) error {
 	changes := map[string]interface{}{}
 	if update.HideBalances != nil {
@@ -376,6 +385,13 @@ func (s *userService) UpdateProfileSettings(userID string, update ProfileSetting
 		}
 		changes["default_account_id"] = update.DefaultAccountID
 	}
+	if update.BaseCurrency != nil {
+		code, err := s.validateBaseCurrency(userID, *update.BaseCurrency)
+		if err != nil {
+			return err
+		}
+		changes["base_currency"] = code
+	}
 	if len(changes) == 0 {
 		return apperrors.WithMessage(apperrors.ErrInvalidInput, "no profile settings to update")
 	}
@@ -384,6 +400,42 @@ func (s *userService) UpdateProfileSettings(userID string, update ProfileSetting
 		return apperrors.Wrap(apperrors.ErrInternalServer, err)
 	}
 	return nil
+}
+
+// validateBaseCurrency normalises code and checks that it may become the
+// user's base currency: supported, or already the user's current one.
+func (s *userService) validateBaseCurrency(userID, code string) (string, error) {
+	code = normalizeCode(code)
+	var user models.User
+	if err := s.db.Select("id", "base_currency").Where("id = ?", userID).First(&user).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return "", apperrors.ErrUserNotFound
+		}
+		return "", apperrors.Wrap(apperrors.ErrInternalServer, err)
+	}
+	if !isCurrencyCode(code) {
+		return "", apperrors.ErrUnsupportedCurrency
+	}
+	if code == user.BaseCurrency {
+		return code, nil
+	}
+	if !s.fx.IsSupportedCurrency(code, time.Now()) {
+		return "", apperrors.ErrUnsupportedCurrency
+	}
+	// Investment cost basis and realized gains are frozen in the base currency
+	// at trade time, so they cannot be re-labelled by changing it.
+	var history int64
+	if err := s.db.Table("investment_transactions").
+		Joins("JOIN investments ON investments.id = investment_transactions.investment_id AND investments.deleted_at IS NULL").
+		Joins("JOIN accounts ON accounts.id = investments.account_id").
+		Where("accounts.user_id = ? AND investment_transactions.deleted_at IS NULL", userID).
+		Limit(1).Count(&history).Error; err != nil {
+		return "", apperrors.Wrap(apperrors.ErrInternalServer, err)
+	}
+	if history > 0 {
+		return "", apperrors.ErrBaseCurrencyLocked
+	}
+	return code, nil
 }
 
 // validateDefaultAccount checks that accountID may be the user's default account.

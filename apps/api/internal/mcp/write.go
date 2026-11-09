@@ -12,6 +12,7 @@ import (
 	"github.com/mark3labs/mcp-go/mcp"
 
 	apperrors "kuberan/internal/errors"
+	"kuberan/internal/fx"
 	"kuberan/internal/logger"
 	"kuberan/internal/services"
 )
@@ -184,7 +185,7 @@ func change(from, to interface{}) map[string]interface{} {
 func serviceErrorMessage(err error) string {
 	var appErr *apperrors.AppError
 	if errors.As(err, &appErr) && appErr.StatusCode < 500 {
-		return appErr.Message
+		return appErr.Message + fxSuggestionText(appErr)
 	}
 	logger.Get().Errorf("MCP write failed: %v", err)
 	return "internal error"
@@ -274,35 +275,93 @@ func optionalDescriptionArg(args map[string]interface{}) (*string, *mcp.CallTool
 	return v, checkLength("description", *v, services.MaxDescriptionLen)
 }
 
-// checkCeiling rejects an amount (in cents) above the per-change limit. It
-// applies to every amount a write moves, including ones the caller did not
-// pass explicitly (a full write-off, a transaction whose type is flipped).
-func (s *Server) checkCeiling(what string, cents int64) *mcp.CallToolResult {
-	if s.write.MaxAmount > 0 && cents > s.write.MaxAmount {
+// checkCeiling rejects an amount (in cents of currency) above the per-change
+// limit. The limit (MCP_MAX_WRITE_AMOUNT) is in the user's base currency, so an
+// amount in another currency is converted at the current rate first; with no
+// rate it is rejected, since its size cannot be judged. An amount already in
+// the base currency is compared directly, with no FX lookup. It applies to
+// every amount a write moves, including ones the caller did not pass
+// explicitly (a full write-off, a transaction whose type is flipped).
+func (s *Server) checkCeiling(userID, what string, cents int64, currency string) *mcp.CallToolResult {
+	if s.write.MaxAmount <= 0 {
+		return nil
+	}
+	user, err := s.services.Users.GetUserByID(userID)
+	if err != nil {
+		return serviceError("find user", err)
+	}
+	base := strings.ToUpper(user.BaseCurrency)
+	currency = strings.ToUpper(currency)
+
+	inBase := cents
+	if currency != base {
+		converted, res := s.convertForCeiling(cents, currency, base)
+		if res != nil {
+			return res
+		}
+		inBase = converted
+	}
+	if inBase > s.write.MaxAmount {
+		shown := formatMoney(cents, currency)
+		if currency != base {
+			shown += " (≈ " + formatMoney(inBase, base) + ")"
+		}
 		return mcp.NewToolResultError(fmt.Sprintf(
 			"%s of %s exceeds the per-change limit of %s; make this change in the Kuberan app instead",
-			what, formatCents(cents), formatCents(s.write.MaxAmount)))
+			what, shown, formatMoney(s.write.MaxAmount, base)))
 	}
 	return nil
 }
 
+// convertForCeiling converts cents of from into the base currency at the
+// current rate, or returns an error result when no rate exists.
+func (s *Server) convertForCeiling(cents int64, from, base string) (int64, *mcp.CallToolResult) {
+	noRate := mcp.NewToolResultError(fmt.Sprintf(
+		"no exchange rate from %s to %s is available, so the size of this change cannot be checked against the per-change limit; make this change in the Kuberan app instead",
+		from, base))
+	if s.services.FX == nil {
+		return 0, noRate
+	}
+	quote, err := s.services.FX.Rate(from, base, time.Now())
+	if err != nil {
+		if errors.Is(err, apperrors.ErrFXRateUnavailable) {
+			return 0, noRate
+		}
+		return 0, serviceError("check the amount", err)
+	}
+	converted, err := fx.Convert(cents, quote.Rate)
+	if err != nil {
+		return 0, serviceError("check the amount", err)
+	}
+	return converted, nil
+}
+
 // amountArg reads the "amount" argument (dollars) and returns it in cents. It
-// must be positive and at most the configured ceiling. present is false when
-// the argument was omitted.
+// must be positive; the per-change limit is applied separately with
+// checkCeiling once the amount's currency is known. present is false when the
+// argument was omitted.
 func (s *Server) amountArg(args map[string]interface{}) (cents int64, present bool, res *mcp.CallToolResult) {
-	raw, ok := args["amount"]
+	return moneyArg(args, "amount")
+}
+
+// moneyArg reads a positive dollar amount argument as cents.
+func moneyArg(args map[string]interface{}, name string) (cents int64, present bool, res *mcp.CallToolResult) {
+	raw, ok := args[name]
 	if !ok || raw == nil {
 		return 0, false, nil
 	}
 	dollars, ok := raw.(float64)
 	if !ok || math.IsNaN(dollars) || math.IsInf(dollars, 0) {
-		return 0, true, mcp.NewToolResultError("amount must be a number of dollars")
+		return 0, true, mcp.NewToolResultError(name + " must be a number of dollars")
+	}
+	if dollars > maxFilterDollars {
+		return 0, true, mcp.NewToolResultError(name + " is too large: it exceeds the per-change limit; make this change in the Kuberan app instead")
 	}
 	cents = dollarsToCents(dollars)
 	if cents <= 0 {
-		return 0, true, mcp.NewToolResultError("amount must be greater than zero")
+		return 0, true, mcp.NewToolResultError(name + " must be greater than zero")
 	}
-	return cents, true, s.checkCeiling("amount", cents)
+	return cents, true, nil
 }
 
 // requiredAmount reads the required "amount" argument (dollars), in cents.
@@ -503,4 +562,28 @@ func (l *rateLimiter) sweep(now time.Time) {
 			delete(l.buckets, k)
 		}
 	}
+}
+
+// fxSuggestionText renders the suggestion an FX_AMOUNT_REQUIRED error carries
+// (the field to fill, the suggested amount and the market rate behind it), or
+// "" for any other error.
+func fxSuggestionText(e *apperrors.AppError) string {
+	if e.Code != apperrors.ErrFXAmountRequired.Code {
+		return ""
+	}
+	currency, _ := e.Details["currency"].(string)
+	field, _ := e.Details["field"].(string)
+	var cents int64
+	switch v := e.Details["suggested_amount"].(type) {
+	case int64:
+		cents = v
+	case int:
+		cents = int64(v)
+	}
+	if cents <= 0 || currency == "" {
+		return fmt.Sprintf(" (pass %s in %s)", field, strings.ToUpper(currency))
+	}
+	rate, _ := e.Details["rate"].(string)
+	return fmt.Sprintf(" (pass %s in %s; the market rate suggests %s at rate %s)",
+		field, strings.ToUpper(currency), formatMoney(cents, currency), rate)
 }

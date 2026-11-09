@@ -20,7 +20,14 @@ import {
   useInvestment,
   useInvestmentTransactions,
 } from "@/hooks/use-investments";
-import { formatCurrency, formatDate } from "@/lib/format";
+import { useAuth } from "@/hooks/use-auth";
+import { useBaseCurrency } from "@/hooks/use-profile";
+import { formatDate, formatMoney } from "@/lib/format";
+import { Money } from "@/components/ui/money";
+import {
+  formatSigned,
+  holdingFigures,
+} from "@/components/investments/holding-figures";
 import { RecordBuyDialog } from "@/components/investments/record-buy-dialog";
 import { RecordSellDialog } from "@/components/investments/record-sell-dialog";
 import { RecordDividendDialog } from "@/components/investments/record-dividend-dialog";
@@ -43,7 +50,11 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import type { AssetType, InvestmentTransactionType } from "@/types/models";
+import type {
+  AssetType,
+  InvestmentTransaction,
+  InvestmentTransactionType,
+} from "@/types/models";
 
 const ASSET_TYPE_LABELS: Record<AssetType, string> = {
   stock: "Stock",
@@ -70,18 +81,23 @@ const PAGE_SIZE = 20;
 function InvestmentTransactionListItem({
   transaction,
 }: {
-  transaction: {
-    id: string;
-    date: string;
-    type: InvestmentTransactionType;
-    quantity: number;
-    price_per_unit: number;
-    total_amount: number;
-    fee: number;
-    realized_gain_loss: number;
-    split_ratio?: number;
-    notes?: string;
-  };
+  transaction: Pick<
+    InvestmentTransaction,
+    | "id"
+    | "date"
+    | "type"
+    | "quantity"
+    | "price_per_unit"
+    | "total_amount"
+    | "fee"
+    | "realized_gain_loss"
+    | "realized_gain_loss_base"
+    | "currency"
+    | "fx_rate_to_base"
+    | "base_amount"
+    | "split_ratio"
+    | "notes"
+  >;
 }) {
   const config = TX_TYPE_CONFIG[transaction.type];
   const isSplit = transaction.type === "split";
@@ -100,7 +116,16 @@ function InvestmentTransactionListItem({
           </span>
         </div>
         <span className={`text-sm font-medium font-mono shrink-0 ${config.color}`}>
-          {isSplit ? "-" : formatCurrency(transaction.total_amount)}
+          {isSplit ? (
+            "-"
+          ) : (
+            <Money
+              amount={transaction.total_amount}
+              currency={transaction.currency}
+              baseAmount={transaction.base_amount}
+              fxRate={transaction.fx_rate_to_base}
+            />
+          )}
         </span>
       </div>
 
@@ -119,14 +144,26 @@ function InvestmentTransactionListItem({
         {!isSplit && !isDividend && (
           <div className="flex justify-between">
             <span className="text-muted-foreground">Price/Unit:</span>
-            <span className="font-mono">{formatCurrency(transaction.price_per_unit)}</span>
+            <span className="font-mono">
+              <Money
+                amount={transaction.price_per_unit}
+                currency={transaction.currency}
+                fxRate={transaction.fx_rate_to_base}
+              />
+            </span>
           </div>
         )}
 
         {transaction.fee > 0 && (
           <div className="flex justify-between">
             <span className="text-muted-foreground">Fee:</span>
-            <span className="font-mono">{formatCurrency(transaction.fee)}</span>
+            <span className="font-mono">
+              <Money
+                amount={transaction.fee}
+                currency={transaction.currency}
+                fxRate={transaction.fx_rate_to_base}
+              />
+            </span>
           </div>
         )}
 
@@ -135,7 +172,11 @@ function InvestmentTransactionListItem({
             <span className="text-muted-foreground">Realized P&L:</span>
             <span className={`font-mono font-medium ${transaction.realized_gain_loss >= 0 ? "text-green-600" : "text-red-600"}`}>
               {transaction.realized_gain_loss >= 0 ? "+" : ""}
-              {formatCurrency(transaction.realized_gain_loss)}
+              <Money
+                amount={transaction.realized_gain_loss}
+                currency={transaction.currency}
+                baseAmount={transaction.realized_gain_loss_base}
+              />
             </span>
           </div>
         )}
@@ -170,6 +211,8 @@ export default function InvestmentDetailPage() {
   const params = useParams();
   const investmentId = params.id as string;
 
+  const { hideBalances } = useAuth();
+  const baseCurrency = useBaseCurrency();
   const [txPage, setTxPage] = useState(1);
   const [buyOpen, setBuyOpen] = useState(false);
   const [sellOpen, setSellOpen] = useState(false);
@@ -210,10 +253,15 @@ export default function InvestmentDetailPage() {
   }
 
   const isClosed = investment.quantity === 0;
-  const marketValue = Math.round(investment.quantity * investment.current_price);
-  const gainLoss = marketValue - investment.cost_basis;
-  const gainLossPct =
-    investment.cost_basis > 0 ? (gainLoss / investment.cost_basis) * 100 : 0;
+  const f = holdingFigures(investment);
+  const currency = f.currency;
+  // Headline P&L is in the base currency (base value - base cost); without an
+  // FX rate it falls back to the native P&L (native value - native cost).
+  const pnlInBase = f.basePnl !== null;
+  const gainLoss = f.basePnl ?? f.nativePnl;
+  const gainLossCurrency = pnlInBase ? baseCurrency : currency;
+  const pnlCost = pnlInBase ? investment.cost_basis_base : investment.cost_basis;
+  const gainLossPct = pnlCost > 0 ? (gainLoss / pnlCost) * 100 : 0;
   const isPositive = gainLoss >= 0;
   const hasRealizedGainLoss = investment.realized_gain_loss !== 0;
   const isRealizedPositive = investment.realized_gain_loss >= 0;
@@ -267,7 +315,12 @@ export default function InvestmentDetailPage() {
                 className={`text-2xl font-bold font-mono whitespace-nowrap ${isRealizedPositive ? "text-green-600" : "text-red-600"}`}
               >
                 {isRealizedPositive ? "+" : "-"}{" "}
-                {formatCurrency(Math.abs(investment.realized_gain_loss))}
+                <Money
+                  amount={Math.abs(investment.realized_gain_loss)}
+                  currency={currency}
+                  baseAmount={Math.abs(investment.realized_gain_loss_base)}
+                  layout="stacked"
+                />
               </p>
             </CardContent>
           </Card>
@@ -279,7 +332,15 @@ export default function InvestmentDetailPage() {
             </CardHeader>
             <CardContent>
               <p className="text-2xl font-bold font-mono">
-                {formatCurrency(investment.current_price)}
+                <Money
+                  amount={investment.current_price_native}
+                  currency={currency}
+                  baseAmount={investment.current_price}
+                  fxRate={investment.fx_rate}
+                  fxStale={investment.fx_stale}
+                  fxMissing={investment.fx_missing}
+                  layout="stacked"
+                />
               </p>
             </CardContent>
           </Card>
@@ -308,7 +369,15 @@ export default function InvestmentDetailPage() {
             </CardHeader>
             <CardContent>
               <p className="text-2xl font-bold font-mono">
-                {formatCurrency(investment.current_price)}
+                <Money
+                  amount={investment.current_price_native}
+                  currency={currency}
+                  baseAmount={investment.current_price}
+                  fxRate={investment.fx_rate}
+                  fxStale={investment.fx_stale}
+                  fxMissing={investment.fx_missing}
+                  layout="stacked"
+                />
               </p>
             </CardContent>
           </Card>
@@ -334,7 +403,15 @@ export default function InvestmentDetailPage() {
             </CardHeader>
             <CardContent>
               <p className="text-2xl font-bold font-mono">
-                {formatCurrency(marketValue)}
+                <Money
+                  amount={f.nativeValue}
+                  currency={currency}
+                  baseAmount={f.baseValue}
+                  fxRate={investment.fx_rate}
+                  fxStale={investment.fx_stale}
+                  fxMissing={investment.fx_missing}
+                  layout="stacked"
+                />
               </p>
             </CardContent>
           </Card>
@@ -346,7 +423,12 @@ export default function InvestmentDetailPage() {
             </CardHeader>
             <CardContent>
               <p className="text-2xl font-bold font-mono">
-                {formatCurrency(investment.cost_basis)}
+                <Money
+                  amount={investment.cost_basis}
+                  currency={currency}
+                  baseAmount={investment.cost_basis_base}
+                  layout="stacked"
+                />
               </p>
             </CardContent>
           </Card>
@@ -365,7 +447,11 @@ export default function InvestmentDetailPage() {
                 className={`text-2xl font-bold font-mono whitespace-nowrap ${isPositive ? "text-green-600" : "text-red-600"}`}
               >
                 {isPositive ? "+" : "-"}{" "}
-                {formatCurrency(Math.abs(gainLoss))}
+                {formatMoney(
+                  Math.abs(gainLoss),
+                  gainLossCurrency,
+                  hideBalances
+                )}
               </p>
               <p
                 className={`text-sm ${isPositive ? "text-green-600" : "text-red-600"}`}
@@ -373,6 +459,11 @@ export default function InvestmentDetailPage() {
                 {isPositive ? "+" : "-"}
                 {Math.abs(gainLossPct).toFixed(2)}%
               </p>
+              {pnlInBase && currency !== baseCurrency && (
+                <p className="text-xs text-muted-foreground">
+                  In {currency}: {formatSigned(f.nativePnl, currency, hideBalances)}
+                </p>
+              )}
             </CardContent>
           </Card>
 
@@ -391,7 +482,12 @@ export default function InvestmentDetailPage() {
                   className={`text-2xl font-bold font-mono whitespace-nowrap ${isRealizedPositive ? "text-green-600" : "text-red-600"}`}
                 >
                   {isRealizedPositive ? "+" : "-"}{" "}
-                  {formatCurrency(Math.abs(investment.realized_gain_loss))}
+                  <Money
+                    amount={Math.abs(investment.realized_gain_loss)}
+                    currency={currency}
+                    baseAmount={Math.abs(investment.realized_gain_loss_base)}
+                    layout="stacked"
+                  />
                 </p>
               </CardContent>
             </Card>
@@ -534,23 +630,49 @@ export default function InvestmentDetailPage() {
                           <TableCell className="text-right font-mono">
                             {tx.type === "split" || tx.type === "dividend"
                               ? "-"
-                              : formatCurrency(tx.price_per_unit)}
+                              : (
+                                <Money
+                                  amount={tx.price_per_unit}
+                                  currency={tx.currency}
+                                  fxRate={tx.fx_rate_to_base}
+                                />
+                              )}
                           </TableCell>
                           <TableCell
                             className={`text-right font-mono font-medium ${config.color}`}
                           >
                             {tx.type === "split"
                               ? "-"
-                              : formatCurrency(tx.total_amount)}
+                              : (
+                                <Money
+                                  amount={tx.total_amount}
+                                  currency={tx.currency}
+                                  baseAmount={tx.base_amount}
+                                  fxRate={tx.fx_rate_to_base}
+                                  className="justify-end"
+                                />
+                              )}
                           </TableCell>
                           <TableCell className="text-right font-mono text-muted-foreground">
-                            {tx.fee > 0 ? formatCurrency(tx.fee) : "-"}
+                            {tx.fee > 0 ? (
+                              <Money
+                                amount={tx.fee}
+                                currency={tx.currency}
+                                fxRate={tx.fx_rate_to_base}
+                              />
+                            ) : (
+                              "-"
+                            )}
                           </TableCell>
                           <TableCell className="text-right font-mono font-medium">
                             {tx.type === "sell" ? (
                               <span className={tx.realized_gain_loss >= 0 ? "text-green-600" : "text-red-600"}>
                                 {tx.realized_gain_loss >= 0 ? "+" : ""}
-                                {formatCurrency(tx.realized_gain_loss)}
+                                <Money
+                                  amount={tx.realized_gain_loss}
+                                  currency={tx.currency}
+                                  baseAmount={tx.realized_gain_loss_base}
+                                />
                               </span>
                             ) : (
                               "-"

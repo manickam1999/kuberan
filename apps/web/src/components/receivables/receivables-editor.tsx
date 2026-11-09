@@ -3,7 +3,8 @@
 import { useState } from "react";
 import { toast } from "sonner";
 import { ChevronDown, ChevronRight } from "lucide-react";
-import { formatCurrency } from "@/lib/format";
+import { formatMoney } from "@/lib/format";
+import { useAccountCurrencies } from "@/hooks/use-accounts";
 import {
   RECEIVABLE_KINDS,
   RECEIVABLE_KIND_LABELS,
@@ -74,6 +75,8 @@ export function ReceivablesEditor({ transaction, onSaved }: ReceivablesEditorPro
   const [kind, setKind] = useState<ReceivableKind>(existing[0]?.kind ?? "split");
   const [error, setError] = useState("");
   const update = useUpdateReceivables(transaction.id);
+  const currencyOf = useAccountCurrencies();
+  const currency = currencyOf(transaction.account_id, transaction.account);
 
   const total = transaction.amount;
   const yourShare =
@@ -101,6 +104,7 @@ export function ReceivablesEditor({ transaction, onSaved }: ReceivablesEditorPro
     if (rows.length > 0) {
       const built = buildSharedCounterparties({
         amount: total,
+        currency,
         mode: "custom",
         rows,
       });
@@ -111,7 +115,7 @@ export function ReceivablesEditor({ transaction, onSaved }: ReceivablesEditorPro
       const tooLow = rows.find((r) => r.amount < r.paid + r.writtenOff);
       if (tooLow) {
         setError(
-          `${normalizeCounterpartyName(tooLow.name)} has already paid or been written off ${formatCurrency(tooLow.paid + tooLow.writtenOff)}, so the amount can't be lower than that.`
+          `${normalizeCounterpartyName(tooLow.name)} has already paid or been written off ${formatMoney(tooLow.paid + tooLow.writtenOff, currency)}, so the amount can't be lower than that.`
         );
         return;
       }
@@ -183,13 +187,14 @@ export function ReceivablesEditor({ transaction, onSaved }: ReceivablesEditorPro
           </div>
 
           <CounterpartyRows
+            currency={currency}
             rows={rows.map((r) => ({
               key: r.key,
               name: r.name,
               amount: r.amount,
               lockedReason:
                 r.paid > 0
-                  ? `Already paid ${formatCurrency(r.paid)}. Undo the repayments first to remove.`
+                  ? `Already paid ${formatMoney(r.paid, currency)}. Undo the repayments first to remove.`
                   : undefined,
             }))}
             idPrefix="recv"
@@ -216,7 +221,7 @@ export function ReceivablesEditor({ transaction, onSaved }: ReceivablesEditorPro
             }
           />
 
-          <YourShare cents={yourShare} />
+          <YourShare cents={yourShare} currency={currency} />
           {rows.length === 0 && hasExisting && (
             <p className="text-xs text-muted-foreground">
               Nobody will owe you for this expense, so all of it counts as your

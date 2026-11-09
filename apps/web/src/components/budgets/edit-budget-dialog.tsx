@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { ApiClientError } from "@/lib/api-client";
 import { useUpdateBudget } from "@/hooks/use-budgets";
+import { REPORTING_CURRENCIES } from "@/lib/currencies";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -49,6 +50,7 @@ export function EditBudgetDialog({
   budget,
 }: EditBudgetDialogProps) {
   const [name, setName] = useState("");
+  const [currency, setCurrency] = useState("");
   const [amount, setAmount] = useState(0);
   const [period, setPeriod] = useState<BudgetPeriod>("monthly");
   const [isActive, setIsActive] = useState(true);
@@ -57,9 +59,20 @@ export function EditBudgetDialog({
   const updateBudget = useUpdateBudget(budget?.id ?? "");
   const isSubmitting = updateBudget.isPending;
 
+  const selectedCurrency = currency || budget?.currency || "";
+  const currencyOptions =
+    selectedCurrency === "" ||
+    REPORTING_CURRENCIES.some((c) => c.code === selectedCurrency)
+      ? REPORTING_CURRENCIES
+      : [
+          { code: selectedCurrency, name: selectedCurrency },
+          ...REPORTING_CURRENCIES,
+        ];
+
   useEffect(() => {
     if (budget) {
       setName(budget.name);
+      setCurrency(budget.currency);
       setAmount(budget.amount);
       setPeriod(budget.period);
       setIsActive(budget.is_active);
@@ -89,6 +102,7 @@ export function EditBudgetDialog({
     const payload: UpdateBudgetRequest = {};
     if (trimmedName !== budget.name) payload.name = trimmedName;
     if (amount !== budget.amount) payload.amount = amount;
+    if (selectedCurrency !== budget.currency) payload.currency = selectedCurrency;
     if (period !== budget.period) payload.period = period;
     if (isActive !== budget.is_active) payload.is_active = isActive;
 
@@ -133,9 +147,30 @@ export function EditBudgetDialog({
           </div>
 
           <div className="flex flex-col gap-2">
+            <Label htmlFor="edit-budget-currency">Currency</Label>
+            <Select
+              value={selectedCurrency}
+              onValueChange={setCurrency}
+              disabled={isSubmitting}
+            >
+              <SelectTrigger id="edit-budget-currency" className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {currencyOptions.map((c) => (
+                  <SelectItem key={c.code} value={c.code}>
+                    {c.code} · {c.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="flex flex-col gap-2">
             <Label htmlFor="edit-budget-amount">Amount</Label>
             <CurrencyInput
               id="edit-budget-amount"
+              currency={selectedCurrency}
               value={amount}
               onChange={setAmount}
               disabled={isSubmitting}

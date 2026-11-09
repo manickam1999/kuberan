@@ -597,6 +597,7 @@ func TestGetBudgetProgress(t *testing.T) {
 		defer testutil.TeardownTestDB(t, db)
 		svc := NewBudgetService(db)
 		user := testutil.CreateTestUser(t, db)
+		setBaseUSD(t, db, user.ID)
 		cat := testutil.CreateTestCategory(t, db, user.ID, models.CategoryTypeExpense)
 		budget := testutil.CreateTestBudget(t, db, user.ID, cat.ID) // $100
 
@@ -625,6 +626,7 @@ func TestGetBudgetProgress(t *testing.T) {
 		defer testutil.TeardownTestDB(t, db)
 		svc := NewBudgetService(db)
 		user := testutil.CreateTestUser(t, db)
+		setBaseUSD(t, db, user.ID)
 		cat := testutil.CreateTestCategory(t, db, user.ID, models.CategoryTypeExpense)
 		account := testutil.CreateTestCashAccountWithBalance(t, db, user.ID, 100000)
 		budget := testutil.CreateTestBudget(t, db, user.ID, cat.ID) // $100
@@ -673,6 +675,7 @@ func TestGetBudgetProgress(t *testing.T) {
 		defer testutil.TeardownTestDB(t, db)
 		svc := NewBudgetService(db)
 		user := testutil.CreateTestUser(t, db)
+		setBaseUSD(t, db, user.ID)
 		cat := testutil.CreateTestCategory(t, db, user.ID, models.CategoryTypeExpense)
 		account := testutil.CreateTestCashAccountWithBalance(t, db, user.ID, 200000)
 		budget := testutil.CreateTestBudget(t, db, user.ID, cat.ID) // $100
@@ -709,6 +712,7 @@ func TestGetBudgetProgress(t *testing.T) {
 		defer testutil.TeardownTestDB(t, db)
 		svc := NewBudgetService(db)
 		user := testutil.CreateTestUser(t, db)
+		setBaseUSD(t, db, user.ID)
 		cat := testutil.CreateTestCategory(t, db, user.ID, models.CategoryTypeExpense)
 		account := testutil.CreateTestCashAccount(t, db, user.ID)
 		budget := testutil.CreateTestBudget(t, db, user.ID, cat.ID)
@@ -740,6 +744,7 @@ func TestGetBudgetProgress(t *testing.T) {
 		defer testutil.TeardownTestDB(t, db)
 		svc := NewBudgetService(db)
 		user := testutil.CreateTestUser(t, db)
+		setBaseUSD(t, db, user.ID)
 		cat1 := testutil.CreateTestCategory(t, db, user.ID, models.CategoryTypeExpense)
 		cat2 := testutil.CreateTestCategory(t, db, user.ID, models.CategoryTypeExpense)
 		account := testutil.CreateTestCashAccountWithBalance(t, db, user.ID, 100000)
@@ -772,6 +777,7 @@ func TestGetBudgetProgress(t *testing.T) {
 		defer testutil.TeardownTestDB(t, db)
 		svc := NewBudgetService(db)
 		user := testutil.CreateTestUser(t, db)
+		setBaseUSD(t, db, user.ID)
 
 		_, err := svc.GetBudgetProgress(user.ID, "9999")
 		testutil.AssertAppError(t, err, "BUDGET_NOT_FOUND")
@@ -782,6 +788,7 @@ func TestGetBudgetProgress(t *testing.T) {
 		defer testutil.TeardownTestDB(t, db)
 		svc := NewBudgetService(db)
 		user := testutil.CreateTestUser(t, db)
+		setBaseUSD(t, db, user.ID)
 		cat := testutil.CreateTestCategory(t, db, user.ID, models.CategoryTypeExpense)
 
 		// Create budget with zero amount

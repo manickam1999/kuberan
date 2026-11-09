@@ -75,6 +75,8 @@ interface MoneyOwedBackSectionProps {
   onChange: (state: OwedBackState) => void;
   /** Expense amount in cents. */
   amount: number;
+  /** Currency of the expense (the chosen account's). */
+  currency: string;
   disabled?: boolean;
 }
 
@@ -86,6 +88,7 @@ export function MoneyOwedBackSection({
   state,
   onChange,
   amount,
+  currency,
   disabled,
 }: MoneyOwedBackSectionProps) {
   const shareMode = owedShareMode(state);
@@ -168,6 +171,7 @@ export function MoneyOwedBackSection({
 
           <CounterpartyRows
             rows={rows}
+            currency={currency}
             idPrefix="owed"
             noun={modeInfo.counterpartyLabel}
             numbered={!singleRow}
@@ -191,7 +195,7 @@ export function MoneyOwedBackSection({
             }
           />
 
-          <YourShare cents={yourShare} />
+          <YourShare cents={yourShare} currency={currency} />
           {yourShare === 0 && (
             <p className="-mt-1 text-xs text-muted-foreground">
               Nothing counts as your spending, so a category is optional.

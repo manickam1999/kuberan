@@ -46,6 +46,8 @@ export interface ApiError {
   error: {
     code: string;
     message: string;
+    /** Machine-readable context, e.g. FX_AMOUNT_REQUIRED's suggested_amount. */
+    details?: Record<string, unknown>;
   };
 }
 
@@ -91,6 +93,8 @@ export interface ProfileResponse {
 export interface UpdateProfileSettingsRequest {
   hide_balances?: boolean;
   default_account_id?: string | null; // null clears the default
+  /** ISO 4217 reporting currency; 400 UNSUPPORTED_CURRENCY if it can't be converted. */
+  base_currency?: string;
 }
 
 // Single-item response wrappers (backend wraps single items in a key)
@@ -202,6 +206,8 @@ export interface CreateTransferRequest {
   amount: number; // cents, > 0
   description?: string;
   date?: string; // ISO 8601
+  /** Cents credited to the destination, in its currency. Required when the accounts' currencies differ (else 400 FX_AMOUNT_REQUIRED), omit otherwise. */
+  to_amount?: number;
 }
 
 export interface UpdateTransactionRequest {
@@ -332,6 +338,8 @@ export interface CreateBudgetRequest {
   name: string;
   amount: number; // cents, > 0
   period: BudgetPeriod;
+  /** ISO 4217; defaults to the user's base currency. */
+  currency?: string;
 }
 
 export interface UpdateBudgetRequest {
@@ -339,6 +347,8 @@ export interface UpdateBudgetRequest {
   amount?: number; // cents, > 0
   period?: BudgetPeriod;
   is_active?: boolean;
+  /** ISO 4217 */
+  currency?: string;
 }
 
 // Budget filters
@@ -353,14 +363,26 @@ export interface SpendingByCategoryItem {
   category_name: string;
   category_color: string;
   category_icon: string;
-  total: number; // cents
+  total: number; // cents, in the response's currency (base)
+}
+
+/** A native-currency amount left out of converted totals for lack of an FX rate. */
+export interface UnconvertedAmount {
+  currency: string;
+  amount: number; // cents, in `currency`
 }
 
 export interface SpendingByCategory {
   items: SpendingByCategoryItem[];
-  total_spent: number; // cents
+  total_spent: number; // cents, in `currency`
   from_date: string; // ISO 8601
   to_date: string; // ISO 8601
+  /** The user's base currency: the unit of every amount. */
+  currency: string;
+  /** Some spending had no exchange rate and was left out. */
+  fx_missing: boolean;
+  /** Native amounts left out of the totals (may be null/absent when none). */
+  unconverted?: UnconvertedAmount[] | null;
 }
 
 export interface Cashflow {
@@ -370,23 +392,38 @@ export interface Cashflow {
   total_expenses: number; // cents
   from_date: string; // ISO 8601
   to_date: string; // ISO 8601
+  /** The user's base currency: the unit of every amount. */
+  currency: string;
+  fx_missing: boolean;
+  /** Native amounts left out of the totals (may be null/absent when none). */
+  unconverted?: UnconvertedAmount[] | null;
 }
 
 export interface MonthlySummaryItem {
   month: string; // "2026-02"
-  income: number; // cents
-  expenses: number; // cents
+  income: number; // cents, base currency
+  expenses: number; // cents, base currency
+  /** The user's base currency. */
+  currency: string;
+  /** Some of the month's amounts had no rate and are excluded. */
+  fx_missing: boolean;
 }
 
 export interface DailySpendingItem {
   date: string; // "2026-02-01"
-  total: number; // cents
+  total: number; // cents, base currency
+  /** The user's base currency. */
+  currency: string;
+  fx_missing: boolean;
 }
 
 export interface DailySummaryItem {
   date: string; // "2026-02-01"
-  income: number; // cents
-  expenses: number; // cents
+  income: number; // cents, base currency
+  expenses: number; // cents, base currency
+  /** The user's base currency. */
+  currency: string;
+  fx_missing: boolean;
 }
 
 export interface TopExpenseItem {
@@ -397,11 +434,17 @@ export interface TopExpenseItem {
   category_name: string;
   category_color: string;
   category_icon: string;
-  amount: number; // cents (full amount)
-  /** Cents the user bears; null when the expense is not shared. */
+  amount: number; // cents (full amount), in `currency`
+  /** Cents the user bears, in `currency`; null when the expense is not shared. */
   personal_amount: number | null;
   description: string;
   date: string; // ISO 8601
+  /** The account's currency: the unit of amount and personal_amount. */
+  currency: string;
+  /** Effective amount (personal share, else amount) in the base currency at the expense's date; 0 when fx_missing. */
+  amount_base: number;
+  /** No rate existed, so amount_base could not be computed. */
+  fx_missing: boolean;
 }
 
 export interface TopExpenses {
@@ -410,6 +453,10 @@ export interface TopExpenses {
   total_count: number;
   from_date: string; // ISO 8601
   to_date: string; // ISO 8601
+  /** The user's base currency (the unit of each item's amount_base). */
+  currency: string;
+  /** Some expenses had no rate; they rank after every converted expense. */
+  fx_missing: boolean;
 }
 
 // Investment response wrappers
@@ -434,11 +481,13 @@ export interface AddInvestmentRequest {
   account_id: string; // UUIDv7
   security_id: string; // UUIDv7
   quantity: number; // float, > 0
-  purchase_price: number; // cents, > 0
+  purchase_price: number; // cents, > 0, security currency
   wallet_address?: string;
   date?: string; // ISO 8601, defaults to now
-  fee?: number; // cents, >= 0, defaults to 0
+  fee?: number; // cents, >= 0, defaults to 0 (security currency)
   notes?: string; // max 500, defaults to "Initial purchase"
+  /** Optional decimal string: security currency -> base rate of the trade. */
+  fx_rate?: string;
 }
 
 export interface RecordBuyRequest {
@@ -448,6 +497,10 @@ export interface RecordBuyRequest {
   fee?: number; // cents, >= 0
   notes?: string;
   funding_account_id?: string; // optional cash account to deduct from
+  /** Cents debited from the funding account, in ITS currency; required when it differs from the security's currency. */
+  funding_amount?: number;
+  /** Optional decimal string: security currency -> base rate of the trade. */
+  fx_rate?: string;
 }
 
 export interface RecordSellRequest {
@@ -457,13 +510,25 @@ export interface RecordSellRequest {
   fee?: number; // cents, >= 0
   notes?: string;
   deposit_account_id?: string; // optional cash account to credit with proceeds
+  /** Cents credited to the deposit account, in ITS currency; required when it differs from the security's currency. */
+  deposit_amount?: number;
+  /** Optional decimal string: security currency -> base rate of the trade. */
+  fx_rate?: string;
 }
 
 export interface RecordDividendRequest {
   date: string; // ISO 8601
-  amount: number; // cents, > 0
+  amount: number; // cents, > 0, gross, security currency
   dividend_type?: string;
   notes?: string;
+  /** Withholding tax plus fees, cents in the security currency (<= amount). */
+  fee?: number;
+  /** Optional cash account credited with the NET dividend (amount - fee). */
+  deposit_account_id?: string;
+  /** Net cents credited in the deposit account's currency; required when it differs from the security's currency. */
+  deposit_amount?: number;
+  /** Optional decimal string: security currency -> base rate of the trade. */
+  fx_rate?: string;
 }
 
 export interface RecordSplitRequest {
@@ -600,6 +665,8 @@ export interface SettleReceivableRequest {
   date?: string; // ISO 8601
   description?: string;
   write_off_remainder?: boolean;
+  /** Cents credited to the account, in the account's currency; required when it differs from the receivable's currency. */
+  account_amount?: number;
 }
 
 export interface WriteOffReceivableRequest {
@@ -613,6 +680,12 @@ export interface ReceivableKindSummary {
   open_count: number;
 }
 
+/** Open outstanding in one receivable currency, unconverted. */
+export interface ReceivableCurrencyTotal {
+  currency: string;
+  outstanding: number; // cents, in `currency`
+}
+
 export interface ReceivableCounterpartySummary {
   counterparty_key: string;
   counterparty_name: string;
@@ -622,7 +695,13 @@ export interface ReceivableCounterpartySummary {
 }
 
 export interface ReceivablesSummary {
-  total_outstanding: number; // cents
+  total_outstanding: number; // cents, in `currency` (the user's base)
+  /** Currency of the converted totals (the user's base). */
+  currency: string;
+  /** Some outstanding amounts had no rate and are left out of the totals. */
+  fx_missing: boolean;
+  /** Native outstanding per receivable currency (may be null/absent when none). */
+  by_currency?: ReceivableCurrencyTotal[] | null;
   by_kind: ReceivableKindSummary[];
   by_counterparty: ReceivableCounterpartySummary[];
 }

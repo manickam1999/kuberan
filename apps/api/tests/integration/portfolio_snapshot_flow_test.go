@@ -13,7 +13,7 @@ func TestPortfolioSnapshotFlow_ComputeAndQuery(t *testing.T) {
 
 	// Step 1: Create cash account with $5000 balance (500000 cents)
 	rec := app.request("POST", "/api/v1/accounts/cash",
-		`{"name":"Checking","initial_balance":500000}`, token)
+		`{"name":"Checking","initial_balance":500000,"currency":"MYR"}`, token)
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("expected 201 creating cash account, got %d: %s", rec.Code, rec.Body.String())
 	}
@@ -38,7 +38,7 @@ func TestPortfolioSnapshotFlow_ComputeAndQuery(t *testing.T) {
 	// Step 4: Record live price via pipeline ($150/share)
 	priceTime := time.Now().UTC().Format(time.RFC3339)
 	rec = app.pipelineRequest("POST", "/api/v1/pipeline/securities/prices",
-		fmt.Sprintf(`{"prices":[{"security_id":%q,"price":15000,"recorded_at":%q}]}`, securityID, priceTime))
+		fmt.Sprintf(`{"prices":[{"security_id":%q,"price":15000,"currency":"MYR","recorded_at":%q}]}`, securityID, priceTime))
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200 for pipeline price, got %d: %s", rec.Code, rec.Body.String())
 	}
@@ -101,8 +101,8 @@ func TestPortfolioSnapshotFlow_MultipleUsersComputed(t *testing.T) {
 	app := setupApp(t)
 
 	// Register two users with different balances
-	token1, _, _ := app.registerUser(t, "user1@test.com", "password123")
-	token2, _, _ := app.registerUser(t, "user2@test.com", "password123")
+	token1, _, _ := app.registerUserUSD(t, "user1@test.com", "password123")
+	token2, _, _ := app.registerUserUSD(t, "user2@test.com", "password123")
 
 	// User 1: $3000 cash
 	rec := app.request("POST", "/api/v1/accounts/cash",

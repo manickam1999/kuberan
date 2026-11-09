@@ -1,0 +1,291 @@
+﻿Statement,Header,Field Name,Field Value
+Statement,Data,BrokerName,Interactive Brokers LLC
+Statement,Data,BrokerAddress,"Two Pickwick Plaza, Greenwich, CT 06830"
+Statement,Data,Title,Activity Statement
+Statement,Data,Period,"January 1, 2026 - November 2, 2026"
+Statement,Data,WhenGenerated,"2026-11-03, 08:02:13 EST"
+Account Information,Header,Field Name,Field Value
+Account Information,Data,Name,Test User
+Account Information,Data,Account,U00000000
+Account Information,Data,Account Type,Individual
+Account Information,Data,Customer Type,Individual
+Account Information,Data,Account Capabilities,Cash
+Account Information,Data,Base Currency,USD
+Net Asset Value,Header,Asset Class,Prior Total,Current Long,Current Short,Current Total,Change
+Net Asset Value,Data,Cash ,4.65331474,120.553840346,0,120.553840346,115.900525606
+Net Asset Value,Data,Stock,13991.42,20676.39,0,20676.39,6684.97
+Net Asset Value,Data,Total,13996.07331474,20796.943840346,0,20796.943840346,6800.870525606
+Net Asset Value,Header,Time Weighted Rate of Return
+Net Asset Value,Data,-1.160836654%
+Change in NAV,Header,Field Name,Field Value
+Change in NAV,Data,Starting Value,13996.07331474
+Change in NAV,Data,Mark-to-Market,-669.821657
+Change in NAV,Data,Deposits & Withdrawals,7461.52
+Change in NAV,Data,Grant Activity,-59.33
+Change in NAV,Data,Dividends,108.89
+Change in NAV,Data,Withholding Tax,-29.48
+Change in NAV,Data,Change in Dividend Accruals,-0.01
+Change in NAV,Data,Other Fees,-3.56
+Change in NAV,Data,Commissions,-7.3476954
+Change in NAV,Data,Other FX Translations,0.01
+Change in NAV,Data,Ending Value,20796.943840346
+Mark-to-Market Performance Summary,Header,Asset Category,Symbol,Prior Quantity,Current Quantity,Prior Price,Current Price,Mark-to-Market P/L Position,Mark-to-Market P/L Transaction,Mark-to-Market P/L Commissions,Mark-to-Market P/L Other,Mark-to-Market P/L Total,Code
+Mark-to-Market Performance Summary,Data,Stocks,CCJ,30.0511,30.0511,91.4900,73.3800,-544.23,0,0,0,-544.23,
+Mark-to-Market Performance Summary,Data,Stocks,CHA,102.9936,0,11.6300,--,-216.290992,35.918592,-0.36229207,0,-180.73469207,
+Mark-to-Market Performance Summary,Data,Stocks,IBKR,2.3791,1.6706,64.3100,74.8300,31.059656,-0.001628,-0.00028289,0.36,31.41774511,
+Mark-to-Market Performance Summary,Data,Stocks,NVDA,0,10.2137,--,202.0600,-142.536439,-4.967983,-0.70166789,2.99,-145.21608989,
+Mark-to-Market Performance Summary,Data,Stocks,NVO,71.2295,30.2548,50.8800,40.4500,-625.722282,25.697297,-0.8311653,76.06,-524.7961503,
+Mark-to-Market Performance Summary,Data,Stocks,SPCX,0,10,--,136.3700,-168.6,13.224,-0.35228725,0,-155.72828725,
+Mark-to-Market Performance Summary,Data,Stocks,VUAA,28,45.2,132.4200,147.7000,455.704,13.082,-1.7,0,467.086,
+Mark-to-Market Performance Summary,Data,Stocks,VWRA,15,37,170.6200,189.7000,444.4,13.442,-3.4,0,454.442,
+Mark-to-Market Performance Summary,Data,Total,,,,,,-766.216057,96.394278,-7.3476954,79.41,-597.7594744,
+Mark-to-Market Performance Summary,Data,Forex,USD,4.65331474,120.553840346,1.0000,1.0000,0,0,0,0,0,
+Mark-to-Market Performance Summary,Data,Total,,,,,,0,0,0,0,0,
+Mark-to-Market Performance Summary,Data,Total (All Assets),,,,,,-766.216057,96.394278,-7.3476954,79.41,-597.7594744,
+Mark-to-Market Performance Summary,Data,Other Fees,,,,,,,,,,-3.56,
+Total P/L for Statement Period,,,,,,,,,,,,-601.3194744,
+Realized & Unrealized Performance Summary,Header,Asset Category,Symbol,Cost Adj.,Realized S/T Profit,Realized S/T Loss,Realized L/T Profit,Realized L/T Loss,Realized Total,Unrealized S/T Profit,Unrealized S/T Loss,Unrealized L/T Profit,Unrealized L/T Loss,Unrealized Total,Total,Code
+Realized & Unrealized Performance Summary,Data,Stocks,CCJ,0,0,0,0,0,0,0,-0.697884,0,-278.456635,-279.154519,-279.154519,
+Realized & Unrealized Performance Summary,Data,Stocks,CHA,0,0,-745.18302207,0,0,-745.18302207,0,0,0,0,0,-745.18302207,
+Realized & Unrealized Performance Summary,Data,Stocks,IBKR,0,0,0,0,0,0,0.966187,-15.091346,0.053888,0,-14.071271,-14.071271,
+Realized & Unrealized Performance Summary,Data,Stocks,NVDA,0,0,0,0,0,0,0.04374,-148.24983,0,0,-148.20609,-148.20609,
+Realized & Unrealized Performance Summary,Data,Stocks,NVO,0,0,-339.3919442,0,0,-339.3919442,3.573134,-1.933453,0,-604.492149,-602.852468,-942.2444122,
+Realized & Unrealized Performance Summary,Data,Stocks,SPCX,0,0,0,0,0,0,0,-155.728287,0,0,-155.728287,-155.728287,
+Realized & Unrealized Performance Summary,Data,Stocks,VUAA,0,0,0,0,0,0,39.246,0,964.813805,0,1004.059805,1004.059805,
+Realized & Unrealized Performance Summary,Data,Stocks,VWRA,0,0,0,0,0,0,169.67,-1.428,623.347,0,791.589,791.589,
+Realized & Unrealized Performance Summary,Data,Total,,0,0,-1084.57496627,0,0,-1084.57496627,213.499061,-323.1288,1588.214693,-882.948784,595.63617,-488.93879627,
+Realized & Unrealized Performance Summary,Data,Total (All Assets),,0,0,-1084.57496627,0,0,-1084.57496627,213.499061,-323.1288,1588.214693,-882.948784,595.63617,-488.93879627,
+Cash Report,Header,Currency Summary,Currency,Total,Securities,Futures,
+Cash Report,Data,Starting Cash,Base Currency Summary,4.65331474,4.65331474,0,
+Cash Report,Data,Commissions,Base Currency Summary,-7.3476954,-7.3476954,0,
+Cash Report,Data,Deposits,Base Currency Summary,7461.52,7461.52,0,
+Cash Report,Data,Dividends,Base Currency Summary,108.58,108.58,0,
+Cash Report,Data,Trades (Sales),Base Currency Summary,2892.310466,2892.310466,0,
+Cash Report,Data,Trades (Purchase),Base Currency Summary,-10306.432245,-10306.432245,0,
+Cash Report,Data,Other Fees,Base Currency Summary,-3.56,-3.56,0,
+Cash Report,Data,Payment In Lieu of Dividends,Base Currency Summary,0.31,0.31,0,
+Cash Report,Data,Withholding Tax,Base Currency Summary,-29.48,-29.48,0,
+Cash Report,Data,Ending Cash,Base Currency Summary,120.553840346,120.553840346,0,
+Cash Report,Data,Ending Settled Cash,Base Currency Summary,120.553840346,120.553840346,0,
+Open Positions,Header,DataDiscriminator,Asset Category,Currency,Symbol,Quantity,Mult,Cost Price,Cost Basis,Close Price,Value,Unrealized P/L,Code
+Open Positions,Data,Summary,Stocks,USD,CCJ,30.0511,1,82.669337196,2484.304519,73.38,2205.15,-279.154519,
+Open Positions,Data,Summary,Stocks,USD,IBKR,1.6706,1,83.252287202,139.081271,74.83,125.01,-14.071271,
+Open Positions,Data,Summary,Stocks,USD,NVDA,10.2137,1,216.570497469,2211.98609,202.06,2063.78,-148.20609,
+Open Positions,Data,Summary,Stocks,USD,NVO,30.2548,1,60.375955815,1826.662468,40.45,1223.81,-602.852468,
+Open Positions,Data,Summary,Stocks,USD,SPCX,10,1,151.9428287,1519.428287,136.37,1363.7,-155.728287,
+Open Positions,Data,Summary,Stocks,USD,VUAA,45.2,1,125.4862875,5671.980195,147.7,6676.04,1004.059805,
+Open Positions,Data,Summary,Stocks,USD,VWRA,37,1,168.305702703,6227.311,189.7,7018.9,791.589,
+Open Positions,Total,,Stocks,USD,,,,,20080.75383,,20676.39,595.63617,
+Trades,Header,DataDiscriminator,Asset Category,Currency,Symbol,Date/Time,Quantity,T. Price,C. Price,Proceeds,Comm/Fee,Basis,Realized P/L,MTM P/L,Code
+Trades,Data,Order,Stocks,USD,CHA,"2026-03-27, 09:33:14",-102,9.88,9.53,1007.76,-0.264952395,-1748.264244,-740.769196,35.7,C;P
+Trades,Data,Order,Stocks,USD,CHA,"2026-03-27, 09:38:01",-0.9936,9.75,9.53,9.6876,-0.097339676,-14.004087,-4.413827,0.2186,C;FP
+Trades,SubTotal,,Stocks,USD,CHA,,-102.9936,,,1017.4476,-0.362292071,-1762.268331,-745.183023,35.9186,
+Trades,Data,Order,Stocks,USD,IBKR,"2026-03-16, 09:34:22",0.0016,67.71,68.28,-0.108336,-0.000108736,0.108444736,0,0.0009,O;R
+Trades,Data,Order,Stocks,USD,IBKR,"2026-06-15, 09:33:20",0.0006,93.96,92.76,-0.056376,-0.000056539,0.056432539,0,-0.0007,O;R
+Trades,Data,Order,Stocks,USD,IBKR,"2026-09-15, 09:30:01",0.0013,90.2,88.8,-0.11726,-0.00011761,0.11737761,0,-0.0018,O;R
+Trades,SubTotal,,Stocks,USD,IBKR,,0.0035,,,-0.281972,-0.000282885,0.282254885,0,-0.0016,
+Trades,Data,Order,Stocks,USD,NVDA,"2026-06-03, 09:56:59",6.9,217.219217391,214.75,-1498.8126,-0.35165795,1499.16425795,0,-17.0376,IM;O;P;RPA
+Trades,Data,Order,Stocks,USD,NVDA,"2026-06-04, 09:37:12",3.3,214.998181818,218.66,-709.494,-0.34702715,709.84102715,0,12.084,FPA;O;P
+Trades,Data,Order,Stocks,USD,NVDA,"2026-06-29, 09:36:04",0.0062,194.81,194.97,-1.207822,-0.001209968,1.209031968,0,0.001,O;R
+Trades,Data,Order,Stocks,USD,NVDA,"2026-10-02, 09:30:01",0.0075,236,233.95,-1.77,-0.001772823,1.771772823,0,-0.0154,O;R
+Trades,SubTotal,,Stocks,USD,NVDA,,10.2137,,,-2211.284422,-0.701667891,2211.986089891,0,-4.968,
+Trades,Data,Order,Stocks,USD,NVO,"2026-04-10, 09:34:15",1.6303,38.219958903,37.52,-62.309999,-0.062681857,62.372680857,0,-1.1411,O;P;R
+Trades,Data,Order,Stocks,USD,NVO,"2026-06-03, 09:54:52",-35,42.75,42,1496.25,-0.39501,-1728.094829,-232.239838,26.25,C
+Trades,Data,Order,Stocks,USD,NVO,"2026-06-26, 10:01:15",-7.8598,48.170801547,48.07,378.612866,-0.361184876,-485.403787,-107.152105,0.7923,C;FPA;IM;P
+Trades,Data,Order,Stocks,USD,NVO,"2026-08-26, 09:34:03",0.2548,47.99,47.19,-12.227852,-0.012288564,12.240140564,0,-0.2038,O;R
+Trades,SubTotal,,Stocks,USD,NVO,,-40.9747,,,1800.325015,-0.831165297,-2138.885794579,-339.391943,25.6974,
+Trades,Data,Order,Stocks,USD,SPCX,"2026-06-26, 10:01:46",10,151.9076,153.23,-1519.076,-0.35228725,1519.42828725,0,13.224,IA;O
+Trades,SubTotal,,Stocks,USD,SPCX,,10,,,-1519.076,-0.35228725,1519.42828725,0,13.224,
+Trades,Data,Order,Stocks,USD,VUAA,"2026-06-04, 08:23:52",17.2,145.319505814,146.08,-2499.494,-1.7,2501.194,0,13.082,FPA;O;P
+Trades,SubTotal,,Stocks,USD,VUAA,,17.2,,,-2499.494,-1.7,2501.194,0,13.082,
+Trades,Data,Order,Stocks,USD,VWRA,"2026-03-27, 09:40:42",6.2,162.887032258,162.4,-1009.9,-1.7,1011.6,0,-3.02,FPA;O;P
+Trades,Data,Order,Stocks,USD,VWRA,"2026-06-04, 08:23:16",15.8,189.357816456,190.4,-2991.858,-1.7,2993.558,0,16.462,O;P
+Trades,SubTotal,,Stocks,USD,VWRA,,22,,,-4001.758,-3.4,4005.158,0,13.442,
+Trades,Total,,Stocks,USD,,,,,,-7414.121779,-7.347695394,6336.894506447,-1084.574966,96.3944, 
+Grant Activity,Header,Symbol,Report Date,Description,Award Date,Vesting Date,Quantity,Price,Value
+Grant Activity,Data,IBKR,2026-01-29,Stock Award Vesting,2025-01-29,2026-01-29,0.6994,75.66,52.9167
+Grant Activity,Data,IBKR,2026-01-29,Stock Award Withholding,2025-01-29,2026-01-29,-0.2098,75.66,-15.87
+Grant Activity,Data,IBKR,2026-03-02,Stock Award Vesting,2025-02-27,2026-02-27,0.166,71.19,11.8176
+Grant Activity,Data,IBKR,2026-03-02,Stock Award Withholding,2025-02-27,2026-02-27,-0.0498,71.19,-3.55
+Grant Activity,Data,IBKR,2026-03-25,Stock Award Vesting,2025-03-25,2026-03-25,0.1188,68.68,8.1592
+Grant Activity,Data,IBKR,2026-03-25,Stock Award Withholding,2025-03-25,2026-03-25,-0.0356,68.68,-2.45
+Grant Activity,Data,IBKR,2026-04-29,Stock Award Vesting,2025-04-29,2026-04-29,0.1232,77.05,9.4926
+Grant Activity,Data,IBKR,2026-04-29,Stock Award Withholding,2025-04-29,2026-04-29,-0.0369,77.05,-2.84
+Grant Activity,Data,IBKR,2026-05-29,Stock Award Vesting,2025-05-29,2026-05-29,0.1792,86.97,15.5851
+Grant Activity,Data,IBKR,2026-05-29,Stock Award Withholding,2025-05-29,2026-05-29,-0.0537,86.97,-4.67
+Grant Activity,Data,IBKR,2026-07-28,Stock Award Vesting,2025-07-28,2026-07-28,0.0683,90.91,6.2092
+Grant Activity,Data,IBKR,2026-07-28,Stock Award Withholding,2025-07-28,2026-07-28,-0.0204,90.91,-1.85
+Grant Activity,Data,IBKR,2026-09-22,Stock Award Vesting,2025-09-22,2026-09-22,1.0194,91.88,93.6625
+Grant Activity,Data,IBKR,2026-09-22,Stock Award Withholding,2025-09-22,2026-09-22,-0.3058,91.88,-28.1
+Grant Activity,Data,Total,,,,,1.6623,,138.5129
+Deposits & Withdrawals,Header,Currency,Settle Date,Description,Amount
+Deposits & Withdrawals,Data,USD,2026-06-04,Electronic Fund Transfer,7461.52
+Deposits & Withdrawals,Data,Total,,,7461.52
+Fees,Header,Subtitle,Currency,Date,Description,Amount
+Fees,Data,Other Fees,USD,2026-04-08,NVO(US6701002056) Cash Dividend USD 1.217376 per Share - FEE,-1.07
+Fees,Data,Other Fees,USD,2026-04-14,CHA(15743P104) ADR Fee USD 0.02 per Share,-2.04
+Fees,Data,Other Fees,USD,2026-08-25,NVO(US6701002056) Cash Dividend USD 0.579193 per Share - FEE,-0.45
+Fees,Data,Total,,,,-3.56
+Dividends,Header,Currency,Date,Description,Amount
+Dividends,Data,USD,2026-03-13,IBKR(US45841N1072) Payment in Lieu of Dividend (Ordinary Dividend),0.12
+Dividends,Data,USD,2026-03-13,IBKR(US45841N1072) Cash Dividend USD 0.08 per Share (Ordinary Dividend),0.05
+Dividends,Data,USD,2026-04-08,NVO(US6701002056) Cash Dividend USD 1.217376 per Share (Ordinary Dividend),86.72
+Dividends,Data,USD,2026-06-12,IBKR(US45841N1072) Payment in Lieu of Dividend (Ordinary Dividend),0.09
+Dividends,Data,USD,2026-06-12,IBKR(US45841N1072) Cash Dividend USD 0.0875 per Share (Ordinary Dividend),0.08
+Dividends,Data,USD,2026-06-12,IBKR(US45841N1072) Payment in Lieu of Dividend - Reversal (Ordinary Dividend),-0.09
+Dividends,Data,USD,2026-06-12,IBKR(US45841N1072) Payment in Lieu of Dividend (Ordinary Dividend),0.1
+Dividends,Data,USD,2026-06-26,NVDA(US67066G1040) Cash Dividend USD 0.25 per Share (Ordinary Dividend),1.73
+Dividends,Data,USD,2026-08-25,NVO(US6701002056) Cash Dividend USD 0.579193 per Share (Ordinary Dividend),17.37
+Dividends,Data,USD,2026-09-14,IBKR(US45841N1072) Cash Dividend USD 0.0875 per Share (Ordinary Dividend),0.08
+Dividends,Data,USD,2026-09-14,IBKR(US45841N1072) Payment in Lieu of Dividend (Ordinary Dividend),0.09
+Dividends,Data,USD,2026-10-01,NVDA(US67066G1040) Cash Dividend USD 0.25 per Share (Ordinary Dividend),2.55
+Dividends,Data,Total,,,108.89
+Withholding Tax,Header,Currency,Date,Description,Amount,Code
+Withholding Tax,Data,USD,2026-03-13,IBKR(US45841N1072) Payment in Lieu of Dividend - US Tax,-0.04,
+Withholding Tax,Data,USD,2026-03-13,IBKR(US45841N1072) Cash Dividend USD 0.08 per Share - US Tax,-0.02,
+Withholding Tax,Data,USD,2026-04-08,NVO(US6701002056) Cash Dividend USD 1.217376 per Share - DK Tax,-23.34,
+Withholding Tax,Data,USD,2026-06-12,IBKR(US45841N1072) Payment in Lieu of Dividend - US Tax,-0.03,
+Withholding Tax,Data,USD,2026-06-12,IBKR(US45841N1072) Cash Dividend USD 0.0875 per Share - US Tax,-0.02,
+Withholding Tax,Data,USD,2026-06-26,NVDA(US67066G1040) Cash Dividend USD 0.25 per Share - US Tax,-0.52,
+Withholding Tax,Data,USD,2026-08-25,NVO(US6701002056) Cash Dividend USD 0.579193 per Share - DK Tax,-4.69,
+Withholding Tax,Data,USD,2026-09-14,IBKR(US45841N1072) Cash Dividend USD 0.0875 per Share - US Tax,-0.02,
+Withholding Tax,Data,USD,2026-09-14,IBKR(US45841N1072) Payment in Lieu of Dividend - US Tax,-0.03,
+Withholding Tax,Data,USD,2026-10-01,NVDA(US67066G1040) Cash Dividend USD 0.25 per Share - US Tax,-0.77,
+Withholding Tax,Data,Total,,,-29.48,
+Change in Dividend Accruals,Header,Asset Category,Currency,Symbol,Date,Ex Date,Pay Date,Quantity,Tax,Fee,Gross Rate,Gross Amount,Net Amount,Code
+Change in Dividend Accruals,Data,Starting Dividend Accruals in USD,,,,,,,,,,,0,
+Change in Dividend Accruals,Data,Stocks,USD,CHA,2026-03-13,2026-03-16,2026-04-14,102.9936,0,2.04,0.02,0,-2.04,ADR;Po
+Change in Dividend Accruals,Data,Stocks,USD,CHA,2026-04-14,2026-03-16,2026-04-14,102.9936,0,-2.04,0.02,0,2.04,ADR;Re
+Change in Dividend Accruals,Data,Stocks,USD,IBKR,2026-02-26,2026-02-27,2026-03-13,2.1693,0.06,0,0.08,0.17,0.11,Po
+Change in Dividend Accruals,Data,Stocks,USD,IBKR,2026-02-26,2026-02-27,2026-03-13,2.1195,0.06,0,0.08,0.17,0.11,Po
+Change in Dividend Accruals,Data,Stocks,USD,IBKR,2026-02-26,2026-02-27,2026-03-13,2.1693,-0.06,0,0.08,-0.17,-0.11,Re
+Change in Dividend Accruals,Data,Stocks,USD,IBKR,2026-03-13,2026-02-27,2026-03-13,2.1195,-0.06,0,0.08,-0.17,-0.11,Re
+Change in Dividend Accruals,Data,Stocks,USD,IBKR,2026-05-29,2026-06-01,2026-06-12,1,0.03,0,0.0875,0.09,0.06,Po
+Change in Dividend Accruals,Data,Stocks,USD,IBKR,2026-06-12,2026-06-01,2026-06-12,1,-0.03,0,0.0875,-0.09,-0.06,Re
+Change in Dividend Accruals,Data,Stocks,USD,IBKR,2026-08-31,2026-09-01,2026-09-14,1.9751,0.05,0,0.0875,0.17,0.12,Po
+Change in Dividend Accruals,Data,Stocks,USD,IBKR,2026-09-14,2026-09-01,2026-09-14,1.9751,-0.05,0,0.0875,-0.17,-0.12,Re
+Change in Dividend Accruals,Data,Stocks,USD,NVDA,2026-06-03,2026-06-04,2026-06-26,6.9,0.52,0,0.25,1.73,1.21,Po
+Change in Dividend Accruals,Data,Stocks,USD,NVDA,2026-06-26,2026-06-04,2026-06-26,6.9,-0.52,0,0.25,-1.73,-1.21,Re
+Change in Dividend Accruals,Data,Stocks,USD,NVDA,2026-09-09,2026-09-10,2026-10-01,10.2062,0.77,0,0.25,2.55,1.78,Po
+Change in Dividend Accruals,Data,Stocks,USD,NVDA,2026-10-01,2026-09-10,2026-10-01,10.2062,-0.77,0,0.25,-2.55,-1.78,Re
+Change in Dividend Accruals,Data,Stocks,USD,NVO,2026-03-27,2026-03-30,2026-04-08,71.2295,24.44,1.07,1.275101,90.83,65.32,Po
+Change in Dividend Accruals,Data,Stocks,USD,NVO,2026-03-27,2026-03-30,2026-04-08,71.2295,23.34,1.07,1.217376,86.72,62.31,Po
+Change in Dividend Accruals,Data,Stocks,USD,NVO,2026-03-27,2026-03-30,2026-04-08,71.2295,-24.44,-1.07,1.217376,-90.83,-65.32,Re
+Change in Dividend Accruals,Data,Stocks,USD,NVO,2026-04-08,2026-03-30,2026-04-08,71.2295,-23.34,-1.07,1.217376,-86.72,-62.31,Re
+Change in Dividend Accruals,Data,Stocks,USD,NVO,2026-08-14,2026-08-17,2026-08-25,30,4.69,0.45,0.578578,17.36,12.22,Po
+Change in Dividend Accruals,Data,Stocks,USD,NVO,2026-08-25,2026-08-17,2026-08-25,30,-4.69,-0.45,0.579193,-17.37,-12.23,Re
+Change in Dividend Accruals,Data,Total,,,,,,,-0,0,,-0.01,-0.01,
+Change in Dividend Accruals,Data,Ending Dividend Accruals in USD,,,,,,,,,,,0,
+Financial Instrument Information,Header,Asset Category,Symbol,Description,Conid,Security ID,Underlying,Listing Exch,Multiplier,Type,Code
+Financial Instrument Information,Data,Stocks,CCJ,CAMECO CORP,1447060,CA13321L1085,CCJ,NYSE,1,COMMON,
+Financial Instrument Information,Data,Stocks,CHA,CHAGEE HOLDINGS LTD-ADR,777710729,US15743P1049,CHA,NASDAQ,1,ADR,
+Financial Instrument Information,Data,Stocks,IBKR,INTERACTIVE BROKERS GRO-CL A,43645865,US45841N1072,IBKR,NASDAQ,1,COMMON,
+Financial Instrument Information,Data,Stocks,NVDA,NVIDIA CORP,4815747,US67066G1040,NVDA,NASDAQ,1,COMMON,
+Financial Instrument Information,Data,Stocks,NVO,NOVO-NORDISK A/S-SPONS ADR,10611,US6701002056,NVO,NYSE,1,ADR,
+Financial Instrument Information,Data,Stocks,SPCX,SPACE EXPLORATION TECHN-CL A,890493863,US84615Q1031,SPCX,NASDAQ,1,COMMON,
+Financial Instrument Information,Data,Stocks,VUAA,VANG S&P500 USDA,366244335,IE00BFMXXD54,VUAA,LSEETF,1,ETF,
+Financial Instrument Information,Data,Stocks,VWRA,VANG FTSE AW USDA,375855577,IE00BK5BQT80,VWRA,LSEETF,1,ETF,
+Codes,Header,Code,Meaning,Code (Cont.),Meaning (Cont.)
+Codes,Data,A,Assignment
+Codes,Data,ADR,ADR Fee Accrual
+Codes,Data,AEx,Automatic exercise for dividend-related recommendation.
+Codes,Data,AFx,AutoFX conversion resulting from trading
+Codes,Data,Adj,Adjustment
+Codes,Data,Al,Allocation
+Codes,Data,Aw,Away Trade
+Codes,Data,B,Automatic Buy-in
+Codes,Data,Bo,Direct Borrow
+Codes,Data,C,Closing Trade
+Codes,Data,CD,Cash Delivery
+Codes,Data,CP,Complex Position
+Codes,Data,Ca,Cancelled
+Codes,Data,Co,Corrected Trade
+Codes,Data,Cx,Part or all of this transaction was a Crossing executed as dual agent by IB for two IB customers
+Codes,Data,DL,Dollar for Lot
+Codes,Data,DT,Discounted Trade
+Codes,Data,De,Delivery or Conversion Action
+Codes,Data,ETF,ETF Creation/Redemption
+Codes,Data,Ep,Resulted from an Expired Position
+Codes,Data,Ex,Exercise
+Codes,Data,FP,The fractional portion of this trade was executed against IB or an affiliate.
+Codes,Data,FPA,The fractional portion of this trade was executed against IB or an affiliate. IB acted as agent for the whole share portion of this trade.
+Codes,Data,G,Trade in Guaranteed Account Segment
+Codes,Data,GEA,Exercise or Assignment resulting from offsetting positions
+Codes,Data,HC,Highest Cost tax basis election
+Codes,Data,HFI,Investment Transferred to Hedge Fund
+Codes,Data,HFR,Redemption from Hedge Fund
+Codes,Data,I,Internal Transfer
+Codes,Data,IA,The transaction was executed against IB or an affiliate
+Codes,Data,IM,A portion of the order was executed against IB or an affiliate; IB acted as agent on a portion.
+Codes,Data,INV,Investment Transfer from Investor
+Codes,Data,IPO,This transaction was executed as part of an IPO in which IB was a member of the selling group and is classified as a Principal trade.
+Codes,Data,L,Ordered by IB (Margin Violation)
+Codes,Data,LD,Adjusted by Loss Disallowed from Wash Sale
+Codes,Data,LF,Liquidation of fractional position by IB
+Codes,Data,LI,"Last In, First Out (LIFO) tax basis election"
+Codes,Data,LT,Long Term P/L
+Codes,Data,Lo,Direct Loan
+Codes,Data,M,Entered manually by IB
+Codes,Data,MEx,Manual exercise for dividend-related recommendation.
+Codes,Data,ML,Maximize Losses tax basis election
+Codes,Data,MLG,Maximize Long Term Gain tax basis election
+Codes,Data,MLL,Maximize Long Term Loss tax basis election
+Codes,Data,MSG,Maximize Short Term Gain tax basis election
+Codes,Data,MSL,Maximize Short Term Loss tax basis election
+Codes,Data,O,Opening Trade
+Codes,Data,Off,Yes and No contracts offset to $1.00 cash settlement
+Codes,Data,P,Partial Execution
+Codes,Data,PE,Perpetual Investment
+Codes,Data,PI,Price Improvement
+Codes,Data,PTA,Post Trade Allocation
+Codes,Data,Po,Interest or Dividend Accrual Posting
+Codes,Data,Pr,Part or all of this transaction was executed by the Exchange as a Crossing by IB against an IB affiliate and is therefore classified as a Principal and not an agency trade
+Codes,Data,R,Dividend Reinvestment
+Codes,Data,RED,Redemption to Investor
+Codes,Data,RI,Recurring Investment
+Codes,Data,RP,"IB acted as agent for the fractional share portion of this trade, which was executed by an IB affiliate as riskless principal."
+Codes,Data,RPA,IB acted as agent for both the fractional share portion and the whole share portion of this trade; the fractional share portion was executed by an IB Affiliate as riskless principal.
+Codes,Data,Rb,Rebill
+Codes,Data,Re,Interest or Dividend Accrual Reversal
+Codes,Data,Ri,Reimbursement
+Codes,Data,S0,Contract settled to zero value
+Codes,Data,S1,Contract settled to $1.00
+Codes,Data,SF,Trade is subject to IBKR Lite Surcharge Fee if volume of such trades exceeds 10% of the total monthly Lite trade volume
+Codes,Data,SI,This order was solicited by Interactive Brokers
+Codes,Data,SL,Specific Lot tax basis election
+Codes,Data,SO,This order was marked as solicited by your Introducing Broker
+Codes,Data,SS,Customer designated this trade for shortened settlement and so is subject to execution at prices above the prevailing market
+Codes,Data,ST,Short Term P/L
+Codes,Data,Sw,Money Market Fund Sweep
+Codes,Data,T,Transfer
+Codes,Data,TO,This cryptocurrency is not supported in your account. You will not be able to sell it from your account but may transfer it out at any time.
+Codes,Data,Un,Unvested shares from stock grant
+Codes,Data,XCH,Mutual Fund Exchange Transaction
+Notes/Legal Notes,Header,Type,Note
+Notes/Legal Notes,Data,Notes,"Stock exchange transactions generally settle on the trade date plus one business day (T+1). Options, futures and US open-end mutual fund transactions also settle on trade date plus one business day. Some exchanges and other transaction types may have longer or shorter settlement periods. Ending settled cash reflects the cash that has actually settled."
+Notes/Legal Notes,Data,Notes,Initial and maintenance margin requirements are available within the Account Window of the Trader Workstation.
+Notes/Legal Notes,Data,Notes,"Interactive Brokers LLC receives compensation from fund companies in connection with the purchase and holding of fund shares by customers of Interactive Brokers LLC. Such compensation includes, but is not limited to, Rule 12b-1 fees that are paid out of the funds assets. The source and amount of any remuneration received by Interactive Brokers LLC in connection with a transaction will be furnished upon written request of the customer.  IB may share a portion of the compensation received from fund companies with your independent advisor or introducing broker."
+Notes/Legal Notes,Data,Notes,"Quantities preceded by a ""-"" sign indicate sell transactions. Other transactions are purchases. "
+Notes/Legal Notes,Data,Notes,"IB acts as agent in executing the fractional share portion of your order. In certain circumstances, IB routes the fractional portion of your order to an affiliate, which may execute the fractional portion of the order as principal. In such circumstances, this is indicated by the codes associated with the trade. If an IB affiliate acts as principal in executing any fractional share portion of your order, the order will be executed at the price displayed for the opposite side of the NBBO from your order (the offer if you are buying and the bid if you are selling) at the time of execution. If an IB affiliate is acting as riskless principal in connection with filling the fractional share portion of your order, the affiliate will execute the fractional share portion of your order at the price it receives for the execution of the whole share."
+Notes/Legal Notes,Data,Notes,"In case of partial executions, commissions are charged on the total quantity executed on the original order. The commission is displayed on the first partial execution only."
+Notes/Legal Notes,Data,Notes,Trade execution times are displayed in Eastern Time.
+Notes/Legal Notes,Data,Notes,Applicable regulatory fees for your transactions are available on the IB website at www.interactivebrokers.com/en/accounts/fees/exchangeAndRegulatoryFees.php.
+Notes/Legal Notes,Data,Notes,"Borrow Fee Rate represents the cost to borrow stock expressed in percent per annum. It is applied to the collateral value on the stock borrow contract and is separate from any interest earned on credit cash balances. Similarly, Loan Fee Rate represents the benefit to lend stock. A positive rate indicates a cost to the borrower/benefit to the lender and a negative rate indicates a benefit to the borrower/cost to the lender. In general, the fee rates for hard-to-borrow stocks are higher than for normal availability stocks."
+Notes/Legal Notes,Data,Notes,Interest Rate on Customer Collateral represents the interest paid on the collateral posted to the customer's account and received from lending stock.  A positive rate indicates a benefit to the lender.
+Notes/Legal Notes,Data,Notes,"The closing prices on this Activity Statement are indicative and may come from third-party sources. Interactive Brokers does not warrant the accuracy of the prices provided by third-party sources. Due to time zone differences, certain non-US mutual funds may deliver closing prices after the Activity Statement has been produced and the closing prices for such funds will reflect the previous day's price."
+Notes/Legal Notes,Data,Notes,All Market Data and Research services are provided through Global Financial Information Services (GmbH).
+Notes/Legal Notes,Data,Notes,"Market data is provided by Global Financial Information Services (GmbH). Your local broker collects amounts owed for fees and tax for such data on behalf of Global Financial Information Services (GmbH). Note, you are responsible for any applicable taxes relating to the provision of these services."
+Notes/Legal Notes,Data,Notes,RUS denotes Ruble balances that have been restricted by Russian authorities.
+Notes/Legal Notes,Data,Mutual Fund Notes,"All purchase and sales of mutual funds are calculated against the published NAV (Net Asset Value) of the underlying fund and is displayed on this confirmation as the ""C. Price"" (Closing Price). Due to any fees charged by a fund and/or any share rounding, the net price you pay may vary from the published NAV and is shown on this confirmation as the ""T. Price"" (Trade Price)."
+Notes/Legal Notes,Data,Fixed Income Notes,"Call features for bonds or preferred stocks may affect the yield. For zero coupon, compound interest and multiplier securities, there are no periodic payments and securities may be callable below maturity value without notice to holder unless registered. For asset-backed securities, the actual yield may vary depending on the speed at which the underlying note is pre-paid. For additional information regarding bond yield, please contact the IB Help Desk at: ibkr.com/help. If this debt security is unrated by a nationally recognized statistical rating organization, it may pose a high risk of default. You should consult an independent advisor to determine whether unrated bonds are appropriate for your portfolio in light of your goals and your financial circumstances. Fees charged by bond trading centers are included in the cost of bond transactions."
+Notes/Legal Notes,Data,Legal Notes,"Please promptly report any inaccuracy or discrepancy in this statement, or in your account. Contact the IB Customer Service Department in writing using the form available on the IB website. You may also contact IB by phone, but if you report an error by phone, you should re-confirm such oral communication in writing in order to protect your rights, including rights under the Securities Investor Protection Act (SIPA).Interactive Brokers:Interactive Brokers LLC, www.interactivebrokers.com, 877-442-2757 (U.S.)Interactive Brokers (UK) (Ltd), www.interactivebrokers.co.uk, 00800-42-276537 (Intl)Interactive Brokers Canada Inc., www.interactivebrokers.ca, 877-745-4222 (Can.)"
+Notes/Legal Notes,Data,Legal Notes,"Unless otherwise noted, Interactive Brokers acted as agent in the execution of the above transactions. For those exchanges where IB is not a direct clearing member or custodian, IB may use one of the following clearing agents or sub-custodians: Interactive Brokers Australia Pty Limited; Interactive Brokers Canada Inc.; Interactive Brokers Hong Kong Limited; Interactive Brokers Ireland, Limited; Interactive Brokers Securities Japan, Inc.; Interactive Brokers (U.K.) Limited; IBKR Financial Services AG; ABN Amro Clearing Singapore Pte. Ltd.; Allfunds Bank, S.A.U.; Banco B3 S.A.; BBVA Bancomer, S.A.; BNP Securities Services, Milan Branch; BMO Bank N.A.; Citibank Europe plc; Skandinaviska Enskilda Banken AB (including select branches)."
+Notes/Legal Notes,Data,Legal Notes,"IB acts as agent or riskless principal in foreign currency exchange transactions and as riskless principal in spot precious metals transactions.  Such transactions are executed against an IB affiliate or a third party, which acts as principal in such transactions and may have a long or short position and may have profited or lost in connection with the transaction.  Foreign currency exchange and spot precious metals transactions executed by Customer through IB are not regulated or overseen by the SEC or the CFTC."
+Notes/Legal Notes,Data,Legal Notes,"IB accepts liquidity rebates or other order flow payments from Alternative Trading Systems, market makers and exchanges for certain orders in stocks. IB receives payment for some option orders pursuant to exchange-mandated marketing fee programs or other arrangements. The source and nature of any compensation received by IB in connection with any transaction is available upon written request of the customer. For further information, check the IB website and the Order Routing and Payment for Order Flow Disclosure provided when you opened your account and annually or visit ibkr.com/help.  "
+Notes/Legal Notes,Data,Legal Notes,"For security futures trades, if not already indicated on this statement, information about the time of any transaction, the identity of the counterparty to the transaction, and whether IB is acting as agent or principal, as agent for the counterparty, as agent for both parties to the contract, or as principal, and if acting as principal, whether the transaction was a block transaction or an exchange for physicals transaction, will be available upon written request of the customer."
+Notes/Legal Notes,Data,Legal Notes,Customer is requested to promptly advise Interactive Brokers of any material change in Customers investment objectives.
+Notes/Legal Notes,Data,Legal Notes,"A financial statement of Interactive Brokers LLC is available for your personal inspection at www.interactivebrokers.com or at its offices, or a copy of it will be mailed upon your written request."
+Notes/Legal Notes,Data,Legal Notes,"For trades executed on the ASX market, the ASX 24 market and the Cboe Australia market, this confirmation is issued subject to: (i) the Applicable Laws, the directions, decisions and requirements of the relevant market operator, the operating rules of the relevant market, the clearing rules and where relevant, the relevant settlement rules, (ii) the customs and usages of the relevant financial market, and (iii) the correction of errors and omissions. Trades in Cash Market Products (as that term is defined in the relevant ASIC market integrity rules) on ASX market and Cboe Australia are cleared by BNP Paribas, ARBN 149 440 291, AFSL 402467, who is a participant of ASX Clear Pty Ltd and ASX Settlement Pty Ltd. Trades in Derivative Products on ASX and all products on ASX 24 are cleared by Interactive Brokers Australia (“IBA”) as a participant of ASX Clear Pty Ltd and ASX Clear (Futures) Pty Ltd. If your transaction was a crossing transaction, IBA may have either acted on behalf of (i) both the buyer and seller of this transaction, or (ii) on behalf of the buyer or seller on one side of the transaction and acted as Principal on the other side. Under the Corporations Act 2001, where IBA enters into an exchange traded derivative on a customer's behalf, IBA is regarded as having issued the derivative to the customer."
+Notes/Legal Notes,Data,Legal Notes,"For All Options Trades Executed on the Stock Exchange of Hong Kong (""SEHK""): (a) Options can involve a high degree of risk and may not be suitable for every investor. Investors should ensure they understand those risks before participating in the options market. (b) All options contracts executed on the SEHK were executed by Interactive Brokers Hong Kong Limited on behalf of Interactive Brokers LLC. (c) In the event of a default committed by Interactive Brokers LLC resulting in the client suffering any pecuniary loss, the client shall have a right to claim under the Investor Compensation Fund established under the Hong Kong Securities and Futures Ordinance, subject to the terms of the Investor Compensation Fund from time to time. (d) All Exchange Traded Options Business made for or on behalf of a client shall be subject to the relevant provisions of the constitution, Rules of The Stock Exchange of Hong Kong Limited (""SEHK Rules""), regulations, the Articles, customs and usages of SEHK, the Options Trading Rules, the Clearing Rules of SEOCH, the CCASS Rules and the laws of Hong Kong, which shall be binding on both Interactive Brokers LLC and the client."
+Notes/Legal Notes,Data,Legal Notes,"Interactive Brokers LLC is a SIPC member. Deposits held away from Interactive Brokers LLC may not qualify under SIPC protection. Also, futures and options on futures are not covered by SIPC."
+Notes/Legal Notes,Data,,Interactive Brokers LLC is a SIPC Member

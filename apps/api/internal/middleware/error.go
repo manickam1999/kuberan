@@ -34,12 +34,7 @@ func ErrorHandler() gin.HandlerFunc {
 					"path", c.Request.URL.Path,
 				)
 			}
-			c.JSON(appErr.StatusCode, gin.H{
-				"error": gin.H{
-					"code":    appErr.Code,
-					"message": appErr.Message,
-				},
-			})
+			c.JSON(appErr.StatusCode, gin.H{"error": appErr.Body()})
 			return
 		}
 

@@ -4,6 +4,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestWithWriteScopes(t *testing.T) {
@@ -65,5 +66,29 @@ func TestSplitList(t *testing.T) {
 	}
 	if got := splitList(""); got != nil {
 		t.Errorf("splitList(\"\") = %v, want nil", got)
+	}
+}
+
+func TestGetEnvDuration(t *testing.T) {
+	const key = "TEST_FX_DURATION"
+	const def = 168 * time.Hour
+	tests := []struct {
+		name  string
+		value string
+		want  time.Duration
+	}{
+		{"unset", "", def},
+		{"valid", "36h", 36 * time.Hour},
+		{"invalid falls back", "soon", def},
+		{"zero falls back", "0s", def},
+		{"negative falls back", "-1h", def},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv(key, tc.value)
+			if got := getEnvDuration(key, def); got != tc.want {
+				t.Errorf("getEnvDuration(%q) = %s, want %s", tc.value, got, tc.want)
+			}
+		})
 	}
 }

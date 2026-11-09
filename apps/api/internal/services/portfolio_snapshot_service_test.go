@@ -13,7 +13,7 @@ func TestComputeAndRecordSnapshots(t *testing.T) {
 	t.Run("creates_snapshots_for_all_users", func(t *testing.T) {
 		db := testutil.SetupTestDB(t)
 		defer testutil.TeardownTestDB(t, db)
-		svc := NewPortfolioSnapshotService(db)
+		svc := NewPortfolioSnapshotService(db, nil)
 
 		user1 := testutil.CreateTestUser(t, db)
 		user2 := testutil.CreateTestUser(t, db)
@@ -21,6 +21,7 @@ func TestComputeAndRecordSnapshots(t *testing.T) {
 		testutil.CreateTestCashAccountWithBalance(t, db, user2.ID, 200000)
 
 		recordedAt := time.Now().Truncate(time.Second)
+		p4AllAccountsIn(t, db, "MYR") // match the users' MYR base
 		count, err := svc.ComputeAndRecordSnapshots(recordedAt)
 		testutil.AssertNoError(t, err)
 
@@ -39,13 +40,14 @@ func TestComputeAndRecordSnapshots(t *testing.T) {
 	t.Run("cash_balance_computed_correctly", func(t *testing.T) {
 		db := testutil.SetupTestDB(t)
 		defer testutil.TeardownTestDB(t, db)
-		svc := NewPortfolioSnapshotService(db)
+		svc := NewPortfolioSnapshotService(db, nil)
 
 		user := testutil.CreateTestUser(t, db)
 		testutil.CreateTestCashAccountWithBalance(t, db, user.ID, 1000000) // $10,000.00
 		testutil.CreateTestCashAccountWithBalance(t, db, user.ID, 500000)  // $5,000.00
 
 		recordedAt := time.Now().Truncate(time.Second)
+		p4AllAccountsIn(t, db, "MYR") // match the users' MYR base
 		count, err := svc.ComputeAndRecordSnapshots(recordedAt)
 		testutil.AssertNoError(t, err)
 
@@ -64,7 +66,7 @@ func TestComputeAndRecordSnapshots(t *testing.T) {
 	t.Run("investment_value_computed_correctly", func(t *testing.T) {
 		db := testutil.SetupTestDB(t)
 		defer testutil.TeardownTestDB(t, db)
-		svc := NewPortfolioSnapshotService(db)
+		svc := NewPortfolioSnapshotService(db, nil)
 
 		user := testutil.CreateTestUser(t, db)
 		investAcct := testutil.CreateTestInvestmentAccount(t, db, user.ID)
@@ -92,6 +94,7 @@ func TestComputeAndRecordSnapshots(t *testing.T) {
 		testutil.CreateTestSecurityPrice(t, db, sec2.ID, 20000, time.Now()) // $200/share
 
 		recordedAt := time.Now().Truncate(time.Second)
+		p4AllAccountsIn(t, db, "MYR") // match the users' MYR base
 		count, err := svc.ComputeAndRecordSnapshots(recordedAt)
 		testutil.AssertNoError(t, err)
 
@@ -111,7 +114,7 @@ func TestComputeAndRecordSnapshots(t *testing.T) {
 	t.Run("debt_balance_computed_correctly", func(t *testing.T) {
 		db := testutil.SetupTestDB(t)
 		defer testutil.TeardownTestDB(t, db)
-		svc := NewPortfolioSnapshotService(db)
+		svc := NewPortfolioSnapshotService(db, nil)
 
 		user := testutil.CreateTestUser(t, db)
 		testutil.CreateTestDebtAccount(t, db, user.ID, 500000)            // $5,000
@@ -119,6 +122,7 @@ func TestComputeAndRecordSnapshots(t *testing.T) {
 		testutil.CreateTestCashAccountWithBalance(t, db, user.ID, 100000) // need active account for user to appear
 
 		recordedAt := time.Now().Truncate(time.Second)
+		p4AllAccountsIn(t, db, "MYR") // match the users' MYR base
 		count, err := svc.ComputeAndRecordSnapshots(recordedAt)
 		testutil.AssertNoError(t, err)
 
@@ -137,7 +141,7 @@ func TestComputeAndRecordSnapshots(t *testing.T) {
 	t.Run("net_worth_computed_correctly", func(t *testing.T) {
 		db := testutil.SetupTestDB(t)
 		defer testutil.TeardownTestDB(t, db)
-		svc := NewPortfolioSnapshotService(db)
+		svc := NewPortfolioSnapshotService(db, nil)
 
 		user := testutil.CreateTestUser(t, db)
 
@@ -165,6 +169,7 @@ func TestComputeAndRecordSnapshots(t *testing.T) {
 		testutil.CreateTestCreditCardAccount(t, db, user.ID, 200000)
 
 		recordedAt := time.Now().Truncate(time.Second)
+		p4AllAccountsIn(t, db, "MYR") // match the users' MYR base
 		_, err := svc.ComputeAndRecordSnapshots(recordedAt)
 		testutil.AssertNoError(t, err)
 
@@ -195,7 +200,7 @@ func TestComputeAndRecordSnapshots(t *testing.T) {
 	t.Run("excludes_inactive_accounts", func(t *testing.T) {
 		db := testutil.SetupTestDB(t)
 		defer testutil.TeardownTestDB(t, db)
-		svc := NewPortfolioSnapshotService(db)
+		svc := NewPortfolioSnapshotService(db, nil)
 
 		user := testutil.CreateTestUser(t, db)
 		testutil.CreateTestCashAccountWithBalance(t, db, user.ID, 500000) // active, $5,000
@@ -205,6 +210,7 @@ func TestComputeAndRecordSnapshots(t *testing.T) {
 		db.Model(inactiveAcct).Update("is_active", false)
 
 		recordedAt := time.Now().Truncate(time.Second)
+		p4AllAccountsIn(t, db, "MYR") // match the users' MYR base
 		_, err := svc.ComputeAndRecordSnapshots(recordedAt)
 		testutil.AssertNoError(t, err)
 
@@ -219,13 +225,14 @@ func TestComputeAndRecordSnapshots(t *testing.T) {
 	t.Run("idempotent_retry", func(t *testing.T) {
 		db := testutil.SetupTestDB(t)
 		defer testutil.TeardownTestDB(t, db)
-		svc := NewPortfolioSnapshotService(db)
+		svc := NewPortfolioSnapshotService(db, nil)
 
 		user := testutil.CreateTestUser(t, db)
 		testutil.CreateTestCashAccountWithBalance(t, db, user.ID, 500000)
 
 		recordedAt := time.Now().Truncate(time.Second)
 
+		p4AllAccountsIn(t, db, "MYR") // match the users' MYR base
 		count1, err := svc.ComputeAndRecordSnapshots(recordedAt)
 		testutil.AssertNoError(t, err)
 		if count1 != 1 {
@@ -233,6 +240,7 @@ func TestComputeAndRecordSnapshots(t *testing.T) {
 		}
 
 		// Second call with same recorded_at — should upsert, not fail
+		p4AllAccountsIn(t, db, "MYR") // match the users' MYR base
 		count2, err := svc.ComputeAndRecordSnapshots(recordedAt)
 		testutil.AssertNoError(t, err)
 		if count2 != 1 {
@@ -252,7 +260,7 @@ func TestGetSnapshots(t *testing.T) {
 	t.Run("returns_paginated", func(t *testing.T) {
 		db := testutil.SetupTestDB(t)
 		defer testutil.TeardownTestDB(t, db)
-		svc := NewPortfolioSnapshotService(db)
+		svc := NewPortfolioSnapshotService(db, nil)
 
 		user := testutil.CreateTestUser(t, db)
 		base := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
@@ -289,7 +297,7 @@ func TestGetSnapshots(t *testing.T) {
 	t.Run("filters_by_date_range", func(t *testing.T) {
 		db := testutil.SetupTestDB(t)
 		defer testutil.TeardownTestDB(t, db)
-		svc := NewPortfolioSnapshotService(db)
+		svc := NewPortfolioSnapshotService(db, nil)
 
 		user := testutil.CreateTestUser(t, db)
 		base := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
@@ -318,7 +326,7 @@ func TestGetSnapshots(t *testing.T) {
 	t.Run("user_isolation", func(t *testing.T) {
 		db := testutil.SetupTestDB(t)
 		defer testutil.TeardownTestDB(t, db)
-		svc := NewPortfolioSnapshotService(db)
+		svc := NewPortfolioSnapshotService(db, nil)
 
 		user1 := testutil.CreateTestUser(t, db)
 		user2 := testutil.CreateTestUser(t, db)
@@ -352,7 +360,7 @@ func TestGetSnapshots(t *testing.T) {
 	t.Run("ordered_by_recorded_at_desc", func(t *testing.T) {
 		db := testutil.SetupTestDB(t)
 		defer testutil.TeardownTestDB(t, db)
-		svc := NewPortfolioSnapshotService(db)
+		svc := NewPortfolioSnapshotService(db, nil)
 
 		user := testutil.CreateTestUser(t, db)
 		base := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
@@ -390,7 +398,7 @@ func TestGetGroupedSnapshots(t *testing.T) {
 	t.Run("groups_by_day_keeps_last_per_day", func(t *testing.T) {
 		db := testutil.SetupTestDB(t)
 		defer testutil.TeardownTestDB(t, db)
-		svc := NewPortfolioSnapshotService(db)
+		svc := NewPortfolioSnapshotService(db, nil)
 
 		user := testutil.CreateTestUser(t, db)
 		// Day 1: 3 snapshots at 08:00, 12:00, 20:00
@@ -445,7 +453,7 @@ func TestGetGroupedSnapshots(t *testing.T) {
 	t.Run("groups_by_hour_keeps_last_per_hour", func(t *testing.T) {
 		db := testutil.SetupTestDB(t)
 		defer testutil.TeardownTestDB(t, db)
-		svc := NewPortfolioSnapshotService(db)
+		svc := NewPortfolioSnapshotService(db, nil)
 
 		user := testutil.CreateTestUser(t, db)
 		base := time.Date(2026, 3, 1, 10, 0, 0, 0, time.UTC)
@@ -492,7 +500,7 @@ func TestGetGroupedSnapshots(t *testing.T) {
 	t.Run("returns_chronological_order", func(t *testing.T) {
 		db := testutil.SetupTestDB(t)
 		defer testutil.TeardownTestDB(t, db)
-		svc := NewPortfolioSnapshotService(db)
+		svc := NewPortfolioSnapshotService(db, nil)
 
 		user := testutil.CreateTestUser(t, db)
 		base := time.Date(2026, 3, 1, 12, 0, 0, 0, time.UTC)
@@ -529,7 +537,7 @@ func TestGetGroupedSnapshots(t *testing.T) {
 	t.Run("empty_range_returns_empty", func(t *testing.T) {
 		db := testutil.SetupTestDB(t)
 		defer testutil.TeardownTestDB(t, db)
-		svc := NewPortfolioSnapshotService(db)
+		svc := NewPortfolioSnapshotService(db, nil)
 
 		user := testutil.CreateTestUser(t, db)
 		from := time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC)
@@ -546,7 +554,7 @@ func TestGetGroupedSnapshots(t *testing.T) {
 	t.Run("user_isolation", func(t *testing.T) {
 		db := testutil.SetupTestDB(t)
 		defer testutil.TeardownTestDB(t, db)
-		svc := NewPortfolioSnapshotService(db)
+		svc := NewPortfolioSnapshotService(db, nil)
 
 		user1 := testutil.CreateTestUser(t, db)
 		user2 := testutil.CreateTestUser(t, db)

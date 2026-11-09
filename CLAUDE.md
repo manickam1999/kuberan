@@ -17,7 +17,7 @@ Monorepo with five applications:
 │   ├── oracle/       # Go price-ingestion + snapshot worker (own Go module, uses the pipeline API)
 │   └── backup/       # Cron-based pg_dump backup service (shell + supercronic)
 ├── deploy/           # Deployment scripts (deploy.sh)
-├── docs/             # Documentation (mcp-oauth.md, database-setup.md, receipts.md)
+├── docs/             # Documentation (mcp-oauth.md, database-setup.md, receipts.md, ibkr-import.md, multi-currency.md)
 ├── ory/              # Ory Hydra (OAuth 2.1 authorization server) config
 ├── plans/            # Architecture and upgrade plans
 ├── scripts/          # Shared scripts (check-go.sh, etc.)
@@ -112,6 +112,10 @@ apps/web/src/
 │   │   ├── categories/           # Category management
 │   │   ├── investments/          # Portfolio overview + [id] detail
 │   │   ├── securities/           # Securities browse + [id] detail
+│   │   ├── analytics/            # Monthly/daily summaries, cashflow, top expenses
+│   │   ├── budgets/              # Budget list + progress
+│   │   ├── receivables/          # Money lent out and owed back, settlements, write-offs
+│   │   ├── rules/                # Transaction rules (conditions + set-category actions)
 │   │   └── settings/             # Settings (profile, appearance, Telegram, connected apps)
 │   └── layout.tsx                # Root layout (providers chain)
 ├── components/
@@ -131,15 +135,14 @@ apps/web/src/
 │   ├── auth-cookie.ts            # Auth flag cookie for middleware route protection
 │   ├── token-utils.ts            # JWT parsing
 │   ├── domain-visuals.ts         # Shared icon/color mappings for domain entities
-│   ├── format.ts                 # Currency (cents->display), date, percentage formatters
+│   ├── format.ts                 # Money (cents->display), date, percentage formatters
+│   ├── currencies.ts             # REPORTING_CURRENCIES (the one currency list), currencySymbol (en-MY)
 │   └── utils.ts                  # cn() Tailwind utility
 ├── types/
 │   ├── models.ts                 # Domain model types matching backend
 │   └── api.ts                    # API request/response DTOs
 └── middleware.ts                  # Next.js middleware for cookie-based route protection
 ```
-
-Note: Budgets exist in the backend API but have no page in the redesigned UI (only the `use-budgets.ts` hook remains).
 
 ### Frontend Patterns
 - **Route groups**: `(auth)` for public pages, `(oauth)` for the Hydra login/consent pages (MCP OAuth flow), `(dashboard)` for protected pages with sidebar layout
@@ -149,6 +152,7 @@ Note: Budgets exist in the backend API but have no page in the redesigned UI (on
 - **Security headers**: per-request nonce CSP in `src/middleware.ts` (pass the nonce from `headers().get("x-nonce")` to any new inline script); static headers (HSTS, nosniff, Referrer/Permissions-Policy) in `next.config.ts`
 - **Component organization**: ShadCN primitives in `ui/`, feature-specific dialogs in domain folders (`accounts/`, `transactions/`, etc.)
 - **Forms**: react-hook-form with zod schemas for validation, ShadCN Form components for UI
+- **Money display**: `formatMoney(cents, currency)` always takes a currency and formats with `en-MY` (`RM 1,234.50`, `US$1,234.50`). Every currency select uses `REPORTING_CURRENCIES` from `lib/currencies.ts` (2-decimal currencies only; no JPY and other zero-decimal ones). `<Money>` (`ui/money.tsx`) shows the native amount with `≈` base beside it and a rate tooltip; `useBaseCurrency()` returns the user's reporting currency; `<FxNotice>` (`ui/fx-notice.tsx`) reports `fx_missing` / `unconverted`. Never add raw amounts across currencies: sum only `*_base` fields. Cross-currency dialogs ask for the second amount (`CrossCurrencyAmount`, `CrossCurrencyAmountField`), pre-filled from `useFxLatest` (`hooks/use-fx-rates.ts`).
 
 ## Data Model & Conventions
 
@@ -160,6 +164,20 @@ Four account types are supported: `cash`, `investment`, `credit_card`, and `debt
 
 ### Monetary Values
 All monetary values are stored and transmitted as **int64 cents** (not float64). `$10.50` = `1050`. This eliminates floating-point rounding errors. The frontend is responsible for display formatting.
+
+Security prices are stored in each security's own currency (`security_prices.currency`); valuation converts at read time via `internal/services/holding_valuation.go` (`latestNativePrices` + `valuer`, the line value is converted once). `Investment.current_price` stays in the user's base currency; `current_price_native`, `price_currency`, `fx_rate`, `fx_stale` and `fx_missing` are added alongside it.
+
+Investment amounts are in the **security's currency**: `price_per_unit`, `total_amount`, `fee`, `cost_basis` and `realized_gain_loss` on both the holding and its `investment_transactions`. The `_base` twins (`cost_basis_base`, `realized_gain_loss_base`, and per transaction `fx_rate_to_base` + `base_amount` + `realized_gain_loss_base`) are in the user's base currency, frozen at each trade's rate. `fx_rate_to_base` is NULL on legacy rows. Trade rate precedence: explicit `fx_rate` > the rate implied by a base-currency funding/deposit account > 1 for a base-currency security > the market rate > `FX_RATE_UNAVAILABLE`. A cash account used to fund a buy or receive a sell/dividend in a different currency than the security needs `funding_amount` / `deposit_amount` (else 400 `FX_AMOUNT_REQUIRED` with `error.details.suggested_amount`). Dividends take `fee` (withholding; the NET is deposited). All per-transaction holding math lives in `holdingState.apply` (`internal/services/investment_math.go`), shared by the write paths and `rebuildInvestment` (replay). `GetPortfolio` totals are base currency: `total_cost_basis` = Σ `cost_basis_base`, plus `total_price_return` / `total_fx_return`. A security's currency can't change once native-era trades (`fx_rate_to_base IS NOT NULL`) exist.
+
+Transfers are one `transactions` row (`account_id` = source, `to_account_id` = destination). The source moves by `amount`, the destination by `COALESCE(to_amount, amount)` (`Transaction.EffectiveToAmount()`). `to_amount` (cents, destination currency) is required when the accounts' currencies differ (else 400 `FX_AMOUNT_REQUIRED`, `field: "to_amount"`, with a suggestion), must be omitted or equal `amount` otherwise, and is NULL for same-currency transfers. Responses add `implied_rate` (`to_amount/amount`, 10 dp). Transfers can't be edited, only deleted (which reverses both legs by the effective amounts).
+
+Aggregates that add money across accounts convert to the user's base currency (plan 024, phase 4): amounts are grouped by currency first and converted once per group, with no FX query when everything is already in the target currency. A missing rate is never treated as 1:1; the affected amounts are left out and the response sets `fx_missing` (plus `unconverted` / `by_currency` where the shape allows). Analytics convert per transaction day; account lists add `balance_base`, snapshots convert at `recorded_at`, and the receivables summary converts at the current rate. A receivable's currency is its expense account's; settling into an account in another currency requires `account_amount`, which is stored on the settlement so deleting it reverses the account exactly. Analytics (monthly/daily summaries, spending by category, cashflow, top expenses) group by (UTC day, account currency[, category]) in SQL, convert each group at its own day via `datedValuer` (`FXServicer.RatesByDay`, a constant number of queries per range) and roll up in Go, so a monthly total is the sum of daily conversions; `unconverted: [{currency, amount}]` lists what was left out. Budgets carry a `currency` (default: the user's base) and their progress converts spending to it per transaction day.
+
+MCP (plan 024, phase 6): tool output tags every amount with its ISO currency code (`MYR 1,234.56`, never a symbol), and aggregates are in the user's base currency with `fx_missing` / unconverted notes. `MCP_MAX_WRITE_AMOUNT` (cents) is compared in the **base currency after conversion**; a write whose currency has no rate is rejected rather than compared raw. `create_transfer` takes `to_amount` (required when the accounts' currencies differ) and `record_repayment` takes `account_amount` (required when the receiving account's currency differs from the receivable's); both are in dollars like the other MCP amounts.
+
+Bot (plan 024, phase 6): `format_currency` requires a currency argument (no default). Totals use the profile's `base_currency` and the API's `balance_base` / `*_base` fields, never a sum of raw balances; accounts without a rate are left out and listed. `telegram_links.default_currency` is only the default for new accounts. The operator guide and deploy runbook is `docs/multi-currency.md`.
+
+The reporting currency (`users.base_currency`) is locked once the user has any non-deleted investment transaction: a change to a different value is refused with 409 `BASE_CURRENCY_LOCKED`, because `cost_basis_base` and the other `_base` figures are frozen in the base currency at trade time (setting the same value is allowed).
 
 Non-monetary floats that remain as float64: `Investment.Quantity`, `SplitRatio`, `InterestRate`, `YieldToMaturity`, `CouponRate`. `CreditLimit` is int64 cents (not a float).
 
@@ -229,7 +247,15 @@ cd apps/api && swag init -g cmd/api/main.go -d . --output internal/docs --parseD
 
 # Lint
 cd apps/api && golangci-lint run ./...
+
+# Oracle subcommands (one-off migration tools; plain `oracle` is the scheduled run).
+# Production: reconcile is a dry run unless --apply; backfill --dry-run posts nothing.
+docker compose -f docker-compose.prod.yml --profile oracle run --rm oracle reconcile
+docker compose -f docker-compose.prod.yml --profile oracle run --rm oracle reconcile --apply
+docker compose -f docker-compose.prod.yml --profile oracle run --rm oracle backfill --since 2025-01-01
 ```
+
+`oracle reconcile [--apply]` compares each Yahoo-priced security's stored currency with Yahoo's and, with `--apply`, corrects mismatches via `PATCH /pipeline/securities/:id` (deleting that security's prices). `oracle backfill --since YYYY-MM-DD [--until D] [--prices] [--fx] [--symbols A,B] [--dry-run]` backfills daily history (FX first, then prices). Run `oracle help` for usage.
 
 ## Verification & Feedback Loop
 
@@ -281,7 +307,7 @@ POST /oauth2/register          # Hardened RFC 7591 DCR proxy (alias: POST /api/v
 ```
 # User
 GET    /api/v1/profile
-PATCH  /api/v1/profile
+PATCH  /api/v1/profile               # hide_balances, default_account_id, base_currency (must be supported: 2-decimal, USD or has a USD rate)
 
 # Accounts
 POST   /api/v1/accounts/cash
@@ -296,7 +322,7 @@ GET    /api/v1/accounts/:id/investments
 # Transactions
 GET    /api/v1/transactions
 POST   /api/v1/transactions
-POST   /api/v1/transactions/transfer
+POST   /api/v1/transactions/transfer     # + to_amount (required when the accounts' currencies differ)
 GET    /api/v1/transactions/spending-by-category
 GET    /api/v1/transactions/monthly-summary
 GET    /api/v1/transactions/daily-spending
@@ -325,9 +351,9 @@ GET    /api/v1/investments
 GET    /api/v1/investments/portfolio
 GET    /api/v1/investments/snapshots
 GET    /api/v1/investments/:id
-POST   /api/v1/investments/:id/buy
-POST   /api/v1/investments/:id/sell
-POST   /api/v1/investments/:id/dividend
+POST   /api/v1/investments/:id/buy         # + funding_amount (other-currency cash), fx_rate
+POST   /api/v1/investments/:id/sell        # + deposit_amount (other-currency cash), fx_rate
+POST   /api/v1/investments/:id/dividend    # + fee, deposit_account_id, deposit_amount, fx_rate
 POST   /api/v1/investments/:id/split
 GET    /api/v1/investments/:id/transactions
 
@@ -335,6 +361,13 @@ GET    /api/v1/investments/:id/transactions
 GET    /api/v1/securities
 GET    /api/v1/securities/:id
 GET    /api/v1/securities/:id/prices
+
+# FX rates (rates are always JSON decimal strings; plan 024)
+GET    /api/v1/fx-rates?base=&quote=&from=&to=   # direct-pair history (default last 30 days, max 3700)
+GET    /api/v1/fx-rates/latest?base=&quote=      # direct, inverse or USD-pivot quote; 503 FX_RATE_UNAVAILABLE
+
+# Imports (multipart; plan 024 phase 3b; see docs/ibkr-import.md)
+POST   /api/v1/imports/ibkr    # IBKR Activity Statement CSVs (files x1-10, investment_account_id, cash_account_id, cash_start_date, legacy_cash_account_id?, deactivate_legacy_cash_account?, apply?). Dry run unless apply=true; apply is one DB transaction, refused with 400 IMPORT_INVALID (report in error.details) on report errors or a failed quantity checkpoint; idempotent via transactions.import_ref; in memory only, counts-only logs
 
 # Connected apps (OAuth client grants)
 GET    /api/v1/oauth/clients
@@ -357,8 +390,11 @@ POST   /api/v1/internal/telegram/activity/:telegram_user_id
 ```
 GET    /api/v1/pipeline/securities          # List all securities
 POST   /api/v1/pipeline/securities          # Create security
-POST   /api/v1/pipeline/securities/prices   # Record security prices
+PATCH  /api/v1/pipeline/securities/:id      # Correct currency/exchange/provider_symbol/name; a currency change on a security with prices needs reset_prices (409 SECURITY_CURRENCY_LOCKED), which deletes them in one transaction
+POST   /api/v1/pipeline/securities/prices   # Record security prices in the security's own currency (optional per-entry `currency`); 200 {"recorded": n, "rejected": [...]} - unknown_security / currency_mismatch entries are skipped, never fail the request
 POST   /api/v1/pipeline/snapshots           # Compute portfolio snapshots for all users
+POST   /api/v1/pipeline/fx-rates            # Upsert exchange rates (decimal-string rates, <= 5000 per call)
+GET    /api/v1/pipeline/fx-pairs            # Pairs to publish + users' base currencies
 ```
 
 ## Testing Strategy
@@ -401,6 +437,7 @@ DB_MAX_OPEN_CONNS=20             # pool defaults; also DB_MAX_IDLE_CONNS=10, DB_
 JWT_SECRET=<required in production>
 JWT_EXPIRES_IN=24h               # config default; access-token lifetime is hardcoded to 15m in middleware
 PIPELINE_API_KEY=<key for pipeline endpoints; shared with the oracle>
+FX_MAX_STALENESS=168h            # Go duration; an FX quote older than this (as of the lookup time) is flagged stale
 BOT_INTERNAL_SECRET=<shared secret for internal telegram routes>
 CORS_ORIGIN=http://localhost:3000 # comma-separated exact-origin allowlist (default shown); no wildcards in production
 COOKIE_SECURE=true               # Secure flag on the refresh cookie; defaults to false only when ENV=development

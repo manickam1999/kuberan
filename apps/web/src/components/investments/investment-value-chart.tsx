@@ -12,7 +12,10 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { usePortfolioSnapshots } from "@/hooks/use-portfolio-snapshots";
-import { formatCurrency, formatDate } from "@/lib/format";
+import { useAuth } from "@/hooks/use-auth";
+import { useBaseCurrency } from "@/hooks/use-profile";
+import { FxNotice } from "@/components/ui/fx-notice";
+import { formatMoney, formatDate } from "@/lib/format";
 
 const PERIOD_OPTIONS = [
   { value: "1M", label: "1M", months: 1 },
@@ -40,6 +43,8 @@ function getDateRange(months: number) {
 
 export function InvestmentValueChart() {
   const [period, setPeriod] = useState("1Y");
+  const { hideBalances } = useAuth();
+  const baseCurrency = useBaseCurrency();
 
   const { from_date, to_date } = useMemo(() => {
     const opt = PERIOD_OPTIONS.find((p) => p.value === period);
@@ -63,6 +68,11 @@ export function InvestmentValueChart() {
       }))
       .reverse();
   }, [snapshotsData]);
+
+  // Snapshots are stored in the base currency at recording time; the newest
+  // one names the currency of the chart.
+  const currency = snapshotsData?.data?.[0]?.currency || baseCurrency;
+  const anyFxMissing = snapshotsData?.data?.some((s) => s.fx_missing) ?? false;
 
   if (isLoading) {
     return (
@@ -116,8 +126,11 @@ export function InvestmentValueChart() {
             className="h-[220px] md:h-[280px] w-full"
             ditherColor="green"
             cleanColor="var(--chart-1)"
-            valueFormatter={(v) => formatCurrency(v * 100)}
+            valueFormatter={(v) => formatMoney(v * 100, currency, hideBalances)}
           />
+        )}
+        {anyFxMissing && (
+          <FxNotice fxMissing variant="inline" className="mt-3" />
         )}
       </CardContent>
     </Card>

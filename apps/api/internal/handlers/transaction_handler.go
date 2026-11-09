@@ -103,11 +103,14 @@ func (h *TransactionHandler) CreateTransaction(c *gin.Context) {
 
 // CreateTransferRequest represents the request payload for creating a transfer
 type CreateTransferRequest struct {
-	FromAccountID string  `json:"from_account_id" binding:"required"`
-	ToAccountID   string  `json:"to_account_id" binding:"required"`
-	Amount        int64   `json:"amount" binding:"required,gt=0"`
-	Description   string  `json:"description" binding:"max=500"`
-	Date          *string `json:"date"`
+	FromAccountID string `json:"from_account_id" binding:"required"`
+	ToAccountID   string `json:"to_account_id" binding:"required"`
+	Amount        int64  `json:"amount" binding:"required,gt=0"`
+	// ToAmount is the amount arriving in the destination account, in its
+	// currency. Required when the two accounts' currencies differ.
+	ToAmount    *int64  `json:"to_amount" binding:"omitempty,gt=0"`
+	Description string  `json:"description" binding:"max=500"`
+	Date        *string `json:"date"`
 }
 
 // CreateTransfer handles the creation of a transfer between two accounts
@@ -151,6 +154,7 @@ func (h *TransactionHandler) CreateTransfer(c *gin.Context) {
 		req.FromAccountID,
 		req.ToAccountID,
 		req.Amount,
+		req.ToAmount,
 		req.Description,
 		transferDate,
 	)
@@ -164,6 +168,7 @@ func (h *TransactionHandler) CreateTransfer(c *gin.Context) {
 			"from_account_id": req.FromAccountID,
 			"to_account_id":   req.ToAccountID,
 			"amount":          req.Amount,
+			"to_amount":       req.ToAmount,
 		})
 
 	c.JSON(http.StatusCreated, gin.H{"transaction": transaction})

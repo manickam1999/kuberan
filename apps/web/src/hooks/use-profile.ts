@@ -52,3 +52,47 @@ export function useSetDefaultAccount() {
     },
   });
 }
+
+/** Fallback reporting currency while the profile loads. */
+export const DEFAULT_BASE_CURRENCY = "MYR";
+
+/**
+ * The user's reporting (base) currency from the profile query; `"MYR"` while
+ * the profile is loading or unavailable.
+ */
+export function useBaseCurrency(): string {
+  const { data } = useProfile();
+  return data?.base_currency || DEFAULT_BASE_CURRENCY;
+}
+
+/**
+ * Saves the reporting currency (`PATCH /profile {base_currency}`). Every
+ * aggregate changes with it, so on success ALL queries are invalidated. A
+ * rejected currency surfaces as an `ApiClientError` (code
+ * `UNSUPPORTED_CURRENCY`) in `mutation.error`.
+ */
+export function useSetBaseCurrency() {
+  const queryClient = useQueryClient();
+  const { patchUser } = useAuth();
+
+  return useMutation({
+    mutationFn: async (baseCurrency: string) => {
+      const body: UpdateProfileSettingsRequest = {
+        base_currency: baseCurrency,
+      };
+      const res = await apiClient.patch<ProfileResponse>(
+        "/api/v1/profile",
+        body
+      );
+      return res.user;
+    },
+    onSuccess: (user) => {
+      const fields = { base_currency: user.base_currency };
+      patchUser(fields);
+      queryClient.setQueryData<User>(profileKeys.all, (prev) =>
+        prev ? { ...prev, ...fields } : user
+      );
+      void queryClient.invalidateQueries();
+    },
+  });
+}

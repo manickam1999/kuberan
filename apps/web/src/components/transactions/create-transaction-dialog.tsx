@@ -9,11 +9,11 @@ import {
   ArrowLeftRight,
   Star,
 } from "lucide-react";
-import { ApiClientError, apiClient } from "@/lib/api-client";
+import { ApiClientError, apiClient, getFxAmountRequired, type FxAmountRequired } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
 import { useAccounts } from "@/hooks/use-accounts";
 import { useAuth } from "@/hooks/use-auth";
-import { useSetDefaultAccount } from "@/hooks/use-profile";
+import { useBaseCurrency, useSetDefaultAccount } from "@/hooks/use-profile";
 import { useCreateSharedExpense } from "@/hooks/use-receivables";
 import {
   MoneyOwedBackSection,
@@ -29,6 +29,10 @@ import {
   transactionKeys,
 } from "@/hooks/use-transactions";
 import { useCategories } from "@/hooks/use-categories";
+import {
+  CrossCurrencyAmount,
+  useCrossAmount,
+} from "@/components/transactions/cross-currency-amount";
 import { StagedAttachments } from "@/components/transactions/transaction-attachments";
 import { attachmentKeys } from "@/hooks/use-attachments";
 import type { AttachmentResponse } from "@/types/api";
@@ -136,6 +140,9 @@ export function CreateTransactionDialog({
   // Transfer-specific state
   const [fromAccountId, setFromAccountId] = useState<string>("");
   const [toAccountId, setToAccountId] = useState<string>("");
+  // Set when the API asked for the received amount although the cached
+  // accounts looked like same-currency (stale data).
+  const [fxRequired, setFxRequired] = useState<FxAmountRequired | null>(null);
 
   const queryClient = useQueryClient();
   const createTransaction = useCreateTransaction();
@@ -143,6 +150,7 @@ export function CreateTransactionDialog({
   const createShared = useCreateSharedExpense();
   const { defaultAccountId: savedDefaultAccountId } = useAuth();
   const setDefaultAccount = useSetDefaultAccount();
+  const baseCurrency = useBaseCurrency();
   const { data: accountsData } = useAccounts({ page_size: 100 });
   const { data: categoriesData } = useCategories({
     page_size: 100,
@@ -163,6 +171,19 @@ export function CreateTransactionDialog({
   const selectedFromAccountId = fromAccountId || preselectedAccountId;
   const selectedAccount = accounts.find((a) => a.id === selectedAccountId);
   const isTransfer = type === "transfer";
+  const fromAccount = accounts.find((a) => a.id === selectedFromAccountId);
+  const toAccount = accounts.find((a) => a.id === toAccountId);
+  // The currency the entered amount is in: the source account for a transfer,
+  // else the chosen account.
+  const amountCurrency = isTransfer
+    ? (fromAccount?.currency ?? baseCurrency)
+    : (selectedAccount?.currency ?? baseCurrency);
+  const receivedCurrency = fxRequired?.currency || toAccount?.currency || "";
+  const received = useCrossAmount(
+    isTransfer ? amountCurrency : "",
+    isTransfer ? receivedCurrency : "",
+    amount
+  );
   const sharedActive = type === "expense" && owed.enabled;
   const isSubmitting =
     createTransaction.isPending ||
@@ -185,6 +206,7 @@ export function CreateTransactionDialog({
     setError("");
     setFromAccountId("");
     setToAccountId("");
+    setFxRequired(null);
     setStagedFiles([]);
     setOwed(initialOwedBackState());
   }
@@ -245,11 +267,17 @@ export function CreateTransactionDialog({
         return;
       }
 
+      if (received.needed && received.value <= 0) {
+        setError(`Enter the amount received in ${receivedCurrency}`);
+        return;
+      }
+
       createTransfer.mutate(
         {
           from_account_id: selectedFromAccountId,
           to_account_id: toAccountId,
           amount,
+          to_amount: received.needed ? received.value : undefined,
           description: description.trim() || undefined,
           date: date ? toRFC3339(date) : undefined,
         },
@@ -258,7 +286,20 @@ export function CreateTransactionDialog({
             toast.success("Transfer completed");
             handleOpenChange(false);
           },
-          onError: (err) => setError(getErrorMessage(err)),
+          onError: (err) => {
+            const need = getFxAmountRequired(err);
+            if (need && need.field === "to_amount") {
+              // Reveal the field (even if the accounts looked same-currency)
+              // and offer the server's suggestion.
+              setFxRequired(need);
+              if (need.suggestedAmount) received.setValue(need.suggestedAmount);
+              setError(
+                `The accounts are in different currencies. Confirm the amount received in ${need.currency}.`
+              );
+              return;
+            }
+            setError(getErrorMessage(err));
+          },
         }
       );
     } else {
@@ -273,6 +314,7 @@ export function CreateTransactionDialog({
           const shareMode = owedShareMode(owed);
           const built = buildSharedCounterparties({
             amount,
+            currency: amountCurrency,
             mode: shareMode,
             rows: visibleOwedRows(owed),
           });
@@ -410,10 +452,10 @@ export function CreateTransactionDialog({
               id="tx-amount"
               value={amount}
               onChange={setAmount}
-              symbol="MYR"
+              currency={amountCurrency}
               placeholder="0.00"
               disabled={isSubmitting}
-              className="money h-14 pl-16 text-2xl font-semibold"
+              className="money h-14 pl-20 text-2xl font-semibold"
             />
           </div>
 
@@ -438,7 +480,7 @@ export function CreateTransactionDialog({
                 <SelectContent>
                   {accounts.map((a) => (
                     <SelectItem key={a.id} value={a.id}>
-                      {a.name}
+                      {a.name} ({a.currency})
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -484,7 +526,7 @@ export function CreateTransactionDialog({
                       .filter((a) => a.is_active)
                       .map((a) => (
                         <SelectItem key={a.id} value={a.id}>
-                          {a.name}
+                          {a.name} ({a.currency})
                         </SelectItem>
                       ))}
                   </SelectContent>
@@ -494,7 +536,10 @@ export function CreateTransactionDialog({
                 <Label htmlFor="tx-to-account">To</Label>
                 <Select
                   value={toAccountId}
-                  onValueChange={setToAccountId}
+                  onValueChange={(v) => {
+                    setToAccountId(v);
+                    setFxRequired(null);
+                  }}
                   disabled={isSubmitting}
                 >
                   <SelectTrigger id="tx-to-account" className="w-full">
@@ -503,13 +548,28 @@ export function CreateTransactionDialog({
                   <SelectContent>
                     {toAccounts.map((a) => (
                       <SelectItem key={a.id} value={a.id}>
-                        {a.name}
+                        {a.name} ({a.currency})
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
             </div>
+          )}
+
+          {/* Amount received (cross-currency transfer) */}
+          {isTransfer && received.needed && (
+            <CrossCurrencyAmount
+              id="tx-to-amount"
+              label={`Amount received (${receivedCurrency})`}
+              fromCurrency={amountCurrency}
+              fromAmount={amount}
+              toCurrency={receivedCurrency}
+              value={received.value}
+              onChange={received.setValue}
+              rate={received.rate}
+              disabled={isSubmitting}
+            />
           )}
 
           {/* Category (expense/income) */}
@@ -565,6 +625,7 @@ export function CreateTransactionDialog({
               state={owed}
               onChange={setOwed}
               amount={amount}
+              currency={amountCurrency}
               disabled={isSubmitting}
             />
           )}

@@ -20,6 +20,8 @@ export interface User {
   last_login_at?: string | null; // ISO 8601
   hide_balances: boolean;
   default_account_id: string | null; // account preselected for new transactions
+  /** ISO 4217 reporting currency aggregates are converted to. */
+  base_currency: string;
 }
 
 // Account types
@@ -66,6 +68,14 @@ export interface Account extends BaseModel {
   due_date?: string; // debt/credit_card accounts, ISO 8601
   credit_limit?: number; // credit_card accounts (cents)
   fixed_deposit?: FixedDepositDetails; // fixed_deposit accounts only
+  /** Balance converted to the user's base currency now; absent when no rate exists (see fx_missing). */
+  balance_base?: number; // cents, base currency
+  /** Account currency -> base rate as a decimal string; absent when the account is in the base currency. */
+  fx_rate?: string;
+  /** The FX quote used for balance_base is older than the staleness limit. */
+  fx_stale?: boolean;
+  /** No FX rate exists; balance_base is absent. */
+  fx_missing?: boolean;
 }
 
 // Transaction types
@@ -90,6 +100,10 @@ export interface Transaction extends BaseModel {
   to_account_id?: string | null; // UUIDv7, for transfers
   account?: Account; // preloaded relation
   to_account?: Account | null; // preloaded relation for transfers
+  /** Transfers only: cents credited to the destination, in its currency. Absent for same-currency transfers (use amount). */
+  to_amount?: number;
+  /** Transfers only: to_amount / amount as a decimal string (10 dp); present when to_amount is set. */
+  implied_rate?: string;
   category?: Category | null; // preloaded relation
   attachments?: Attachment[]; // preloaded on detail queries only (not list)
   attachments_count?: number; // populated on list queries for the paperclip indicator
@@ -135,6 +149,10 @@ export interface ReceivableSettlement {
   written_off_amount: number; // cents written off by the same settle call (reversed when undone)
   date: string; // ISO 8601
   created_at: string; // ISO 8601
+  /** Currency of `amount` (the receivable's currency). */
+  currency: string;
+  /** Cents credited to the account, in the account's currency; present when it differs from the receivable's currency. */
+  account_amount?: number;
 }
 
 export interface Receivable {
@@ -149,6 +167,8 @@ export interface Receivable {
   written_off_amount: number; // cents
   outstanding: number; // cents, derived by the server
   status: ReceivableStatus;
+  /** ISO 4217 currency of all amounts (the expense account's currency). */
+  currency: string;
   created_at: string; // ISO 8601
   updated_at: string; // ISO 8601
   settlements?: ReceivableSettlement[]; // GET /receivables/:id only
@@ -232,6 +252,8 @@ export interface Budget extends BaseModel {
   amount: number; // cents
   period: BudgetPeriod;
   is_active: boolean;
+  /** ISO 4217 currency of `amount` and of progress figures. */
+  currency: string;
   category?: Category; // preloaded relation
 }
 
@@ -241,6 +263,10 @@ export interface BudgetProgress {
   spent: number; // cents
   remaining: number; // cents
   percentage: number; // float, (spent/budgeted)*100
+  /** Budget currency: the unit of every amount above. */
+  currency: string;
+  /** Some spending had no exchange rate and is excluded from `spent`. */
+  fx_missing: boolean;
 }
 
 // Asset types
@@ -278,6 +304,11 @@ export interface PortfolioSnapshot {
   cash_balance: number; // cents
   investment_value: number; // cents
   debt_balance: number; // cents
+  fixed_deposit_balance?: number; // cents
+  /** Currency (the user's base at recording time) of every amount. */
+  currency: string;
+  /** Some amounts had no exchange rate and are excluded. */
+  fx_missing: boolean;
 }
 
 export interface Investment extends BaseModel {
@@ -291,6 +322,21 @@ export interface Investment extends BaseModel {
   wallet_address?: string; // crypto
   security: Security; // preloaded relation
   account?: Account; // preloaded relation
+  /** cost_basis in the user's base currency, frozen at each trade's rate. */
+  cost_basis_base: number; // cents, base currency
+  /** realized_gain_loss in the user's base currency, frozen at each trade's rate. */
+  realized_gain_loss_base: number; // cents, base currency
+  /** Latest price in the security's own currency (current_price is in the base currency). */
+  current_price_native: number; // cents, price_currency
+  /** Currency of current_price_native. */
+  price_currency: string;
+  /** price_currency -> base rate as a decimal string; "" when already the base currency. */
+  fx_rate: string;
+  fx_stale: boolean;
+  /** No FX rate; current_price is 0 (use current_price_native). */
+  fx_missing: boolean;
+  /** The security's currency (same as price_currency); cost_basis, realized_gain_loss are in it. */
+  currency: string;
 }
 
 // Investment transaction types
@@ -311,9 +357,23 @@ export interface InvestmentTransaction extends BaseModel {
   fee: number; // cents
   notes: string;
   realized_gain_loss: number; // cents — realized P&L for this specific sell
+  /** Currency of price_per_unit, total_amount, fee and realized_gain_loss (the security's). */
+  currency: string;
+  /** Security currency -> base rate of the trade (decimal string); null on legacy rows. */
+  fx_rate_to_base: string | null;
+  /** total_amount in base currency at the trade's rate; null on legacy rows. */
+  base_amount: number | null;
+  /** realized_gain_loss in base currency (frozen). */
+  realized_gain_loss_base: number;
   split_ratio?: number; // float, for splits
   dividend_type?: string; // for dividends
   investment?: Investment; // preloaded relation
+}
+
+/** Native market value of holdings left out of the totals for lack of an FX rate. */
+export interface UnconvertedValue {
+  currency: string;
+  value: number; // cents, in `currency`
 }
 
 export interface PortfolioSummary {
@@ -323,4 +383,14 @@ export interface PortfolioSummary {
   gain_loss_pct: number; // float percentage
   total_realized_gain_loss: number; // cents
   holdings_by_type: Record<AssetType, { value: number; count: number }>;
+  /** Base currency; every amount in this summary is in it. */
+  currency: string;
+  /** Unrealized gain from price movement at today's rate (base currency, cents). */
+  total_price_return: number;
+  /** Unrealized gain from currency movement on the cost (base currency, cents). */
+  total_fx_return: number;
+  /** An FX quote used was stale. */
+  fx_stale: boolean;
+  /** Holdings that could not be valued (no rate); excluded from the totals. May be null/absent when none. */
+  unconverted?: UnconvertedValue[] | null;
 }

@@ -6,6 +6,8 @@ import { toast } from "sonner";
 import { ApiClientError } from "@/lib/api-client";
 import { useCreateBudget } from "@/hooks/use-budgets";
 import { useCategories } from "@/hooks/use-categories";
+import { useBaseCurrency } from "@/hooks/use-profile";
+import { REPORTING_CURRENCIES } from "@/lib/currencies";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -51,9 +53,22 @@ export function CreateBudgetDialog({
 }: CreateBudgetDialogProps) {
   const [name, setName] = useState("");
   const [categoryId, setCategoryId] = useState("");
+  // null until the user picks: the budget then follows the reporting currency.
+  const [currency, setCurrency] = useState<string | null>(null);
   const [amount, setAmount] = useState(0);
   const [period, setPeriod] = useState<BudgetPeriod>("monthly");
   const [error, setError] = useState("");
+
+  const baseCurrency = useBaseCurrency();
+  const selectedCurrency = currency ?? baseCurrency;
+  const currencyOptions = REPORTING_CURRENCIES.some(
+    (c) => c.code === selectedCurrency
+  )
+    ? REPORTING_CURRENCIES
+    : [
+        { code: selectedCurrency, name: selectedCurrency },
+        ...REPORTING_CURRENCIES,
+      ];
 
   const createBudget = useCreateBudget();
   const isSubmitting = createBudget.isPending;
@@ -70,6 +85,7 @@ export function CreateBudgetDialog({
   function resetForm() {
     setName("");
     setCategoryId("");
+    setCurrency(null);
     setAmount(0);
     setPeriod("monthly");
     setError("");
@@ -108,6 +124,7 @@ export function CreateBudgetDialog({
         category_id: categoryId,
         amount,
         period,
+        currency: selectedCurrency,
       },
       {
         onSuccess: (budget) => {
@@ -178,9 +195,30 @@ export function CreateBudgetDialog({
           </div>
 
           <div className="flex flex-col gap-2">
+            <Label htmlFor="budget-currency">Currency</Label>
+            <Select
+              value={selectedCurrency}
+              onValueChange={setCurrency}
+              disabled={isSubmitting}
+            >
+              <SelectTrigger id="budget-currency" className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {currencyOptions.map((c) => (
+                  <SelectItem key={c.code} value={c.code}>
+                    {c.code} · {c.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="flex flex-col gap-2">
             <Label htmlFor="budget-amount">Amount</Label>
             <CurrencyInput
               id="budget-amount"
+              currency={selectedCurrency}
               value={amount}
               onChange={setAmount}
               disabled={isSubmitting}

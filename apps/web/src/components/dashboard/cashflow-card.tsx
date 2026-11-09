@@ -20,7 +20,9 @@ import { useActiveMonth } from "@/hooks/use-active-month";
 import { useChartTheme } from "@/providers/chart-theme-provider";
 import { DitherFill } from "@/components/charts/dither-fill";
 import { useAuth } from "@/hooks/use-auth";
-import { formatCurrency } from "@/lib/format";
+import { formatMoney } from "@/lib/format";
+import { useBaseCurrency } from "@/hooks/use-profile";
+import { FxNotice } from "@/components/ui/fx-notice";
 
 interface CashflowCardProps {
   title?: string;
@@ -35,6 +37,7 @@ export function CashflowCard({
   ...props
 }: CashflowCardProps) {
   const { data, isLoading } = useMonthlySummary(6);
+  const baseCurrency = useBaseCurrency();
   const active = useActiveMonth();
   const monthLabel = props.label ?? active.label;
   const showLatestActivityHint =
@@ -45,7 +48,8 @@ export function CashflowCard({
   const { hideBalances } = useAuth();
   const isDither = chartTheme === "dither";
 
-  const { income, expenses, net, trend, savingsRate } = useMemo(() => {
+  const { income, expenses, net, trend, savingsRate, currency, anyFxMissing } =
+    useMemo(() => {
     const rows = data ?? [];
     // Active month = latest row with any activity, else last row.
     const active =
@@ -65,13 +69,23 @@ export function CashflowCard({
         full: date.toLocaleDateString("en-US", { month: "long", year: "numeric" }),
         income: m.income,
         expenses: m.expenses,
+        currency: m.currency,
         net: d,
         height: Math.abs(d) / maxNet,
       };
     });
 
-    return { income, expenses, net, trend, savingsRate };
-  }, [data]);
+    return {
+      income,
+      expenses,
+      net,
+      trend,
+      savingsRate,
+      // The response's currency is the base; every row shares it.
+      currency: active?.currency ?? baseCurrency,
+      anyFxMissing: rows.some((m) => m.fx_missing),
+    };
+  }, [data, baseCurrency]);
 
   if (isLoading) {
     return (
@@ -105,13 +119,13 @@ export function CashflowCard({
           <div className="flex items-baseline justify-between gap-2 @md:block">
             <p className="text-xs text-muted-foreground">Income</p>
             <p className="money text-base font-semibold text-positive @md:mt-0.5 @md:text-lg">
-              {formatCurrency(income, undefined, hideBalances)}
+              {formatMoney(income, currency, hideBalances)}
             </p>
           </div>
           <div className="flex items-baseline justify-between gap-2 @md:block">
             <p className="text-xs text-muted-foreground">Expenses</p>
             <p className="money text-base font-semibold @md:mt-0.5 @md:text-lg">
-              {formatCurrency(expenses, undefined, hideBalances)}
+              {formatMoney(expenses, currency, hideBalances)}
             </p>
           </div>
           <div className="flex items-baseline justify-between gap-2 @md:block">
@@ -122,7 +136,7 @@ export function CashflowCard({
               }`}
             >
               {netUp ? "+" : "−"}
-              {formatCurrency(Math.abs(net), undefined, hideBalances)}
+              {formatMoney(Math.abs(net), currency, hideBalances)}
             </p>
           </div>
         </div>
@@ -153,6 +167,8 @@ export function CashflowCard({
             </p>
           )}
         </div>
+
+        <FxNotice fxMissing={anyFxMissing} variant="inline" />
 
         {/* 6-month net trend */}
         {trend.length > 1 && (
@@ -189,13 +205,13 @@ export function CashflowCard({
                       <div className="flex items-center justify-between gap-4">
                         <span className="text-muted-foreground">Income</span>
                         <span className="money text-positive">
-                          {formatCurrency(m.income, undefined, hideBalances)}
+                          {formatMoney(m.income, m.currency, hideBalances)}
                         </span>
                       </div>
                       <div className="flex items-center justify-between gap-4">
                         <span className="text-muted-foreground">Expenses</span>
                         <span className="money">
-                          {formatCurrency(m.expenses, undefined, hideBalances)}
+                          {formatMoney(m.expenses, m.currency, hideBalances)}
                         </span>
                       </div>
                       <div className="flex items-center justify-between gap-4 border-t border-border/40 pt-0.5">
@@ -204,7 +220,7 @@ export function CashflowCard({
                           className={`money ${m.net >= 0 ? "text-positive" : "text-negative"}`}
                         >
                           {m.net >= 0 ? "+" : "−"}
-                          {formatCurrency(Math.abs(m.net), undefined, hideBalances)}
+                          {formatMoney(Math.abs(m.net), m.currency, hideBalances)}
                         </span>
                       </div>
                     </div>

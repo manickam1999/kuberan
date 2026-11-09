@@ -2,11 +2,13 @@ package services
 
 import (
 	"errors"
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
 
 	apperrors "kuberan/internal/errors"
+	"kuberan/internal/logger"
 	"kuberan/internal/models"
 	"kuberan/internal/pagination"
 	"kuberan/internal/services/fdmath"
@@ -16,19 +18,35 @@ import (
 type accountService struct {
 	db              *gorm.DB
 	categoryService CategoryServicer
+	fxService       FXServicer
+}
+
+// AccountServiceOption configures optional dependencies of NewAccountService.
+type AccountServiceOption func(*accountService)
+
+// WithCategoryService sets the category service used by the fixed-deposit close
+// path (plan 020, B5) to provision the "Interest Income" category.
+func WithCategoryService(cs CategoryServicer) AccountServiceOption {
+	return func(s *accountService) { s.categoryService = cs }
+}
+
+// WithFXService sets the FX service used to value investment holdings in the
+// account's currency. Without it only same-currency holdings are valued.
+func WithFXService(fxs FXServicer) AccountServiceOption {
+	return func(s *accountService) { s.fxService = fxs }
 }
 
 // NewAccountService creates a new AccountServicer.
 //
-// The optional categoryService argument is used by the fixed-deposit close path
-// to provision the "Interest Income" category (plan 020, B5). Pass it in
-// production wiring; it may be omitted in tests that do not exercise that path.
-func NewAccountService(db *gorm.DB, categoryService ...CategoryServicer) AccountServicer {
-	var cs CategoryServicer
-	if len(categoryService) > 0 {
-		cs = categoryService[0]
+// Production wiring passes WithCategoryService (fixed-deposit close path) and
+// WithFXService (investment-account balances); both may be omitted in tests
+// that do not exercise those paths.
+func NewAccountService(db *gorm.DB, opts ...AccountServiceOption) AccountServicer {
+	s := &accountService{db: db}
+	for _, opt := range opts {
+		opt(s)
 	}
-	return &accountService{db: db, categoryService: cs}
+	return s
 }
 
 // CreateCashAccount creates a new cash account for a user
@@ -40,6 +58,9 @@ func (s *accountService) CreateCashAccount(userID, name, description, currency s
 
 	if currency == "" {
 		currency = "USD" // Default currency
+	}
+	if err := validateCreatableCurrency(currency); err != nil {
+		return nil, err
 	}
 
 	// Create account
@@ -90,6 +111,9 @@ func (s *accountService) CreateInvestmentAccount(userID, name, description, curr
 	if currency == "" {
 		currency = "USD"
 	}
+	if err := validateCreatableCurrency(currency); err != nil {
+		return nil, err
+	}
 
 	account := &models.Account{
 		UserID:        userID,
@@ -117,6 +141,9 @@ func (s *accountService) CreateCreditCardAccount(userID, name, description, curr
 
 	if currency == "" {
 		currency = "USD"
+	}
+	if err := validateCreatableCurrency(currency); err != nil {
+		return nil, err
 	}
 
 	account := &models.Account{
@@ -161,6 +188,10 @@ func (s *accountService) GetUserAccounts(userID string, page pagination.PageRequ
 		return nil, err
 	}
 
+	if err := s.enrichBaseBalances(userID, accounts); err != nil {
+		return nil, err
+	}
+
 	result := pagination.NewPageResponse(accounts, page.Page, page.PageSize, totalItems)
 	return &result, nil
 }
@@ -183,7 +214,50 @@ func (s *accountService) GetAccountByID(userID, accountID string) (*models.Accou
 		account = accounts[0]
 	}
 
+	one := []models.Account{account}
+	if err := s.enrichBaseBalances(userID, one); err != nil {
+		return nil, err
+	}
+	account = one[0]
+
 	return &account, nil
+}
+
+// enrichBaseBalances fills the response-only base-currency fields of accounts
+// (balance_base, fx_rate, fx_stale, fx_missing) using the user's base currency
+// and one batched rate lookup as of now. Accounts already in the base currency
+// need no FX query; an account without a rate is flagged fx_missing and never
+// converted 1:1.
+func (s *accountService) enrichBaseBalances(userID string, accounts []models.Account) error {
+	if len(accounts) == 0 {
+		return nil
+	}
+	base, err := userBaseCurrency(s.db, userID)
+	if err != nil {
+		return err
+	}
+	currencies := make([]string, 0, len(accounts))
+	for i := range accounts {
+		currencies = append(currencies, accounts[i].Currency)
+	}
+	v, err := newValuer(s.fxService, base, time.Now(), currencies)
+	if err != nil {
+		return err
+	}
+	for i := range accounts {
+		converted, quote, ok := v.Convert(accounts[i].Balance, accounts[i].Currency)
+		if !ok {
+			accounts[i].BalanceBase = nil
+			accounts[i].FXMissing = true
+			continue
+		}
+		accounts[i].BalanceBase = &converted
+		if quote != nil {
+			accounts[i].FXRate = quote.Rate.String()
+			accounts[i].FXStale = quote.Stale
+		}
+	}
+	return nil
 }
 
 // UpdateAccount updates an existing account for any account type.
@@ -493,6 +567,9 @@ func (s *accountService) CreateFixedDepositAccount(userID string, params CreateF
 	if params.Currency == "" {
 		params.Currency = "USD"
 	}
+	if err := validateCreatableCurrency(params.Currency); err != nil {
+		return nil, err
+	}
 
 	// --- validate source account ---
 	sourceAccount, err := s.GetAccountByID(userID, params.SourceAccountID)
@@ -681,6 +758,10 @@ func (s *accountService) CloseFixedDeposit(userID, accountID string, params Clos
 	if destAccount.Type != models.AccountTypeCash {
 		return nil, apperrors.WithMessage(apperrors.ErrInvalidAccountType, "destination account must be a cash account")
 	}
+	if !strings.EqualFold(destAccount.Currency, fdAccount.Currency) {
+		return nil, apperrors.WithMessage(apperrors.ErrAccountCurrencyMismatch,
+			"destination account currency must match the fixed deposit currency")
+	}
 
 	// --- compute interest ---
 	var grossInterest int64
@@ -851,22 +932,56 @@ func (s *accountService) enrichInvestmentBalances(accounts []models.Account) err
 		secIDs = append(secIDs, id)
 	}
 
-	// Batch-fetch latest prices
-	prices, err := getLatestPrices(s.db, secIDs)
+	// Batch-fetch latest native prices
+	prices, err := latestNativePrices(s.db, secIDs)
 	if err != nil {
 		return err
 	}
 
-	// Accumulate market value per account
+	// Each investment account's balance is in its own currency.
+	accountCurrency := make(map[string]string, len(accounts))
+	currencies := map[string]struct{}{}
+	for i := range accounts {
+		if accounts[i].Type == models.AccountTypeInvestment {
+			c := normalizeCode(accounts[i].Currency)
+			accountCurrency[accounts[i].ID] = c
+			currencies[c] = struct{}{}
+		}
+	}
+	priceCurrencies := distinctPriceCurrencies(prices)
+	valuers := make(map[string]*valuer, len(currencies))
+	for target := range currencies {
+		v, vErr := newValuer(s.fxService, target, time.Now(), priceCurrencies)
+		if vErr != nil {
+			return vErr
+		}
+		valuers[target] = v
+	}
+
+	// Accumulate market value per account, converting each line value once.
 	balances := make(map[string]int64)
+	missing := make(map[string]bool)
 	for _, h := range holdings {
-		balances[h.AccountID] += valueCents(h.Quantity, prices[h.SecurityID])
+		p := prices[h.SecurityID]
+		target := accountCurrency[h.AccountID]
+		value, _, ok := valuers[target].Convert(valueCents(h.Quantity, p.Price), p.Currency)
+		if !ok {
+			missing[h.AccountID] = true
+			logger.Get().Warnw("investment holding skipped: no FX rate",
+				"account_id", h.AccountID, "account_currency", target, "price_currency", p.Currency,
+				"security_id", h.SecurityID)
+			continue
+		}
+		balances[h.AccountID] += value
 	}
 
 	// Set balances on the account slice
 	for i := range accounts {
 		if accounts[i].Type == models.AccountTypeInvestment {
 			accounts[i].Balance = balances[accounts[i].ID]
+			if missing[accounts[i].ID] {
+				accounts[i].FXMissing = true
+			}
 		}
 	}
 

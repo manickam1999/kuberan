@@ -1,6 +1,12 @@
 package models
 
-import "time"
+import (
+	"time"
+
+	"gorm.io/gorm"
+
+	"kuberan/internal/fx"
+)
 
 // TransactionType represents the type of transaction
 type TransactionType string
@@ -43,6 +49,20 @@ type Transaction struct {
 	// For transfers
 	ToAccountID *string `gorm:"type:uuid" json:"to_account_id,omitempty"`
 
+	// ToAmount is the amount credited to the destination account, in the
+	// destination's currency, for a cross-currency transfer. NULL means the
+	// destination receives Amount. Use EffectiveToAmount to read it.
+	ToAmount *int64 `gorm:"type:bigint;check:transactions_to_amount_check,to_amount IS NULL OR to_amount > 0" json:"to_amount,omitempty"`
+
+	// ImpliedRate is the response-only rate to_amount/amount (decimal string,
+	// 10 dp, half-even), set for cross-currency transfers.
+	ImpliedRate string `gorm:"-" json:"implied_rate,omitempty"`
+
+	// ImportRef marks a row written by an importer ("ibkr:<account>:<event key>")
+	// so that re-running the import replaces rather than duplicates it. NULL for
+	// every row that was entered by hand.
+	ImportRef *string `gorm:"size:128;index:idx_transactions_import_ref" json:"import_ref,omitempty"`
+
 	// Relationships
 	Account   Account   `gorm:"foreignKey:AccountID" json:"account"`
 	ToAccount *Account  `gorm:"foreignKey:ToAccountID" json:"to_account,omitempty"`
@@ -60,4 +80,31 @@ type Transaction struct {
 	// on list queries so the UI can show a paperclip indicator without loading
 	// the attachment rows. See plans/017-transaction-receipts.
 	AttachmentsCount int `gorm:"-" json:"attachments_count,omitempty"`
+}
+
+// EffectiveToAmount is what a transfer credits to its destination account:
+// ToAmount when set, otherwise Amount.
+func (t *Transaction) EffectiveToAmount() int64 {
+	if t.ToAmount != nil {
+		return *t.ToAmount
+	}
+	return t.Amount
+}
+
+// FillImpliedRate sets the response-only ImpliedRate from Amount and ToAmount.
+// It is a no-op unless the transaction carries a to_amount.
+func (t *Transaction) FillImpliedRate() {
+	t.ImpliedRate = ""
+	if t.ToAmount == nil {
+		return
+	}
+	if r, err := fx.RateFromAmounts(t.Amount, *t.ToAmount); err == nil {
+		t.ImpliedRate = r.String()
+	}
+}
+
+// AfterFind populates the response-only fields.
+func (t *Transaction) AfterFind(_ *gorm.DB) error {
+	t.FillImpliedRate()
+	return nil
 }

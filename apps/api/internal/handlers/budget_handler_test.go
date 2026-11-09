@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"fmt"
 	"net/http"
 	"testing"
 
@@ -24,7 +25,7 @@ type mockBudgetService struct {
 	getActiveBudgetsProgressFn func(userID string) ([]services.BudgetProgress, error)
 }
 
-func (m *mockBudgetService) CreateBudget(userID, categoryID, name string, amount int64, period models.BudgetPeriod) (*models.Budget, error) {
+func (m *mockBudgetService) CreateBudget(userID, categoryID, name string, amount int64, period models.BudgetPeriod, _ ...services.BudgetOption) (*models.Budget, error) {
 	if m.createBudgetFn != nil {
 		return m.createBudgetFn(userID, categoryID, name, amount, period)
 	}
@@ -46,7 +47,7 @@ func (m *mockBudgetService) GetBudgetByID(userID, budgetID string) (*models.Budg
 	return &models.Budget{}, nil
 }
 
-func (m *mockBudgetService) UpdateBudget(userID, budgetID, name string, amount *int64, period *models.BudgetPeriod, isActive *bool) (*models.Budget, error) {
+func (m *mockBudgetService) UpdateBudget(userID, budgetID, name string, amount *int64, period *models.BudgetPeriod, isActive *bool, _ ...services.BudgetOption) (*models.Budget, error) {
 	if m.updateBudgetFn != nil {
 		return m.updateBudgetFn(userID, budgetID, name, amount, period, isActive)
 	}
@@ -600,4 +601,63 @@ func TestBudgetHandler_GetBudgetsProgress(t *testing.T) {
 			t.Fatalf("expected 401, got %d", rec.Code)
 		}
 	})
+}
+
+func TestBudgetHandler_CurrencyField(t *testing.T) {
+	const body = `{"category_id":"00000000-0000-0000-0000-000000000001","name":"Trip","amount":50000,"period":"monthly","currency":%q}`
+
+	t.Run("create accepts a valid currency and returns it", func(t *testing.T) {
+		svc := &mockBudgetService{
+			createBudgetFn: func(_ string, categoryID string, name string, amount int64, period models.BudgetPeriod) (*models.Budget, error) {
+				return &models.Budget{Base: models.Base{ID: "1"}, CategoryID: categoryID, Name: name, Amount: amount, Period: period, Currency: "USD"}, nil
+			},
+		}
+		r := setupBudgetRouter(NewBudgetHandler(svc, &mockAuditService{}))
+		rec := doRequest(r, "POST", "/budgets", fmt.Sprintf(body, "USD"))
+		if rec.Code != http.StatusCreated {
+			t.Fatalf("expected 201, got %d: %s", rec.Code, rec.Body.String())
+		}
+		budget := parseJSON(t, rec)["budget"].(map[string]interface{})
+		if budget["currency"] != "USD" {
+			t.Errorf("currency = %v, want USD", budget["currency"])
+		}
+	})
+
+	t.Run("create and update reject an invalid currency", func(t *testing.T) {
+		r := setupBudgetRouter(NewBudgetHandler(&mockBudgetService{}, &mockAuditService{}))
+		if rec := doRequest(r, "POST", "/budgets", fmt.Sprintf(body, "XX1")); rec.Code != http.StatusBadRequest {
+			t.Errorf("create: expected 400, got %d", rec.Code)
+		}
+		if rec := doRequest(r, "PUT", "/budgets/00000000-0000-0000-0000-0000000000b1", `{"currency":"dollars"}`); rec.Code != http.StatusBadRequest {
+			t.Errorf("update: expected 400, got %d", rec.Code)
+		}
+	})
+
+	t.Run("update accepts a valid currency", func(t *testing.T) {
+		r := setupBudgetRouter(NewBudgetHandler(&mockBudgetService{}, &mockAuditService{}))
+		if rec := doRequest(r, "PUT", "/budgets/00000000-0000-0000-0000-0000000000b1", `{"currency":"SGD"}`); rec.Code != http.StatusOK {
+			t.Errorf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+		}
+	})
+}
+
+func TestBudgetHandler_ProgressCarriesCurrencyAndFXMissing(t *testing.T) {
+	svc := &mockBudgetService{
+		getBudgetProgressFn: func(_, budgetID string) (*services.BudgetProgress, error) {
+			return &services.BudgetProgress{BudgetID: budgetID, Currency: "USD", FXMissing: true}, nil
+		},
+	}
+	r := setupBudgetRouter(NewBudgetHandler(svc, &mockAuditService{}))
+	rec := doRequest(r, "GET", "/budgets/00000000-0000-0000-0000-0000000000b1/progress", "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	got := parseJSON(t, rec)
+	p, _ := got["progress"].(map[string]interface{})
+	if p == nil {
+		p = got
+	}
+	if p["currency"] != "USD" || p["fx_missing"] != true {
+		t.Errorf("progress = %v, want currency USD and fx_missing true", got)
+	}
 }

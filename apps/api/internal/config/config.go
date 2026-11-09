@@ -46,6 +46,10 @@ type Config struct {
 	// Pipeline
 	PipelineAPIKey string
 
+	// FXMaxStaleness is how old an exchange rate may be before FX quotes are
+	// flagged stale (FX_MAX_STALENESS, a Go duration; default 168h).
+	FXMaxStaleness time.Duration
+
 	// CORSOrigins is the exact-match allowlist of browser origins allowed to
 	// make credentialed cross-origin requests (CORS_ORIGIN, comma-separated).
 	CORSOrigins []string
@@ -117,6 +121,9 @@ type RateLimits struct {
 	RefreshPerMinute    int // per client IP: /auth/refresh (RATE_LIMIT_REFRESH_PER_MINUTE, 60)
 	RegistrationPerHour int // per client IP: OAuth DCR (RATE_LIMIT_DCR_PER_HOUR, 10)
 }
+
+// DefaultFXMaxStaleness is the default for FX_MAX_STALENESS.
+const DefaultFXMaxStaleness = 168 * time.Hour
 
 // DefaultCORSOrigin is the development default for CORS_ORIGIN.
 const DefaultCORSOrigin = "http://localhost:3000"
@@ -206,6 +213,8 @@ func Load() (*Config, error) {
 		expDur = 24 * time.Hour
 	}
 	config.JWTExpirationDur = expDur
+
+	config.FXMaxStaleness = getEnvDuration("FX_MAX_STALENESS", DefaultFXMaxStaleness)
 
 	// Validate production configuration
 	if config.Env == Production {
@@ -326,6 +335,21 @@ func getEnvInt64(key string, defaultValue int64) int64 {
 	parsed, err := strconv.ParseInt(value, 10, 64)
 	if err != nil {
 		logger.Get().Warnf("Invalid integer for %s ('%s'), falling back to %d", key, value, defaultValue)
+		return defaultValue
+	}
+	return parsed
+}
+
+// getEnvDuration retrieves a positive Go-duration environment variable or
+// returns a default value.
+func getEnvDuration(key string, defaultValue time.Duration) time.Duration {
+	value := os.Getenv(key)
+	if value == "" {
+		return defaultValue
+	}
+	parsed, err := time.ParseDuration(value)
+	if err != nil || parsed <= 0 {
+		logger.Get().Warnf("Invalid duration for %s ('%s'), falling back to %s", key, value, defaultValue)
 		return defaultValue
 	}
 	return parsed

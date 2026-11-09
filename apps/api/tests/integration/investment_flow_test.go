@@ -67,7 +67,7 @@ func TestInvestmentFlow_FullLifecycle(t *testing.T) {
 	// Step 5: Record live price via pipeline ($170/share)
 	now := time.Now().Format(time.RFC3339)
 	rec = app.pipelineRequest("POST", "/api/v1/pipeline/securities/prices",
-		fmt.Sprintf(`{"prices":[{"security_id":%q,"price":17000,"recorded_at":%q}]}`, securityID, now))
+		fmt.Sprintf(`{"prices":[{"security_id":%q,"price":17000,"currency":"MYR","recorded_at":%q}]}`, securityID, now))
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200 for pipeline price, got %d: %s", rec.Code, rec.Body.String())
 	}
@@ -256,7 +256,7 @@ func TestInvestmentFlow_PortfolioMultipleHoldings(t *testing.T) {
 	// Record live prices via pipeline
 	now := time.Now().Format(time.RFC3339)
 	rec = app.pipelineRequest("POST", "/api/v1/pipeline/securities/prices",
-		fmt.Sprintf(`{"prices":[{"security_id":%q,"price":12000,"recorded_at":%q},{"security_id":%q,"price":5500,"recorded_at":%q}]}`,
+		fmt.Sprintf(`{"prices":[{"security_id":%q,"price":12000,"currency":"MYR","recorded_at":%q},{"security_id":%q,"price":5500,"currency":"MYR","recorded_at":%q}]}`,
 			aaplID, now, vooID, now))
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200 for pipeline prices, got %d: %s", rec.Code, rec.Body.String())

@@ -15,7 +15,9 @@ import { ditherFill } from "@/lib/dither";
 import type { DitherColor } from "@/components/dither-kit/palette";
 import { useChartTheme } from "@/providers/chart-theme-provider";
 import { useAuth } from "@/hooks/use-auth";
-import { formatCurrency, formatPercentage } from "@/lib/format";
+import { formatMoney, formatPercentage } from "@/lib/format";
+import { useBaseCurrency } from "@/hooks/use-profile";
+import { FxNotice, type FxNoticeItem } from "@/components/ui/fx-notice";
 import type { Account } from "@/types/models";
 
 interface Segment {
@@ -32,6 +34,8 @@ export function CompositionCard() {
   const { data: portfolio } = usePortfolio();
   const { chartTheme } = useChartTheme();
   const { hideBalances } = useAuth();
+  // Every figure here is in the base currency (balance_base, portfolio totals).
+  const baseCurrency = useBaseCurrency();
 
   if (isLoading) {
     return (
@@ -50,8 +54,25 @@ export function CompositionCard() {
   }
 
   const accounts = accountsData?.data ?? [];
+  // An account's balance in the base currency; undefined when no rate exists.
+  const baseValue = (a: Account): number | undefined =>
+    a.balance_base ?? (a.currency === baseCurrency ? a.balance : undefined);
+  // Accounts left out of the totals (no rate), with native balances per currency.
+  const excluded = accounts.filter((a) => baseValue(a) === undefined);
+  const excludedByCurrency = new Map<string, number>();
+  for (const a of excluded) {
+    excludedByCurrency.set(
+      a.currency,
+      (excludedByCurrency.get(a.currency) ?? 0) + a.balance
+    );
+  }
+  const unconverted: FxNoticeItem[] = [...excludedByCurrency].map(
+    ([currency, amount]) => ({ currency, amount })
+  );
   const sumByType = (type: Account["type"]) =>
-    accounts.filter((a) => a.type === type).reduce((s, a) => s + a.balance, 0);
+    accounts
+      .filter((a) => a.type === type)
+      .reduce((s, a) => s + (baseValue(a) ?? 0), 0);
 
   const cash = sumByType("cash");
   const investmentAccounts = sumByType("investment");
@@ -152,7 +173,7 @@ export function CompositionCard() {
                 )}
               </span>
               <span className="money shrink-0 text-sm font-medium">
-                {formatCurrency(s.value, undefined, hideBalances)}
+                {formatMoney(s.value, baseCurrency, hideBalances)}
               </span>
             </div>
           ))}
@@ -171,16 +192,27 @@ export function CompositionCard() {
                 <span className="text-sm text-muted-foreground">Debt</span>
               </span>
               <span className="money shrink-0 text-sm font-medium text-negative">
-                −{formatCurrency(debt, undefined, hideBalances)}
+                −{formatMoney(debt, baseCurrency, hideBalances)}
               </span>
             </div>
           )}
         </div>
 
+        <FxNotice
+          fxMissing={excluded.length > 0}
+          unconverted={unconverted}
+          variant="inline"
+        />
+        <FxNotice
+          fxStale={portfolio?.fx_stale}
+          unconverted={portfolio?.unconverted}
+          variant="inline"
+        />
+
         <div className="flex items-center justify-between gap-3 border-t border-border/60 pt-3">
           <span className="text-sm font-medium">Net worth</span>
           <span className="money text-base font-semibold">
-            {formatCurrency(netWorth, undefined, hideBalances)}
+            {formatMoney(netWorth, baseCurrency, hideBalances)}
           </span>
         </div>
       </CardContent>

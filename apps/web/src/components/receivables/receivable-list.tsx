@@ -4,7 +4,7 @@ import { useState } from "react";
 import { ChevronDown, ChevronRight, HandCoins, Undo2, Eraser } from "lucide-react";
 import { toast } from "sonner";
 import { useUndoWriteOff } from "@/hooks/use-receivables";
-import { formatCurrency } from "@/lib/format";
+import { formatMoney } from "@/lib/format";
 import { isOpen, receivableApiErrorMessage } from "@/lib/receivable-format";
 import {
   AlertDialog,
@@ -78,6 +78,7 @@ function ReceivableRow({
   const [historyOpen, setHistoryOpen] = useState(false);
   const undoWriteOff = useUndoWriteOff();
 
+  const ccy = receivable.currency;
   const open = isOpen(receivable);
   const hasPayments = receivable.paid_amount > 0;
   const description = showExpense ? receivable.transaction?.description : undefined;
@@ -106,17 +107,17 @@ function ReceivableRow({
           </div>
           <div className="mt-0.5 break-words text-xs text-muted-foreground">
             {description ? `${description} · ` : ""}
-            Paid {formatCurrency(receivable.paid_amount)}
+            Paid {formatMoney(receivable.paid_amount, ccy)}
             {receivable.written_off_amount > 0 &&
-              ` · Written off ${formatCurrency(receivable.written_off_amount)}`}
+              ` · Written off ${formatMoney(receivable.written_off_amount, ccy)}`}
           </div>
         </div>
         <div className="shrink-0 text-right">
           <div className="money text-sm font-semibold">
-            {formatCurrency(receivable.outstanding)}
+            {formatMoney(receivable.outstanding, ccy)}
           </div>
           <div className="text-xs text-muted-foreground">
-            of {formatCurrency(receivable.amount)}
+            of {formatMoney(receivable.amount, ccy)}
           </div>
         </div>
       </div>
@@ -200,7 +201,7 @@ function ReceivableRow({
           <AlertDialogHeader>
             <AlertDialogTitle>Undo this write-off?</AlertDialogTitle>
             <AlertDialogDescription>
-              {formatCurrency(receivable.written_off_amount)} will be owed to you
+              {formatMoney(receivable.written_off_amount, ccy)} will be owed to you
               again by {receivable.counterparty_name}, and it will no longer count
               as your own spending.
             </AlertDialogDescription>

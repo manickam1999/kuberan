@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 )
 
 // v8ChartResponse builds a v8 chart JSON response for a single symbol.
@@ -19,18 +20,8 @@ func v8ChartResponse(symbol string, price float64) yahooChartResponse {
 // v8ChartResponseWithCurrency builds a v8 chart JSON response with an explicit currency.
 func v8ChartResponseWithCurrency(symbol string, price float64, currency string) yahooChartResponse {
 	var resp yahooChartResponse
-	resp.Chart.Result = []struct {
-		Meta struct {
-			Symbol             string  `json:"symbol"`
-			Currency           string  `json:"currency"`
-			RegularMarketPrice float64 `json:"regularMarketPrice"`
-		} `json:"meta"`
-	}{
-		{Meta: struct {
-			Symbol             string  `json:"symbol"`
-			Currency           string  `json:"currency"`
-			RegularMarketPrice float64 `json:"regularMarketPrice"`
-		}{Symbol: symbol, Currency: currency, RegularMarketPrice: price}},
+	resp.Chart.Result = []yahooChartResult{
+		{Meta: yahooChartMeta{Symbol: symbol, Currency: currency, RegularMarketPrice: price}},
 	}
 	return resp
 }
@@ -392,7 +383,7 @@ func TestYahooProvider_FetchPrices_CurrencyFromResponse(t *testing.T) {
 	}{
 		"sec-1": {17872, "USD"},
 		"sec-2": {855, "MYR"},
-		"sec-3": {52512, "GBP"}, // GBp → GBP after ToUpper
+		"sec-3": {525, "GBP"}, // 525.12 GBp = 5.2512 GBP, i.e. 525 GBP cents
 	}
 	for _, r := range results {
 		want, ok := expected[r.SecurityID]
@@ -405,6 +396,113 @@ func TestYahooProvider_FetchPrices_CurrencyFromResponse(t *testing.T) {
 		}
 		if r.Currency != want.currency {
 			t.Errorf("security %s: got currency %q, want %q", r.SecurityID, r.Currency, want.currency)
+		}
+	}
+}
+
+func TestNormalizeYahooPrice(t *testing.T) {
+	tests := []struct {
+		name     string
+		price    float64
+		reported string
+		want     int64
+		currency string
+	}{
+		{"USD is ordinary cents", 178.72, "USD", 17872, "USD"},
+		{"lower-case reported currency is upper-cased", 178.72, "usd", 17872, "USD"},
+		{"MYR is ordinary cents", 8.55, "MYR", 855, "MYR"},
+		{"GBp is pence: 525.12 GBp is 525 GBP cents", 525.12, "GBp", 525, "GBP"},
+		{"GBX is pence", 525.12, "GBX", 525, "GBP"},
+		{"ZAc is South African cents", 1234.5, "ZAc", 1235, "ZAR"},
+		{"ILA is agorot", 3210.4, "ILA", 3210, "ILS"},
+		{"GBp half rounds away from zero", 100.5, "GBp", 101, "GBP"},
+		{"GBp just below half rounds down", 100.49, "GBp", 100, "GBP"},
+		{"GBp with three decimals rounds at the hundredth", 1234.567, "GBp", 1235, "GBP"},
+		{"GBp rounds once: 525.495 is 525, not 526 via a rounded hundredth", 525.495, "GBp", 525, "GBP"},
+		{"GBP is not a minor unit", 5.25, "GBP", 525, "GBP"},
+		{"gbp in lower case is not a minor unit", 5.25, "gbp", 525, "GBP"},
+		{"gbx in lower case is not a minor unit", 525, "gbx", 52500, "GBX"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, cur := NormalizeYahooPrice(tt.price, tt.reported)
+			if got != tt.want || cur != tt.currency {
+				t.Errorf("NormalizeYahooPrice(%v, %q) = (%d, %q), want (%d, %q)",
+					tt.price, tt.reported, got, cur, tt.want, tt.currency)
+			}
+		})
+	}
+}
+
+func TestYahooProvider_FetchHistory(t *testing.T) {
+	var gotQuery, gotUA, gotPath string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotQuery, gotUA, gotPath = r.URL.RawQuery, r.Header.Get("User-Agent"), r.URL.Path
+		_, _ = w.Write([]byte(`{"chart":{"result":[{"meta":{"symbol":"VOD.L","currency":"GBp","regularMarketPrice":70},
+			"timestamp":[1735828200,1735914600,1736001000],
+			"indicators":{"quote":[{"close":[70.5,null,71.25]}]}}],"error":null}}`))
+	}))
+	defer server.Close()
+	p := &YahooProvider{httpClient: server.Client(), baseURL: server.URL}
+
+	from := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
+	to := time.Date(2025, 2, 1, 0, 0, 0, 0, time.UTC)
+	h, err := p.FetchHistory(context.Background(), "VOD.L", from, to)
+	if err != nil {
+		t.Fatalf("FetchHistory: %v", err)
+	}
+	if gotPath != "/VOD.L" || gotQuery != "interval=1d&period1=1735689600&period2=1738368000" {
+		t.Errorf("request = %s?%s", gotPath, gotQuery)
+	}
+	if gotUA != yahooUA {
+		t.Errorf("User-Agent = %q, want the shared one", gotUA)
+	}
+	if h.Currency != "GBp" {
+		t.Errorf("currency = %q, want raw GBp", h.Currency)
+	}
+	if len(h.Bars) != 2 || h.Bars[0].Close != 70.5 || h.Bars[1].Close != 71.25 {
+		t.Fatalf("bars = %+v, want the null close skipped", h.Bars)
+	}
+	if !h.Bars[0].Time.Equal(time.Unix(1735828200, 0)) || !h.Bars[1].Time.Equal(time.Unix(1736001000, 0)) {
+		t.Errorf("bar times = %v, %v", h.Bars[0].Time, h.Bars[1].Time)
+	}
+}
+
+func TestYahooProvider_FetchHistory_SharesChartErrors(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"chart":{"result":null,"error":{"code":"Not Found","description":"No data"}}}`))
+	}))
+	defer server.Close()
+	p := &YahooProvider{httpClient: server.Client(), baseURL: server.URL}
+	if _, err := p.FetchHistory(context.Background(), "NOPE", time.Unix(0, 0), time.Unix(86400, 0)); err == nil || !strings.Contains(err.Error(), "chart error Not Found") {
+		t.Errorf("err = %v", err)
+	}
+}
+
+func TestForexConverter_FetchHistory_UsesPairTicker(t *testing.T) {
+	var gotPath string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		_, _ = w.Write([]byte(`{"chart":{"result":[{"meta":{"currency":"MYR"},"timestamp":[1735828200],"indicators":{"quote":[{"close":[4.47]}]}}],"error":null}}`))
+	}))
+	defer server.Close()
+	fc := &ForexConverter{httpClient: server.Client(), baseURL: server.URL, rates: map[string]float64{}}
+	h, err := fc.FetchHistory(context.Background(), "usd", "myr", time.Unix(0, 0), time.Unix(86400, 0))
+	if err != nil || gotPath != "/USDMYR=X" || len(h.Bars) != 1 || h.Bars[0].Close != 4.47 {
+		t.Errorf("path=%s h=%+v err=%v", gotPath, h, err)
+	}
+}
+
+func TestYahooProvider_FetchCurrency(t *testing.T) {
+	for reported, want := range map[string]string{"GBp": "GBP", "usd": "USD", "ZAc": "ZAR"} {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			_, _ = fmt.Fprintf(w, `{"chart":{"result":[{"meta":{"currency":%q,"regularMarketPrice":1}}],"error":null}}`, reported)
+		}))
+		p := &YahooProvider{httpClient: server.Client(), baseURL: server.URL}
+		got, err := p.FetchCurrency(context.Background(), "X")
+		server.Close()
+		if err != nil || got != want {
+			t.Errorf("FetchCurrency(%s) = %q, %v; want %q", reported, got, err, want)
 		}
 	}
 }

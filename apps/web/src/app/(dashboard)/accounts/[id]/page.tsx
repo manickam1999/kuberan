@@ -28,7 +28,10 @@ import {
   usePrefetchInvestment,
 } from "@/hooks/use-investments";
 import { useCategories } from "@/hooks/use-categories";
-import { formatCurrency, formatDate, formatPayoutType, formatPayoutFrequency, formatCompounding } from "@/lib/format";
+import { useBaseCurrency } from "@/hooks/use-profile";
+import { Money } from "@/components/ui/money";
+import { TransactionAmount } from "@/components/transactions/transaction-amount";
+import { formatMoney, formatDate, formatPayoutType, formatPayoutFrequency, formatCompounding } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -131,15 +134,19 @@ function AccountDetailSkeleton() {
 
 function TransactionsTableRow({
   transaction,
+  accountId,
   onClick,
 }: {
   transaction: Transaction;
+  accountId: string;
   onClick?: () => void;
 }) {
   const config = TRANSACTION_TYPE_CONFIG[transaction.type];
   const Icon = config.icon;
+  // A transfer into this account is a credit here.
   const isNegative =
-    transaction.type === "expense" || transaction.type === "transfer";
+    transaction.type === "expense" ||
+    (transaction.type === "transfer" && transaction.to_account_id !== accountId);
 
   return (
     <TableRow className={onClick ? "cursor-pointer" : ""} onClick={onClick}>
@@ -167,7 +174,7 @@ function TransactionsTableRow({
       </TableCell>
       <TableCell className={`text-right font-medium ${config.color}`}>
         {isNegative ? "-" : "+"}
-        {formatCurrency(transaction.amount)}
+        <TransactionAmount transaction={transaction} viewAccountId={accountId} />
         <YourShareText transaction={transaction} />
       </TableCell>
     </TableRow>
@@ -176,15 +183,19 @@ function TransactionsTableRow({
 
 function TransactionListItem({
   transaction,
+  accountId,
   onClick,
 }: {
   transaction: Transaction;
+  accountId: string;
   onClick?: () => void;
 }) {
   const config = TRANSACTION_TYPE_CONFIG[transaction.type];
   const Icon = config.icon;
+  // A transfer into this account is a credit here.
   const isNegative =
-    transaction.type === "expense" || transaction.type === "transfer";
+    transaction.type === "expense" ||
+    (transaction.type === "transfer" && transaction.to_account_id !== accountId);
 
   return (
     <div
@@ -213,7 +224,7 @@ function TransactionListItem({
       </div>
       <span className={`text-sm font-medium shrink-0 ml-3 text-right ${config.color}`}>
         {isNegative ? "-" : "+"}
-        {formatCurrency(transaction.amount)}
+        <TransactionAmount transaction={transaction} viewAccountId={accountId} />
         <YourShareText transaction={transaction} />
       </span>
     </div>
@@ -239,6 +250,7 @@ export default function AccountDetailPage() {
   const { data: account, isLoading: accountLoading } = useAccount(accountId);
   const updateAccount = useUpdateAccount(accountId);
   const { hideBalances } = useAuth();
+  const baseCurrency = useBaseCurrency();
   const isInvestmentAccount = account?.type === "investment";
   const { data: transactionsData, isLoading: transactionsLoading } =
     useAccountTransactions(isInvestmentAccount ? "" : accountId, {
@@ -314,7 +326,15 @@ export default function AccountDetailPage() {
             </Badge>
           </div>
           <p className="mt-2 text-3xl font-semibold">
-            {formatCurrency(account.balance, account.currency, hideBalances)}
+            <Money
+              amount={account.balance}
+              currency={account.currency}
+              baseAmount={account.balance_base}
+              fxRate={account.fx_rate}
+              fxStale={account.fx_stale}
+              fxMissing={account.fx_missing}
+              layout="stacked"
+            />
           </p>
           {account.description && (
             <p className="mt-1 text-sm text-muted-foreground">
@@ -397,7 +417,7 @@ export default function AccountDetailPage() {
             <div className="grid gap-4 sm:grid-cols-2">
               <div>
                 <p className="text-sm text-muted-foreground">Principal</p>
-                <p className="font-medium">{formatCurrency(account.fixed_deposit.principal, account.currency, hideBalances)}</p>
+                <p className="font-medium">{formatMoney(account.fixed_deposit.principal, account.currency, hideBalances)}</p>
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">Interest Rate</p>
@@ -427,7 +447,7 @@ export default function AccountDetailPage() {
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">Projected Maturity Value</p>
-                <p className="font-medium">{formatCurrency(account.fixed_deposit.maturity_value, account.currency, hideBalances)}</p>
+                <p className="font-medium">{formatMoney(account.fixed_deposit.maturity_value, account.currency, hideBalances)}</p>
               </div>
               <div className="sm:col-span-2">
                 <p className="text-sm text-muted-foreground">Status</p>
@@ -595,6 +615,7 @@ export default function AccountDetailPage() {
                       <TransactionListItem
                         key={tx.id}
                         transaction={tx}
+                        accountId={accountId}
                         onClick={() => {
                           setSelectedTransaction(tx);
                           setEditTxOpen(true);
@@ -621,6 +642,7 @@ export default function AccountDetailPage() {
                         <TransactionsTableRow
                           key={tx.id}
                           transaction={tx}
+                          accountId={accountId}
                           onClick={() => {
                             setSelectedTransaction(tx);
                             setEditTxOpen(true);
@@ -708,11 +730,16 @@ export default function AccountDetailPage() {
                   </TableHeader>
                   <TableBody>
                     {investments.map((inv) => {
-                      const marketValue = Math.round(
+                      // Native figures stay native; the base figures are used
+                      // for P&L. They are never mixed in one calculation.
+                      const nativeValue = Math.round(
+                        inv.quantity * inv.current_price_native
+                      );
+                      const baseValue = Math.round(
                         inv.quantity * inv.current_price
                       );
-                      const gainLoss = marketValue - inv.cost_basis;
-                      const isPositive = gainLoss >= 0;
+                      const gainLossBase = baseValue - inv.cost_basis_base;
+                      const isPositive = gainLossBase >= 0;
                       return (
                         <TableRow
                           key={inv.id}
@@ -735,20 +762,45 @@ export default function AccountDetailPage() {
                             {inv.quantity}
                           </TableCell>
                           <TableCell className="text-right">
-                            {formatCurrency(inv.current_price, undefined, hideBalances)}
+                            {formatMoney(
+                              inv.current_price_native,
+                              inv.price_currency,
+                              hideBalances
+                            )}
                           </TableCell>
                           <TableCell className="text-right font-medium">
-                            {formatCurrency(marketValue, undefined, hideBalances)}
+                            <Money
+                              amount={nativeValue}
+                              currency={inv.price_currency}
+                              baseAmount={baseValue}
+                              fxRate={inv.fx_rate}
+                              fxStale={inv.fx_stale}
+                              fxMissing={inv.fx_missing}
+                              layout="stacked"
+                              className="items-end"
+                            />
                           </TableCell>
                           <TableCell
                             className={`text-right font-medium ${
-                              isPositive
-                                ? "text-green-600"
-                                : "text-red-600"
+                              inv.fx_missing
+                                ? "text-muted-foreground"
+                                : isPositive
+                                  ? "text-green-600"
+                                  : "text-red-600"
                             }`}
                           >
-                            {isPositive ? "+" : ""}
-                            {formatCurrency(gainLoss, undefined, hideBalances)}
+                            {inv.fx_missing ? (
+                              "—"
+                            ) : (
+                              <>
+                                {isPositive ? "+" : ""}
+                                {formatMoney(
+                                  gainLossBase,
+                                  baseCurrency,
+                                  hideBalances
+                                )}
+                              </>
+                            )}
                           </TableCell>
                         </TableRow>
                       );

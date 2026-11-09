@@ -30,8 +30,11 @@ type Services struct {
 	Investments  services.InvestmentServicer
 	Snapshots    services.PortfolioSnapshotServicer
 	Receivables  services.ReceivableServicer
-	Audit        services.AuditServicer
-	Grants       GrantAuthorizer
+	// FX converts write amounts to the user's base currency for the per-change
+	// ceiling. When nil, a write in a non-base currency is rejected.
+	FX     services.FXServicer
+	Audit  services.AuditServicer
+	Grants GrantAuthorizer
 }
 
 // GrantAuthorizer is the one part of services.OAuthGrantServicer the MCP

@@ -83,16 +83,18 @@ func run() error {
 
 	// Initialize services
 	db := dbManager.DB()
-	userService := services.NewUserService(db)
+	fxService := services.NewFXService(db, appConfig.FXMaxStaleness)
+	userService := services.NewUserService(db, fxService)
 	categoryService := services.NewCategoryService(db)
-	accountService := services.NewAccountService(db, categoryService)
+	accountService := services.NewAccountService(db, services.WithCategoryService(categoryService), services.WithFXService(fxService))
 	ruleService := services.NewRuleService(db, categoryService)
-	transactionService := services.NewTransactionService(db, accountService, ruleService)
-	receivableService := services.NewReceivableService(db, accountService, ruleService)
-	budgetService := services.NewBudgetService(db)
-	investmentService := services.NewInvestmentService(db, accountService)
+	transactionService := services.NewTransactionService(db, accountService, ruleService, services.WithTransactionFXService(fxService))
+	receivableService := services.NewReceivableService(db, accountService, ruleService, services.WithReceivableFXService(fxService))
+	budgetService := services.NewBudgetService(db, services.WithBudgetFXService(fxService))
+	investmentService := services.NewInvestmentService(db, accountService, fxService)
+	importService := services.NewImportService(db, accountService, fxService)
 	securityService := services.NewSecurityService(db)
-	snapshotService := services.NewPortfolioSnapshotService(db)
+	snapshotService := services.NewPortfolioSnapshotService(db, fxService)
 	fdService := services.NewFixedDepositService(db, categoryService)
 	auditService := services.NewAuditService(db)
 	telegramService := services.NewTelegramService(db)
@@ -156,6 +158,8 @@ func run() error {
 	snapshotHandler := handlers.NewPortfolioSnapshotHandler(snapshotService, auditService)
 	fdPipelineHandler := handlers.NewFixedDepositPipelineHandler(fdService, auditService)
 	telegramHandler := handlers.NewTelegramHandler(telegramService, auditService)
+	fxHandler := handlers.NewFXHandler(fxService, auditService)
+	importHandler := handlers.NewImportHandler(importService, auditService, appConfig.MaxUploadBytes)
 
 	// Register custom validators before routes
 	validator.Register()
@@ -178,7 +182,7 @@ func run() error {
 	router.Use(middleware.CORS(appConfig.CORSOrigins))
 	router.Use(middleware.Gzip())
 	// The attachment upload enforces its own (larger) MAX_UPLOAD_BYTES cap.
-	router.Use(middleware.BodySizeLimit(appConfig.MaxBodyBytes, "POST "+handlers.AttachmentUploadRoute))
+	router.Use(middleware.BodySizeLimit(appConfig.MaxBodyBytes, "POST "+handlers.AttachmentUploadRoute, "POST "+handlers.ImportIBKRRoute))
 	router.Use(middleware.ErrorHandler())
 
 	// Swagger documentation (not served in production).
@@ -213,6 +217,8 @@ func run() error {
 		Snapshot:             snapshotHandler,
 		FixedDepositPipeline: fdPipelineHandler,
 		Telegram:             telegramHandler,
+		FX:                   fxHandler,
+		Import:               importHandler,
 		Limits:               handlers.NewRouteLimits(appConfig.RateLimits),
 	}, handlers.RouteSecrets{
 		BotInternalSecret: appConfig.BotInternalSecret,

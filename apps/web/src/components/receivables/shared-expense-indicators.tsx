@@ -1,4 +1,6 @@
-import { formatCurrency } from "@/lib/format";
+import { formatMoney } from "@/lib/format";
+import { useAuth } from "@/hooks/use-auth";
+import { useAccountCurrencies } from "@/hooks/use-accounts";
 import { ReceivableKindBadge } from "./receivable-kind-badge";
 import type { Transaction } from "@/types/models";
 
@@ -22,8 +24,8 @@ export function SharedKindBadge({ transaction }: { transaction: Transaction }) {
 }
 
 /**
- * Muted share line under the amount of a shared expense: "Your share MYR 20",
- * shortened to "Share MYR 20" on phones (the full label stays in the
+ * Muted share line under the amount of a shared expense: "Your share RM 20",
+ * shortened to "Share RM 20" on phones (the full label stays in the
  * accessibility tree), or "All owed back" when nothing is the user's own.
  */
 export function YourShareText({
@@ -33,7 +35,10 @@ export function YourShareText({
   transaction: Transaction;
   className?: string;
 }) {
+  const { hideBalances } = useAuth();
+  const currencyOf = useAccountCurrencies();
   if (!isSharedExpense(transaction)) return null;
+  const currency = currencyOf(transaction.account_id, transaction.account);
   const receivablesTotal = transaction.receivables!.reduce(
     (s, r) => s + r.amount,
     0
@@ -53,7 +58,7 @@ export function YourShareText({
             Share
           </span>
           <span className="sr-only sm:not-sr-only">Your share</span>{" "}
-          {formatCurrency(share)}
+          {formatMoney(share, currency, hideBalances)}
         </>
       )}
     </span>

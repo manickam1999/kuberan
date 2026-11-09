@@ -17,6 +17,8 @@ type Budget struct {
 	Amount     int64        `gorm:"type:bigint;not null" json:"amount"`
 	Period     BudgetPeriod `gorm:"not null" json:"period"`
 	IsActive   bool         `gorm:"default:true" json:"is_active"`
+	// Currency is the ISO 4217 code of Amount (and of progress figures).
+	Currency string `gorm:"size:3;not null" json:"currency"`
 
 	// Relationships
 	Category Category `gorm:"foreignKey:CategoryID" json:"category"`

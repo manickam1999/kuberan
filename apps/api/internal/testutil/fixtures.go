@@ -78,7 +78,7 @@ func CreateTestInvestmentAccount(t *testing.T, db *gorm.DB, userID string) *mode
 		UserID:   userID,
 		Name:     fmt.Sprintf("Test Investment Account %d", nextID()),
 		Type:     models.AccountTypeInvestment,
-		Currency: "USD",
+		Currency: "MYR", // matches the default user base currency and the security fixtures
 		IsActive: true,
 	}
 	if err := db.Create(account).Error; err != nil {
@@ -168,6 +168,7 @@ func CreateTestBudget(t *testing.T, db *gorm.DB, userID, categoryID string) *mod
 		Amount:     10000, // $100.00
 		Period:     models.BudgetPeriodMonthly,
 		IsActive:   true,
+		Currency:   "USD", // matches the USD fixture accounts
 	}
 	if err := db.Create(budget).Error; err != nil {
 		t.Fatalf("failed to create test budget: %v", err)
@@ -189,7 +190,7 @@ func CreateTestSecurityWithParams(t *testing.T, db *gorm.DB, symbol, name string
 		Symbol:    symbol,
 		Name:      name,
 		AssetType: assetType,
-		Currency:  "USD",
+		Currency:  "MYR", // the users' default base currency, so valuation needs no FX rate
 		Exchange:  exchange,
 	}
 	if err := db.Create(sec).Error; err != nil {
@@ -207,6 +208,8 @@ func CreateTestInvestment(t *testing.T, db *gorm.DB, accountID, securityID strin
 		SecurityID: securityID,
 		Quantity:   10.0,
 		CostBasis:  100000, // $1000.00
+		// The default security and user are both MYR, so the base cost equals the cost.
+		CostBasisBase: 100000,
 	}
 	if err := db.Create(inv).Error; err != nil {
 		t.Fatalf("failed to create test investment: %v", err)
@@ -221,6 +224,7 @@ func CreateTestSecurityPrice(t *testing.T, db *gorm.DB, securityID string, price
 	sp := &models.SecurityPrice{
 		SecurityID: securityID,
 		Price:      price,
+		Currency:   "MYR",
 		RecordedAt: recordedAt,
 	}
 	if err := db.Create(sp).Error; err != nil {

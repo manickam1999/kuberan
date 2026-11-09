@@ -12,7 +12,8 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { useChartTheme } from "@/providers/chart-theme-provider";
-import { formatCurrency } from "@/lib/format";
+import { useAuth } from "@/hooks/use-auth";
+import { formatMoney } from "@/lib/format";
 import type { AssetType } from "@/types/models";
 
 const ASSET_TYPE_LABELS: Record<AssetType, string> = {
@@ -37,12 +38,16 @@ const CLEAN_COLORS = [
 interface AssetAllocationChartProps {
   holdingsByType: Record<AssetType, { value: number; count: number }>;
   totalValue: number;
+  /** Currency of `holdingsByType` values and `totalValue` (the portfolio's base). */
+  currency: string;
 }
 
 export function AssetAllocationChart({
   holdingsByType,
   totalValue,
+  currency,
 }: AssetAllocationChartProps) {
+  const { hideBalances } = useAuth();
   const { chartTheme } = useChartTheme();
 
   const { slices, rows } = useMemo(() => {
@@ -101,7 +106,7 @@ export function AssetAllocationChart({
           <ThemedDonut
             data={slices}
             size={200}
-            valueFormatter={(value) => formatCurrency(value)}
+            valueFormatter={(value) => formatMoney(value, currency, hideBalances)}
             totalForPct={totalValue}
             center={
               <>
@@ -130,7 +135,7 @@ export function AssetAllocationChart({
                 </span>
               </span>
               <span className="money shrink-0 font-medium">
-                {formatCurrency(r.value)}
+                {formatMoney(r.value, currency, hideBalances)}
               </span>
               <span className="w-10 shrink-0 text-right text-xs tabular-nums text-muted-foreground">
                 {r.pct.toFixed(0)}%

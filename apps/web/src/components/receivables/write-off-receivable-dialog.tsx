@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { toast } from "sonner";
 import { useWriteOff } from "@/hooks/use-receivables";
-import { formatCurrency } from "@/lib/format";
+import { formatMoney } from "@/lib/format";
 import {
   receivableApiErrorMessage,
   writeOffImpactText,
@@ -69,7 +69,7 @@ function WriteOffForm({
     setError("");
     if (!valid) {
       setError(
-        `Amount must be between 0.01 and ${formatCurrency(receivable.outstanding)}`
+        `Amount must be between 0.01 and ${formatMoney(receivable.outstanding, receivable.currency)}`
       );
       return;
     }
@@ -95,7 +95,7 @@ function WriteOffForm({
         <DialogTitle>Write off</DialogTitle>
         <DialogDescription>
           Forgive what {receivable.counterparty_name} still owes (
-          {formatCurrency(receivable.outstanding)}). It becomes part of your own
+          {formatMoney(receivable.outstanding, receivable.currency)}). It becomes part of your own
           spending. You can undo this later.
         </DialogDescription>
       </DialogHeader>
@@ -106,6 +106,7 @@ function WriteOffForm({
           id="writeoff-amount"
           value={amount}
           onChange={setAmount}
+          currency={receivable.currency}
           disabled={writeOff.isPending}
         />
         {impact && <p className="text-xs text-muted-foreground">{impact}</p>}

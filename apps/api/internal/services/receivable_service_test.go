@@ -779,7 +779,7 @@ func TestDeleteSettlement(t *testing.T) {
 // balances only, so it drops by the full amount and recovers as repayments arrive.
 func TestNetWorthUnaffectedByReceivables(t *testing.T) {
 	e := newRecEnv(t)
-	snap := NewPortfolioSnapshotService(e.db)
+	snap := NewPortfolioSnapshotService(e.db, nil)
 	netWorth := func() int64 {
 		t.Helper()
 		s, err := snap.(*portfolioSnapshotService).computeSnapshot(e.user.ID, time.Now())

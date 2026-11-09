@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"encoding/json"
 	"net/http"
 	"testing"
 	"time"
@@ -16,6 +17,12 @@ import (
 // --- mock investment service ---
 
 type mockInvestmentService struct {
+	// last*: the params the handler passed to the service (phase 3a request fields).
+	lastAdd      services.AddInvestmentParams
+	lastBuy      services.BuyParams
+	lastSell     services.SellParams
+	lastDividend services.DividendParams
+
 	addInvestmentFn             func(userID, accountID, securityID string, quantity float64, purchasePrice int64, walletAddress string, date *time.Time, fee int64, notes string) (*models.Investment, error)
 	getAllInvestmentsFn         func(userID string, status services.InvestmentStatus, page pagination.PageRequest) (*pagination.PageResponse[models.Investment], error)
 	getAccountInvestmentsFn     func(userID, accountID string, page pagination.PageRequest) (*pagination.PageResponse[models.Investment], error)
@@ -28,9 +35,10 @@ type mockInvestmentService struct {
 	getInvestmentTransactionsFn func(userID, investmentID string, page pagination.PageRequest) (*pagination.PageResponse[models.InvestmentTransaction], error)
 }
 
-func (m *mockInvestmentService) AddInvestment(userID, accountID, securityID string, quantity float64, purchasePrice int64, walletAddress string, date *time.Time, fee int64, notes string) (*models.Investment, error) {
+func (m *mockInvestmentService) AddInvestment(userID string, p services.AddInvestmentParams) (*models.Investment, error) {
+	m.lastAdd = p
 	if m.addInvestmentFn != nil {
-		return m.addInvestmentFn(userID, accountID, securityID, quantity, purchasePrice, walletAddress, date, fee, notes)
+		return m.addInvestmentFn(userID, p.AccountID, p.SecurityID, p.Quantity, p.PurchasePrice, p.WalletAddress, p.Date, p.Fee, p.Notes)
 	}
 	return &models.Investment{}, nil
 }
@@ -65,23 +73,26 @@ func (m *mockInvestmentService) GetPortfolio(userID string) (*services.Portfolio
 	return &services.PortfolioSummary{HoldingsByType: map[models.AssetType]services.TypeSummary{}}, nil
 }
 
-func (m *mockInvestmentService) RecordBuy(userID, investmentID string, date time.Time, quantity float64, pricePerUnit, fee int64, notes, fundingAccountID string) (*models.InvestmentTransaction, error) {
+func (m *mockInvestmentService) RecordBuy(userID, investmentID string, p services.BuyParams) (*models.InvestmentTransaction, error) {
+	m.lastBuy = p
 	if m.recordBuyFn != nil {
-		return m.recordBuyFn(userID, investmentID, date, quantity, pricePerUnit, fee, notes, fundingAccountID)
+		return m.recordBuyFn(userID, investmentID, p.Date, p.Quantity, p.PricePerUnit, p.Fee, p.Notes, p.FundingAccountID)
 	}
 	return &models.InvestmentTransaction{}, nil
 }
 
-func (m *mockInvestmentService) RecordSell(userID, investmentID string, date time.Time, quantity float64, pricePerUnit, fee int64, notes, depositAccountID string) (*models.InvestmentTransaction, error) {
+func (m *mockInvestmentService) RecordSell(userID, investmentID string, p services.SellParams) (*models.InvestmentTransaction, error) {
+	m.lastSell = p
 	if m.recordSellFn != nil {
-		return m.recordSellFn(userID, investmentID, date, quantity, pricePerUnit, fee, notes, depositAccountID)
+		return m.recordSellFn(userID, investmentID, p.Date, p.Quantity, p.PricePerUnit, p.Fee, p.Notes, p.DepositAccountID)
 	}
 	return &models.InvestmentTransaction{}, nil
 }
 
-func (m *mockInvestmentService) RecordDividend(userID, investmentID string, date time.Time, amount int64, dividendType, notes string) (*models.InvestmentTransaction, error) {
+func (m *mockInvestmentService) RecordDividend(userID, investmentID string, p services.DividendParams) (*models.InvestmentTransaction, error) {
+	m.lastDividend = p
 	if m.recordDividendFn != nil {
-		return m.recordDividendFn(userID, investmentID, date, amount, dividendType, notes)
+		return m.recordDividendFn(userID, investmentID, p.Date, p.Amount, p.DividendType, p.Notes)
 	}
 	return &models.InvestmentTransaction{}, nil
 }
@@ -831,6 +842,97 @@ func TestInvestmentHandler_GetInvestmentTransactions(t *testing.T) {
 
 		if rec.Code != http.StatusNotFound {
 			t.Fatalf("expected 404, got %d", rec.Code)
+		}
+	})
+}
+
+func TestInvestmentHandler_Phase3aRequestFields(t *testing.T) {
+	const id = "00000000-0000-0000-0000-000000000001"
+	date := `"date":"2025-03-15T00:00:00Z"`
+
+	t.Run("buy passes funding_amount and fx_rate", func(t *testing.T) {
+		svc := &mockInvestmentService{}
+		r := setupInvestmentRouter(NewInvestmentHandler(svc, &mockAuditService{}))
+		rec := doRequest(r, "POST", "/investments/"+id+"/buy",
+			`{`+date+`,"quantity":2,"price_per_unit":1000,"funding_account_id":"acc","funding_amount":9000,"fx_rate":"4.5"}`)
+		if rec.Code != http.StatusCreated {
+			t.Fatalf("expected 201, got %d: %s", rec.Code, rec.Body.String())
+		}
+		if svc.lastBuy.FundingAmount != 9000 || svc.lastBuy.FXRate != "4.5" || svc.lastBuy.FundingAccountID != "acc" {
+			t.Errorf("unexpected params: %+v", svc.lastBuy)
+		}
+	})
+	t.Run("sell passes deposit_amount and fx_rate", func(t *testing.T) {
+		svc := &mockInvestmentService{}
+		r := setupInvestmentRouter(NewInvestmentHandler(svc, &mockAuditService{}))
+		rec := doRequest(r, "POST", "/investments/"+id+"/sell",
+			`{`+date+`,"quantity":2,"price_per_unit":1000,"deposit_account_id":"acc","deposit_amount":8000,"fx_rate":"4.4"}`)
+		if rec.Code != http.StatusCreated {
+			t.Fatalf("expected 201, got %d: %s", rec.Code, rec.Body.String())
+		}
+		if svc.lastSell.DepositAmount != 8000 || svc.lastSell.FXRate != "4.4" {
+			t.Errorf("unexpected params: %+v", svc.lastSell)
+		}
+	})
+	t.Run("dividend passes fee, deposit and fx_rate", func(t *testing.T) {
+		svc := &mockInvestmentService{}
+		r := setupInvestmentRouter(NewInvestmentHandler(svc, &mockAuditService{}))
+		rec := doRequest(r, "POST", "/investments/"+id+"/dividend",
+			`{`+date+`,"amount":500,"fee":50,"deposit_account_id":"acc","deposit_amount":2000,"fx_rate":"4.4"}`)
+		if rec.Code != http.StatusCreated {
+			t.Fatalf("expected 201, got %d: %s", rec.Code, rec.Body.String())
+		}
+		d := svc.lastDividend
+		if d.Fee != 50 || d.DepositAccountID != "acc" || d.DepositAmount != 2000 || d.FXRate != "4.4" {
+			t.Errorf("unexpected params: %+v", d)
+		}
+	})
+	t.Run("add investment passes fx_rate", func(t *testing.T) {
+		svc := &mockInvestmentService{}
+		r := setupInvestmentRouter(NewInvestmentHandler(svc, &mockAuditService{}))
+		rec := doRequest(r, "POST", "/investments",
+			`{"account_id":"00000000-0000-0000-0000-000000000001","security_id":"00000000-0000-0000-0000-000000000002","quantity":1,"purchase_price":100,"fx_rate":"4.2"}`)
+		if rec.Code != http.StatusCreated {
+			t.Fatalf("expected 201, got %d: %s", rec.Code, rec.Body.String())
+		}
+		if svc.lastAdd.FXRate != "4.2" {
+			t.Errorf("unexpected params: %+v", svc.lastAdd)
+		}
+	})
+	t.Run("rejects non-positive funding_amount and negative fee", func(t *testing.T) {
+		svc := &mockInvestmentService{}
+		r := setupInvestmentRouter(NewInvestmentHandler(svc, &mockAuditService{}))
+		for path, body := range map[string]string{
+			"/investments/" + id + "/buy":      `{` + date + `,"quantity":1,"price_per_unit":100,"funding_amount":-5}`,
+			"/investments/" + id + "/sell":     `{` + date + `,"quantity":1,"price_per_unit":100,"deposit_amount":-5}`,
+			"/investments/" + id + "/dividend": `{` + date + `,"amount":100,"fee":-1}`,
+		} {
+			if rec := doRequest(r, "POST", path, body); rec.Code != http.StatusBadRequest {
+				t.Errorf("%s: expected 400, got %d", path, rec.Code)
+			}
+		}
+	})
+	t.Run("error details are rendered", func(t *testing.T) {
+		svc := &mockInvestmentService{recordBuyFn: func(_, _ string, _ time.Time, _ float64, _, _ int64, _, _ string) (*models.InvestmentTransaction, error) {
+			return nil, apperrors.WithDetails(apperrors.ErrFXAmountRequired, map[string]any{"currency": "MYR", "field": "funding_amount", "suggested_amount": int64(447120)})
+		}}
+		r := setupInvestmentRouter(NewInvestmentHandler(svc, &mockAuditService{}))
+		rec := doRequest(r, "POST", "/investments/"+id+"/buy", `{`+date+`,"quantity":1,"price_per_unit":100,"funding_account_id":"acc"}`)
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("expected 400, got %d", rec.Code)
+		}
+		var body struct {
+			Error struct {
+				Code    string         `json:"code"`
+				Details map[string]any `json:"details"`
+			} `json:"error"`
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+			t.Fatal(err)
+		}
+		if body.Error.Code != "FX_AMOUNT_REQUIRED" || body.Error.Details["currency"] != "MYR" ||
+			body.Error.Details["field"] != "funding_amount" || body.Error.Details["suggested_amount"] != float64(447120) {
+			t.Errorf("unexpected error body: %s", rec.Body.String())
 		}
 	})
 }

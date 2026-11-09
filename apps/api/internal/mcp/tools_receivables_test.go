@@ -95,6 +95,7 @@ func TestListReceivables(t *testing.T) {
 		resp := pagination.NewPageResponse([]models.Receivable{{
 			Base:             models.Base{ID: "r1"},
 			CounterpartyName: "Alice Smith",
+			Currency:         "USD",
 			Kind:             models.ReceivableKindSplit,
 			Amount:           3000,
 			PaidAmount:       1000,
@@ -120,9 +121,9 @@ func TestListReceivables(t *testing.T) {
 	}
 	out := resultText(t, res)
 	for _, want := range []string{
-		"Alice Smith", "[split]", "$30.00", "partially_paid",
-		"paid $10.00, written off $5.00, outstanding $15.00",
-		`Expense: "Dinner" on 2026-10-05 (total $90.00)`, "ID: r1",
+		"Alice Smith", "[split]", "USD 30.00", "partially_paid",
+		"paid USD 10.00, written off USD 5.00, outstanding USD 15.00",
+		`Expense: "Dinner" on 2026-10-05 (total USD 90.00)`, "ID: r1",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("output missing %q:\n%s", want, out)
@@ -165,7 +166,11 @@ func TestGetReceivablesSummary(t *testing.T) {
 	svc := mockReceivables{summaryFn: func(string) (*services.ReceivableSummary, error) {
 		return &services.ReceivableSummary{
 			TotalOutstanding: 4500,
-			ByKind:           []services.ReceivableKindTotal{{Kind: models.ReceivableKindSplit, Outstanding: 4500, OpenCount: 2}},
+			Currency:         "MYR",
+			ByCurrency: []services.ReceivableCurrencyTotal{
+				{Currency: "MYR", Outstanding: 1500}, {Currency: "USD", Outstanding: 750},
+			},
+			ByKind: []services.ReceivableKindTotal{{Kind: models.ReceivableKindSplit, Outstanding: 4500, OpenCount: 2}},
 			ByCounterparty: []services.ReceivableCounterpartyTotal{
 				{CounterpartyName: "Alice", Outstanding: 3000, OpenCount: 1, OldestDate: time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)},
 				{CounterpartyName: "Bob", Outstanding: 1500, OpenCount: 1, OldestDate: time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)},
@@ -179,8 +184,9 @@ func TestGetReceivablesSummary(t *testing.T) {
 	}
 	out := resultText(t, res)
 	for _, want := range []string{
-		"$45.00 outstanding", "NOT included in net worth", "By counterparty:",
-		"Alice", "$30.00", "oldest 2026-09-01", "By kind:", "split", "(2 open)",
+		"MYR 45.00 outstanding (total in MYR)", "NOT included in net worth", "By counterparty (in MYR):",
+		"By currency (not converted):", "USD 7.50", "MYR 15.00",
+		"Alice", "MYR 30.00", "oldest 2026-09-01", "By kind (in MYR):", "split", "(2 open)",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("output missing %q:\n%s", want, out)
@@ -242,9 +248,9 @@ func TestListTransactionsSharedAndReimbursementOutput(t *testing.T) {
 	date := time.Date(2026, 10, 5, 0, 0, 0, 0, time.UTC)
 	svc := mockTransactions{listFn: func(_ string, p pagination.PageRequest, _ services.TransactionFilter) (*pagination.PageResponse[models.Transaction], error) {
 		resp := pagination.NewPageResponse([]models.Transaction{
-			{Base: models.Base{ID: "t1"}, Type: models.TransactionTypeExpense, Amount: 6000, PersonalAmount: &personal, Description: "Dinner", Date: date},
-			{Base: models.Base{ID: "t2"}, Type: models.TransactionTypeReimbursement, Amount: 2000, Description: "Repayment from Alice", Date: date},
-			{Base: models.Base{ID: "t3"}, Type: models.TransactionTypeExpense, Amount: 500, Description: "Coffee", Date: date},
+			{Base: models.Base{ID: "t1"}, Type: models.TransactionTypeExpense, Amount: 6000, PersonalAmount: &personal, Description: "Dinner", Date: date, Account: models.Account{Name: "Wallet", Currency: "USD"}},
+			{Base: models.Base{ID: "t2"}, Type: models.TransactionTypeReimbursement, Amount: 2000, Description: "Repayment from Alice", Date: date, Account: models.Account{Name: "Wallet", Currency: "USD"}},
+			{Base: models.Base{ID: "t3"}, Type: models.TransactionTypeExpense, Amount: 500, Description: "Coffee", Date: date, Account: models.Account{Name: "Wallet", Currency: "USD"}},
 		}, p.Page, p.PageSize, 3)
 		return &resp, nil
 	}}
@@ -254,7 +260,7 @@ func TestListTransactionsSharedAndReimbursementOutput(t *testing.T) {
 		t.Fatalf("unexpected failure: %v %v", err, res)
 	}
 	out := resultText(t, res)
-	if !strings.Contains(out, "Shared expense: your share $20.00 of $60.00") {
+	if !strings.Contains(out, "Shared expense: your share USD 20.00 of USD 60.00") {
 		t.Errorf("missing shared note:\n%s", out)
 	}
 	if !strings.Contains(out, "Repayment received for a shared expense (not income)") {
@@ -268,9 +274,9 @@ func TestListTransactionsSharedAndReimbursementOutput(t *testing.T) {
 func TestGetTopExpensesShowsEffectiveAmount(t *testing.T) {
 	personal := int64(2000)
 	svc := mockTransactions{topFn: func(string, time.Time, time.Time, int, *string) (*services.TopExpenses, error) {
-		return &services.TopExpenses{Items: []services.TopExpenseItem{
-			{Description: "Group dinner", Amount: 9000, PersonalAmount: &personal, CategoryName: "Food", AccountName: "Cash", Date: time.Date(2026, 10, 5, 0, 0, 0, 0, time.UTC)},
-			{Description: "Shoes", Amount: 1500, CategoryName: "Shopping", AccountName: "Cash", Date: time.Date(2026, 10, 6, 0, 0, 0, 0, time.UTC)},
+		return &services.TopExpenses{Currency: "USD", Items: []services.TopExpenseItem{
+			{Description: "Group dinner", Amount: 9000, PersonalAmount: &personal, Currency: "USD", AmountBase: 2000, CategoryName: "Food", AccountName: "Cash", Date: time.Date(2026, 10, 5, 0, 0, 0, 0, time.UTC)},
+			{Description: "Shoes", Amount: 1500, Currency: "USD", AmountBase: 1500, CategoryName: "Shopping", AccountName: "Cash", Date: time.Date(2026, 10, 6, 0, 0, 0, 0, time.UTC)},
 		}}, nil
 	}}
 	s := &Server{services: Services{Transactions: svc}}
@@ -289,13 +295,13 @@ func TestGetTopExpensesShowsEffectiveAmount(t *testing.T) {
 			dinnerLine = line
 		}
 	}
-	if !strings.Contains(dinnerLine, "$20.00") || strings.Contains(dinnerLine, "$90.00") {
+	if !strings.Contains(dinnerLine, "USD 20.00") || strings.Contains(dinnerLine, "USD 90.00") {
 		t.Errorf("shared row must show the effective amount, got line %q", dinnerLine)
 	}
-	if !strings.Contains(text, "your share $20.00 of $90.00") {
+	if !strings.Contains(text, "your share USD 20.00 of USD 90.00") {
 		t.Errorf("missing share note in:\n%s", text)
 	}
-	if !strings.Contains(text, "$15.00") {
+	if !strings.Contains(text, "USD 15.00") {
 		t.Errorf("unshared row must show its full amount in:\n%s", text)
 	}
 }

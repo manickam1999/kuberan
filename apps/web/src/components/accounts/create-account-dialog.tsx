@@ -13,6 +13,8 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { useBaseCurrency } from "@/hooks/use-profile";
+import { REPORTING_CURRENCIES } from "@/lib/currencies";
 import { CurrencyInput } from "@/components/ui/currency-input";
 import {
   Dialog,
@@ -31,8 +33,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import type { PayoutType, PayoutFrequency, Compounding } from "@/types/models";
-
-const CURRENCIES = ["MYR", "USD", "EUR", "GBP", "CAD", "AUD", "JPY", "INR"];
 
 function getErrorMessage(error: unknown): string {
   if (error instanceof ApiClientError) {
@@ -55,20 +55,23 @@ export function CreateAccountDialog({
   // Cash account fields
   const [cashName, setCashName] = useState("");
   const [cashDescription, setCashDescription] = useState("");
-  const [cashCurrency, setCashCurrency] = useState("MYR");
+  // null = follow the reporting currency until the user picks one.
+  const [cashCurrencyPick, setCashCurrency] = useState<string | null>(null);
   const [cashBalance, setCashBalance] = useState(0);
 
   // Investment account fields
   const [investName, setInvestName] = useState("");
   const [investDescription, setInvestDescription] = useState("");
-  const [investCurrency, setInvestCurrency] = useState("MYR");
+  // null = follow the reporting currency until the user picks one.
+  const [investCurrencyPick, setInvestCurrency] = useState<string | null>(null);
   const [investBroker, setInvestBroker] = useState("");
   const [investAccountNumber, setInvestAccountNumber] = useState("");
 
   // Credit card account fields
   const [ccName, setCcName] = useState("");
   const [ccDescription, setCcDescription] = useState("");
-  const [ccCurrency, setCcCurrency] = useState("MYR");
+  // null = follow the reporting currency until the user picks one.
+  const [ccCurrencyPick, setCcCurrency] = useState<string | null>(null);
   const [ccCreditLimit, setCcCreditLimit] = useState(0);
   const [ccInterestRate, setCcInterestRate] = useState("");
   const [ccDueDate, setCcDueDate] = useState("");
@@ -93,6 +96,19 @@ export function CreateAccountDialog({
   const createCreditCard = useCreateCreditCardAccount();
   const createFD = useCreateFixedDepositAccount();
 
+  const baseCurrency = useBaseCurrency();
+  const cashCurrency = cashCurrencyPick ?? baseCurrency;
+  const investCurrency = investCurrencyPick ?? baseCurrency;
+  const ccCurrency = ccCurrencyPick ?? baseCurrency;
+  const currencyOptions = (selected: string) =>
+    Array.from(
+      new Set([
+        baseCurrency,
+        ...REPORTING_CURRENCIES.map((c) => c.code),
+        selected,
+      ])
+    );
+
   const { data: accountsData } = useAccounts({ page_size: 100 });
   const cashAccounts = (accountsData?.data ?? []).filter(
     (a) => a.type === "cash" && a.is_active
@@ -107,16 +123,16 @@ export function CreateAccountDialog({
   function resetForm() {
     setCashName("");
     setCashDescription("");
-    setCashCurrency("MYR");
+    setCashCurrency(null);
     setCashBalance(0);
     setInvestName("");
     setInvestDescription("");
-    setInvestCurrency("MYR");
+    setInvestCurrency(null);
     setInvestBroker("");
     setInvestAccountNumber("");
     setCcName("");
     setCcDescription("");
-    setCcCurrency("MYR");
+    setCcCurrency(null);
     setCcCreditLimit(0);
     setCcInterestRate("");
     setCcDueDate("");
@@ -312,7 +328,7 @@ export function CreateAccountDialog({
     }
 
     const currency =
-      cashAccounts.find((a) => a.id === fdSourceAccountId)?.currency ?? "MYR";
+      cashAccounts.find((a) => a.id === fdSourceAccountId)?.currency ?? baseCurrency;
 
     createFD.mutate(
       {
@@ -407,7 +423,7 @@ export function CreateAccountDialog({
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {CURRENCIES.map((c) => (
+                    {currencyOptions(cashCurrency).map((c) => (
                       <SelectItem key={c} value={c}>
                         {c}
                       </SelectItem>
@@ -421,6 +437,7 @@ export function CreateAccountDialog({
                   id="cash-balance"
                   value={cashBalance}
                   onChange={setCashBalance}
+                  currency={cashCurrency}
                   placeholder="0.00"
                   disabled={isSubmitting}
                 />
@@ -471,7 +488,7 @@ export function CreateAccountDialog({
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {CURRENCIES.map((c) => (
+                    {currencyOptions(investCurrency).map((c) => (
                       <SelectItem key={c} value={c}>
                         {c}
                       </SelectItem>
@@ -547,7 +564,7 @@ export function CreateAccountDialog({
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {CURRENCIES.map((c) => (
+                    {currencyOptions(ccCurrency).map((c) => (
                       <SelectItem key={c} value={c}>
                         {c}
                       </SelectItem>
@@ -561,6 +578,7 @@ export function CreateAccountDialog({
                   id="cc-credit-limit"
                   value={ccCreditLimit}
                   onChange={setCcCreditLimit}
+                  currency={ccCurrency}
                   placeholder="0.00"
                   disabled={isSubmitting}
                 />
@@ -655,7 +673,7 @@ export function CreateAccountDialog({
                   id="fd-principal"
                   value={fdPrincipal}
                   onChange={setFdPrincipal}
-                  symbol={cashAccounts.find((a) => a.id === fdSourceAccountId)?.currency}
+                  currency={cashAccounts.find((a) => a.id === fdSourceAccountId)?.currency ?? baseCurrency}
                   placeholder="0.00"
                   disabled={isSubmitting}
                 />

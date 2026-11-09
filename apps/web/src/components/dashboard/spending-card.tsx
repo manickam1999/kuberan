@@ -17,7 +17,9 @@ import { useSpendingByCategory } from "@/hooks/use-transactions";
 import { useActiveMonth } from "@/hooks/use-active-month";
 import { useChartTheme } from "@/providers/chart-theme-provider";
 import { useAuth } from "@/hooks/use-auth";
-import { formatCurrency } from "@/lib/format";
+import { formatMoney } from "@/lib/format";
+import { useBaseCurrency } from "@/hooks/use-profile";
+import { FxNotice } from "@/components/ui/fx-notice";
 
 const TOP_N = 5;
 const OTHERS_CLEAN_COLOR = "#8b8b95";
@@ -39,6 +41,9 @@ export function SpendingCard(props: SpendingCardProps) {
       ? !!props.isActiveMonthDefault
       : !active.isCurrentMonth;
   const { data, isLoading } = useSpendingByCategory(fromDate, toDate);
+  const baseCurrency = useBaseCurrency();
+  // The response's currency is the base: the unit of every amount below.
+  const currency = data?.currency ?? baseCurrency;
   const { chartTheme } = useChartTheme();
   const { hideBalances } = useAuth();
 
@@ -118,6 +123,12 @@ export function SpendingCard(props: SpendingCardProps) {
               {monthLabel}
               {showLatestActivityHint && " · latest activity"}
             </CardDescription>
+            <FxNotice
+              fxMissing={data.fx_missing}
+              unconverted={data.unconverted}
+              variant="inline"
+              className="mt-1"
+            />
           </div>
           <span className="text-xs text-muted-foreground">
             {data.items.length} categories
@@ -128,12 +139,12 @@ export function SpendingCard(props: SpendingCardProps) {
         <ThemedDonut
           data={slices}
           size={200}
-          valueFormatter={(value) => formatCurrency(value, undefined, hideBalances)}
+          valueFormatter={(value) => formatMoney(value, currency, hideBalances)}
           totalForPct={data.total_spent}
           center={
             <>
               <span className="text-sm font-semibold tabular-nums">
-                {formatCurrency(data.total_spent, undefined, hideBalances)}
+                {formatMoney(data.total_spent, currency, hideBalances)}
               </span>
               <span className="text-[10px] text-muted-foreground">spent</span>
             </>
@@ -152,7 +163,7 @@ export function SpendingCard(props: SpendingCardProps) {
                   <span className="truncate">{b.name}</span>
                 </span>
                 <span className="money shrink-0 font-medium">
-                  {formatCurrency(b.value, undefined, hideBalances)}
+                  {formatMoney(b.value, currency, hideBalances)}
                 </span>
               </div>
               <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">

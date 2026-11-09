@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/driver/sqlite"
@@ -65,6 +66,7 @@ func setupIsolatedDB(t *testing.T) *gorm.DB {
 		&models.Budget{},
 		&models.Security{},
 		&models.SecurityPrice{},
+		&models.FXRate{},
 		&models.PortfolioSnapshot{},
 		&models.Investment{},
 		&models.InvestmentTransaction{},
@@ -92,16 +94,18 @@ func setupApp(t *testing.T) *testApp {
 	db := setupIsolatedDB(t)
 
 	// Services
-	userService := services.NewUserService(db)
+	fxService := services.NewFXService(db, 168*time.Hour)
+	userService := services.NewUserService(db, fxService)
 	categoryService := services.NewCategoryService(db)
-	accountService := services.NewAccountService(db, categoryService)
+	accountService := services.NewAccountService(db, services.WithCategoryService(categoryService), services.WithFXService(fxService))
 	ruleService := services.NewRuleService(db, categoryService)
-	transactionService := services.NewTransactionService(db, accountService, ruleService)
-	receivableService := services.NewReceivableService(db, accountService, ruleService)
-	budgetService := services.NewBudgetService(db)
-	investmentService := services.NewInvestmentService(db, accountService)
+	transactionService := services.NewTransactionService(db, accountService, ruleService, services.WithTransactionFXService(fxService))
+	receivableService := services.NewReceivableService(db, accountService, ruleService, services.WithReceivableFXService(fxService))
+	budgetService := services.NewBudgetService(db, services.WithBudgetFXService(fxService))
+	investmentService := services.NewInvestmentService(db, accountService, fxService)
+	importService := services.NewImportService(db, accountService, fxService)
 	securityService := services.NewSecurityService(db)
-	snapshotService := services.NewPortfolioSnapshotService(db)
+	snapshotService := services.NewPortfolioSnapshotService(db, fxService)
 	auditService := services.NewAuditService(db)
 	attachmentService := services.NewAttachmentService(db, storage.NewMemBlobStore(), services.AttachmentLimits{
 		MaxUploadBytes:      testMaxUploadBytes,
@@ -127,7 +131,7 @@ func setupApp(t *testing.T) *testApp {
 	router.Use(middleware.SecurityHeaders(false))
 	router.Use(middleware.CORS([]string{"http://localhost:3000"}))
 	router.Use(middleware.Gzip())
-	router.Use(middleware.BodySizeLimit(middleware.DefaultMaxBodyBytes, "POST "+handlers.AttachmentUploadRoute))
+	router.Use(middleware.BodySizeLimit(middleware.DefaultMaxBodyBytes, "POST "+handlers.AttachmentUploadRoute, "POST "+handlers.ImportIBKRRoute))
 	router.Use(middleware.ErrorHandler())
 
 	handlers.RegisterRoutes(router, handlers.Routes{
@@ -146,6 +150,8 @@ func setupApp(t *testing.T) *testApp {
 		Snapshot:             handlers.NewPortfolioSnapshotHandler(snapshotService, auditService),
 		FixedDepositPipeline: handlers.NewFixedDepositPipelineHandler(fdService, auditService),
 		Telegram:             handlers.NewTelegramHandler(telegramService, auditService),
+		FX:                   handlers.NewFXHandler(fxService, auditService),
+		Import:               handlers.NewImportHandler(importService, auditService, testMaxUploadBytes),
 	}, handlers.RouteSecrets{
 		BotInternalSecret: "test-bot-secret",
 		PipelineAPIKey:    "test-pipeline-key",
@@ -208,7 +214,7 @@ func (app *testApp) pipelineRequest(method, path, body string) *httptest.Respons
 // createSecurity creates a security via the pipeline API and returns the security ID.
 func (app *testApp) createSecurity(t *testing.T, symbol, name, assetType string) string {
 	t.Helper()
-	body := fmt.Sprintf(`{"symbol":%q,"name":%q,"asset_type":%q}`, symbol, name, assetType)
+	body := fmt.Sprintf(`{"symbol":%q,"name":%q,"asset_type":%q,"currency":"MYR"}`, symbol, name, assetType)
 	rec := app.pipelineRequest("POST", "/api/v1/pipeline/securities", body)
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("create security failed: %d %s", rec.Code, rec.Body.String())
@@ -239,6 +245,17 @@ func (app *testApp) registerUser(t *testing.T, email, password string) (accessTo
 	result := parseJSON(t, rec)
 	user := result["user"].(map[string]interface{})
 	return result["access_token"].(string), refreshCookieValue(t, rec), user["id"].(string)
+}
+
+// registerUserUSD registers a user whose base currency is USD, for tests whose
+// USD accounts must aggregate without exchange rates.
+func (app *testApp) registerUserUSD(t *testing.T, email, password string) (accessToken, refreshToken, userID string) {
+	t.Helper()
+	accessToken, refreshToken, userID = app.registerUser(t, email, password)
+	if err := app.DB.Model(&models.User{}).Where("id = ?", userID).Update("base_currency", "USD").Error; err != nil {
+		t.Fatalf("set base currency: %v", err)
+	}
+	return accessToken, refreshToken, userID
 }
 
 // refreshCookieValue returns the refresh token set in the kuberan_refresh

@@ -664,11 +664,12 @@ func TestAuthHandler_GetProfile(t *testing.T) {
 		userSvc := &mockUserService{
 			getUserByIDFn: func(id string) (*models.User, error) {
 				return &models.User{
-					Base:        models.Base{ID: id},
-					Email:       "test@example.com",
-					FirstName:   "John",
-					LastName:    "Doe",
-					LastLoginAt: &now,
+					Base:         models.Base{ID: id},
+					Email:        "test@example.com",
+					FirstName:    "John",
+					LastName:     "Doe",
+					LastLoginAt:  &now,
+					BaseCurrency: "MYR",
 				}, nil
 			},
 		}
@@ -687,6 +688,9 @@ func TestAuthHandler_GetProfile(t *testing.T) {
 		}
 		if user["first_name"] != "John" {
 			t.Errorf("expected John, got %v", user["first_name"])
+		}
+		if user["base_currency"] != "MYR" {
+			t.Errorf("expected base_currency MYR, got %v", user["base_currency"])
 		}
 	})
 
@@ -815,6 +819,115 @@ func TestAuthHandler_UpdateProfileSettings(t *testing.T) {
 			t.Errorf("expected both settings, got %+v", got)
 		}
 	})
+
+	t.Run("base_currency alone is a valid update and is audited with old and new", func(t *testing.T) {
+		var calls []services.ProfileSettingsUpdate
+		userSvc := recordUpdates(&calls)
+		current := "MYR"
+		userSvc.getUserByIDFn = func(id string) (*models.User, error) {
+			return &models.User{Base: models.Base{ID: id}, BaseCurrency: current}, nil
+		}
+		userSvc.updateProfileSettingsFn = func(_ string, update services.ProfileSettingsUpdate) error {
+			calls = append(calls, update)
+			current = "SGD"
+			return nil
+		}
+		audit := &recordingAudit{}
+		r := setupAuthRouter(NewAuthHandler(userSvc, audit))
+
+		rec := doRequest(r, "PATCH", "/profile", `{"base_currency":"SGD"}`)
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+		}
+		if len(calls) != 1 || calls[0].BaseCurrency == nil || *calls[0].BaseCurrency != "SGD" {
+			t.Fatalf("expected a base_currency=SGD update, got %+v", calls)
+		}
+		if e := audit.only(t); e.action != "UPDATE_BASE_CURRENCY" || e.changes["old"] != "MYR" || e.changes["new"] != "SGD" {
+			t.Errorf("unexpected audit entry %+v", e)
+		}
+		user := parseJSON(t, rec)["user"].(map[string]interface{})
+		if user["base_currency"] != "SGD" {
+			t.Errorf("expected base_currency SGD in the response, got %v", user["base_currency"])
+		}
+	})
+
+	t.Run("base_currency alongside another setting writes both audit entries", func(t *testing.T) {
+		var calls []services.ProfileSettingsUpdate
+		audit := &recordingAudit{}
+		r := setupAuthRouter(NewAuthHandler(recordUpdates(&calls), audit))
+
+		rec := doRequest(r, "PATCH", "/profile", `{"hide_balances":true,"base_currency":"EUR"}`)
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+		}
+		audit.mu.Lock()
+		defer audit.mu.Unlock()
+		if len(audit.entries) != 2 || audit.entries[0].action != "UPDATE_PROFILE" || audit.entries[1].action != "UPDATE_BASE_CURRENCY" {
+			t.Errorf("unexpected audit entries %+v", audit.entries)
+		}
+		if _, leaked := audit.entries[0].changes["base_currency"]; leaked {
+			t.Error("base_currency must only be audited as UPDATE_BASE_CURRENCY")
+		}
+	})
+
+	t.Run("unsupported base_currency is rejected by the service", func(t *testing.T) {
+		userSvc := &mockUserService{
+			updateProfileSettingsFn: func(_ string, _ services.ProfileSettingsUpdate) error {
+				return apperrors.ErrUnsupportedCurrency
+			},
+		}
+		audit := &recordingAudit{}
+		r := setupAuthRouter(NewAuthHandler(userSvc, audit))
+
+		rec := doRequest(r, "PATCH", "/profile", `{"base_currency":"JPY"}`)
+
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("expected 400, got %d: %s", rec.Code, rec.Body.String())
+		}
+		assertErrorCode(t, parseJSON(t, rec), "UNSUPPORTED_CURRENCY")
+		audit.assertNone(t)
+	})
+
+	t.Run("locked base_currency returns 409", func(t *testing.T) {
+		userSvc := &mockUserService{
+			updateProfileSettingsFn: func(_ string, _ services.ProfileSettingsUpdate) error {
+				return apperrors.ErrBaseCurrencyLocked
+			},
+		}
+		audit := &recordingAudit{}
+		r := setupAuthRouter(NewAuthHandler(userSvc, audit))
+
+		rec := doRequest(r, "PATCH", "/profile", `{"base_currency":"USD"}`)
+
+		if rec.Code != http.StatusConflict {
+			t.Fatalf("expected 409, got %d: %s", rec.Code, rec.Body.String())
+		}
+		assertErrorCode(t, parseJSON(t, rec), "BASE_CURRENCY_LOCKED")
+		audit.assertNone(t)
+	})
+
+	for name, body := range map[string]string{
+		"not an ISO code":          `{"base_currency":"ZZZ"}`,
+		"lower-case code":          `{"base_currency":"myr"}`,
+		"wrong length":             `{"base_currency":"US"}`,
+		"non-string base_currency": `{"base_currency":5}`,
+	} {
+		t.Run("returns 400 for base_currency "+name, func(t *testing.T) {
+			var calls []services.ProfileSettingsUpdate
+			r := setupAuthRouter(NewAuthHandler(recordUpdates(&calls), &mockAuditService{}))
+
+			rec := doRequest(r, "PATCH", "/profile", body)
+
+			if rec.Code != http.StatusBadRequest {
+				t.Fatalf("expected 400, got %d: %s", rec.Code, rec.Body.String())
+			}
+			if len(calls) != 0 {
+				t.Errorf("expected no service call, got %+v", calls)
+			}
+		})
+	}
 
 	for name, body := range map[string]string{
 		"no setting":          `{}`,

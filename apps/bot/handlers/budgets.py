@@ -2,15 +2,19 @@ from telegram import Update
 from telegram.constants import ParseMode
 from telegram.ext import ContextTypes
 from api_client import KuberanAPIClient
-from handlers.common import describe_error, resolve_linked_user
+from handlers.common import describe_error, get_base_currency, resolve_linked_user
 from utils.formatting import esc, format_currency, format_percentage
 import logging
 
 logger = logging.getLogger(__name__)
 
 
-def format_budgets_message(budgets: list, progress_by_budget: dict) -> str:
-    """Build the /budgets message (HTML)."""
+def format_budgets_message(budgets: list, progress_by_budget: dict, base_currency: str) -> str:
+    """Build the /budgets message (HTML).
+
+    Each budget is shown in its own currency (the progress entry's currency
+    when present, else the budget's, else the base currency).
+    """
     message = "📊 <b>Your Budgets</b>\n\n"
 
     for budget in budgets:
@@ -22,6 +26,9 @@ def format_budgets_message(budgets: list, progress_by_budget: dict) -> str:
         period = esc(budget.get('period', 'monthly'))
 
         progress = progress_by_budget.get(budget.get('id'))
+        currency = (
+            (progress or {}).get('currency') or budget.get('currency') or base_currency
+        )
         if progress:
             spent = progress.get('spent', 0)
             remaining = progress.get('remaining', 0)
@@ -30,13 +37,13 @@ def format_budgets_message(budgets: list, progress_by_budget: dict) -> str:
             status_emoji = "✅" if percentage < 80 else "⚠️" if percentage < 100 else "🚨"
 
             message += f"{status_emoji} <b>{name}</b> ({period})\n"
-            message += f"Budget: {esc(format_currency(amount))}\n"
-            message += f"Spent: {esc(format_currency(spent))} ({format_percentage(percentage)})\n"
-            message += f"Remaining: {esc(format_currency(remaining))}\n\n"
+            message += f"Budget: {esc(format_currency(amount, currency))}\n"
+            message += f"Spent: {esc(format_currency(spent, currency))} ({format_percentage(percentage)})\n"
+            message += f"Remaining: {esc(format_currency(remaining, currency))}\n\n"
         else:
             # No matching progress entry; show budget info only.
             message += f"📋 <b>{name}</b> ({period})\n"
-            message += f"Budget: {esc(format_currency(amount))}\n\n"
+            message += f"Budget: {esc(format_currency(amount, currency))}\n\n"
 
     return message
 
@@ -66,8 +73,9 @@ def handle(api_client: KuberanAPIClient):
                 if p.get('budget_id')
             }
 
+            base_currency = await get_base_currency(user_client)
             await update.message.reply_text(
-                format_budgets_message(budgets, progress_by_budget),
+                format_budgets_message(budgets, progress_by_budget, base_currency),
                 parse_mode=ParseMode.HTML,
             )
 

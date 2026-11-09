@@ -5,7 +5,21 @@ import type {
   RuleCondition,
 } from "@/types/models";
 import type { RuleConditionInput } from "@/types/api";
-import { formatCurrency } from "@/lib/format";
+import { formatMoney } from "@/lib/format";
+
+/**
+ * Rules carry no currency of their own (an amount condition is compared with
+ * the raw amount, whatever the account), so a bare number is shown unless the
+ * caller knows one.
+ */
+function formatRuleAmount(cents: number, currency?: string): string {
+  return currency
+    ? formatMoney(cents, currency)
+    : (cents / 100).toLocaleString("en-US", {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      });
+}
 
 // Operators valid for each field, in display order. Mirrors the backend matrix.
 export const OPERATORS_BY_FIELD: Record<RuleField, RuleOperator[]> = {
@@ -70,18 +84,20 @@ export function isConditionComplete(c: RuleConditionInput): boolean {
  */
 export function summarizeCondition(
   c: RuleCondition,
-  accountName?: (id: string) => string
+  accountName?: (id: string) => string,
+  currency?: string
 ): string {
   const field = FIELD_LABELS[c.field];
   const op = OPERATOR_LABELS[c.operator];
   if (c.field === "amount") {
     if (c.operator === "between") {
-      return `${field} ${op} ${formatCurrency(c.amount_min ?? 0)} and ${formatCurrency(
-        c.amount_max ?? 0
+      return `${field} ${op} ${formatRuleAmount(c.amount_min ?? 0, currency)} and ${formatRuleAmount(
+        c.amount_max ?? 0,
+        currency
       )}`;
     }
     const value = c.operator === "gt" ? c.amount_min : c.amount_max;
-    return `${field} ${op} ${formatCurrency(value ?? 0)}`;
+    return `${field} ${op} ${formatRuleAmount(value ?? 0, currency)}`;
   }
   if (c.field === "account_id") {
     const label = accountName ? accountName(c.value_text ?? "") : c.value_text;

@@ -39,15 +39,16 @@ func run() error {
 
 	db := dbManager.DB()
 
-	userService := services.NewUserService(db)
-	accountService := services.NewAccountService(db)
+	fxService := services.NewFXService(db, cfg.FXMaxStaleness)
+	userService := services.NewUserService(db, fxService)
+	accountService := services.NewAccountService(db, services.WithFXService(fxService))
 	categoryService := services.NewCategoryService(db)
 	ruleService := services.NewRuleService(db, categoryService)
-	transactionService := services.NewTransactionService(db, accountService, ruleService)
-	budgetService := services.NewBudgetService(db)
-	investmentService := services.NewInvestmentService(db, accountService)
-	snapshotService := services.NewPortfolioSnapshotService(db)
-	receivableService := services.NewReceivableService(db, accountService, ruleService)
+	transactionService := services.NewTransactionService(db, accountService, ruleService, services.WithTransactionFXService(fxService))
+	budgetService := services.NewBudgetService(db, services.WithBudgetFXService(fxService))
+	investmentService := services.NewInvestmentService(db, accountService, fxService)
+	snapshotService := services.NewPortfolioSnapshotService(db, fxService)
+	receivableService := services.NewReceivableService(db, accountService, ruleService, services.WithReceivableFXService(fxService))
 	auditService := services.NewAuditService(db)
 	grantService := services.NewOAuthGrantService(db)
 
@@ -88,6 +89,7 @@ func run() error {
 		Investments:  investmentService,
 		Snapshots:    snapshotService,
 		Receivables:  receivableService,
+		FX:           fxService,
 		Audit:        auditService,
 		Grants:       grantService,
 	}, addr, mcpserver.OAuthConfig{

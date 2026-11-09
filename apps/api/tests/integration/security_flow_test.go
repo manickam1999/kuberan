@@ -74,9 +74,9 @@ func TestSecurityFlow_FullLifecycle(t *testing.T) {
 	t3 := now.Format(time.RFC3339)
 
 	pricesBody := fmt.Sprintf(`{"prices":[
-		{"security_id":%q,"price":17500,"recorded_at":%q},
-		{"security_id":%q,"price":17600,"recorded_at":%q},
-		{"security_id":%q,"price":17700,"recorded_at":%q}
+		{"security_id":%q,"price":17500,"currency":"USD","recorded_at":%q},
+		{"security_id":%q,"price":17600,"currency":"USD","recorded_at":%q},
+		{"security_id":%q,"price":17700,"currency":"USD","recorded_at":%q}
 	]}`, securityID, t1, securityID, t2, securityID, t3)
 
 	rec = app.pipelineRequest("POST", "/api/v1/pipeline/securities/prices", pricesBody)
@@ -124,7 +124,7 @@ func TestSecurityFlow_ProviderSymbolRoundTrip(t *testing.T) {
 
 	// Create security with provider_symbol
 	rec := app.pipelineRequest("POST", "/api/v1/pipeline/securities",
-		`{"symbol":"CIMB","name":"CIMB Group","asset_type":"stock","currency":"MYR","exchange":"BURSA","provider_symbol":"1023.KL"}`)
+		`{"symbol":"CIMB","name":"CIMB Group","asset_type":"stock","currency":"USD","exchange":"BURSA","provider_symbol":"1023.KL"}`)
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("expected 201, got %d: %s", rec.Code, rec.Body.String())
 	}

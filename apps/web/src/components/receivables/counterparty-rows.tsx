@@ -3,7 +3,7 @@
 import type { ReactNode } from "react";
 import { Plus, X } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { formatCurrency } from "@/lib/format";
+import { formatMoney } from "@/lib/format";
 import { MAX_COUNTERPARTIES, counterpartyKey } from "@/lib/shared-expense";
 import { Button } from "@/components/ui/button";
 import { CurrencyInput } from "@/components/ui/currency-input";
@@ -27,6 +27,8 @@ export interface CounterpartyRowData {
 
 interface CounterpartyRowsProps {
   rows: CounterpartyRowData[];
+  /** Currency of the amounts (the expense account's). */
+  currency: string;
   /** Prefix for the input ids, e.g. "owed" gives owed-name-0 / owed-amount-0. */
   idPrefix: string;
   /** Singular label for who owes, e.g. "Person" or "Held by". */
@@ -55,6 +57,7 @@ interface CounterpartyRowsProps {
  */
 export function CounterpartyRows({
   rows,
+  currency,
   idPrefix,
   noun,
   numbered,
@@ -94,7 +97,7 @@ export function CounterpartyRows({
                   />
                   {equalShare !== undefined && equalShare > 0 && (
                     <p className="money text-xs text-muted-foreground">
-                      owes {formatCurrency(equalShare)}
+                      owes {formatMoney(equalShare, currency)}
                     </p>
                   )}
                 </div>
@@ -110,6 +113,7 @@ export function CounterpartyRows({
                       id={amountId}
                       value={row.amount}
                       onChange={(amt) => onAmountChange(row.key, amt)}
+                      currency={currency}
                       disabled={disabled}
                       placeholder="0.00"
                     />
@@ -163,9 +167,11 @@ export function CounterpartyRows({
 /** "Your share" summary row. Keeps the accessible name "Your share". */
 export function YourShare({
   cents,
+  currency,
   className,
 }: {
   cents: number;
+  currency: string;
   className?: string;
 }) {
   return (
@@ -181,7 +187,7 @@ export function YourShare({
         aria-label="Your share"
         className={cn("money font-semibold", cents < 0 && "text-destructive")}
       >
-        {formatCurrency(cents)}
+        {formatMoney(cents, currency)}
       </output>
     </div>
   );

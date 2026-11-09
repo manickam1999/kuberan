@@ -12,6 +12,20 @@ type AppError struct {
 	Message    string `json:"message"`
 	StatusCode int    `json:"-"`
 	Internal   error  `json:"-"`
+	// Details carries optional machine-readable context for the client (for
+	// example a suggested amount). It is rendered in the JSON error body when
+	// non-empty and must never hold internal information.
+	Details map[string]any `json:"details,omitempty"`
+}
+
+// Body returns the JSON error object clients receive: code, message and, when
+// present, details. The error middleware and handler helpers both render it.
+func (e *AppError) Body() map[string]any {
+	body := map[string]any{"code": e.Code, "message": e.Message}
+	if len(e.Details) > 0 {
+		body["details"] = e.Details
+	}
+	return body
 }
 
 // Error implements the error interface.
@@ -35,6 +49,7 @@ func Wrap(sentinel *AppError, internal error) *AppError {
 		Message:    sentinel.Message,
 		StatusCode: sentinel.StatusCode,
 		Internal:   internal,
+		Details:    sentinel.Details,
 	}
 }
 
@@ -45,7 +60,19 @@ func WithMessage(sentinel *AppError, message string) *AppError {
 		Message:    message,
 		StatusCode: sentinel.StatusCode,
 		Internal:   sentinel.Internal,
+		Details:    sentinel.Details,
 	}
+}
+
+// WithDetails returns a copy of err carrying details. The input is never
+// mutated, so shared sentinels stay clean. The map is copied too.
+func WithDetails(err *AppError, details map[string]any) *AppError {
+	cp := *err
+	cp.Details = make(map[string]any, len(details))
+	for k, v := range details {
+		cp.Details[k] = v
+	}
+	return &cp
 }
 
 // Authentication & authorization errors.
@@ -94,9 +121,11 @@ var (
 	ErrInvalidTypeChange      = &AppError{Code: "INVALID_TYPE_CHANGE", Message: "Cannot change transaction type to or from transfer/investment", StatusCode: http.StatusBadRequest}
 )
 
-// ErrTransferCurrencyMismatch rejects a transfer between accounts whose
-// currencies differ (no FX conversion is performed).
-var ErrTransferCurrencyMismatch = &AppError{Code: "TRANSFER_CURRENCY_MISMATCH", Message: "Cannot transfer between accounts with different currencies", StatusCode: http.StatusBadRequest}
+// ErrFXAmountRequired is returned when an operation moves money between two
+// currencies and the caller must state the amount in the other currency. The
+// error carries Details: currency, field and, when a market rate exists,
+// suggested_amount, rate and rate_recorded_at.
+var ErrFXAmountRequired = &AppError{Code: "FX_AMOUNT_REQUIRED", Message: "An amount in the other account's currency is required", StatusCode: http.StatusBadRequest}
 
 // Budget errors.
 var (
@@ -121,8 +150,9 @@ var (
 
 // Security errors.
 var (
-	ErrSecurityNotFound  = &AppError{Code: "SECURITY_NOT_FOUND", Message: "Security not found", StatusCode: http.StatusNotFound}
-	ErrDuplicateSecurity = &AppError{Code: "DUPLICATE_SECURITY", Message: "A security with this symbol and exchange already exists", StatusCode: http.StatusConflict}
+	ErrSecurityNotFound       = &AppError{Code: "SECURITY_NOT_FOUND", Message: "Security not found", StatusCode: http.StatusNotFound}
+	ErrDuplicateSecurity      = &AppError{Code: "DUPLICATE_SECURITY", Message: "A security with this symbol and exchange already exists", StatusCode: http.StatusConflict}
+	ErrSecurityCurrencyLocked = &AppError{Code: "SECURITY_CURRENCY_LOCKED", Message: "Security currency cannot change while it has prices; pass reset_prices to delete them", StatusCode: http.StatusConflict}
 )
 
 // Telegram errors.
@@ -203,3 +233,32 @@ var (
 	// has been revoked, or belongs to an inactive user.
 	ErrOAuthScopeNotGranted = &AppError{Code: "OAUTH_SCOPE_NOT_GRANTED", Message: "This app is not allowed to perform this action", StatusCode: http.StatusForbidden}
 )
+
+// Currency and exchange-rate errors (plan 024).
+var (
+	// ErrFXRateUnavailable is returned when no exchange rate (direct, inverse or via the USD pivot) exists for a pair.
+	ErrFXRateUnavailable = &AppError{Code: "FX_RATE_UNAVAILABLE", Message: "Exchange rate unavailable", StatusCode: http.StatusServiceUnavailable}
+
+	// ErrUnsupportedCurrency is returned when a currency cannot be used (unknown, not 2-decimal, or without a USD rate).
+	ErrUnsupportedCurrency = &AppError{Code: "UNSUPPORTED_CURRENCY", Message: "Currency is not supported", StatusCode: http.StatusBadRequest}
+
+	// ErrAccountCurrencyMismatch is returned when an operation would reinterpret cents in another currency.
+	ErrAccountCurrencyMismatch = &AppError{Code: "ACCOUNT_CURRENCY_MISMATCH", Message: "A transaction can't move to an account in a different currency", StatusCode: http.StatusBadRequest}
+
+	// ErrImportedTransactionLocked is returned when an imported row's type, amount or account is edited.
+	ErrImportedTransactionLocked = &AppError{Code: "IMPORTED_TRANSACTION_LOCKED", Message: "Imported transactions can't be changed; re-run the import instead", StatusCode: http.StatusConflict}
+)
+
+// Import errors (plan 024, phase 3b).
+var (
+	// ErrImportInvalid is returned when an import is applied while its report has
+	// errors or a failed quantity checkpoint. The report is in the error details.
+	ErrImportInvalid = &AppError{Code: "IMPORT_INVALID", Message: "The import has errors; fix them and run a dry run again", StatusCode: http.StatusBadRequest}
+
+	// ErrImportInProgress is returned when the user already has an import being applied.
+	ErrImportInProgress = &AppError{Code: "IMPORT_IN_PROGRESS", Message: "Another import is already being applied", StatusCode: http.StatusConflict}
+)
+
+// ErrBaseCurrencyLocked is returned when the user tries to change the reporting
+// currency while having investment history (plan 024).
+var ErrBaseCurrencyLocked = &AppError{Code: "BASE_CURRENCY_LOCKED", Message: "Reporting currency can't change while you have investment history, because cost basis is recorded in your current reporting currency", StatusCode: http.StatusConflict}

@@ -24,7 +24,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { formatCurrency, formatDate } from "@/lib/format";
+import { formatMoney, formatDate } from "@/lib/format";
 import type { Account, PayoutType, PayoutFrequency, Compounding } from "@/types/models";
 import type { UpdateAccountRequest } from "@/types/api";
 
@@ -304,6 +304,7 @@ export function EditAccountDialog({
                   id="edit-account-credit-limit"
                   value={creditLimit}
                   onChange={setCreditLimit}
+                  currency={account.currency}
                   disabled={isSubmitting}
                 />
               </div>
@@ -342,7 +343,7 @@ export function EditAccountDialog({
               <div className="flex flex-col gap-2">
                 <Label>Principal</Label>
                 <div className="rounded-md border bg-muted/40 px-3 py-2 text-sm">
-                  {formatCurrency(account.fixed_deposit.principal, account.currency)}
+                  {formatMoney(account.fixed_deposit.principal, account.currency)}
                 </div>
               </div>
               <div className="flex flex-col gap-2">

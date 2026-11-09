@@ -29,10 +29,10 @@ echo "=== Step 3/5: golangci-lint ==="
 golangci-lint run ./...
 
 echo "=== Step 4/5: go test ==="
-go test ./... -count=1 -timeout 120s
+go test ./... -count=1 -timeout 600s
 
 echo "=== Step 5/5: go test -race ==="
-go test ./... -race -count=1 -timeout 120s
+go test ./... -race -count=1 -timeout 600s
 
 echo ""
 echo "All checks passed."

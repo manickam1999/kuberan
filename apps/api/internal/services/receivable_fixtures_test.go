@@ -49,6 +49,11 @@ func newRecEnv(t *testing.T) *recEnv {
 		initial: map[string]int64{},
 	}
 	e.user = testutil.CreateTestUser(t, db)
+	// The fixture accounts are USD: make USD the base so the summary needs no
+	// exchange rate (the FX tests switch the user and account currencies).
+	if err := db.Model(e.user).Update("base_currency", "USD").Error; err != nil {
+		t.Fatalf("set base currency: %v", err)
+	}
 	e.cash = e.track(testutil.CreateTestCashAccountWithBalance(t, db, e.user.ID, recCashStart))
 	e.cat = testutil.CreateTestCategory(t, db, e.user.ID, models.CategoryTypeExpense)
 	return e
@@ -117,7 +122,7 @@ func (e *recEnv) check() {
 		}
 		paidBySettlements[s.ReceivableID] += s.Amount
 		rt, ok := byID[s.TransactionID]
-		if !ok || rt.Type != models.TransactionTypeReimbursement || rt.Amount != s.Amount || rt.AccountID != s.AccountID {
+		if !ok || rt.Type != models.TransactionTypeReimbursement || rt.Amount != s.EffectiveAccountAmount() || rt.AccountID != s.AccountID {
 			t.Errorf("INVARIANT: settlement %s does not match a live reimbursement: %+v", s.ID, rt)
 		}
 		if rt.CategoryID != nil {

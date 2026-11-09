@@ -57,18 +57,30 @@ func (s *Server) handleGetNetWorthHistory(ctx context.Context, req mcp.CallToolR
 
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "Net Worth History (%s to %s, grouped by %s):\n\n", fromStr, toStr, groupBy)
-	fmt.Fprintf(&sb, "  %-12s %14s %14s %14s %14s\n",
-		"Date", "Net Worth", "Cash", "Investments", "Debt")
-	fmt.Fprintf(&sb, "  %-12s %14s %14s %14s %14s\n",
-		"----", "---------", "----", "-----------", "----")
+	fmt.Fprintf(&sb, "  %-12s %-4s %18s %18s %18s %18s\n",
+		"Date", "Cur", "Net Worth", "Cash", "Investments", "Debt")
+	fmt.Fprintf(&sb, "  %-12s %-4s %18s %18s %18s %18s\n",
+		"----", "---", "---------", "----", "-----------", "----")
 
-	for _, snap := range snapshots {
-		fmt.Fprintf(&sb, "  %-12s %14s %14s %14s %14s\n",
-			snap.RecordedAt.Format("2006-01-02"),
-			formatCents(snap.TotalNetWorth),
-			formatCents(snap.CashBalance),
-			formatCents(snap.InvestmentValue),
-			formatCents(snap.DebtBalance))
+	changed, missing := false, false
+	for i, snap := range snapshots {
+		cur := snap.Currency
+		fmt.Fprintf(&sb, "  %-12s %-4s %18s %18s %18s %18s\n",
+			snap.RecordedAt.Format("2006-01-02"), currencyCode(cur),
+			formatMoney(snap.TotalNetWorth, cur),
+			formatMoney(snap.CashBalance, cur),
+			formatMoney(snap.InvestmentValue, cur),
+			formatMoney(snap.DebtBalance, cur))
+		if i > 0 && !strings.EqualFold(cur, snapshots[i-1].Currency) {
+			changed = true
+		}
+		missing = missing || snap.FXMissing
+	}
+	if changed {
+		sb.WriteString("Note: the reporting currency changed during this period; each row is in its own currency and rows are not comparable\n")
+	}
+	if missing {
+		sb.WriteString("Note: some points exclude amounts with no exchange rate (fx_missing), so they understate net worth\n")
 	}
 
 	return mcp.NewToolResultText(sb.String()), nil

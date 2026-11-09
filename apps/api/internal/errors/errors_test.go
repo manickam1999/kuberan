@@ -31,3 +31,30 @@ func TestAppErrorIs(t *testing.T) {
 }
 
 var errSentinel = stderrors.New("sentinel")
+
+func TestWithDetails(t *testing.T) {
+	d := map[string]any{"currency": "MYR", "suggested_amount": int64(447120)}
+	e := WithDetails(ErrFXAmountRequired, d)
+	if e == ErrFXAmountRequired {
+		t.Fatal("WithDetails must return a copy")
+	}
+	if ErrFXAmountRequired.Details != nil {
+		t.Fatal("sentinel was mutated")
+	}
+	d["currency"] = "EUR" // the copy must not alias the caller's map
+	if e.Details["currency"] != "MYR" {
+		t.Errorf("details aliased the input map: %v", e.Details)
+	}
+	if !stderrors.Is(e, ErrFXAmountRequired) {
+		t.Error("copy must still match the sentinel by code")
+	}
+	if got := WithMessage(e, "other").Details["currency"]; got != "MYR" {
+		t.Errorf("WithMessage dropped details: %v", got)
+	}
+	if ErrFXAmountRequired.Body()["details"] != nil {
+		t.Error("sentinel body must not carry details")
+	}
+	if e.Body()["details"] == nil {
+		t.Error("body must carry details")
+	}
+}

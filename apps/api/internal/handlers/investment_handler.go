@@ -33,6 +33,7 @@ type AddInvestmentRequest struct {
 	Date          *time.Time `json:"date"`                                    // optional, defaults to now
 	Fee           int64      `json:"fee" binding:"gte=0,lte=100000000000000"` // optional, defaults to 0
 	Notes         string     `json:"notes" binding:"max=500"`                 // optional, defaults to "Initial purchase"
+	FXRate        string     `json:"fx_rate" binding:"max=32"`                // optional decimal string: security currency -> base rate of the trade
 }
 
 // RecordBuyRequest represents the request payload for recording a buy transaction.
@@ -43,6 +44,11 @@ type RecordBuyRequest struct {
 	Fee              int64     `json:"fee" binding:"gte=0,lte=100000000000000"`
 	Notes            string    `json:"notes" binding:"max=500"`
 	FundingAccountID string    `json:"funding_account_id" binding:"omitempty"`
+	// FundingAmount is the amount debited from the funding account in ITS currency;
+	// required when that differs from the security's currency.
+	FundingAmount int64 `json:"funding_amount" binding:"omitempty,gt=0,lte=100000000000000"`
+	// FXRate optionally overrides the security currency -> base rate (decimal string).
+	FXRate string `json:"fx_rate" binding:"max=32"`
 }
 
 // RecordSellRequest represents the request payload for recording a sell transaction.
@@ -53,14 +59,28 @@ type RecordSellRequest struct {
 	Fee              int64     `json:"fee" binding:"gte=0,lte=100000000000000"`
 	Notes            string    `json:"notes" binding:"max=500"`
 	DepositAccountID string    `json:"deposit_account_id" binding:"omitempty"`
+	// DepositAmount is the amount credited to the deposit account in ITS currency;
+	// required when that differs from the security's currency.
+	DepositAmount int64 `json:"deposit_amount" binding:"omitempty,gt=0,lte=100000000000000"`
+	// FXRate optionally overrides the security currency -> base rate (decimal string).
+	FXRate string `json:"fx_rate" binding:"max=32"`
 }
 
 // RecordDividendRequest represents the request payload for recording a dividend.
 type RecordDividendRequest struct {
 	Date         time.Time `json:"date" binding:"required"`
-	Amount       int64     `json:"amount" binding:"required,gt=0,lte=100000000000000"`
+	Amount       int64     `json:"amount" binding:"required,gt=0,lte=100000000000000"` // gross, in the security's currency
 	DividendType string    `json:"dividend_type" binding:"max=50"`
 	Notes        string    `json:"notes" binding:"max=500"`
+	// Fee is withholding tax plus dividend fees, in the security's currency (<= amount).
+	Fee int64 `json:"fee" binding:"gte=0,lte=100000000000000"`
+	// DepositAccountID optionally credits the NET dividend (amount - fee) to a cash account.
+	DepositAccountID string `json:"deposit_account_id" binding:"omitempty"`
+	// DepositAmount is the net amount credited in the deposit account's currency;
+	// required when that differs from the security's currency.
+	DepositAmount int64 `json:"deposit_amount" binding:"omitempty,gt=0,lte=100000000000000"`
+	// FXRate optionally overrides the security currency -> base rate (decimal string).
+	FXRate string `json:"fx_rate" binding:"max=32"`
 }
 
 // RecordSplitRequest represents the request payload for recording a stock split.
@@ -120,7 +140,7 @@ func (h *InvestmentHandler) GetAllInvestments(c *gin.Context) {
 
 // AddInvestment handles adding a new investment holding.
 // @Summary     Add investment
-// @Description Add a new investment holding to an investment account
+// @Description Add a new investment holding to an investment account. purchase_price and fee are in the security's currency; fx_rate optionally overrides the trade's security-currency to base rate (decimal string).
 // @Tags        investments
 // @Accept      json
 // @Produce     json
@@ -131,6 +151,7 @@ func (h *InvestmentHandler) GetAllInvestments(c *gin.Context) {
 // @Failure     401 {object} ErrorResponse "Unauthorized"
 // @Failure     404 {object} ErrorResponse "Account not found"
 // @Failure     500 {object} ErrorResponse "Server error"
+// @Failure     503 {object} ErrorResponse "No FX rate available; pass fx_rate"
 // @Router      /investments [post]
 func (h *InvestmentHandler) AddInvestment(c *gin.Context) {
 	userID, err := getUserID(c)
@@ -145,9 +166,17 @@ func (h *InvestmentHandler) AddInvestment(c *gin.Context) {
 		return
 	}
 
-	investment, err := h.investmentService.AddInvestment(
-		userID, req.AccountID, req.SecurityID, req.Quantity, req.PurchasePrice, req.WalletAddress, req.Date, req.Fee, req.Notes,
-	)
+	investment, err := h.investmentService.AddInvestment(userID, services.AddInvestmentParams{
+		AccountID:     req.AccountID,
+		SecurityID:    req.SecurityID,
+		Quantity:      req.Quantity,
+		PurchasePrice: req.PurchasePrice,
+		WalletAddress: req.WalletAddress,
+		Date:          req.Date,
+		Fee:           req.Fee,
+		Notes:         req.Notes,
+		FXRate:        req.FXRate,
+	})
 	if err != nil {
 		respondWithError(c, err)
 		return
@@ -268,7 +297,7 @@ func (h *InvestmentHandler) GetPortfolio(c *gin.Context) {
 
 // RecordBuy handles recording a buy transaction for an investment.
 // @Summary     Record buy transaction
-// @Description Record a buy transaction for an investment holding
+// @Description Record a buy transaction for an investment holding. Price, fee and total are in the security's currency. With funding_account_id the cost is debited from that cash account; when its currency differs from the security's, funding_amount (in the account's currency) is required (400 FX_AMOUNT_REQUIRED, with details.suggested_amount from the market rate). The trade's FX rate to the base currency is, in order: fx_rate, the rate implied by a base-currency funding account, 1 for a base-currency security, the market rate (503 FX_RATE_UNAVAILABLE if none; pass fx_rate).
 // @Tags        investments
 // @Accept      json
 // @Produce     json
@@ -280,6 +309,7 @@ func (h *InvestmentHandler) GetPortfolio(c *gin.Context) {
 // @Failure     401 {object} ErrorResponse "Unauthorized"
 // @Failure     404 {object} ErrorResponse "Investment not found"
 // @Failure     500 {object} ErrorResponse "Server error"
+// @Failure     503 {object} ErrorResponse "No FX rate available; pass fx_rate"
 // @Router      /investments/{id}/buy [post]
 func (h *InvestmentHandler) RecordBuy(c *gin.Context) {
 	userID, err := getUserID(c)
@@ -300,7 +330,16 @@ func (h *InvestmentHandler) RecordBuy(c *gin.Context) {
 		return
 	}
 
-	invTx, err := h.investmentService.RecordBuy(userID, investmentID, req.Date, req.Quantity, req.PricePerUnit, req.Fee, req.Notes, req.FundingAccountID)
+	invTx, err := h.investmentService.RecordBuy(userID, investmentID, services.BuyParams{
+		Date:             req.Date,
+		Quantity:         req.Quantity,
+		PricePerUnit:     req.PricePerUnit,
+		Fee:              req.Fee,
+		Notes:            req.Notes,
+		FundingAccountID: req.FundingAccountID,
+		FundingAmount:    req.FundingAmount,
+		FXRate:           req.FXRate,
+	})
 	if err != nil {
 		respondWithError(c, err)
 		return
@@ -317,7 +356,7 @@ func (h *InvestmentHandler) RecordBuy(c *gin.Context) {
 
 // RecordSell handles recording a sell transaction for an investment.
 // @Summary     Record sell transaction
-// @Description Record a sell transaction for an investment holding
+// @Description Record a sell transaction for an investment holding. Amounts are in the security's currency and the realized gain/loss is reported in both the security and base currencies. With deposit_account_id the net proceeds are credited to that cash account; when its currency differs from the security's, deposit_amount (in the account's currency) is required (400 FX_AMOUNT_REQUIRED). fx_rate overrides the trade's FX rate as for buys.
 // @Tags        investments
 // @Accept      json
 // @Produce     json
@@ -329,6 +368,7 @@ func (h *InvestmentHandler) RecordBuy(c *gin.Context) {
 // @Failure     401 {object} ErrorResponse "Unauthorized"
 // @Failure     404 {object} ErrorResponse "Investment not found"
 // @Failure     500 {object} ErrorResponse "Server error"
+// @Failure     503 {object} ErrorResponse "No FX rate available; pass fx_rate"
 // @Router      /investments/{id}/sell [post]
 func (h *InvestmentHandler) RecordSell(c *gin.Context) {
 	userID, err := getUserID(c)
@@ -349,7 +389,16 @@ func (h *InvestmentHandler) RecordSell(c *gin.Context) {
 		return
 	}
 
-	invTx, err := h.investmentService.RecordSell(userID, investmentID, req.Date, req.Quantity, req.PricePerUnit, req.Fee, req.Notes, req.DepositAccountID)
+	invTx, err := h.investmentService.RecordSell(userID, investmentID, services.SellParams{
+		Date:             req.Date,
+		Quantity:         req.Quantity,
+		PricePerUnit:     req.PricePerUnit,
+		Fee:              req.Fee,
+		Notes:            req.Notes,
+		DepositAccountID: req.DepositAccountID,
+		DepositAmount:    req.DepositAmount,
+		FXRate:           req.FXRate,
+	})
 	if err != nil {
 		respondWithError(c, err)
 		return
@@ -366,7 +415,7 @@ func (h *InvestmentHandler) RecordSell(c *gin.Context) {
 
 // RecordDividend handles recording a dividend for an investment.
 // @Summary     Record dividend
-// @Description Record a dividend payment for an investment holding
+// @Description Record a dividend for an investment holding. amount is the gross dividend and fee the withholding tax and fees, in the security's currency. With deposit_account_id the net (amount - fee) is credited to that cash account; when its currency differs from the security's, deposit_amount (the net, in the account's currency) is required (400 FX_AMOUNT_REQUIRED). fx_rate overrides the trade's FX rate as for buys.
 // @Tags        investments
 // @Accept      json
 // @Produce     json
@@ -378,6 +427,7 @@ func (h *InvestmentHandler) RecordSell(c *gin.Context) {
 // @Failure     401 {object} ErrorResponse "Unauthorized"
 // @Failure     404 {object} ErrorResponse "Investment not found"
 // @Failure     500 {object} ErrorResponse "Server error"
+// @Failure     503 {object} ErrorResponse "No FX rate available; pass fx_rate"
 // @Router      /investments/{id}/dividend [post]
 func (h *InvestmentHandler) RecordDividend(c *gin.Context) {
 	userID, err := getUserID(c)
@@ -398,7 +448,16 @@ func (h *InvestmentHandler) RecordDividend(c *gin.Context) {
 		return
 	}
 
-	invTx, err := h.investmentService.RecordDividend(userID, investmentID, req.Date, req.Amount, req.DividendType, req.Notes)
+	invTx, err := h.investmentService.RecordDividend(userID, investmentID, services.DividendParams{
+		Date:             req.Date,
+		Amount:           req.Amount,
+		Fee:              req.Fee,
+		DividendType:     req.DividendType,
+		Notes:            req.Notes,
+		DepositAccountID: req.DepositAccountID,
+		DepositAmount:    req.DepositAmount,
+		FXRate:           req.FXRate,
+	})
 	if err != nil {
 		respondWithError(c, err)
 		return

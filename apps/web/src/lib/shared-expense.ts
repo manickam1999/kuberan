@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { formatCurrency } from "@/lib/format";
+import { formatMoney } from "@/lib/format";
 import type { ShareCounterpartyInput } from "@/types/api";
 import { RECEIVABLE_KIND_LABELS } from "@/lib/receivable-format";
 import type {
@@ -135,6 +135,7 @@ export function equalShareAmount(amount: number, n: number): number {
 const sharedExpenseSchema = z
   .object({
     amount: z.number().int().positive("Amount must be greater than zero"),
+    currency: z.string(),
     mode: z.enum(["equal", "custom", "full"]),
     counterparties: z.array(
       z.object({
@@ -199,7 +200,7 @@ const sharedExpenseSchema = z
       }
       if (sum > val.amount) {
         fail(
-          `Amounts add up to ${formatCurrency(sum)}, more than the ${formatCurrency(val.amount)} expense`
+          `Amounts add up to ${formatMoney(sum, val.currency)}, more than the ${formatMoney(val.amount, val.currency)} expense`
         );
       }
     } else if (val.mode === "equal") {
@@ -215,6 +216,8 @@ const sharedExpenseSchema = z
  */
 export function buildSharedCounterparties(input: {
   amount: number;
+  /** Currency of the expense (its account's), for error messages. */
+  currency: string;
   mode: ShareMode;
   /** `id` marks an already-saved row (editor only); omit for new expenses. */
   rows: { name: string; amount: number; id?: string }[];
@@ -227,6 +230,7 @@ export function buildSharedCounterparties(input: {
   }));
   const parsed = sharedExpenseSchema.safeParse({
     amount: input.amount,
+    currency: input.currency,
     mode: input.mode,
     counterparties: counterparties.map((c, i) => ({
       ...c,

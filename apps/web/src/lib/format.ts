@@ -1,25 +1,28 @@
+import { MONEY_LOCALE } from "@/lib/currencies";
+
 /** Placeholder shown in place of an amount when balance visibility is hidden. */
 export const MASKED_AMOUNT = "****";
 
 /**
- * Format cents as a currency string.
- * @param cents - Amount in cents (e.g., 1050 = $10.50)
- * @param currency - ISO 4217 currency code (default: "USD")
+ * Format cents in an explicit currency, using `Intl` (en-MY): `RM 1,234.00`,
+ * `US$1,234.00`, `£1,234.00`. The currency is required so a call site can
+ * never silently fall back to the wrong one.
+ * @param cents - Amount in minor units (e.g., 1050 = 10.50)
+ * @param currency - ISO 4217 currency code
  * @param masked - If true, returns {@link MASKED_AMOUNT} instead of the formatted value
  */
-export function formatCurrency(
+export function formatMoney(
   cents: number,
-  currency = "MYR",
+  currency: string,
   masked = false
 ): string {
   if (masked) return MASKED_AMOUNT;
-  const dollars = cents / 100;
-  return new Intl.NumberFormat("en-US", {
+  return new Intl.NumberFormat(MONEY_LOCALE, {
     style: "currency",
-    currency: currency || "MYR",
+    currency,
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
-  }).format(dollars);
+  }).format(cents / 100);
 }
 
 /**

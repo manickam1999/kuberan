@@ -32,6 +32,7 @@ func newSharedFixture(t *testing.T, when time.Time) *sharedFixture {
 	acctSvc := NewAccountService(db)
 	txSvc := NewTransactionService(db, acctSvc, nil)
 	user := testutil.CreateTestUser(t, db)
+	setBaseUSD(t, db, user.ID)
 	account := testutil.CreateTestCashAccountWithBalance(t, db, user.ID, 1000000)
 	cat := testutil.CreateTestCategory(t, db, user.ID, models.CategoryTypeExpense)
 
@@ -191,6 +192,7 @@ func TestEffectiveAmount_BudgetProgress(t *testing.T) {
 	txSvc := NewTransactionService(db, acctSvc, nil)
 	budgetSvc := NewBudgetService(db)
 	user := testutil.CreateTestUser(t, db)
+	setBaseUSD(t, db, user.ID)
 	account := testutil.CreateTestCashAccountWithBalance(t, db, user.ID, 1000000)
 	cat := testutil.CreateTestCategory(t, db, user.ID, models.CategoryTypeExpense)
 	budget := testutil.CreateTestBudget(t, db, user.ID, cat.ID)

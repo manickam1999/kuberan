@@ -122,7 +122,7 @@ func TestFixedDepositFlow_OpenAndCloseCumulative(t *testing.T) {
 
 func TestFixedDepositFlow_NetWorthReflectsFD(t *testing.T) {
 	app := setupApp(t)
-	token, _, _ := app.registerUser(t, "fdnetworth@test.com", "password123")
+	token, _, _ := app.registerUserUSD(t, "fdnetworth@test.com", "password123")
 
 	// Create bank with $3000
 	rec := app.request("POST", "/api/v1/accounts/cash",

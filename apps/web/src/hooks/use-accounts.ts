@@ -6,6 +6,7 @@ import {
   type QueryClient,
 } from "@tanstack/react-query";
 import { apiClient } from "@/lib/api-client";
+import { useBaseCurrency } from "@/hooks/use-profile";
 import type { Account } from "@/types/models";
 import type {
   PageResponse,
@@ -37,6 +38,23 @@ export function useAccounts(params?: PaginationParams) {
       }),
     placeholderData: keepPreviousData,
   });
+}
+
+/**
+ * Resolver for an account's currency by id, from the accounts query (shared
+ * cache with the accounts page). Falls back to a preloaded relation, then to
+ * the user's base currency while nothing is loaded.
+ */
+export function useAccountCurrencies(): (
+  accountId: string | null | undefined,
+  preloaded?: Pick<Account, "currency"> | null
+) => string {
+  const { data } = useAccounts({ page_size: 100 });
+  const base = useBaseCurrency();
+  return (accountId, preloaded) =>
+    data?.data.find((a) => a.id === accountId)?.currency ??
+    preloaded?.currency ??
+    base;
 }
 
 async function fetchAccount(id: string): Promise<Account> {

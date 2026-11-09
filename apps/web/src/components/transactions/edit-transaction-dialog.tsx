@@ -7,6 +7,8 @@ import { ApiClientError } from "@/lib/api-client";
 import { RuleDialog } from "@/components/rules/rule-dialog";
 import { suggestConditionValue } from "@/lib/rule-format";
 import { cn } from "@/lib/utils";
+import { useBaseCurrency } from "@/hooks/use-profile";
+import { TransactionAmount } from "@/components/transactions/transaction-amount";
 import { useAccounts } from "@/hooks/use-accounts";
 import {
   useUpdateTransaction,
@@ -50,7 +52,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { ExistingAttachments } from "@/components/transactions/transaction-attachments";
-import { formatCurrency, formatDate, toRFC3339 } from "@/lib/format";
+import { formatMoney, formatDate, toRFC3339 } from "@/lib/format";
 import type { Transaction, TransactionType } from "@/types/models";
 import type { RuleConditionInput, UpdateTransactionRequest } from "@/types/api";
 
@@ -137,6 +139,15 @@ export function EditTransactionDialog({
     live?.account?.name ||
     accounts.find((a) => a.id === transaction?.account_id)?.name ||
     "Unknown account";
+  // The transaction's currency is its account's; the amount input follows the
+  // account picked in the form.
+  const baseCurrency = useBaseCurrency();
+  const txCurrency =
+    accounts.find((a) => a.id === live?.account_id)?.currency ??
+    live?.account?.currency ??
+    baseCurrency;
+  const inputCurrency =
+    accounts.find((a) => a.id === accountId)?.currency ?? txCurrency;
   const receivables = live?.receivables ?? [];
   const isShared = live?.type === "expense" && receivables.length > 0;
   // Remount the editor when the saved receivables change.
@@ -197,7 +208,7 @@ export function EditTransactionDialog({
     }
     if (isShared && amount < receivablesTotal) {
       setError(
-        `Amount can't be less than the ${formatCurrency(receivablesTotal)} others owe you. Edit the money owed back first.`
+        `Amount can't be less than the ${formatMoney(receivablesTotal, txCurrency)} others owe you. Edit the money owed back first.`
       );
       return;
     }
@@ -367,10 +378,10 @@ export function EditTransactionDialog({
                   id="edit-tx-amount"
                   value={amount}
                   onChange={setAmount}
-                  symbol="MYR"
+                  currency={inputCurrency}
                   placeholder="0.00"
                   disabled={isSaving}
-                  className="money h-14 pl-16 text-2xl font-semibold"
+                  className="money h-14 pl-20 text-2xl font-semibold"
                 />
               </div>
 
@@ -390,7 +401,7 @@ export function EditTransactionDialog({
                       <SelectContent>
                         {accounts.map((a) => (
                           <SelectItem key={a.id} value={a.id}>
-                            {a.name}
+                            {a.name} ({a.currency})
                           </SelectItem>
                         ))}
                       </SelectContent>
@@ -479,8 +490,8 @@ export function EditTransactionDialog({
                         Shared expense
                       </span>
                       <span className="money font-medium">
-                        Your share {formatCurrency(sharedPersonal)} of{" "}
-                        {formatCurrency(live.amount)}
+                        Your share {formatMoney(sharedPersonal, txCurrency)} of{" "}
+                        {formatMoney(live.amount, txCurrency)}
                       </span>
                     </div>
                     <ReceivableList
@@ -520,10 +531,7 @@ export function EditTransactionDialog({
             <ReimbursementView
               transaction={transaction}
               accountName={accountName}
-              currency={
-                transaction.account?.currency ||
-                accounts.find((a) => a.id === transaction.account_id)?.currency
-              }
+              currency={txCurrency}
               onNavigate={() => onOpenChange(false)}
             />
           ) : (
@@ -538,12 +546,11 @@ export function EditTransactionDialog({
               <div className="flex items-center justify-between">
                 <Label>Amount</Label>
                 <span className="text-sm font-medium">
-                  {transaction
-                    ? formatCurrency(
-                        transaction.amount,
-                        transaction.account?.currency
-                      )
-                    : ""}
+                  {transaction ? (
+                    <TransactionAmount transaction={transaction} />
+                  ) : (
+                    ""
+                  )}
                 </span>
               </div>
               <div className="flex items-center justify-between">

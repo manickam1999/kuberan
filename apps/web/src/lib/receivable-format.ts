@@ -14,7 +14,7 @@ import type {
   ReceivableKind,
   ReceivableStatus,
 } from "@/types/models";
-import { formatCurrency, formatMonthYear } from "@/lib/format";
+import { formatMoney, formatMonthYear } from "@/lib/format";
 
 // Re-exported so existing imports keep working; the helper lives in lib/format.
 export { formatMonthYear };
@@ -75,7 +75,7 @@ export function writeOffImpactText(
   const when = receivable.transaction
     ? `${formatMonthYear(receivable.transaction.date)} spending`
     : "your spending";
-  return `Adds ${formatCurrency(writeOffCents)} to ${when}`;
+  return `Adds ${formatMoney(writeOffCents, receivable.currency)} to ${when}`;
 }
 
 /** True when the receivable still has money that can be collected or forgiven. */

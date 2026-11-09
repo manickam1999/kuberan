@@ -36,30 +36,36 @@ def display_icon(icon: str) -> str:
     return icon if is_emoji_icon(icon or "") else ""
 
 
-def format_currency(amount_cents: int, currency: str = "MYR") -> str:
-    """
-    Format amount in cents to currency string.
+# Display prefixes for common currency codes. Anything not listed is shown as
+# "CODE 1,234.50".
+CURRENCY_SYMBOLS = {
+    "MYR": "RM ",
+    "USD": "US$",
+    "SGD": "S$",
+    "GBP": "£",
+    "EUR": "€",
+    "AUD": "A$",
+    "HKD": "HK$",
+}
+
+
+def format_currency(amount_cents: int, currency: str) -> str:
+    """Format an amount in cents for display in its currency.
 
     Args:
-        amount_cents: Amount in cents (e.g., 1050 for $10.50)
-        currency: Currency code (default: MYR)
+        amount_cents: Amount in cents (e.g., 1050 for 10.50)
+        currency: ISO 4217 code of the amount (required; never guess it)
 
     Returns:
-        Formatted currency string (e.g., "$10.50")
+        Formatted string such as "RM 1,234.50", "US$10.50" or "-RM 1.00".
+        Integer arithmetic keeps the cents exact.
     """
-    amount_dollars = amount_cents / 100.0
-
-    currency_symbols = {
-        "USD": "$",
-        "EUR": "€",
-        "GBP": "£",
-        "INR": "₹",
-        "MYR": "RM",
-    }
-
-    symbol = currency_symbols.get(currency, f"{currency} ")
-
-    return f"{symbol}{amount_dollars:,.2f}"
+    code = currency.upper()
+    symbol = CURRENCY_SYMBOLS.get(code, f"{code} ")
+    cents = int(amount_cents)
+    sign = "-" if cents < 0 else ""
+    whole, frac = divmod(abs(cents), 100)
+    return f"{sign}{symbol}{whole:,}.{frac:02d}"
 
 
 def format_account_type(account_type: str) -> str:

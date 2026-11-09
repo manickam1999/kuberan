@@ -13,7 +13,7 @@ import (
 func (s *Server) registerBudgetTools() {
 	s.mcp.AddTool(
 		readTool("list_budgets",
-			mcp.WithDescription("List all budgets with their category, amount, and period. Limited to the first 100 budgets."),
+			mcp.WithDescription("List all budgets with their category, amount (in the budget's currency), and period. Limited to the first 100 budgets."),
 			mcp.WithBoolean("active_only", mcp.Description("Only show active budgets (default true)")),
 		),
 		s.handleListBudgets,
@@ -59,7 +59,7 @@ func (s *Server) handleListBudgets(ctx context.Context, req mcp.CallToolRequest)
 	for i := range result.Data {
 		b := &result.Data[i]
 		fmt.Fprintf(&sb, "  %-27s %12s  %-8s  %s\n",
-			untrusted(b.Name), formatCents(b.Amount), b.Period, untrusted(b.Category.Name))
+			untrusted(b.Name), formatMoney(b.Amount, b.Currency), b.Period, untrusted(b.Category.Name))
 		fmt.Fprintf(&sb, "    ID: %s\n", b.ID)
 	}
 
@@ -88,10 +88,13 @@ func (s *Server) handleGetBudgetProgress(ctx context.Context, req mcp.CallToolRe
 
 	var sb strings.Builder
 	sb.WriteString("Budget Progress:\n\n")
-	fmt.Fprintf(&sb, "  Budgeted:   %s\n", formatCents(progress.Budgeted))
-	fmt.Fprintf(&sb, "  Spent:      %s\n", formatCents(progress.Spent))
-	fmt.Fprintf(&sb, "  Remaining:  %s\n", formatCents(progress.Remaining))
+	fmt.Fprintf(&sb, "  Budgeted:   %s\n", formatMoney(progress.Budgeted, progress.Currency))
+	fmt.Fprintf(&sb, "  Spent:      %s\n", formatMoney(progress.Spent, progress.Currency))
+	fmt.Fprintf(&sb, "  Remaining:  %s\n", formatMoney(progress.Remaining, progress.Currency))
 	fmt.Fprintf(&sb, "  Used:       %.1f%%\n", progress.Percentage)
+	if progress.FXMissing {
+		fmt.Fprintf(&sb, "Note: spending in other currencies with no exchange rate to %s is excluded\n", currencyCode(progress.Currency))
+	}
 
 	return mcp.NewToolResultText(sb.String()), nil
 }

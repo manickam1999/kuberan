@@ -3,9 +3,9 @@
 import { useState } from "react";
 import { Undo2 } from "lucide-react";
 import { toast } from "sonner";
-import { useAccounts } from "@/hooks/use-accounts";
+import { useAccountCurrencies, useAccounts } from "@/hooks/use-accounts";
 import { useDeleteSettlement, useReceivable } from "@/hooks/use-receivables";
-import { formatCurrency, formatDate } from "@/lib/format";
+import { formatMoney, formatDate } from "@/lib/format";
 import { receivableApiErrorMessage } from "@/lib/receivable-format";
 import {
   AlertDialog,
@@ -35,6 +35,7 @@ export function ReceivableSettlementHistory({
   const deleteSettlement = useDeleteSettlement();
   const [pending, setPending] = useState<ReceivableSettlement | null>(null);
 
+  const currencyOf = useAccountCurrencies();
   const accountName = new Map((accountData?.data ?? []).map((a) => [a.id, a.name]));
 
   async function undo(settlement: ReceivableSettlement) {
@@ -58,11 +59,19 @@ export function ReceivableSettlementHistory({
         {settlements.map((s) => (
           <li key={s.id} className="flex items-center justify-between gap-3 py-2">
             <div className="min-w-0">
-              <div className="money font-medium">{formatCurrency(s.amount)}</div>
+              <div className="money font-medium">
+                {formatMoney(s.amount, s.currency)}
+                {s.account_amount != null && (
+                  <span className="font-normal text-muted-foreground">
+                    {" → "}
+                    {formatMoney(s.account_amount, currencyOf(s.account_id))}
+                  </span>
+                )}
+              </div>
               <div className="truncate text-xs text-muted-foreground">
                 {formatDate(s.date)} · {accountName.get(s.account_id) ?? "Account"}
                 {s.written_off_amount > 0 &&
-                  ` · wrote off ${formatCurrency(s.written_off_amount)}`}
+                  ` · wrote off ${formatMoney(s.written_off_amount, s.currency)}`}
               </div>
             </div>
             <Button
@@ -89,11 +98,11 @@ export function ReceivableSettlementHistory({
           <AlertDialogHeader>
             <AlertDialogTitle>Undo this repayment?</AlertDialogTitle>
             <AlertDialogDescription>
-              {pending ? formatCurrency(pending.amount) : ""} will be removed from
+              {pending ? formatMoney(pending.amount, pending.currency) : ""} will be removed from
               the account it was credited to, and the amount becomes outstanding
               again.
               {pending && pending.written_off_amount > 0 &&
-                ` The ${formatCurrency(pending.written_off_amount)} written off with this repayment is also reversed, so it becomes outstanding too.`}
+                ` The ${formatMoney(pending.written_off_amount, pending.currency)} written off with this repayment is also reversed, so it becomes outstanding too.`}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

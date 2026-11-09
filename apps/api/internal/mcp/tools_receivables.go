@@ -103,12 +103,12 @@ func (s *Server) handleListReceivables(ctx context.Context, req mcp.CallToolRequ
 	for i := range result.Data {
 		r := &result.Data[i]
 		fmt.Fprintf(&sb, "  %s  [%s]  %s  status: %s\n",
-			untrusted(r.CounterpartyName), r.Kind, formatCents(r.Amount), r.Status)
+			untrusted(r.CounterpartyName), r.Kind, formatMoney(r.Amount, r.Currency), r.Status)
 		fmt.Fprintf(&sb, "    paid %s, written off %s, outstanding %s\n",
-			formatCents(r.PaidAmount), formatCents(r.WrittenOffAmount), formatCents(r.OutstandingAmount()))
+			formatMoney(r.PaidAmount, r.Currency), formatMoney(r.WrittenOffAmount, r.Currency), formatMoney(r.OutstandingAmount(), r.Currency))
 		if r.Transaction != nil {
 			fmt.Fprintf(&sb, "    Expense: %s on %s (total %s)\n",
-				untrusted(r.Transaction.Description), r.Transaction.Date.Format("2006-01-02"), formatCents(r.Transaction.Amount))
+				untrusted(r.Transaction.Description), r.Transaction.Date.Format("2006-01-02"), formatMoney(r.Transaction.Amount, r.Currency))
 		}
 		fmt.Fprintf(&sb, "    ID: %s\n", r.ID)
 	}
@@ -135,18 +135,29 @@ func (s *Server) handleGetReceivablesSummary(ctx context.Context, _ mcp.CallTool
 	}
 
 	var sb strings.Builder
-	fmt.Fprintf(&sb, "Open receivables: %s outstanding\n", formatCents(summary.TotalOutstanding))
+	fmt.Fprintf(&sb, "Open receivables: %s outstanding (total in %s)\n",
+		formatMoney(summary.TotalOutstanding, summary.Currency), currencyCode(summary.Currency))
+	if summary.FXMissing {
+		sb.WriteString("Note: some receivables are excluded from the total (no exchange rate); see the per-currency amounts below\n")
+	}
 	sb.WriteString(note)
 
-	sb.WriteString("\nBy counterparty:\n")
-	for _, c := range summary.ByCounterparty {
-		fmt.Fprintf(&sb, "  %-27s %12s  (%d open, oldest %s)\n",
-			untrusted(c.CounterpartyName), formatCents(c.Outstanding), c.OpenCount, c.OldestDate.Format("2006-01-02"))
+	if len(summary.ByCurrency) > 0 {
+		sb.WriteString("\nBy currency (not converted):\n")
+		for _, c := range summary.ByCurrency {
+			fmt.Fprintf(&sb, "  %s\n", formatMoney(c.Outstanding, c.Currency))
+		}
 	}
 
-	sb.WriteString("\nBy kind:\n")
+	fmt.Fprintf(&sb, "\nBy counterparty (in %s):\n", currencyCode(summary.Currency))
+	for _, c := range summary.ByCounterparty {
+		fmt.Fprintf(&sb, "  %-27s %12s  (%d open, oldest %s)\n",
+			untrusted(c.CounterpartyName), formatMoney(c.Outstanding, summary.Currency), c.OpenCount, c.OldestDate.Format("2006-01-02"))
+	}
+
+	fmt.Fprintf(&sb, "\nBy kind (in %s):\n", currencyCode(summary.Currency))
 	for _, k := range summary.ByKind {
-		fmt.Fprintf(&sb, "  %-25s %12s  (%d open)\n", k.Kind, formatCents(k.Outstanding), k.OpenCount)
+		fmt.Fprintf(&sb, "  %-25s %12s  (%d open)\n", k.Kind, formatMoney(k.Outstanding, summary.Currency), k.OpenCount)
 	}
 
 	return mcp.NewToolResultText(sb.String()), nil
