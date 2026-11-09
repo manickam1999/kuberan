@@ -90,7 +90,14 @@ function ChipPopover({
             <span className="max-w-[10rem] truncate">{label}</span>
           </ToggleChip>
         </PopoverTrigger>
-        <PopoverContent align="start" className={cn("p-1.5", width)}>
+        <PopoverContent
+          align="start"
+          // A long account list must scroll inside the popover, not run off screen.
+          className={cn(
+            "max-h-[min(24rem,var(--radix-popover-content-available-height))] overflow-y-auto p-1.5",
+            width
+          )}
+        >
           {children}
         </PopoverContent>
       </Popover>

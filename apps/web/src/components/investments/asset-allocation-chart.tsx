@@ -114,7 +114,7 @@ export function AssetAllocationChart({
                   {rows.length}
                 </span>
                 <span className="text-[10px] text-muted-foreground">
-                  classes
+                  {rows.length === 1 ? "class" : "classes"}
                 </span>
               </>
             }
