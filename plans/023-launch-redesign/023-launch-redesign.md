@@ -38,6 +38,57 @@ Design references:
 Both artifacts are private to the repo owner. The prototype is the visual spec for this plan. Where this plan
 and the prototype disagree, this plan wins; the prototype will be updated to match.
 
+## Backend re-audit (9 Nov 2026)
+
+Re-checked against `main` at `3b3bea4`, after Phase 0 (#39), the security hardening (#38) and multi-currency
+(plan 024, #49 and later) landed. Migrations on `main` run to `000047`, so new ones start at `000048`.
+
+**Done since the plan was written:**
+
+| Plan item | Where |
+|---|---|
+| 1.1 Base currency | Plan 024. `users.base_currency` (migration 39), `PATCH /profile` accepts it (locked once there is investment history), FX rates and conversion on read for every aggregate, `en-MY` money formatting with an explicit currency. This goes further than 1.1 planned: amounts are converted, not just flagged. |
+| 1.2 Opening balance type | Phase 0 (#39), migration `000037`. |
+| Category icon rules | Phase 0 (#39). |
+| Part of 5.8 (import) | Plan 024 added `POST /imports/ibkr` (IBKR Activity Statements). A generic bank CSV import is still missing. |
+
+**Still missing, needed before launch (Phase 1):**
+
+| # | Need | Prototype screens that use it | Today |
+|---|---|---|---|
+| 1.3 | Transaction text search, `notes`, `source`, `shared` / `has_attachment` filters | Transactions, ⌘K search, transaction detail | Filters are account, category, type, dates and amount only; no notes or source columns |
+| 1.4 | Bulk edit (`POST /transactions/bulk`) | Transactions (bulk bar) | None |
+| 1.5 | Edit name and email, change password, list and revoke signed-in devices | Settings → Profile & security | `PATCH /profile` takes only `hide_balances`, `default_account_id`, `base_currency`; `refresh_sessions` exist but aren't exposed |
+| 1.6 | MCP change log and write limits | Settings → Connected apps | MCP writes are audited with `via`/`client_id` inside the `changes` JSON, but `audit_logs` has no columns for them and nothing reads them back; limits live only in config |
+| 1.7 | Data export and server status | Settings → Data, sidebar host chip | None |
+| 1.8 | Appearance preferences on the profile (new) | Settings → Appearance, theme picker | Theme and chart style live in each browser's `localStorage` only |
+| 1.9 | Credit-card "current balance owed" on create (moved from Phase 0) | New account | `CreateCreditCardAccountRequest` has no opening amount |
+
+**Still missing, can follow launch (Phase 5 and 6):**
+
+| # | Need | Today |
+|---|---|---|
+| 5.1 | Per-account balance history and sparklines | Snapshots hold totals only |
+| 5.2 | Rule match counts and suggestions | Preview and apply exist; no counts |
+| 5.3 | Loan (`debt`) account creation | The type exists, but there's no `POST /accounts/debt` |
+| 5.4 | "Typical" averages for pace and "vs typical" | Derivable from many summary calls; no endpoint |
+| 5.5 | Security region (allocation by region) | No field |
+| 5.6 | Reminders (card due, deposit maturity) | None |
+| 5.7 | Demo data load and delete | None |
+| 5.8 | Generic bank CSV import | Only the IBKR importer |
+| 6.x | Bot one-line quick add, `/undo`, receipt photos, `suggest-category` endpoint | The bot has guided flows and `/balance`, `/summary`, `/budgets`, `/owed`, `/accounts`, `/categories` |
+
+**Frontend-only gaps the prototype needs after plan 024.** The prototype assumed one currency (RM everywhere).
+Before Phase 4 it should show:
+
+- each amount in its own currency, with the converted total;
+- FX transfers (`to_amount` and the implied rate);
+- the IBKR import screen;
+- the reporting-currency setting and its lock;
+- the price-versus-FX split of investment returns.
+
+None of these need new API.
+
 ## Context
 
 Before launch, the web app was reviewed against a seeded demo: four accounts, about 140 transactions over
@@ -138,10 +189,12 @@ backend tests.
 
 ## Phase 1: Launch-critical backend
 
-Migrations continue from `000037` (PR #38 added `000035`–`000036`; Phase 0 added `000037`). Every item updates Swagger, the TypeScript types (`types/models.ts`,
+Migrations continue from `000047` (plan 024 used `000038`–`000047`). Every item updates Swagger, the TypeScript types (`types/models.ts`,
 `types/api.ts`) and the hooks.
 
 ### 1.1 Base currency
+
+**Done by plan 024** (see the re-audit above); the text below is the original plan, kept for reference.
 
 - **Migration `000038_add_base_currency_to_users`:** `users.base_currency VARCHAR(3) NOT NULL DEFAULT 'USD'`.
   Backfill each user's most common account currency, falling back to `telegram_links.default_currency`, then `USD`.
@@ -170,6 +223,8 @@ Migrations continue from `000037` (PR #38 added `000035`–`000036`; Phase 0 add
 
 ### 1.2 Opening balance type
 
+**Done in Phase 0** (#39, migration `000037`).
+
 - **Model:** add `TransactionTypeOpeningBalance = "opening_balance"` and teach the `transaction_type` validator
   about it.
 - **Rules for the new type:**
@@ -197,7 +252,7 @@ Migrations continue from `000037` (PR #38 added `000035`–`000036`; Phase 0 add
 
 ### 1.3 Transaction search, notes and source
 
-- **Migration `000039_add_notes_source_to_transactions`:**
+- **Migration `000048_add_notes_source_to_transactions`:**
   - `notes TEXT NOT NULL DEFAULT ''`;
   - `source VARCHAR(20) NOT NULL DEFAULT 'web'`, one of `web | telegram | mcp | rule | import | system`;
   - Postgres only: `CREATE EXTENSION IF NOT EXISTS pg_trgm` and a GIN trigram index on `description`.
@@ -254,7 +309,7 @@ Migrations continue from `000037` (PR #38 added `000035`–`000036`; Phase 0 add
 
 ### 1.6 MCP change log
 
-- **Migration `000040_add_source_to_audit_logs`:**
+- **Migration `000049_add_source_to_audit_logs`:**
   - `source VARCHAR(20) NOT NULL DEFAULT 'web'` and `client_id VARCHAR(255) NOT NULL DEFAULT ''`;
   - an index on `(user_id, source, created_at DESC)`;
   - backfill: `source='mcp'`, with `client_id` taken from the JSON, where `changes::jsonb->>'via' = 'mcp'`
@@ -289,6 +344,27 @@ Migrations continue from `000037` (PR #38 added `000035`–`000036`; Phase 0 add
 **Phase 1 exit:** `./scripts/check-go.sh apps/api` is green, Swagger is regenerated, and the new endpoints are
 covered in `tests/integration/`.
 
+### 1.8 Appearance preferences (theme picker)
+
+Lets the theme picker follow the user across devices instead of resetting per browser.
+
+- **Migration `000050_add_appearance_to_users`:** `users.appearance JSONB NOT NULL DEFAULT '{}'`.
+- **Shape:** `{ "palette": "cobalt", "mode": "system" | "light" | "dark", "chart_style": "clean" | "dither",
+  "density": "comfortable" | "compact", "show_cents": true }`. The server validates `palette` against the
+  list the web app ships, so an unknown palette can't be stored.
+- **API:** `GET /profile` returns it; `PATCH /profile` accepts `appearance` as a partial update (merge, not
+  replace).
+- **Web:** apply it before first paint from a cookie mirror, as the chart-theme init script does today, so
+  there's no flash. `localStorage` stays as the fallback when signed out.
+- **Tests:** validation of unknown keys and values, merge semantics.
+
+### 1.9 Credit-card opening balance
+
+- `CreateCreditCardAccountRequest.current_balance` (`gte=0`, optional) writes an `opening_balance` row.
+- The Phase 0 type already moves liability balances the right way (never inverted), so this is only a
+  request field and a service call.
+- Web: the "Current balance owed" field in New account.
+
 ## Phase 2: Design system re-skin (tokens only, no layout changes)
 
 D1 must be signed off first.
@@ -300,6 +376,10 @@ D1 must be signed off first.
     `positive` and `negative`.
   - Add `--k1..--k8` as the category palette, with one shared hue order for light and dark.
   - Replace `--chart-1..6`.
+  - Ship each palette as a token set under `:root[data-palette="…"]`, with dark and light values, the way the
+    prototype does. Every component already reads tokens, so a palette is data, not code. Start with the
+    default plus the shortlist the owner picks from the prototype's eight. Each palette must pass the contrast
+    checks the prototype's palettes were held to (text 7:1, secondary text and money colours 4.5:1).
 - **2.2 Type.** Load Instrument Serif and Source Serif 4 (opsz) through `next/font/google`. Add `--font-display`
   and `--font-figures`. Body stays Geist.
   - Utilities: `.font-display` for page titles and brand; `.font-figures` with
@@ -528,7 +608,7 @@ These items aren't needed to launch. Each one unhides a piece of UI that was bui
 
 | Area | Files |
 |---|---|
-| Migrations | `000037_add_opening_balance_type` (done), `000038_add_base_currency_to_users`, `000039_add_notes_source_to_transactions`, `000040_add_source_to_audit_logs`; Phase 5 adds rule stats, `reminders`, `demo_rows`, `securities.region` |
+| Migrations | `000037_add_opening_balance_type` (done), base currency done in plan 024 (`000038`–`000047`), `000048_add_notes_source_to_transactions`, `000049_add_source_to_audit_logs`, `000050_add_appearance_to_users`; Phase 5 adds rule stats, `reminders`, `demo_rows`, `securities.region` |
 | API models | `user.go`, `transaction.go`, `audit_log.go`, `refresh_session.go` (read only), `transaction_rule.go` |
 | API services | `account_service.go`, `transaction_service.go` (filter, bulk, opening-balance exclusions), analytics and budget services, `audit_service.go`, auth/user service (password, sessions), new `export_service.go` and `status_service.go` |
 | API handlers | `auth_handler.go` (profile, password, sessions), `transaction_handler.go` (search, bulk), `oauth_clients_handler.go` (activity, limits), new `export_handler.go` and `status_handler.go`, `routes.go` |
