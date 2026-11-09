@@ -1,7 +1,15 @@
 # Plan 023 — Launch Redesign
 
-**Status: Phase 0 implemented; Phase 1 items 1.1, 1.3, 1.4, 1.5, 1.7 and 1.9 implemented** (migrations `000048`
-notes/source, `000049` backup runs). Later items are proposed. Where Phase 0's code differs from the plan below:
+**Status: Phases 0 and 1 implemented** (migrations `000048` notes/source, `000049` backup runs, `000050` audit
+source, `000051` grant client host, `000052` appearance), plus 2.1's palettes. Phase 2 is in progress; later phases
+are proposed. Phase 1 notes:
+
+- Wrong current passwords return 400 `INVALID_CURRENT_PASSWORD`, not 401, so the web client doesn't mistake them
+  for an expired token. The current device is found from the refresh cookie; no token claim was added.
+- MCP activity summaries tag amounts with the ISO code (`MYR 18.71`), the MCP convention.
+- The first paint of a first-ever visit uses Catppuccin and switches to the server's `DEFAULT_PALETTE` once
+  `GET /appearance` loads; the cookie mirror prevents the flash after that.
+- `density` and `show_cents` are stored and validated but have no UI yet (Phase 4). Where Phase 0's code differs from the plan below:
 
 - **0.3 steps down, not up.** A new account's few days of snapshots look the same at 6M and 1M (both grouped
   by day), so a longer range never helps. The chart defaults to 6M and, until the user picks a range, falls back
