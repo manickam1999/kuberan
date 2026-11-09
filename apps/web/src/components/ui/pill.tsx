@@ -37,7 +37,9 @@ export function Pill({
           style={{ backgroundColor: color }}
         />
       ) : null}
-      {children}
+      {/* Slottable: with asChild, the dot is merged into the child element
+          rather than handed to Slot as a second child (which throws). */}
+      {asChild ? <Slot.Slottable>{children}</Slot.Slottable> : children}
     </Comp>
   )
 }
