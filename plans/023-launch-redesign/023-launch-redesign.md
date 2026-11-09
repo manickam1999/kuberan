@@ -159,6 +159,7 @@ At the end, every screen in the prototype either works against the real API or h
 | D9 | Bulk edit | **One endpoint, `POST /transactions/bulk`**, capped at 200 IDs and run in a single database transaction. | Many parallel `PUT`s from the client. Rejected: not atomic, and noisy in the audit log. |
 | D10 | Data export | **Per-table CSV as a zip, streamed.** A Postgres dump stays an operator task (the backup service). The UI shows backup status and links to docs, but doesn't download dumps. | Downloading `pg_dump` from the UI. Rejected: large, and a security risk. |
 | D11 | Receipt OCR in the bot | **Out of scope.** Photos attach to the transaction just entered, but nothing reads them. | OCR. That needs a model or provider, which conflicts with privacy-first. Revisit separately. |
+| D12 | How AI fits in | **MCP only (decided 9 Nov).** Kuberan has no built-in assistant and makes no AI calls of its own. People use the assistant they already have (Claude, Claude Code or any MCP app) through the MCP server. The app's job is connecting, controlling and reviewing that access: Settings → Connected apps (setup steps, per-app access and limits, a log of changes) and "via Claude" on rows an app changed. Copy must not claim data never leaves the server: what a user allows goes to their assistant's provider. | An in-app assistant through the Anthropic API (rejected: it puts AI calls, keys and data egress inside Kuberan). |
 
 ## Phase 0: Visible bug fixes (no redesign)
 
@@ -474,7 +475,7 @@ Each screen is its own PR, matching the prototype screen of the same name. The o
 
 | Screen (prototype id) | Route | Key changes | API |
 |---|---|---|---|
-| Home (`home`) | `/` | Hero net worth (6M default, delta, balance sheet panel, owed-to-you line); "this month" strip of spend vs pace, budgets at risk and cash flow; Recent; Accounts with sparklines; "Ask your assistant" card shown only if a client is connected | Today, plus 5.1 (sparklines) and 5.4 (pace); render without them until they land |
+| Home (`home`) | `/` | Hero net worth (6M default, delta, balance sheet panel, owed-to-you line); "this month" strip of spend vs pace, budgets at risk and cash flow; Recent; Accounts with sparklines | Today, plus 5.1 (sparklines) and 5.4 (pace); render without them until they land |
 | Onboarding (`welcome`) | `/` (empty state) | Four-step checklist computed client-side from accounts, transactions, budgets, Telegram link and OAuth clients; "Load demo data" | 5.7 for the demo button; hide it until then |
 | Search (`search`) | overlay | One palette for transactions, actions and navigation | 1.3 |
 | Transactions (`transactions`, `tx-bulk`) | `/transactions` | Desktop table with 40px rows, sticky day totals and an inline category picker; mobile grouped list; search box; filter chips (period, account, category, type, amount, shared); multi-select with a bulk bar; j/k/x/c/e keys | 1.3, 1.4 |
