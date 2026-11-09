@@ -4,7 +4,8 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { useBaseCurrency } from "@/hooks/use-profile";
 import { useAccounts } from "@/hooks/use-accounts";
-import { useCreateSharedExpense } from "@/hooks/use-receivables";
+import { useCounterparties, useCreateSharedExpense } from "@/hooks/use-receivables";
+import { ToggleChip } from "@/components/ui/toggle-chip";
 import { formatMoney, toLocalDateString, toRFC3339 } from "@/lib/format";
 import {
   isSettlementAccountType,
@@ -81,6 +82,8 @@ function LendForm({
   const baseCurrency = useBaseCurrency();
   const { data: accountData } = useAccounts({ page_size: 100 });
   const createShared = useCreateSharedExpense();
+  const { data: people } = useCounterparties("");
+  const recentPeople = (people ?? []).slice(0, 6);
 
   // Same filtering as the settle dialog: cash / credit card / debt only.
   const accounts = (accountData?.data ?? [])
@@ -178,6 +181,20 @@ function LendForm({
           placeholder="Who are you lending to?"
           disabled={createShared.isPending}
         />
+        {recentPeople.length > 0 && (
+          <div className="flex flex-wrap gap-1.5" aria-label="People you have lent to before">
+            {recentPeople.map((p) => (
+              <ToggleChip
+                key={p.key}
+                pressed={normalizeCounterpartyName(name).toLowerCase() === p.name.toLowerCase()}
+                onPressedChange={(on) => setName(on ? p.name : "")}
+                disabled={createShared.isPending}
+              >
+                {p.name}
+              </ToggleChip>
+            ))}
+          </div>
+        )}
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2">
@@ -238,7 +255,11 @@ function LendForm({
           Cancel
         </Button>
         <Button type="submit" disabled={createShared.isPending}>
-          {createShared.isPending ? "Saving..." : "Record loan"}
+          {createShared.isPending
+            ? "Saving..."
+            : amount > 0
+              ? `Lend ${formatMoney(amount, currency)}`
+              : "Lend"}
         </Button>
       </DialogFooter>
     </form>
