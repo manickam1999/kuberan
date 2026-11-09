@@ -8,6 +8,7 @@ import {
   ArrowRight,
   ArrowUp,
   GripVertical,
+  Info,
   MoreHorizontal,
   Pencil,
   Plus,
@@ -16,11 +17,26 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { ApiClientError } from "@/lib/api-client";
-import { useRules, useReorderRules, useUpdateRule } from "@/hooks/use-rules";
+import {
+  useRules,
+  useReorderRules,
+  useRuleSuggestions,
+  useUpdateRule,
+} from "@/hooks/use-rules";
+import { useCategories } from "@/hooks/use-categories";
 import { useAccounts } from "@/hooks/use-accounts";
 import { useBaseCurrency } from "@/hooks/use-profile";
 import { conditionParts } from "@/lib/rule-format";
 import { parseRulePrefill, type RulePrefill } from "@/lib/rule-prefill";
+import {
+  firstVisibleSuggestion,
+  loadDismissed,
+  matchSummary,
+  saveDismissed,
+  suggestionKey,
+  suggestionPrefill,
+} from "@/lib/rule-suggestions";
+import { formatDate } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { Pill } from "@/components/ui/pill";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -57,6 +73,32 @@ function RulesPageContent() {
   const { data: rules, isLoading, isError, refetch } = useRules();
   const reorder = useReorderRules();
   const { data: accountData } = useAccounts({ page_size: 100 });
+  const { data: suggestions } = useRuleSuggestions();
+  const { data: categoryData } = useCategories({ page_size: 100 });
+
+  // Suggestions the user dismissed are remembered per browser. Read after
+  // mount so server and client render the same markup.
+  const [dismissed, setDismissed] = useState<ReadonlySet<string>>(new Set());
+  useEffect(() => {
+    setDismissed(loadDismissed());
+  }, []);
+  const suggestion = firstVisibleSuggestion(suggestions, dismissed);
+  const suggestionCategory = suggestion
+    ? categoryData?.data.find((c) => c.id === suggestion.category_id)
+    : undefined;
+
+  function dismissSuggestion() {
+    if (!suggestion) return;
+    const next = new Set(dismissed).add(suggestionKey(suggestion));
+    setDismissed(next);
+    saveDismissed(next);
+  }
+
+  function createFromSuggestion() {
+    if (!suggestion) return;
+    setPrefill(suggestionPrefill(suggestion));
+    setCreateOpen(true);
+  }
 
   // Deep link from Transaction detail:
   // /rules?new=1&description=<text>&category_id=<id>&type=<income|expense>
@@ -193,6 +235,29 @@ function RulesPageContent() {
               />
             ))}
           </Reorder.Group>
+        </div>
+      )}
+
+      {suggestion && suggestionCategory && (
+        <div className="bg-card flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl border px-4 py-3 text-sm">
+          <Info
+            className="text-muted-foreground size-4 shrink-0"
+            aria-hidden
+          />
+          <p className="min-w-0 flex-1">
+            <b className="font-medium">Suggestion:</b> you&apos;ve put
+            &ldquo;
+            <span className="break-words">{suggestion.description_pattern}</span>
+            &rdquo; in {suggestionCategory.name} {suggestion.count} times.
+          </p>
+          <div className="flex shrink-0 items-center gap-2">
+            <Button size="sm" variant="outline" onClick={createFromSuggestion}>
+              Create rule
+            </Button>
+            <Button size="sm" variant="ghost" onClick={dismissSuggestion}>
+              Dismiss
+            </Button>
+          </div>
         </div>
       )}
 
@@ -335,6 +400,9 @@ function RuleRow({
               <span className="sr-only">sets category</span> {target.name}
             </span>
           )}
+        </span>
+        <span className="text-muted-foreground/80 mt-0.5 block text-xs">
+          {matchSummary(rule.match_count, rule.last_matched_at, formatDate)}
         </span>
       </button>
 

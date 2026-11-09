@@ -162,8 +162,9 @@ func (s *receivableService) CreateSharedExpense(userID string, in CreateSharedEx
 
 	// Auto-categorize via rules exactly like CreateTransaction, except in full
 	// mode (a loan/claim/deposit is not spending, so no category is guessed).
+	var matchedRuleID *string
 	if in.Mode != ShareModeFull {
-		categoryID = resolveRuleCategory(s.ruleService, userID, categoryID, RuleInput{
+		categoryID, matchedRuleID = resolveRuleCategory(s.ruleService, userID, categoryID, RuleInput{
 			Description: in.Description,
 			Amount:      in.Amount,
 			AccountID:   in.AccountID,
@@ -180,6 +181,9 @@ func (s *receivableService) CreateSharedExpense(userID string, in CreateSharedEx
 		expense, txErr := insertTransaction(tx, s.accountService, userID, accounts[in.AccountID],
 			categoryID, models.TransactionTypeExpense, in.Amount, in.Description, date, meta)
 		if txErr != nil {
+			return txErr
+		}
+		if txErr := recordRuleMatch(tx, userID, matchedRuleID, 1); txErr != nil {
 			return txErr
 		}
 

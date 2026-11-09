@@ -486,15 +486,53 @@ func (h *TransactionHandler) UpdateTransaction(c *gin.Context) {
 		updateFields.Date = &parsedDate
 	}
 
+	before, err := h.transactionService.GetTransactionByID(userID, txID)
+	if err != nil {
+		respondWithError(c, err)
+		return
+	}
+
 	transaction, err := h.transactionService.UpdateTransaction(userID, txID, updateFields)
 	if err != nil {
 		respondWithError(c, err)
 		return
 	}
 
-	h.auditService.Log(userID, "UPDATE_TRANSACTION", "transaction", txID, c.ClientIP(), nil)
+	h.auditService.Log(userID, "UPDATE_TRANSACTION", "transaction", txID, c.ClientIP(),
+		transactionChanges(before, transaction))
 
 	c.JSON(http.StatusOK, gin.H{"transaction": transaction})
+}
+
+// transactionChanges describes what an update changed as {field: {from, to}}
+// for the audit row (the same shape the MCP tools record). Notes are free text,
+// so only the fact that they changed is recorded. Returns nil when nothing
+// differs.
+func transactionChanges(before, after *models.Transaction) map[string]interface{} {
+	if before == nil || after == nil {
+		return nil
+	}
+	changes := map[string]interface{}{}
+	diff := func(field string, from, to interface{}, changed bool) {
+		if changed {
+			changes[field] = map[string]interface{}{"from": from, "to": to}
+		}
+	}
+	diff("account_id", before.AccountID, after.AccountID, before.AccountID != after.AccountID)
+	diff("type", before.Type, after.Type, before.Type != after.Type)
+	diff("amount", before.Amount, after.Amount, before.Amount != after.Amount)
+	diff("description", before.Description, after.Description, before.Description != after.Description)
+	diff("date", before.Date, after.Date, !before.Date.Equal(after.Date))
+	categoryChanged := (before.CategoryID == nil) != (after.CategoryID == nil) ||
+		(before.CategoryID != nil && after.CategoryID != nil && *before.CategoryID != *after.CategoryID)
+	diff("category_id", before.CategoryID, after.CategoryID, categoryChanged)
+	if before.Notes != after.Notes {
+		changes["notes"] = map[string]interface{}{"changed": true}
+	}
+	if len(changes) == 0 {
+		return nil
+	}
+	return changes
 }
 
 // DeleteTransaction handles the deletion of a transaction

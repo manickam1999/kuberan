@@ -280,6 +280,7 @@ func registerRuleRoutes(protected *gin.RouterGroup, h Routes) {
 	rules.GET("", h.Rule.GetRules)
 	rules.POST("/reorder", h.Rule.ReorderRules)
 	rules.POST("/preview", h.Rule.PreviewRule)
+	rules.GET("/suggestions", h.Rule.GetSuggestions)
 	rules.GET("/:id", h.Rule.GetRule)
 	rules.PUT("/:id", h.Rule.UpdateRule)
 	rules.DELETE("/:id", h.Rule.DeleteRule)

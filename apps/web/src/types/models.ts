@@ -275,6 +275,8 @@ export interface TransactionRule extends BaseModel {
   name: string;
   priority: number; // lower = evaluated first
   is_active: boolean;
+  match_count: number; // transactions this rule has categorised
+  last_matched_at: string | null; // ISO 8601; null if it never matched
   conditions: RuleCondition[];
   actions: RuleAction[];
 }

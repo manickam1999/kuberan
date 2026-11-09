@@ -1,5 +1,7 @@
 package models
 
+import "time"
+
 // RuleField identifies which transaction attribute a condition matches against.
 type RuleField string
 
@@ -44,6 +46,12 @@ type TransactionRule struct {
 	Name     string `gorm:"not null" json:"name"`
 	Priority int    `gorm:"not null;default:0" json:"priority"` // lower = evaluated first
 	IsActive bool   `gorm:"not null;default:true" json:"is_active"`
+
+	// MatchCount is how many transactions this rule has categorized (new
+	// transactions it matched plus rows a backfill changed); LastMatchedAt is
+	// when that last happened (nil if never).
+	MatchCount    int64      `gorm:"not null;default:0" json:"match_count"`
+	LastMatchedAt *time.Time `json:"last_matched_at"`
 
 	// Conditions and Actions are wholly-owned children, replaced on update.
 	Conditions []TransactionRuleCondition `gorm:"foreignKey:RuleID" json:"conditions"`

@@ -452,6 +452,8 @@ type RuleServicer interface {
 	// ResolveForUser loads the user's active rules and returns the category the
 	// input transaction should receive (if any). Used by transaction creation.
 	ResolveForUser(userID string, in RuleInput) (RuleResult, error)
+	// SuggestRules proposes rules from repeated categorizations no rule covers.
+	SuggestRules(userID string) ([]RuleSuggestion, error)
 }
 
 // BudgetProgress contains spending vs budget data for a budget's current period.

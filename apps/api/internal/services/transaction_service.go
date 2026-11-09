@@ -93,7 +93,7 @@ func (s *transactionService) CreateTransaction(
 	// Auto-categorize via rules when the caller didn't specify a category and the
 	// transaction is a categorizable income/expense (plan 018). Rule actions are
 	// validated against the user's categories when the rule is saved.
-	categoryID = resolveRuleCategory(s.ruleService, userID, categoryID, RuleInput{
+	categoryID, matchedRuleID := resolveRuleCategory(s.ruleService, userID, categoryID, RuleInput{
 		Description: description,
 		Amount:      amount,
 		AccountID:   accountID,
@@ -108,7 +108,10 @@ func (s *transactionService) CreateTransaction(
 		}
 		result, txErr = insertTransaction(tx, s.accountService, userID, accounts[accountID],
 			categoryID, transactionType, amount, description, date, meta)
-		return txErr
+		if txErr != nil {
+			return txErr
+		}
+		return recordRuleMatch(tx, userID, matchedRuleID, 1)
 	})
 	if err != nil {
 		return nil, err
@@ -401,7 +404,7 @@ func (s *transactionService) ApplyRule(userID, ruleID string, opts ApplyRuleOpti
 				}
 			}
 		}
-		return nil
+		return recordRuleMatch(tx, userID, &ruleID, eligible)
 	})
 	if err != nil {
 		return nil, err

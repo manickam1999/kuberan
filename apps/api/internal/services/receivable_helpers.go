@@ -262,18 +262,38 @@ func normalizeSearchKey(raw string) (string, error) {
 
 // resolveRuleCategory returns the category a new transaction should get: the
 // explicit categoryID when set, otherwise the first matching auto-categorization
-// rule (plan 018) for categorizable types. It runs outside the write
-// transaction so rule reads don't extend the account-row lock, and a rule error
-// never blocks creation (the category is simply left unset).
-func resolveRuleCategory(rules RuleServicer, userID string, categoryID *string, in RuleInput) *string {
+// rule (plan 018) for categorizable types, together with the matched rule's ID
+// (nil when the category was explicit or no rule matched). The rule read runs
+// before the write transaction so it doesn't extend the account-row lock, and a
+// rule error never blocks creation (the category is simply left unset). The
+// caller records the match with recordRuleMatch inside its transaction.
+func resolveRuleCategory(rules RuleServicer, userID string, categoryID *string, in RuleInput) (category, ruleID *string) {
 	if categoryID != nil || rules == nil || !isCategorizableType(in.Type) {
-		return categoryID
+		return categoryID, nil
 	}
 	res, err := rules.ResolveForUser(userID, in)
 	if err != nil {
+		return nil, nil
+	}
+	return res.CategoryID, res.MatchedRuleID
+}
+
+// recordRuleMatch adds n to a rule's match counter and stamps last_matched_at,
+// inside the caller's transaction. A nil ruleID or n <= 0 is a no-op. The
+// update is user-scoped and relative, so concurrent writers never lose counts.
+func recordRuleMatch(tx *gorm.DB, userID string, ruleID *string, n int) error {
+	if ruleID == nil || n <= 0 {
 		return nil
 	}
-	return res.CategoryID
+	if err := tx.Model(&models.TransactionRule{}).
+		Where("id = ? AND user_id = ?", *ruleID, userID).
+		Updates(map[string]any{
+			"match_count":     gorm.Expr("match_count + ?", n),
+			"last_matched_at": time.Now(),
+		}).Error; err != nil {
+		return apperrors.Wrap(apperrors.ErrInternalServer, err)
+	}
+	return nil
 }
 
 // insertTransaction creates a user transaction row and applies its balance

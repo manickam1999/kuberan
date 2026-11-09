@@ -335,6 +335,18 @@ export interface RulesResponse {
   rules: TransactionRule[];
 }
 
+// A rule the app proposes from repeated categorisations (GET /rules/suggestions)
+export interface RuleSuggestion {
+  description_pattern: string; // normalised: lowercase, whitespace collapsed
+  category_id: string;
+  type: "income" | "expense";
+  count: number;
+}
+
+export interface RuleSuggestionsResponse {
+  suggestions: RuleSuggestion[];
+}
+
 // Rule request building blocks (mirror the backend service inputs)
 export interface RuleConditionInput {
   field: RuleField;

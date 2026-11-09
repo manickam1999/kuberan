@@ -179,6 +179,32 @@ func (h *RuleHandler) GetRules(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"rules": rules})
 }
 
+// GetSuggestions handles proposing rules from repeated categorizations.
+// @Summary     Suggest transaction rules
+// @Description Patterns of at least 3 income/expense rows in the last 90 days with the same normalised description and category that no active rule matches
+// @Tags        rules
+// @Produce     json
+// @Security    BearerAuth
+// @Success     200 {object} map[string][]services.RuleSuggestion "Suggestions"
+// @Failure     401 {object} ErrorResponse "Unauthorized"
+// @Failure     500 {object} ErrorResponse "Server error"
+// @Router      /rules/suggestions [get]
+func (h *RuleHandler) GetSuggestions(c *gin.Context) {
+	userID, err := getUserID(c)
+	if err != nil {
+		respondWithError(c, err)
+		return
+	}
+
+	suggestions, err := h.ruleService.SuggestRules(userID)
+	if err != nil {
+		respondWithError(c, err)
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"suggestions": suggestions})
+}
+
 // GetRule handles retrieving a single rule.
 // @Summary     Get a transaction rule
 // @Tags        rules
