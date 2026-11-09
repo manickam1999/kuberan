@@ -36,7 +36,7 @@ per hour per IP in this stack). All of it disappears at the next reset.
 
 ```bash
 cp .env.demo.example .env.demo
-# edit: JWT_SECRET, DB_PASSWORD, the two public URLs, DEMO_EMAIL / DEMO_PASSWORD
+# edit: JWT_SECRET, PIPELINE_API_KEY, DB_PASSWORD, the two public URLs, DEMO_EMAIL / DEMO_PASSWORD
 docker compose -f docker-compose.demo.yml --env-file .env.demo up -d --build
 ```
 
@@ -62,6 +62,11 @@ on purpose: put it next to the demo link on the landing page.
 5. `POST /auth/register` for the demo login, `POST /auth/login`.
 6. `POST /demo/load` to create the sample household (accounts, about three
    months of transactions, a budget, holdings with prices, receivables).
+7. `POST /pipeline/snapshots` (with `PIPELINE_API_KEY`) records today's
+   net-worth snapshot, and `deploy/demo/backfill-snapshots.sql` derives 90 days
+   of sample history from it, so the dashboard chart is not empty. Without the
+   oracle nothing else would ever write snapshots. This history is sample data,
+   a gentle curve, not a calculation.
 
 It uses only existing endpoints; nothing in the api is demo-specific besides
 `DEMO_ENABLED`. Dates in the sample data are relative to the day it is loaded,

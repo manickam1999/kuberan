@@ -66,6 +66,8 @@ services:
       DEFAULT_PALETTE: ${DEFAULT_PALETTE:-}
       # The point of this stack: POST /demo/load and DELETE /demo exist.
       DEMO_ENABLED: "true"
+      # Lets demo-reset record a snapshot so the dashboard has a net-worth chart.
+      PIPELINE_API_KEY: ${PIPELINE_API_KEY:?PIPELINE_API_KEY is required}
       # MCP is off: no mcp or hydra service runs, and no write scopes are offered.
       MCP_WRITE_ENABLED: "false"
       # Open registration stays on (visitors can make their own throwaway
@@ -144,6 +146,7 @@ services:
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
       CORS_ORIGIN: ${CORS_ORIGIN:?CORS_ORIGIN is required (the demo web origin)}
       API_URL: http://api:8080
+      PIPELINE_API_KEY: ${PIPELINE_API_KEY:?PIPELINE_API_KEY is required}
       DEMO_EMAIL: ${DEMO_EMAIL:-demo@kuberan.example.com}
       DEMO_PASSWORD: ${DEMO_PASSWORD:?DEMO_PASSWORD is required (it is public)}
       DEMO_FIRST_NAME: ${DEMO_FIRST_NAME:-Demo}
