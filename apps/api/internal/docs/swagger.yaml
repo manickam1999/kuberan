@@ -36,15 +36,23 @@ definitions:
         type: string
       fee:
         description: optional, defaults to 0
+        maximum: 100000000000000
         minimum: 0
         type: integer
+      fx_rate:
+        description: 'optional decimal string: security currency -> base rate of the
+          trade'
+        maxLength: 32
+        type: string
       notes:
         description: optional, defaults to "Initial purchase"
         maxLength: 500
         type: string
       purchase_price:
+        maximum: 100000000000000
         type: integer
       quantity:
+        maximum: 1000000000000000
         type: number
       security_id:
         type: string
@@ -180,6 +188,10 @@ definitions:
         type: integer
       category_id:
         type: string
+      currency:
+        description: Currency is optional (ISO 4217); it defaults to the user's base
+          currency.
+        type: string
       name:
         maxLength: 100
         minLength: 1
@@ -238,6 +250,13 @@ definitions:
         type: integer
       currency:
         type: string
+      current_balance:
+        description: |-
+          CurrentBalance is the amount already owed, in cents. When > 0 it is
+          recorded as an opening_balance transaction. Currency defaults to the
+          user's base currency when omitted.
+        minimum: 0
+        type: integer
       description:
         maxLength: 500
         type: string
@@ -450,6 +469,11 @@ definitions:
         type: string
       to_account_id:
         type: string
+      to_amount:
+        description: |-
+          ToAmount is the amount arriving in the destination account, in its
+          currency. Required when the two accounts' currencies differ.
+        type: integer
     required:
     - amount
     - from_account_id
@@ -459,6 +483,10 @@ definitions:
     properties:
       code:
         type: string
+      details:
+        additionalProperties: {}
+        description: machine-readable context, e.g. FX_AMOUNT_REQUIRED's suggested_amount
+        type: object
       message:
         type: string
     type: object
@@ -466,6 +494,83 @@ definitions:
     properties:
       error:
         $ref: '#/definitions/internal_handlers.ErrorDetail'
+    type: object
+  internal_handlers.FXLatestResponse:
+    properties:
+      base:
+        type: string
+      path:
+        enum:
+        - identity
+        - direct
+        - inverse
+        - pivot:USD
+        type: string
+      quote:
+        type: string
+      rate:
+        example: "4.4712"
+        type: string
+      recorded_at:
+        type: string
+      stale:
+        type: boolean
+    type: object
+  internal_handlers.FXPairResponse:
+    properties:
+      base:
+        type: string
+      quote:
+        type: string
+    type: object
+  internal_handlers.FXPairsResponse:
+    properties:
+      base_currencies:
+        items:
+          type: string
+        type: array
+      pairs:
+        items:
+          $ref: '#/definitions/internal_handlers.FXPairResponse'
+        type: array
+    type: object
+  internal_handlers.FXRateEntry:
+    properties:
+      base:
+        type: string
+      quote:
+        type: string
+      rate:
+        type: string
+      recorded_at:
+        type: string
+      source:
+        maxLength: 32
+        type: string
+    required:
+    - base
+    - quote
+    - rate
+    - recorded_at
+    type: object
+  internal_handlers.FXRateHistoryResponse:
+    properties:
+      base:
+        type: string
+      quote:
+        type: string
+      rates:
+        items:
+          $ref: '#/definitions/internal_handlers.FXRatePoint'
+        type: array
+    type: object
+  internal_handlers.FXRatePoint:
+    properties:
+      rate:
+        example: "4.4712"
+        type: string
+      recorded_at:
+        type: string
     type: object
   internal_handlers.LoginRequest:
     properties:
@@ -518,16 +623,30 @@ definitions:
       date:
         type: string
       fee:
+        maximum: 100000000000000
         minimum: 0
         type: integer
       funding_account_id:
+        type: string
+      funding_amount:
+        description: |-
+          FundingAmount is the amount debited from the funding account in ITS currency;
+          required when that differs from the security's currency.
+        maximum: 100000000000000
+        type: integer
+      fx_rate:
+        description: FXRate optionally overrides the security currency -> base rate
+          (decimal string).
+        maxLength: 32
         type: string
       notes:
         maxLength: 500
         type: string
       price_per_unit:
+        maximum: 100000000000000
         type: integer
       quantity:
+        maximum: 1000000000000000
         type: number
     required:
     - date
@@ -537,11 +656,34 @@ definitions:
   internal_handlers.RecordDividendRequest:
     properties:
       amount:
+        description: gross, in the security's currency
+        maximum: 100000000000000
         type: integer
       date:
         type: string
+      deposit_account_id:
+        description: DepositAccountID optionally credits the NET dividend (amount
+          - fee) to a cash account.
+        type: string
+      deposit_amount:
+        description: |-
+          DepositAmount is the net amount credited in the deposit account's currency;
+          required when that differs from the security's currency.
+        maximum: 100000000000000
+        type: integer
       dividend_type:
         maxLength: 50
+        type: string
+      fee:
+        description: Fee is withholding tax plus dividend fees, in the security's
+          currency (<= amount).
+        maximum: 100000000000000
+        minimum: 0
+        type: integer
+      fx_rate:
+        description: FXRate optionally overrides the security currency -> base rate
+          (decimal string).
+        maxLength: 32
         type: string
       notes:
         maxLength: 500
@@ -550,8 +692,25 @@ definitions:
     - amount
     - date
     type: object
+  internal_handlers.RecordFXRatesRequest:
+    properties:
+      rates:
+        items:
+          $ref: '#/definitions/internal_handlers.FXRateEntry'
+        maxItems: 5000
+        minItems: 1
+        type: array
+    required:
+    - rates
+    type: object
   internal_handlers.RecordPriceEntry:
     properties:
+      currency:
+        description: |-
+          Currency is required per entry. It is validated by the service so a missing
+          one rejects only that entry (reason currency_required), as does a value that
+          differs from the security's currency (currency_mismatch).
+        type: string
       price:
         type: integer
       recorded_at:
@@ -568,10 +727,22 @@ definitions:
       prices:
         items:
           $ref: '#/definitions/internal_handlers.RecordPriceEntry'
+        maxItems: 5000
         minItems: 1
         type: array
     required:
     - prices
+    type: object
+  internal_handlers.RecordPricesResponse:
+    properties:
+      prices_recorded:
+        type: integer
+      recorded:
+        type: integer
+      rejected:
+        items:
+          $ref: '#/definitions/kuberan_internal_services.RejectedPrice'
+        type: array
     type: object
   internal_handlers.RecordSellRequest:
     properties:
@@ -579,15 +750,29 @@ definitions:
         type: string
       deposit_account_id:
         type: string
+      deposit_amount:
+        description: |-
+          DepositAmount is the amount credited to the deposit account in ITS currency;
+          required when that differs from the security's currency.
+        maximum: 100000000000000
+        type: integer
       fee:
+        maximum: 100000000000000
         minimum: 0
         type: integer
+      fx_rate:
+        description: FXRate optionally overrides the security currency -> base rate
+          (decimal string).
+        maxLength: 32
+        type: string
       notes:
         maxLength: 500
         type: string
       price_per_unit:
+        maximum: 100000000000000
         type: integer
       quantity:
+        maximum: 1000000000000000
         type: number
     required:
     - date
@@ -602,6 +787,7 @@ definitions:
         maxLength: 500
         type: string
       split_ratio:
+        maximum: 1000000
         type: number
     required:
     - date
@@ -614,6 +800,12 @@ definitions:
     type: object
   internal_handlers.RegisterRequest:
     properties:
+      base_currency:
+        description: |-
+          BaseCurrency is the optional reporting currency (ISO 4217, 2-decimal,
+          same rule as PATCH /profile). Omitted keeps the default (MYR).
+        example: EUR
+        type: string
       email:
         maxLength: 254
         type: string
@@ -684,6 +876,11 @@ definitions:
     type: object
   internal_handlers.SettleReceivableRequest:
     properties:
+      account_amount:
+        description: |-
+          AccountAmount is the amount credited to the account, in the account's
+          currency. Required when it differs from the receivable's currency.
+        type: integer
       account_id:
         type: string
       amount:
@@ -799,6 +996,9 @@ definitions:
     properties:
       amount:
         type: integer
+      currency:
+        description: Currency optionally changes the budget's currency (ISO 4217).
+        type: string
       is_active:
         type: boolean
       name:
@@ -827,6 +1027,11 @@ definitions:
     type: object
   internal_handlers.UpdateProfileSettingsRequest:
     properties:
+      base_currency:
+        description: |-
+          BaseCurrency sets the currency aggregates are reported in (ISO 4217,
+          upper-case). It must be a supported currency with an exchange rate to USD.
+        type: string
       default_account_id:
         description: |-
           DefaultAccountID sets the account preselected for new transactions;
@@ -867,6 +1072,30 @@ definitions:
       priority:
         type: integer
     type: object
+  internal_handlers.UpdateSecurityRequest:
+    properties:
+      currency:
+        type: string
+      exchange:
+        type: string
+      name:
+        maxLength: 200
+        type: string
+      provider_symbol:
+        type: string
+      reset_prices:
+        description: |-
+          ResetPrices deletes the security's prices; required to change the
+          currency of a security that has prices.
+        type: boolean
+    type: object
+  internal_handlers.UpdateSecurityResponse:
+    properties:
+      prices_deleted:
+        type: integer
+      security:
+        $ref: '#/definitions/kuberan_internal_models.Security'
+    type: object
   internal_handlers.UpdateTransactionRequest:
     properties:
       account_id:
@@ -885,6 +1114,10 @@ definitions:
     type: object
   internal_handlers.UserResponse:
     properties:
+      base_currency:
+        description: BaseCurrency is the ISO 4217 currency the user's aggregates are
+          reported in.
+        type: string
       email:
         type: string
       first_name:
@@ -958,8 +1191,21 @@ definitions:
     - login_challenge
     - password
     type: object
+  kuberan_internal_fx.Rate:
+    enum:
+    - 999999999999999999
+    type: integer
+    x-enum-varnames:
+    - MaxRate
   kuberan_internal_hydra.OAuth2Client:
     properties:
+      audience:
+        description: |-
+          Audience lists the access-token audiences the client may hold. Hydra
+          re-checks a token's granted audience against it on every refresh.
+        items:
+          type: string
+        type: array
       client_id:
         type: string
       client_name:
@@ -987,6 +1233,11 @@ definitions:
         type: string
       balance:
         type: integer
+      balance_base:
+        description: |-
+          Response-only base-currency view (plan 024, phase 4), populated by the
+          account list/get endpoints. BalanceBase is omitted when no FX rate exists.
+        type: integer
       broker:
         description: For investment accounts
         type: string
@@ -1007,6 +1258,15 @@ definitions:
         - $ref: '#/definitions/kuberan_internal_models.FixedDepositDetails'
         description: For fixed deposit accounts (also reuses InterestRate for the
           annual rate)
+      fx_missing:
+        description: no FX rate; BalanceBase is omitted
+        type: boolean
+      fx_rate:
+        description: account currency -> base, decimal string; empty when same currency
+        type: string
+      fx_stale:
+        description: the FX quote used was stale
+        type: boolean
       id:
         type: string
       interest_rate:
@@ -1075,6 +1335,9 @@ definitions:
       category_id:
         type: string
       created_at:
+        type: string
+      currency:
+        description: Currency is the ISO 4217 code of Amount (and of progress figures).
         type: string
       deleted_at:
         $ref: '#/definitions/gorm.DeletedAt'
@@ -1235,19 +1498,47 @@ definitions:
       account_id:
         type: string
       cost_basis:
+        description: security currency
+        type: integer
+      cost_basis_base:
+        description: |-
+          CostBasisBase and RealizedGainLossBase are the same figures in the user's
+          base currency, frozen at each trade's FX rate (plan 024, phase 3a).
         type: integer
       created_at:
         type: string
+      currency:
+        description: the security's currency (same as price_currency)
+        type: string
       current_price:
-        description: Populated at query time from security_prices
+        description: 'Populated at query time: latest price in the user''s base currency'
+        type: integer
+      current_price_native:
+        description: Response-only price fields (plan 024, phase 2), populated at
+          query time.
         type: integer
       deleted_at:
         $ref: '#/definitions/gorm.DeletedAt'
+      fx_missing:
+        description: no FX rate; CurrentPrice is 0
+        type: boolean
+      fx_rate:
+        description: price currency -> base, decimal string; "" when already base
+        type: string
+      fx_stale:
+        description: the FX quote used was stale
+        type: boolean
       id:
+        type: string
+      price_currency:
+        description: currency of CurrentPriceNative
         type: string
       quantity:
         type: number
       realized_gain_loss:
+        description: security currency
+        type: integer
+      realized_gain_loss_base:
         type: integer
       security:
         allOf:
@@ -1269,7 +1560,12 @@ definitions:
     type: object
   kuberan_internal_models.InvestmentTransaction:
     properties:
+      base_amount:
+        type: integer
       created_at:
+        type: string
+      currency:
+        description: 'response only: the security''s currency'
         type: string
       date:
         type: string
@@ -1280,6 +1576,12 @@ definitions:
         type: string
       fee:
         type: integer
+      fx_rate_to_base:
+        allOf:
+        - $ref: '#/definitions/kuberan_internal_fx.Rate'
+        description: |-
+          Base-currency figures (plan 024, phase 3a). The amounts above are in the
+          security's currency. FXRateToBase is NULL on legacy rows.
       id:
         type: string
       investment:
@@ -1295,6 +1597,8 @@ definitions:
       quantity:
         type: number
       realized_gain_loss:
+        type: integer
+      realized_gain_loss_base:
         type: integer
       split_ratio:
         description: For splits
@@ -1344,10 +1648,14 @@ definitions:
     properties:
       cash_balance:
         type: integer
+      currency:
+        type: string
       debt_balance:
         type: integer
       fixed_deposit_balance:
         type: integer
+      fx_missing:
+        type: boolean
       id:
         type: string
       investment_value:
@@ -1368,6 +1676,11 @@ definitions:
       counterparty_name:
         type: string
       created_at:
+        type: string
+      currency:
+        description: |-
+          Currency is the currency of the account of the expense that created the
+          receivable (plan 024, phase 4). Response-only; set by the service.
         type: string
       deleted_at:
         $ref: '#/definitions/gorm.DeletedAt'
@@ -1439,11 +1752,21 @@ definitions:
     - ReceivableKindRefund
   kuberan_internal_models.ReceivableSettlement:
     properties:
+      account_amount:
+        description: |-
+          AccountAmount is the amount credited to AccountID, in that account's
+          currency. Amount stays in the receivable's currency. NULL for same-currency
+          settlements (and rows predating plan 024 phase 4): the credit equals Amount.
+        type: integer
       account_id:
         type: string
       amount:
         type: integer
       created_at:
+        type: string
+      currency:
+        description: Currency is the receivable's currency (response-only; the unit
+          of Amount).
         type: string
       date:
         type: string
@@ -1549,6 +1872,9 @@ definitions:
     type: object
   kuberan_internal_models.SecurityPrice:
     properties:
+      currency:
+        description: ISO 4217; the security's own currency
+        type: string
       id:
         type: string
       price:
@@ -1597,6 +1923,17 @@ definitions:
         type: string
       id:
         type: string
+      implied_rate:
+        description: |-
+          ImpliedRate is the response-only rate to_amount/amount (decimal string,
+          10 dp, half-even), set for cross-currency transfers.
+        type: string
+      import_ref:
+        description: |-
+          ImportRef marks a row written by an importer ("ibkr:<account>:<event key>")
+          so that re-running the import replaces rather than duplicates it. NULL for
+          every row that was entered by hand.
+        type: string
       personal_amount:
         description: |-
           PersonalAmount is the user's own share of an expense, in cents. NULL means
@@ -1616,6 +1953,12 @@ definitions:
       to_account_id:
         description: For transfers
         type: string
+      to_amount:
+        description: |-
+          ToAmount is the amount credited to the destination account, in the
+          destination's currency, for a cross-currency transfer. NULL means the
+          destination receives Amount. Use EffectiveToAmount to read it.
+        type: integer
       type:
         $ref: '#/definitions/kuberan_internal_models.TransactionType'
       updated_at:
@@ -1912,6 +2255,13 @@ definitions:
         type: string
       budgeted:
         type: integer
+      currency:
+        description: Currency is the budget's currency (the unit of every amount above).
+        type: string
+      fx_missing:
+        description: FXMissing is true when some spending had no exchange rate and
+          is excluded from Spent.
+        type: boolean
       percentage:
         type: number
       remaining:
@@ -1921,12 +2271,18 @@ definitions:
     type: object
   kuberan_internal_services.Cashflow:
     properties:
+      currency:
+        description: the user's base currency
+        type: string
       expenses:
         items:
           $ref: '#/definitions/kuberan_internal_services.SpendingByCategoryItem'
         type: array
       from_date:
         type: string
+      fx_missing:
+        description: some amounts had no rate and are excluded
+        type: boolean
       income:
         items:
           $ref: '#/definitions/kuberan_internal_services.SpendingByCategoryItem'
@@ -1939,6 +2295,11 @@ definitions:
       total_income:
         description: cents
         type: integer
+      unconverted:
+        description: native amounts excluded from the totals
+        items:
+          $ref: '#/definitions/kuberan_internal_services.UnconvertedAmount'
+        type: array
     type: object
   kuberan_internal_services.CounterpartySuggestion:
     properties:
@@ -1947,8 +2308,229 @@ definitions:
       name:
         type: string
     type: object
+  kuberan_internal_services.IBKRImportCandidate:
+    properties:
+      amount:
+        description: Amount is the transfer's amount in the source account's currency.
+        type: integer
+      date:
+        type: string
+      deviation_pct:
+        description: DeviationPct is how far the implied rate is from the market rate,
+          in percent.
+        type: number
+      transaction_id:
+        type: string
+    type: object
+  kuberan_internal_services.IBKRImportCash:
+    properties:
+      checkpoints:
+        description: Checkpoints compare the ledger with Ending Cash at each statement
+          end.
+        items:
+          $ref: '#/definitions/kuberan_internal_services.IBKRImportCashCheckpoint'
+        type: array
+      deposits_matched:
+        description: |-
+          DepositsMatched are the legacy transfers re-pointed (or already pointed)
+          at the new cash account.
+        items:
+          $ref: '#/definitions/kuberan_internal_services.IBKRImportDeposit'
+        type: array
+      dividends:
+        type: integer
+      fees:
+        type: integer
+      legacy_account_balance_after:
+        description: |-
+          LegacyAccountBalanceAfter is the legacy account's balance after the
+          re-pointing; null without a legacy account.
+        type: integer
+      legs:
+        description: |-
+          Legs counts trade cash legs; Dividends dividend legs; Fees standalone
+          fee and withholding expenses.
+        type: integer
+      opening_balance:
+        description: |-
+          OpeningBalance is the opening balance in cents, from the Ending Cash of
+          the statement that ends the day before cash_start_date.
+        type: integer
+      unmatched_deposits:
+        description: |-
+          UnmatchedDeposits are deposits and withdrawals with no legacy transfer;
+          the owner records them by hand.
+        items:
+          $ref: '#/definitions/kuberan_internal_services.IBKRImportUnmatched'
+        type: array
+    type: object
+  kuberan_internal_services.IBKRImportCashCheckpoint:
+    properties:
+      date:
+        type: string
+      diff:
+        description: Diff is ibkr - ledger.
+        type: integer
+      ibkr:
+        type: integer
+      ledger:
+        type: integer
+    type: object
+  kuberan_internal_services.IBKRImportCheckpoint:
+    properties:
+      cost_basis:
+        type: integer
+      cost_basis_diff:
+        description: CostBasisDiff is cost_basis - ibkr_cost_basis (FIFO vs average
+          cost).
+        type: integer
+      date:
+        type: string
+      ibkr_cost_basis:
+        type: integer
+      ibkr_quantity:
+        type: number
+      quantity:
+        type: number
+      quantity_ok:
+        type: boolean
+    type: object
+  kuberan_internal_services.IBKRImportDeposit:
+    properties:
+      amount:
+        type: integer
+      date:
+        type: string
+      source_amount:
+        description: SourceAmount is the transfer's amount in the source account's
+          currency.
+        type: integer
+      transaction_id:
+        type: string
+    type: object
+  kuberan_internal_services.IBKRImportFinal:
+    properties:
+      cost_basis:
+        type: integer
+      cost_basis_base:
+        type: integer
+      quantity:
+        type: number
+      realized_gain_loss:
+        type: integer
+      realized_gain_loss_base:
+        type: integer
+    type: object
+  kuberan_internal_services.IBKRImportIssue:
+    properties:
+      code:
+        description: |-
+          Code is machine readable, e.g. unknown_security, currency_mismatch,
+          fx_rate_missing, insufficient_shares, opening_balance_missing.
+        type: string
+      detail:
+        description: Detail describes the problem for the operator.
+        type: string
+    type: object
+  kuberan_internal_services.IBKRImportPeriod:
+    properties:
+      end:
+        type: string
+      start:
+        type: string
+    type: object
+  kuberan_internal_services.IBKRImportReport:
+    properties:
+      account:
+        description: Account is the IBKR account id found in the statements.
+        type: string
+      applied:
+        description: Applied is true when the changes were written.
+        type: boolean
+      base_currency:
+        description: BaseCurrency is the statements' base currency.
+        type: string
+      cash:
+        allOf:
+        - $ref: '#/definitions/kuberan_internal_services.IBKRImportCash'
+        description: Cash describes the cash ledger part of the import.
+      errors:
+        description: Errors block an apply.
+        items:
+          $ref: '#/definitions/kuberan_internal_services.IBKRImportIssue'
+        type: array
+      ignored_sections:
+        description: IgnoredSections lists the statement sections that are deliberately
+          not imported.
+        items:
+          type: string
+        type: array
+      periods:
+        description: Periods are the statement periods in chronological order.
+        items:
+          $ref: '#/definitions/kuberan_internal_services.IBKRImportPeriod'
+        type: array
+      securities:
+        description: Securities has one entry per symbol with holdings activity.
+        items:
+          $ref: '#/definitions/kuberan_internal_services.IBKRImportSecurity'
+        type: array
+      warnings:
+        description: Warnings never block an apply.
+        items:
+          type: string
+        type: array
+    type: object
+  kuberan_internal_services.IBKRImportSecurity:
+    properties:
+      checkpoints:
+        items:
+          $ref: '#/definitions/kuberan_internal_services.IBKRImportCheckpoint'
+        type: array
+      existing_transactions:
+        type: integer
+      final:
+        allOf:
+        - $ref: '#/definitions/kuberan_internal_services.IBKRImportFinal'
+        description: Final is the holding after replaying all events.
+      investment_id:
+        description: InvestmentID is null when the investment will be created on apply.
+        type: string
+      new_transactions:
+        type: integer
+      security_id:
+        type: string
+      symbol:
+        type: string
+    type: object
+  kuberan_internal_services.IBKRImportUnmatched:
+    properties:
+      amount:
+        type: integer
+      candidates:
+        description: |-
+          Candidates are the legacy transfers that were within 5 days but rejected
+          (implied rate too far from the market rate), to help manual pairing.
+        items:
+          $ref: '#/definitions/kuberan_internal_services.IBKRImportCandidate'
+        type: array
+      date:
+        type: string
+      detail:
+        type: string
+      kind:
+        type: string
+    type: object
   kuberan_internal_services.PortfolioSummary:
     properties:
+      currency:
+        description: |-
+          Currency is the user's base currency, which every value above is in
+          (cost basis and realized gain/loss are the frozen base-currency figures).
+        type: string
+      fx_stale:
+        description: FXStale is true when any FX quote used was stale.
+        type: boolean
       gain_loss_pct:
         type: number
       holdings_by_type:
@@ -1957,12 +2539,27 @@ definitions:
         type: object
       total_cost_basis:
         type: integer
+      total_fx_return:
+        type: integer
       total_gain_loss:
+        type: integer
+      total_price_return:
+        description: |-
+          TotalPriceReturn and TotalFXReturn split the unrealized gain
+          (TotalValue - TotalCostBasis): the native gain at today's rate, and the
+          currency effect on the cost. They sum to TotalGainLoss within a cent per holding.
         type: integer
       total_realized_gain_loss:
         type: integer
       total_value:
         type: integer
+      unconverted:
+        description: |-
+          Unconverted lists holdings that could not be valued for lack of an FX
+          rate, as native value summed per currency. They are left out of the totals.
+        items:
+          $ref: '#/definitions/kuberan_internal_services.UnconvertedValue'
+        type: array
     type: object
   kuberan_internal_services.ReceivableCounterpartyTotal:
     properties:
@@ -1977,6 +2574,14 @@ definitions:
         type: integer
       outstanding:
         description: cents
+        type: integer
+    type: object
+  kuberan_internal_services.ReceivableCurrencyTotal:
+    properties:
+      currency:
+        type: string
+      outstanding:
+        description: cents of Currency
         type: integer
     type: object
   kuberan_internal_services.ReceivableKindTotal:
@@ -1995,13 +2600,37 @@ definitions:
         items:
           $ref: '#/definitions/kuberan_internal_services.ReceivableCounterpartyTotal'
         type: array
+      by_currency:
+        description: native outstanding per receivable currency
+        items:
+          $ref: '#/definitions/kuberan_internal_services.ReceivableCurrencyTotal'
+        type: array
       by_kind:
         items:
           $ref: '#/definitions/kuberan_internal_services.ReceivableKindTotal'
         type: array
+      currency:
+        description: currency of the converted totals (base)
+        type: string
+      fx_missing:
+        description: some outstanding amounts had no rate and are left out
+        type: boolean
       total_outstanding:
-        description: cents
+        description: cents, in Currency (the user's base)
         type: integer
+    type: object
+  kuberan_internal_services.RejectedPrice:
+    properties:
+      currency:
+        type: string
+      expected_currency:
+        type: string
+      index:
+        type: integer
+      reason:
+        type: string
+      security_id:
+        type: string
     type: object
   kuberan_internal_services.RuleMatchPreview:
     properties:
@@ -2024,8 +2653,15 @@ definitions:
     - ShareModeFull
   kuberan_internal_services.SpendingByCategory:
     properties:
+      currency:
+        description: Currency is the currency of every amount (the user's base currency).
+        type: string
       from_date:
         type: string
+      fx_missing:
+        description: FXMissing is true when some spending had no exchange rate and
+          was left out.
+        type: boolean
       items:
         items:
           $ref: '#/definitions/kuberan_internal_services.SpendingByCategoryItem'
@@ -2034,6 +2670,12 @@ definitions:
         type: string
       total_spent:
         type: integer
+      unconverted:
+        description: Unconverted lists, per currency, the native amounts left out
+          of the totals.
+        items:
+          $ref: '#/definitions/kuberan_internal_services.UnconvertedAmount'
+        type: array
     type: object
   kuberan_internal_services.SpendingByCategoryItem:
     properties:
@@ -2057,6 +2699,11 @@ definitions:
       amount:
         description: cents, the full amount that left the account
         type: integer
+      amount_base:
+        description: |-
+          AmountBase is the effective amount (personal share, else Amount) converted
+          to the user's base currency at the expense's date; 0 when FXMissing.
+        type: integer
       category_color:
         type: string
       category_icon:
@@ -2065,10 +2712,17 @@ definitions:
         type: string
       category_name:
         type: string
+      currency:
+        description: Currency is the account's currency, the unit of Amount and PersonalAmount.
+        type: string
       date:
         type: string
       description:
         type: string
+      fx_missing:
+        description: FXMissing is true when no rate existed, so AmountBase could not
+          be computed.
+        type: boolean
       id:
         type: string
       personal_amount:
@@ -2077,8 +2731,16 @@ definitions:
     type: object
   kuberan_internal_services.TopExpenses:
     properties:
+      currency:
+        description: Currency is the user's base currency (the unit of each AmountBase).
+        type: string
       from_date:
         type: string
+      fx_missing:
+        description: |-
+          FXMissing is true when some matching expenses had no rate; they rank after
+          every converted expense.
+        type: boolean
       items:
         items:
           $ref: '#/definitions/kuberan_internal_services.TopExpenseItem'
@@ -2095,6 +2757,21 @@ definitions:
     properties:
       count:
         type: integer
+      value:
+        type: integer
+    type: object
+  kuberan_internal_services.UnconvertedAmount:
+    properties:
+      amount:
+        description: minor units, in Currency
+        type: integer
+      currency:
+        type: string
+    type: object
+  kuberan_internal_services.UnconvertedValue:
+    properties:
+      currency:
+        type: string
       value:
         type: integer
     type: object
@@ -2650,7 +3327,7 @@ paths:
           schema:
             $ref: '#/definitions/internal_handlers.AuthResponse'
         "400":
-          description: Invalid input
+          description: Invalid input (UNSUPPORTED_CURRENCY for a bad base_currency)
           schema:
             $ref: '#/definitions/internal_handlers.ErrorResponse'
         "500":
@@ -3138,6 +3815,166 @@ paths:
       summary: Update category
       tags:
       - categories
+  /fx-rates:
+    get:
+      description: Stored observations of the direct pair (no inverse or pivot), oldest
+        first. Defaults to the last 30 days; the range is capped at 3700 days.
+      parameters:
+      - description: Base currency (ISO 4217)
+        in: query
+        name: base
+        required: true
+        type: string
+      - description: Quote currency (ISO 4217)
+        in: query
+        name: quote
+        required: true
+        type: string
+      - description: Start (RFC3339 or YYYY-MM-DD)
+        in: query
+        name: from
+        type: string
+      - description: End (RFC3339 or YYYY-MM-DD, inclusive)
+        in: query
+        name: to
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Rate history
+          schema:
+            $ref: '#/definitions/internal_handlers.FXRateHistoryResponse'
+        "400":
+          description: Invalid input
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "500":
+          description: Server error
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: FX rate history
+      tags:
+      - fx
+  /fx-rates/latest:
+    get:
+      description: Current rate resolved directly, by inverse, or through USD, with
+        its age flag. 503 when no rate exists.
+      parameters:
+      - description: Base currency (ISO 4217)
+        in: query
+        name: base
+        required: true
+        type: string
+      - description: Quote currency (ISO 4217)
+        in: query
+        name: quote
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Latest rate
+          schema:
+            $ref: '#/definitions/internal_handlers.FXLatestResponse'
+        "400":
+          description: Invalid input
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "503":
+          description: Exchange rate unavailable
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Latest FX rate
+      tags:
+      - fx
+  /imports/ibkr:
+    post:
+      consumes:
+      - multipart/form-data
+      description: Upload 1-10 contiguous Activity Statement CSVs. A dry run (default)
+        returns the report without writing; apply=true writes the holdings and the
+        cash ledger in one transaction and is refused (400 IMPORT_INVALID, report
+        in details) when the report has errors or a quantity checkpoint fails. Uploads
+        are processed in memory only.
+      parameters:
+      - description: Activity Statement CSVs (1-10)
+        in: formData
+        name: files
+        required: true
+        type: file
+      - description: Investment account of the holdings
+        in: formData
+        name: investment_account_id
+        required: true
+        type: string
+      - description: Cash account (statement base currency) for the cash ledger
+        in: formData
+        name: cash_account_id
+        required: true
+        type: string
+      - description: YYYY-MM-DD; cash legs start on this date
+        in: formData
+        name: cash_start_date
+        required: true
+        type: string
+      - description: Old IBKR cash account whose incoming transfers are re-pointed
+        in: formData
+        name: legacy_cash_account_id
+        type: string
+      - description: Deactivate the legacy account after apply
+        in: formData
+        name: deactivate_legacy_cash_account
+        type: boolean
+      - description: 'Write the changes (default: dry run)'
+        in: formData
+        name: apply
+        type: boolean
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/kuberan_internal_services.IBKRImportReport'
+        "400":
+          description: Invalid input or IMPORT_INVALID
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "404":
+          description: Account not found
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "409":
+          description: Another import is being applied
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "413":
+          description: File too large
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Import IBKR Activity Statements
+      tags:
+      - imports
   /internal/telegram/activity/{telegram_user_id}:
     post:
       consumes:
@@ -3273,7 +4110,9 @@ paths:
     post:
       consumes:
       - application/json
-      description: Add a new investment holding to an investment account
+      description: Add a new investment holding to an investment account. purchase_price
+        and fee are in the security's currency; fx_rate optionally overrides the trade's
+        security-currency to base rate (decimal string).
       parameters:
       - description: Investment details
         in: body
@@ -3302,6 +4141,10 @@ paths:
             $ref: '#/definitions/internal_handlers.ErrorResponse'
         "500":
           description: Server error
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "503":
+          description: No FX rate available; pass fx_rate
           schema:
             $ref: '#/definitions/internal_handlers.ErrorResponse'
       security:
@@ -3352,7 +4195,14 @@ paths:
     post:
       consumes:
       - application/json
-      description: Record a buy transaction for an investment holding
+      description: 'Record a buy transaction for an investment holding. Price, fee
+        and total are in the security''s currency. With funding_account_id the cost
+        is debited from that cash account; when its currency differs from the security''s,
+        funding_amount (in the account''s currency) is required (400 FX_AMOUNT_REQUIRED,
+        with details.suggested_amount from the market rate). The trade''s FX rate
+        to the base currency is, in order: fx_rate, the rate implied by a base-currency
+        funding account, 1 for a base-currency security, the market rate (503 FX_RATE_UNAVAILABLE
+        if none; pass fx_rate).'
       parameters:
       - description: Investment ID
         in: path
@@ -3388,6 +4238,10 @@ paths:
           description: Server error
           schema:
             $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "503":
+          description: No FX rate available; pass fx_rate
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
       security:
       - BearerAuth: []
       summary: Record buy transaction
@@ -3397,7 +4251,12 @@ paths:
     post:
       consumes:
       - application/json
-      description: Record a dividend payment for an investment holding
+      description: Record a dividend for an investment holding. amount is the gross
+        dividend and fee the withholding tax and fees, in the security's currency.
+        With deposit_account_id the net (amount - fee) is credited to that cash account;
+        when its currency differs from the security's, deposit_amount (the net, in
+        the account's currency) is required (400 FX_AMOUNT_REQUIRED). fx_rate overrides
+        the trade's FX rate as for buys.
       parameters:
       - description: Investment ID
         in: path
@@ -3433,6 +4292,10 @@ paths:
           description: Server error
           schema:
             $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "503":
+          description: No FX rate available; pass fx_rate
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
       security:
       - BearerAuth: []
       summary: Record dividend
@@ -3442,7 +4305,12 @@ paths:
     post:
       consumes:
       - application/json
-      description: Record a sell transaction for an investment holding
+      description: Record a sell transaction for an investment holding. Amounts are
+        in the security's currency and the realized gain/loss is reported in both
+        the security and base currencies. With deposit_account_id the net proceeds
+        are credited to that cash account; when its currency differs from the security's,
+        deposit_amount (in the account's currency) is required (400 FX_AMOUNT_REQUIRED).
+        fx_rate overrides the trade's FX rate as for buys.
       parameters:
       - description: Investment ID
         in: path
@@ -3476,6 +4344,10 @@ paths:
             $ref: '#/definitions/internal_handlers.ErrorResponse'
         "500":
           description: Server error
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "503":
+          description: No FX rate available; pass fx_rate
           schema:
             $ref: '#/definitions/internal_handlers.ErrorResponse'
       security:
@@ -3816,6 +4688,10 @@ paths:
           description: Invalid credentials
           schema:
             $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "404":
+          description: Unknown or expired challenge
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
       summary: Resolve an OAuth login challenge
       tags:
       - oauth
@@ -3912,6 +4788,73 @@ paths:
       summary: Process fixed deposits
       tags:
       - pipeline
+  /pipeline/fx-pairs:
+    get:
+      description: Pairs of (account/security currency, user base currency), plus
+        each base against USD, and the distinct user base currencies (pipeline endpoint)
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Pairs and base currencies
+          schema:
+            $ref: '#/definitions/internal_handlers.FXPairsResponse'
+        "401":
+          description: Invalid API key
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "500":
+          description: Server error
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "503":
+          description: Pipeline not configured
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: List FX pairs to publish
+      tags:
+      - pipeline
+  /pipeline/fx-rates:
+    post:
+      consumes:
+      - application/json
+      description: Bulk upsert exchange rates on (base, quote, recorded_at) (pipeline
+        endpoint). Rates are decimal strings with at most 10 fractional digits.
+      parameters:
+      - description: Rate entries
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_handlers.RecordFXRatesRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Rates recorded count
+          schema:
+            additionalProperties:
+              type: integer
+            type: object
+        "400":
+          description: Invalid input
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "401":
+          description: Invalid API key
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "503":
+          description: Pipeline not configured
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Record FX rates
+      tags:
+      - pipeline
   /pipeline/securities:
     get:
       description: Get all active securities without pagination (pipeline endpoint)
@@ -3982,11 +4925,65 @@ paths:
       summary: Create security
       tags:
       - pipeline
+  /pipeline/securities/{id}:
+    patch:
+      consumes:
+      - application/json
+      description: Correct a security's currency, exchange, provider symbol or name
+        (pipeline endpoint). Changing the currency of a security that has prices requires
+        reset_prices, which deletes them in the same transaction.
+      parameters:
+      - description: Security ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Fields to change
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_handlers.UpdateSecurityRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Updated security and number of prices deleted
+          schema:
+            $ref: '#/definitions/internal_handlers.UpdateSecurityResponse'
+        "400":
+          description: Invalid input
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "401":
+          description: Invalid API key
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "404":
+          description: Security not found
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "409":
+          description: Currency locked by existing prices, or duplicate symbol and
+            exchange
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "503":
+          description: Pipeline not configured
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Update security
+      tags:
+      - pipeline
   /pipeline/securities/prices:
     post:
       consumes:
       - application/json
-      description: Bulk record prices for securities (pipeline endpoint)
+      description: |-
+        Bulk record prices for securities (pipeline endpoint)
+        Entries for an unknown security, without a currency, or whose currency differs from the security's, are skipped and listed in `rejected` (the request still returns 200).
       parameters:
       - description: Price entries
         in: body
@@ -3998,11 +4995,9 @@ paths:
       - application/json
       responses:
         "200":
-          description: Prices recorded count
+          description: Recorded count and rejected entries
           schema:
-            additionalProperties:
-              type: integer
-            type: object
+            $ref: '#/definitions/internal_handlers.RecordPricesResponse'
         "400":
           description: Invalid input
           schema:
@@ -4088,7 +5083,7 @@ paths:
       consumes:
       - application/json
       description: Update the authenticated user's profile settings (dashboard balance
-        visibility, default transaction account)
+        visibility, default transaction account, base currency)
       parameters:
       - description: Profile settings to update
         in: body
@@ -4237,7 +5232,8 @@ paths:
           schema:
             $ref: '#/definitions/internal_handlers.SettleResponse'
         "400":
-          description: Invalid input, amount over outstanding or invalid account type
+          description: Invalid input, amount over outstanding, invalid account type
+            or FX_AMOUNT_REQUIRED (account_amount needed for a cross-currency repayment)
           schema:
             $ref: '#/definitions/internal_handlers.ErrorResponse'
         "401":

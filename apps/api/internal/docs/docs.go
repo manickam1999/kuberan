@@ -853,7 +853,7 @@ const docTemplate = `{
                         }
                     },
                     "400": {
-                        "description": "Invalid input",
+                        "description": "Invalid input (UNSUPPORTED_CURRENCY for a bad base_currency)",
                         "schema": {
                             "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
@@ -1610,6 +1610,242 @@ const docTemplate = `{
                 }
             }
         },
+        "/fx-rates": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Stored observations of the direct pair (no inverse or pivot), oldest first. Defaults to the last 30 days; the range is capped at 3700 days.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "fx"
+                ],
+                "summary": "FX rate history",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Base currency (ISO 4217)",
+                        "name": "base",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Quote currency (ISO 4217)",
+                        "name": "quote",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Start (RFC3339 or YYYY-MM-DD)",
+                        "name": "from",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "End (RFC3339 or YYYY-MM-DD, inclusive)",
+                        "name": "to",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Rate history",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.FXRateHistoryResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid input",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Server error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/fx-rates/latest": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Current rate resolved directly, by inverse, or through USD, with its age flag. 503 when no rate exists.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "fx"
+                ],
+                "summary": "Latest FX rate",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Base currency (ISO 4217)",
+                        "name": "base",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Quote currency (ISO 4217)",
+                        "name": "quote",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Latest rate",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.FXLatestResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid input",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Exchange rate unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/imports/ibkr": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Upload 1-10 contiguous Activity Statement CSVs. A dry run (default) returns the report without writing; apply=true writes the holdings and the cash ledger in one transaction and is refused (400 IMPORT_INVALID, report in details) when the report has errors or a quantity checkpoint fails. Uploads are processed in memory only.",
+                "consumes": [
+                    "multipart/form-data"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "imports"
+                ],
+                "summary": "Import IBKR Activity Statements",
+                "parameters": [
+                    {
+                        "type": "file",
+                        "description": "Activity Statement CSVs (1-10)",
+                        "name": "files",
+                        "in": "formData",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Investment account of the holdings",
+                        "name": "investment_account_id",
+                        "in": "formData",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Cash account (statement base currency) for the cash ledger",
+                        "name": "cash_account_id",
+                        "in": "formData",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "YYYY-MM-DD; cash legs start on this date",
+                        "name": "cash_start_date",
+                        "in": "formData",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Old IBKR cash account whose incoming transfers are re-pointed",
+                        "name": "legacy_cash_account_id",
+                        "in": "formData"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Deactivate the legacy account after apply",
+                        "name": "deactivate_legacy_cash_account",
+                        "in": "formData"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Write the changes (default: dry run)",
+                        "name": "apply",
+                        "in": "formData"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/kuberan_internal_services.IBKRImportReport"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid input or IMPORT_INVALID",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Account not found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Another import is being applied",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "413": {
+                        "description": "File too large",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/internal/telegram/activity/{telegram_user_id}": {
             "post": {
                 "security": [
@@ -1818,7 +2054,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Add a new investment holding to an investment account",
+                "description": "Add a new investment holding to an investment account. purchase_price and fee are in the security's currency; fx_rate optionally overrides the trade's security-currency to base rate (decimal string).",
                 "consumes": [
                     "application/json"
                 ],
@@ -1867,6 +2103,12 @@ const docTemplate = `{
                     },
                     "500": {
                         "description": "Server error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "No FX rate available; pass fx_rate",
                         "schema": {
                             "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
@@ -2056,7 +2298,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Record a buy transaction for an investment holding",
+                "description": "Record a buy transaction for an investment holding. Price, fee and total are in the security's currency. With funding_account_id the cost is debited from that cash account; when its currency differs from the security's, funding_amount (in the account's currency) is required (400 FX_AMOUNT_REQUIRED, with details.suggested_amount from the market rate). The trade's FX rate to the base currency is, in order: fx_rate, the rate implied by a base-currency funding account, 1 for a base-currency security, the market rate (503 FX_RATE_UNAVAILABLE if none; pass fx_rate).",
                 "consumes": [
                     "application/json"
                 ],
@@ -2115,6 +2357,12 @@ const docTemplate = `{
                         "schema": {
                             "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
+                    },
+                    "503": {
+                        "description": "No FX rate available; pass fx_rate",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
                     }
                 }
             }
@@ -2126,7 +2374,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Record a dividend payment for an investment holding",
+                "description": "Record a dividend for an investment holding. amount is the gross dividend and fee the withholding tax and fees, in the security's currency. With deposit_account_id the net (amount - fee) is credited to that cash account; when its currency differs from the security's, deposit_amount (the net, in the account's currency) is required (400 FX_AMOUNT_REQUIRED). fx_rate overrides the trade's FX rate as for buys.",
                 "consumes": [
                     "application/json"
                 ],
@@ -2185,6 +2433,12 @@ const docTemplate = `{
                         "schema": {
                             "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
+                    },
+                    "503": {
+                        "description": "No FX rate available; pass fx_rate",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
                     }
                 }
             }
@@ -2196,7 +2450,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Record a sell transaction for an investment holding",
+                "description": "Record a sell transaction for an investment holding. Amounts are in the security's currency and the realized gain/loss is reported in both the security and base currencies. With deposit_account_id the net proceeds are credited to that cash account; when its currency differs from the security's, deposit_amount (in the account's currency) is required (400 FX_AMOUNT_REQUIRED). fx_rate overrides the trade's FX rate as for buys.",
                 "consumes": [
                     "application/json"
                 ],
@@ -2252,6 +2506,12 @@ const docTemplate = `{
                     },
                     "500": {
                         "description": "Server error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "No FX rate available; pass fx_rate",
                         "schema": {
                             "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
@@ -2652,6 +2912,12 @@ const docTemplate = `{
                         "schema": {
                             "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
+                    },
+                    "404": {
+                        "description": "Unknown or expired challenge",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
                     }
                 }
             }
@@ -2798,6 +3064,109 @@ const docTemplate = `{
                 }
             }
         },
+        "/pipeline/fx-pairs": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Pairs of (account/security currency, user base currency), plus each base against USD, and the distinct user base currencies (pipeline endpoint)",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "pipeline"
+                ],
+                "summary": "List FX pairs to publish",
+                "responses": {
+                    "200": {
+                        "description": "Pairs and base currencies",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.FXPairsResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Invalid API key",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Server error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Pipeline not configured",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/pipeline/fx-rates": {
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Bulk upsert exchange rates on (base, quote, recorded_at) (pipeline endpoint). Rates are decimal strings with at most 10 fractional digits.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "pipeline"
+                ],
+                "summary": "Record FX rates",
+                "parameters": [
+                    {
+                        "description": "Rate entries",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.RecordFXRatesRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Rates recorded count",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "integer"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid input",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Invalid API key",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Pipeline not configured",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/pipeline/securities": {
             "get": {
                 "security": [
@@ -2915,7 +3284,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "Bulk record prices for securities (pipeline endpoint)",
+                "description": "Bulk record prices for securities (pipeline endpoint)\nEntries for an unknown security, without a currency, or whose currency differs from the security's, are skipped and listed in ` + "`" + `rejected` + "`" + ` (the request still returns 200).",
                 "consumes": [
                     "application/json"
                 ],
@@ -2939,12 +3308,9 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "Prices recorded count",
+                        "description": "Recorded count and rejected entries",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "integer"
-                            }
+                            "$ref": "#/definitions/internal_handlers.RecordPricesResponse"
                         }
                     },
                     "400": {
@@ -2955,6 +3321,82 @@ const docTemplate = `{
                     },
                     "401": {
                         "description": "Invalid API key",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Pipeline not configured",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/pipeline/securities/{id}": {
+            "patch": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Correct a security's currency, exchange, provider symbol or name (pipeline endpoint). Changing the currency of a security that has prices requires reset_prices, which deletes them in the same transaction.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "pipeline"
+                ],
+                "summary": "Update security",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Security ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Fields to change",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.UpdateSecurityRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Updated security and number of prices deleted",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.UpdateSecurityResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid input",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Invalid API key",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Security not found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Currency locked by existing prices, or duplicate symbol and exchange",
                         "schema": {
                             "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
@@ -3073,7 +3515,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Update the authenticated user's profile settings (dashboard balance visibility, default transaction account)",
+                "description": "Update the authenticated user's profile settings (dashboard balance visibility, default transaction account, base currency)",
                 "consumes": [
                     "application/json"
                 ],
@@ -3512,7 +3954,7 @@ const docTemplate = `{
                         }
                     },
                     "400": {
-                        "description": "Invalid input, amount over outstanding or invalid account type",
+                        "description": "Invalid input, amount over outstanding, invalid account type or FX_AMOUNT_REQUIRED (account_amount needed for a cross-currency repayment)",
                         "schema": {
                             "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
@@ -5652,7 +6094,13 @@ const docTemplate = `{
                 "fee": {
                     "description": "optional, defaults to 0",
                     "type": "integer",
+                    "maximum": 100000000000000,
                     "minimum": 0
+                },
+                "fx_rate": {
+                    "description": "optional decimal string: security currency -\u003e base rate of the trade",
+                    "type": "string",
+                    "maxLength": 32
                 },
                 "notes": {
                     "description": "optional, defaults to \"Initial purchase\"",
@@ -5660,10 +6108,12 @@ const docTemplate = `{
                     "maxLength": 500
                 },
                 "purchase_price": {
-                    "type": "integer"
+                    "type": "integer",
+                    "maximum": 100000000000000
                 },
                 "quantity": {
-                    "type": "number"
+                    "type": "number",
+                    "maximum": 1000000000000000
                 },
                 "security_id": {
                     "type": "string"
@@ -5867,6 +6317,10 @@ const docTemplate = `{
                 "category_id": {
                     "type": "string"
                 },
+                "currency": {
+                    "description": "Currency is optional (ISO 4217); it defaults to the user's base currency.",
+                    "type": "string"
+                },
                 "name": {
                     "type": "string",
                     "maxLength": 100,
@@ -5944,6 +6398,11 @@ const docTemplate = `{
                 },
                 "currency": {
                     "type": "string"
+                },
+                "current_balance": {
+                    "description": "CurrentBalance is the amount already owed, in cents. When \u003e 0 it is\nrecorded as an opening_balance transaction. Currency defaults to the\nuser's base currency when omitted.",
+                    "type": "integer",
+                    "minimum": 0
                 },
                 "description": {
                     "type": "string",
@@ -6245,6 +6704,10 @@ const docTemplate = `{
                 },
                 "to_account_id": {
                     "type": "string"
+                },
+                "to_amount": {
+                    "description": "ToAmount is the amount arriving in the destination account, in its\ncurrency. Required when the two accounts' currencies differ.",
+                    "type": "integer"
                 }
             }
         },
@@ -6253,6 +6716,11 @@ const docTemplate = `{
             "properties": {
                 "code": {
                     "type": "string"
+                },
+                "details": {
+                    "description": "machine-readable context, e.g. FX_AMOUNT_REQUIRED's suggested_amount",
+                    "type": "object",
+                    "additionalProperties": {}
                 },
                 "message": {
                     "type": "string"
@@ -6264,6 +6732,120 @@ const docTemplate = `{
             "properties": {
                 "error": {
                     "$ref": "#/definitions/internal_handlers.ErrorDetail"
+                }
+            }
+        },
+        "internal_handlers.FXLatestResponse": {
+            "type": "object",
+            "properties": {
+                "base": {
+                    "type": "string"
+                },
+                "path": {
+                    "type": "string",
+                    "enum": [
+                        "identity",
+                        "direct",
+                        "inverse",
+                        "pivot:USD"
+                    ]
+                },
+                "quote": {
+                    "type": "string"
+                },
+                "rate": {
+                    "type": "string",
+                    "example": "4.4712"
+                },
+                "recorded_at": {
+                    "type": "string"
+                },
+                "stale": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "internal_handlers.FXPairResponse": {
+            "type": "object",
+            "properties": {
+                "base": {
+                    "type": "string"
+                },
+                "quote": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_handlers.FXPairsResponse": {
+            "type": "object",
+            "properties": {
+                "base_currencies": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "pairs": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_handlers.FXPairResponse"
+                    }
+                }
+            }
+        },
+        "internal_handlers.FXRateEntry": {
+            "type": "object",
+            "required": [
+                "base",
+                "quote",
+                "rate",
+                "recorded_at"
+            ],
+            "properties": {
+                "base": {
+                    "type": "string"
+                },
+                "quote": {
+                    "type": "string"
+                },
+                "rate": {
+                    "type": "string"
+                },
+                "recorded_at": {
+                    "type": "string"
+                },
+                "source": {
+                    "type": "string",
+                    "maxLength": 32
+                }
+            }
+        },
+        "internal_handlers.FXRateHistoryResponse": {
+            "type": "object",
+            "properties": {
+                "base": {
+                    "type": "string"
+                },
+                "quote": {
+                    "type": "string"
+                },
+                "rates": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_handlers.FXRatePoint"
+                    }
+                }
+            }
+        },
+        "internal_handlers.FXRatePoint": {
+            "type": "object",
+            "properties": {
+                "rate": {
+                    "type": "string",
+                    "example": "4.4712"
+                },
+                "recorded_at": {
+                    "type": "string"
                 }
             }
         },
@@ -6350,20 +6932,33 @@ const docTemplate = `{
                 },
                 "fee": {
                     "type": "integer",
+                    "maximum": 100000000000000,
                     "minimum": 0
                 },
                 "funding_account_id": {
                     "type": "string"
+                },
+                "funding_amount": {
+                    "description": "FundingAmount is the amount debited from the funding account in ITS currency;\nrequired when that differs from the security's currency.",
+                    "type": "integer",
+                    "maximum": 100000000000000
+                },
+                "fx_rate": {
+                    "description": "FXRate optionally overrides the security currency -\u003e base rate (decimal string).",
+                    "type": "string",
+                    "maxLength": 32
                 },
                 "notes": {
                     "type": "string",
                     "maxLength": 500
                 },
                 "price_per_unit": {
-                    "type": "integer"
+                    "type": "integer",
+                    "maximum": 100000000000000
                 },
                 "quantity": {
-                    "type": "number"
+                    "type": "number",
+                    "maximum": 1000000000000000
                 }
             }
         },
@@ -6375,18 +6970,56 @@ const docTemplate = `{
             ],
             "properties": {
                 "amount": {
-                    "type": "integer"
+                    "description": "gross, in the security's currency",
+                    "type": "integer",
+                    "maximum": 100000000000000
                 },
                 "date": {
                     "type": "string"
+                },
+                "deposit_account_id": {
+                    "description": "DepositAccountID optionally credits the NET dividend (amount - fee) to a cash account.",
+                    "type": "string"
+                },
+                "deposit_amount": {
+                    "description": "DepositAmount is the net amount credited in the deposit account's currency;\nrequired when that differs from the security's currency.",
+                    "type": "integer",
+                    "maximum": 100000000000000
                 },
                 "dividend_type": {
                     "type": "string",
                     "maxLength": 50
                 },
+                "fee": {
+                    "description": "Fee is withholding tax plus dividend fees, in the security's currency (\u003c= amount).",
+                    "type": "integer",
+                    "maximum": 100000000000000,
+                    "minimum": 0
+                },
+                "fx_rate": {
+                    "description": "FXRate optionally overrides the security currency -\u003e base rate (decimal string).",
+                    "type": "string",
+                    "maxLength": 32
+                },
                 "notes": {
                     "type": "string",
                     "maxLength": 500
+                }
+            }
+        },
+        "internal_handlers.RecordFXRatesRequest": {
+            "type": "object",
+            "required": [
+                "rates"
+            ],
+            "properties": {
+                "rates": {
+                    "type": "array",
+                    "maxItems": 5000,
+                    "minItems": 1,
+                    "items": {
+                        "$ref": "#/definitions/internal_handlers.FXRateEntry"
+                    }
                 }
             }
         },
@@ -6398,6 +7031,10 @@ const docTemplate = `{
                 "security_id"
             ],
             "properties": {
+                "currency": {
+                    "description": "Currency is required per entry. It is validated by the service so a missing\none rejects only that entry (reason currency_required), as does a value that\ndiffers from the security's currency (currency_mismatch).",
+                    "type": "string"
+                },
                 "price": {
                     "type": "integer"
                 },
@@ -6417,9 +7054,27 @@ const docTemplate = `{
             "properties": {
                 "prices": {
                     "type": "array",
+                    "maxItems": 5000,
                     "minItems": 1,
                     "items": {
                         "$ref": "#/definitions/internal_handlers.RecordPriceEntry"
+                    }
+                }
+            }
+        },
+        "internal_handlers.RecordPricesResponse": {
+            "type": "object",
+            "properties": {
+                "prices_recorded": {
+                    "type": "integer"
+                },
+                "recorded": {
+                    "type": "integer"
+                },
+                "rejected": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/kuberan_internal_services.RejectedPrice"
                     }
                 }
             }
@@ -6438,19 +7093,32 @@ const docTemplate = `{
                 "deposit_account_id": {
                     "type": "string"
                 },
+                "deposit_amount": {
+                    "description": "DepositAmount is the amount credited to the deposit account in ITS currency;\nrequired when that differs from the security's currency.",
+                    "type": "integer",
+                    "maximum": 100000000000000
+                },
                 "fee": {
                     "type": "integer",
+                    "maximum": 100000000000000,
                     "minimum": 0
+                },
+                "fx_rate": {
+                    "description": "FXRate optionally overrides the security currency -\u003e base rate (decimal string).",
+                    "type": "string",
+                    "maxLength": 32
                 },
                 "notes": {
                     "type": "string",
                     "maxLength": 500
                 },
                 "price_per_unit": {
-                    "type": "integer"
+                    "type": "integer",
+                    "maximum": 100000000000000
                 },
                 "quantity": {
-                    "type": "number"
+                    "type": "number",
+                    "maximum": 1000000000000000
                 }
             }
         },
@@ -6469,7 +7137,8 @@ const docTemplate = `{
                     "maxLength": 500
                 },
                 "split_ratio": {
-                    "type": "number"
+                    "type": "number",
+                    "maximum": 1000000
                 }
             }
         },
@@ -6488,6 +7157,11 @@ const docTemplate = `{
                 "password"
             ],
             "properties": {
+                "base_currency": {
+                    "description": "BaseCurrency is the optional reporting currency (ISO 4217, 2-decimal,\nsame rule as PATCH /profile). Omitted keeps the default (MYR).",
+                    "type": "string",
+                    "example": "EUR"
+                },
                 "email": {
                     "type": "string",
                     "maxLength": 254
@@ -6592,6 +7266,10 @@ const docTemplate = `{
                 "amount"
             ],
             "properties": {
+                "account_amount": {
+                    "description": "AccountAmount is the amount credited to the account, in the account's\ncurrency. Required when it differs from the receivable's currency.",
+                    "type": "integer"
+                },
                 "account_id": {
                     "type": "string"
                 },
@@ -6748,6 +7426,10 @@ const docTemplate = `{
                 "amount": {
                     "type": "integer"
                 },
+                "currency": {
+                    "description": "Currency optionally changes the budget's currency (ISO 4217).",
+                    "type": "string"
+                },
                 "is_active": {
                     "type": "boolean"
                 },
@@ -6788,6 +7470,10 @@ const docTemplate = `{
         "internal_handlers.UpdateProfileSettingsRequest": {
             "type": "object",
             "properties": {
+                "base_currency": {
+                    "description": "BaseCurrency sets the currency aggregates are reported in (ISO 4217,\nupper-case). It must be a supported currency with an exchange rate to USD.",
+                    "type": "string"
+                },
                 "default_account_id": {
                     "description": "DefaultAccountID sets the account preselected for new transactions;\nnull or \"\" clears it. Must be a UUID otherwise.",
                     "type": "string"
@@ -6844,6 +7530,39 @@ const docTemplate = `{
                 }
             }
         },
+        "internal_handlers.UpdateSecurityRequest": {
+            "type": "object",
+            "properties": {
+                "currency": {
+                    "type": "string"
+                },
+                "exchange": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string",
+                    "maxLength": 200
+                },
+                "provider_symbol": {
+                    "type": "string"
+                },
+                "reset_prices": {
+                    "description": "ResetPrices deletes the security's prices; required to change the\ncurrency of a security that has prices.",
+                    "type": "boolean"
+                }
+            }
+        },
+        "internal_handlers.UpdateSecurityResponse": {
+            "type": "object",
+            "properties": {
+                "prices_deleted": {
+                    "type": "integer"
+                },
+                "security": {
+                    "$ref": "#/definitions/kuberan_internal_models.Security"
+                }
+            }
+        },
         "internal_handlers.UpdateTransactionRequest": {
             "type": "object",
             "properties": {
@@ -6871,6 +7590,10 @@ const docTemplate = `{
         "internal_handlers.UserResponse": {
             "type": "object",
             "properties": {
+                "base_currency": {
+                    "description": "BaseCurrency is the ISO 4217 currency the user's aggregates are reported in.",
+                    "type": "string"
+                },
                 "email": {
                     "type": "string"
                 },
@@ -6983,9 +7706,25 @@ const docTemplate = `{
                 }
             }
         },
+        "kuberan_internal_fx.Rate": {
+            "type": "integer",
+            "enum": [
+                999999999999999999
+            ],
+            "x-enum-varnames": [
+                "MaxRate"
+            ]
+        },
         "kuberan_internal_hydra.OAuth2Client": {
             "type": "object",
             "properties": {
+                "audience": {
+                    "description": "Audience lists the access-token audiences the client may hold. Hydra\nre-checks a token's granted audience against it on every refresh.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
                 "client_id": {
                     "type": "string"
                 },
@@ -7027,6 +7766,10 @@ const docTemplate = `{
                 "balance": {
                     "type": "integer"
                 },
+                "balance_base": {
+                    "description": "Response-only base-currency view (plan 024, phase 4), populated by the\naccount list/get endpoints. BalanceBase is omitted when no FX rate exists.",
+                    "type": "integer"
+                },
                 "broker": {
                     "description": "For investment accounts",
                     "type": "string"
@@ -7056,6 +7799,18 @@ const docTemplate = `{
                             "$ref": "#/definitions/kuberan_internal_models.FixedDepositDetails"
                         }
                     ]
+                },
+                "fx_missing": {
+                    "description": "no FX rate; BalanceBase is omitted",
+                    "type": "boolean"
+                },
+                "fx_rate": {
+                    "description": "account currency -\u003e base, decimal string; empty when same currency",
+                    "type": "string"
+                },
+                "fx_stale": {
+                    "description": "the FX quote used was stale",
+                    "type": "boolean"
                 },
                 "id": {
                     "type": "string"
@@ -7151,6 +7906,10 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "created_at": {
+                    "type": "string"
+                },
+                "currency": {
+                    "description": "Currency is the ISO 4217 code of Amount (and of progress figures).",
                     "type": "string"
                 },
                 "deleted_at": {
@@ -7377,25 +8136,58 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "cost_basis": {
+                    "description": "security currency",
+                    "type": "integer"
+                },
+                "cost_basis_base": {
+                    "description": "CostBasisBase and RealizedGainLossBase are the same figures in the user's\nbase currency, frozen at each trade's FX rate (plan 024, phase 3a).",
                     "type": "integer"
                 },
                 "created_at": {
                     "type": "string"
                 },
+                "currency": {
+                    "description": "the security's currency (same as price_currency)",
+                    "type": "string"
+                },
                 "current_price": {
-                    "description": "Populated at query time from security_prices",
+                    "description": "Populated at query time: latest price in the user's base currency",
+                    "type": "integer"
+                },
+                "current_price_native": {
+                    "description": "Response-only price fields (plan 024, phase 2), populated at query time.",
                     "type": "integer"
                 },
                 "deleted_at": {
                     "$ref": "#/definitions/gorm.DeletedAt"
                 },
+                "fx_missing": {
+                    "description": "no FX rate; CurrentPrice is 0",
+                    "type": "boolean"
+                },
+                "fx_rate": {
+                    "description": "price currency -\u003e base, decimal string; \"\" when already base",
+                    "type": "string"
+                },
+                "fx_stale": {
+                    "description": "the FX quote used was stale",
+                    "type": "boolean"
+                },
                 "id": {
+                    "type": "string"
+                },
+                "price_currency": {
+                    "description": "currency of CurrentPriceNative",
                     "type": "string"
                 },
                 "quantity": {
                     "type": "number"
                 },
                 "realized_gain_loss": {
+                    "description": "security currency",
+                    "type": "integer"
+                },
+                "realized_gain_loss_base": {
                     "type": "integer"
                 },
                 "security": {
@@ -7430,7 +8222,14 @@ const docTemplate = `{
         "kuberan_internal_models.InvestmentTransaction": {
             "type": "object",
             "properties": {
+                "base_amount": {
+                    "type": "integer"
+                },
                 "created_at": {
+                    "type": "string"
+                },
+                "currency": {
+                    "description": "response only: the security's currency",
                     "type": "string"
                 },
                 "date": {
@@ -7445,6 +8244,14 @@ const docTemplate = `{
                 },
                 "fee": {
                     "type": "integer"
+                },
+                "fx_rate_to_base": {
+                    "description": "Base-currency figures (plan 024, phase 3a). The amounts above are in the\nsecurity's currency. FXRateToBase is NULL on legacy rows.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/kuberan_internal_fx.Rate"
+                        }
+                    ]
                 },
                 "id": {
                     "type": "string"
@@ -7470,6 +8277,9 @@ const docTemplate = `{
                     "type": "number"
                 },
                 "realized_gain_loss": {
+                    "type": "integer"
+                },
+                "realized_gain_loss_base": {
                     "type": "integer"
                 },
                 "split_ratio": {
@@ -7536,11 +8346,17 @@ const docTemplate = `{
                 "cash_balance": {
                     "type": "integer"
                 },
+                "currency": {
+                    "type": "string"
+                },
                 "debt_balance": {
                     "type": "integer"
                 },
                 "fixed_deposit_balance": {
                     "type": "integer"
+                },
+                "fx_missing": {
+                    "type": "boolean"
                 },
                 "id": {
                     "type": "string"
@@ -7572,6 +8388,10 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "created_at": {
+                    "type": "string"
+                },
+                "currency": {
+                    "description": "Currency is the currency of the account of the expense that created the\nreceivable (plan 024, phase 4). Response-only; set by the service.",
                     "type": "string"
                 },
                 "deleted_at": {
@@ -7670,6 +8490,10 @@ const docTemplate = `{
         "kuberan_internal_models.ReceivableSettlement": {
             "type": "object",
             "properties": {
+                "account_amount": {
+                    "description": "AccountAmount is the amount credited to AccountID, in that account's\ncurrency. Amount stays in the receivable's currency. NULL for same-currency\nsettlements (and rows predating plan 024 phase 4): the credit equals Amount.",
+                    "type": "integer"
+                },
                 "account_id": {
                     "type": "string"
                 },
@@ -7677,6 +8501,10 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "created_at": {
+                    "type": "string"
+                },
+                "currency": {
+                    "description": "Currency is the receivable's currency (response-only; the unit of Amount).",
                     "type": "string"
                 },
                 "date": {
@@ -7818,6 +8646,10 @@ const docTemplate = `{
         "kuberan_internal_models.SecurityPrice": {
             "type": "object",
             "properties": {
+                "currency": {
+                    "description": "ISO 4217; the security's own currency",
+                    "type": "string"
+                },
                 "id": {
                     "type": "string"
                 },
@@ -7884,6 +8716,14 @@ const docTemplate = `{
                 "id": {
                     "type": "string"
                 },
+                "implied_rate": {
+                    "description": "ImpliedRate is the response-only rate to_amount/amount (decimal string,\n10 dp, half-even), set for cross-currency transfers.",
+                    "type": "string"
+                },
+                "import_ref": {
+                    "description": "ImportRef marks a row written by an importer (\"ibkr:\u003caccount\u003e:\u003cevent key\u003e\")\nso that re-running the import replaces rather than duplicates it. NULL for\nevery row that was entered by hand.",
+                    "type": "string"
+                },
                 "personal_amount": {
                     "description": "PersonalAmount is the user's own share of an expense, in cents. NULL means\nthe whole Amount is theirs. It is server-maintained (plan 021, D6) and is\nalways serialized (null when unset). Reports aggregate\nCOALESCE(personal_amount, amount).",
                     "type": "integer"
@@ -7901,6 +8741,10 @@ const docTemplate = `{
                 "to_account_id": {
                     "description": "For transfers",
                     "type": "string"
+                },
+                "to_amount": {
+                    "description": "ToAmount is the amount credited to the destination account, in the\ndestination's currency, for a cross-currency transfer. NULL means the\ndestination receives Amount. Use EffectiveToAmount to read it.",
+                    "type": "integer"
                 },
                 "type": {
                     "$ref": "#/definitions/kuberan_internal_models.TransactionType"
@@ -8342,6 +9186,14 @@ const docTemplate = `{
                 "budgeted": {
                     "type": "integer"
                 },
+                "currency": {
+                    "description": "Currency is the budget's currency (the unit of every amount above).",
+                    "type": "string"
+                },
+                "fx_missing": {
+                    "description": "FXMissing is true when some spending had no exchange rate and is excluded from Spent.",
+                    "type": "boolean"
+                },
                 "percentage": {
                     "type": "number"
                 },
@@ -8356,6 +9208,10 @@ const docTemplate = `{
         "kuberan_internal_services.Cashflow": {
             "type": "object",
             "properties": {
+                "currency": {
+                    "description": "the user's base currency",
+                    "type": "string"
+                },
                 "expenses": {
                     "type": "array",
                     "items": {
@@ -8364,6 +9220,10 @@ const docTemplate = `{
                 },
                 "from_date": {
                     "type": "string"
+                },
+                "fx_missing": {
+                    "description": "some amounts had no rate and are excluded",
+                    "type": "boolean"
                 },
                 "income": {
                     "type": "array",
@@ -8381,6 +9241,13 @@ const docTemplate = `{
                 "total_income": {
                     "description": "cents",
                     "type": "integer"
+                },
+                "unconverted": {
+                    "description": "native amounts excluded from the totals",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/kuberan_internal_services.UnconvertedAmount"
+                    }
                 }
             }
         },
@@ -8395,9 +9262,306 @@ const docTemplate = `{
                 }
             }
         },
+        "kuberan_internal_services.IBKRImportCandidate": {
+            "type": "object",
+            "properties": {
+                "amount": {
+                    "description": "Amount is the transfer's amount in the source account's currency.",
+                    "type": "integer"
+                },
+                "date": {
+                    "type": "string"
+                },
+                "deviation_pct": {
+                    "description": "DeviationPct is how far the implied rate is from the market rate, in percent.",
+                    "type": "number"
+                },
+                "transaction_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "kuberan_internal_services.IBKRImportCash": {
+            "type": "object",
+            "properties": {
+                "checkpoints": {
+                    "description": "Checkpoints compare the ledger with Ending Cash at each statement end.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/kuberan_internal_services.IBKRImportCashCheckpoint"
+                    }
+                },
+                "deposits_matched": {
+                    "description": "DepositsMatched are the legacy transfers re-pointed (or already pointed)\nat the new cash account.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/kuberan_internal_services.IBKRImportDeposit"
+                    }
+                },
+                "dividends": {
+                    "type": "integer"
+                },
+                "fees": {
+                    "type": "integer"
+                },
+                "legacy_account_balance_after": {
+                    "description": "LegacyAccountBalanceAfter is the legacy account's balance after the\nre-pointing; null without a legacy account.",
+                    "type": "integer"
+                },
+                "legs": {
+                    "description": "Legs counts trade cash legs; Dividends dividend legs; Fees standalone\nfee and withholding expenses.",
+                    "type": "integer"
+                },
+                "opening_balance": {
+                    "description": "OpeningBalance is the opening balance in cents, from the Ending Cash of\nthe statement that ends the day before cash_start_date.",
+                    "type": "integer"
+                },
+                "unmatched_deposits": {
+                    "description": "UnmatchedDeposits are deposits and withdrawals with no legacy transfer;\nthe owner records them by hand.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/kuberan_internal_services.IBKRImportUnmatched"
+                    }
+                }
+            }
+        },
+        "kuberan_internal_services.IBKRImportCashCheckpoint": {
+            "type": "object",
+            "properties": {
+                "date": {
+                    "type": "string"
+                },
+                "diff": {
+                    "description": "Diff is ibkr - ledger.",
+                    "type": "integer"
+                },
+                "ibkr": {
+                    "type": "integer"
+                },
+                "ledger": {
+                    "type": "integer"
+                }
+            }
+        },
+        "kuberan_internal_services.IBKRImportCheckpoint": {
+            "type": "object",
+            "properties": {
+                "cost_basis": {
+                    "type": "integer"
+                },
+                "cost_basis_diff": {
+                    "description": "CostBasisDiff is cost_basis - ibkr_cost_basis (FIFO vs average cost).",
+                    "type": "integer"
+                },
+                "date": {
+                    "type": "string"
+                },
+                "ibkr_cost_basis": {
+                    "type": "integer"
+                },
+                "ibkr_quantity": {
+                    "type": "number"
+                },
+                "quantity": {
+                    "type": "number"
+                },
+                "quantity_ok": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "kuberan_internal_services.IBKRImportDeposit": {
+            "type": "object",
+            "properties": {
+                "amount": {
+                    "type": "integer"
+                },
+                "date": {
+                    "type": "string"
+                },
+                "source_amount": {
+                    "description": "SourceAmount is the transfer's amount in the source account's currency.",
+                    "type": "integer"
+                },
+                "transaction_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "kuberan_internal_services.IBKRImportFinal": {
+            "type": "object",
+            "properties": {
+                "cost_basis": {
+                    "type": "integer"
+                },
+                "cost_basis_base": {
+                    "type": "integer"
+                },
+                "quantity": {
+                    "type": "number"
+                },
+                "realized_gain_loss": {
+                    "type": "integer"
+                },
+                "realized_gain_loss_base": {
+                    "type": "integer"
+                }
+            }
+        },
+        "kuberan_internal_services.IBKRImportIssue": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "description": "Code is machine readable, e.g. unknown_security, currency_mismatch,\nfx_rate_missing, insufficient_shares, opening_balance_missing.",
+                    "type": "string"
+                },
+                "detail": {
+                    "description": "Detail describes the problem for the operator.",
+                    "type": "string"
+                }
+            }
+        },
+        "kuberan_internal_services.IBKRImportPeriod": {
+            "type": "object",
+            "properties": {
+                "end": {
+                    "type": "string"
+                },
+                "start": {
+                    "type": "string"
+                }
+            }
+        },
+        "kuberan_internal_services.IBKRImportReport": {
+            "type": "object",
+            "properties": {
+                "account": {
+                    "description": "Account is the IBKR account id found in the statements.",
+                    "type": "string"
+                },
+                "applied": {
+                    "description": "Applied is true when the changes were written.",
+                    "type": "boolean"
+                },
+                "base_currency": {
+                    "description": "BaseCurrency is the statements' base currency.",
+                    "type": "string"
+                },
+                "cash": {
+                    "description": "Cash describes the cash ledger part of the import.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/kuberan_internal_services.IBKRImportCash"
+                        }
+                    ]
+                },
+                "errors": {
+                    "description": "Errors block an apply.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/kuberan_internal_services.IBKRImportIssue"
+                    }
+                },
+                "ignored_sections": {
+                    "description": "IgnoredSections lists the statement sections that are deliberately not imported.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "periods": {
+                    "description": "Periods are the statement periods in chronological order.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/kuberan_internal_services.IBKRImportPeriod"
+                    }
+                },
+                "securities": {
+                    "description": "Securities has one entry per symbol with holdings activity.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/kuberan_internal_services.IBKRImportSecurity"
+                    }
+                },
+                "warnings": {
+                    "description": "Warnings never block an apply.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "kuberan_internal_services.IBKRImportSecurity": {
+            "type": "object",
+            "properties": {
+                "checkpoints": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/kuberan_internal_services.IBKRImportCheckpoint"
+                    }
+                },
+                "existing_transactions": {
+                    "type": "integer"
+                },
+                "final": {
+                    "description": "Final is the holding after replaying all events.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/kuberan_internal_services.IBKRImportFinal"
+                        }
+                    ]
+                },
+                "investment_id": {
+                    "description": "InvestmentID is null when the investment will be created on apply.",
+                    "type": "string"
+                },
+                "new_transactions": {
+                    "type": "integer"
+                },
+                "security_id": {
+                    "type": "string"
+                },
+                "symbol": {
+                    "type": "string"
+                }
+            }
+        },
+        "kuberan_internal_services.IBKRImportUnmatched": {
+            "type": "object",
+            "properties": {
+                "amount": {
+                    "type": "integer"
+                },
+                "candidates": {
+                    "description": "Candidates are the legacy transfers that were within 5 days but rejected\n(implied rate too far from the market rate), to help manual pairing.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/kuberan_internal_services.IBKRImportCandidate"
+                    }
+                },
+                "date": {
+                    "type": "string"
+                },
+                "detail": {
+                    "type": "string"
+                },
+                "kind": {
+                    "type": "string"
+                }
+            }
+        },
         "kuberan_internal_services.PortfolioSummary": {
             "type": "object",
             "properties": {
+                "currency": {
+                    "description": "Currency is the user's base currency, which every value above is in\n(cost basis and realized gain/loss are the frozen base-currency figures).",
+                    "type": "string"
+                },
+                "fx_stale": {
+                    "description": "FXStale is true when any FX quote used was stale.",
+                    "type": "boolean"
+                },
                 "gain_loss_pct": {
                     "type": "number"
                 },
@@ -8410,7 +9574,14 @@ const docTemplate = `{
                 "total_cost_basis": {
                     "type": "integer"
                 },
+                "total_fx_return": {
+                    "type": "integer"
+                },
                 "total_gain_loss": {
+                    "type": "integer"
+                },
+                "total_price_return": {
+                    "description": "TotalPriceReturn and TotalFXReturn split the unrealized gain\n(TotalValue - TotalCostBasis): the native gain at today's rate, and the\ncurrency effect on the cost. They sum to TotalGainLoss within a cent per holding.",
                     "type": "integer"
                 },
                 "total_realized_gain_loss": {
@@ -8418,6 +9589,13 @@ const docTemplate = `{
                 },
                 "total_value": {
                     "type": "integer"
+                },
+                "unconverted": {
+                    "description": "Unconverted lists holdings that could not be valued for lack of an FX\nrate, as native value summed per currency. They are left out of the totals.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/kuberan_internal_services.UnconvertedValue"
+                    }
                 }
             }
         },
@@ -8439,6 +9617,18 @@ const docTemplate = `{
                 },
                 "outstanding": {
                     "description": "cents",
+                    "type": "integer"
+                }
+            }
+        },
+        "kuberan_internal_services.ReceivableCurrencyTotal": {
+            "type": "object",
+            "properties": {
+                "currency": {
+                    "type": "string"
+                },
+                "outstanding": {
+                    "description": "cents of Currency",
                     "type": "integer"
                 }
             }
@@ -8467,15 +9657,50 @@ const docTemplate = `{
                         "$ref": "#/definitions/kuberan_internal_services.ReceivableCounterpartyTotal"
                     }
                 },
+                "by_currency": {
+                    "description": "native outstanding per receivable currency",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/kuberan_internal_services.ReceivableCurrencyTotal"
+                    }
+                },
                 "by_kind": {
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/kuberan_internal_services.ReceivableKindTotal"
                     }
                 },
+                "currency": {
+                    "description": "currency of the converted totals (base)",
+                    "type": "string"
+                },
+                "fx_missing": {
+                    "description": "some outstanding amounts had no rate and are left out",
+                    "type": "boolean"
+                },
                 "total_outstanding": {
-                    "description": "cents",
+                    "description": "cents, in Currency (the user's base)",
                     "type": "integer"
+                }
+            }
+        },
+        "kuberan_internal_services.RejectedPrice": {
+            "type": "object",
+            "properties": {
+                "currency": {
+                    "type": "string"
+                },
+                "expected_currency": {
+                    "type": "string"
+                },
+                "index": {
+                    "type": "integer"
+                },
+                "reason": {
+                    "type": "string"
+                },
+                "security_id": {
+                    "type": "string"
                 }
             }
         },
@@ -8509,8 +9734,16 @@ const docTemplate = `{
         "kuberan_internal_services.SpendingByCategory": {
             "type": "object",
             "properties": {
+                "currency": {
+                    "description": "Currency is the currency of every amount (the user's base currency).",
+                    "type": "string"
+                },
                 "from_date": {
                     "type": "string"
+                },
+                "fx_missing": {
+                    "description": "FXMissing is true when some spending had no exchange rate and was left out.",
+                    "type": "boolean"
                 },
                 "items": {
                     "type": "array",
@@ -8523,6 +9756,13 @@ const docTemplate = `{
                 },
                 "total_spent": {
                     "type": "integer"
+                },
+                "unconverted": {
+                    "description": "Unconverted lists, per currency, the native amounts left out of the totals.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/kuberan_internal_services.UnconvertedAmount"
+                    }
                 }
             }
         },
@@ -8559,6 +9799,10 @@ const docTemplate = `{
                     "description": "cents, the full amount that left the account",
                     "type": "integer"
                 },
+                "amount_base": {
+                    "description": "AmountBase is the effective amount (personal share, else Amount) converted\nto the user's base currency at the expense's date; 0 when FXMissing.",
+                    "type": "integer"
+                },
                 "category_color": {
                     "type": "string"
                 },
@@ -8571,11 +9815,19 @@ const docTemplate = `{
                 "category_name": {
                     "type": "string"
                 },
+                "currency": {
+                    "description": "Currency is the account's currency, the unit of Amount and PersonalAmount.",
+                    "type": "string"
+                },
                 "date": {
                     "type": "string"
                 },
                 "description": {
                     "type": "string"
+                },
+                "fx_missing": {
+                    "description": "FXMissing is true when no rate existed, so AmountBase could not be computed.",
+                    "type": "boolean"
                 },
                 "id": {
                     "type": "string"
@@ -8589,8 +9841,16 @@ const docTemplate = `{
         "kuberan_internal_services.TopExpenses": {
             "type": "object",
             "properties": {
+                "currency": {
+                    "description": "Currency is the user's base currency (the unit of each AmountBase).",
+                    "type": "string"
+                },
                 "from_date": {
                     "type": "string"
+                },
+                "fx_missing": {
+                    "description": "FXMissing is true when some matching expenses had no rate; they rank after\nevery converted expense.",
+                    "type": "boolean"
                 },
                 "items": {
                     "type": "array",
@@ -8612,6 +9872,29 @@ const docTemplate = `{
             "properties": {
                 "count": {
                     "type": "integer"
+                },
+                "value": {
+                    "type": "integer"
+                }
+            }
+        },
+        "kuberan_internal_services.UnconvertedAmount": {
+            "type": "object",
+            "properties": {
+                "amount": {
+                    "description": "minor units, in Currency",
+                    "type": "integer"
+                },
+                "currency": {
+                    "type": "string"
+                }
+            }
+        },
+        "kuberan_internal_services.UnconvertedValue": {
+            "type": "object",
+            "properties": {
+                "currency": {
+                    "type": "string"
                 },
                 "value": {
                     "type": "integer"
