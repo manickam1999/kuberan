@@ -179,6 +179,7 @@ var (
 	ErrAttachmentNotFound   = &AppError{Code: "ATTACHMENT_NOT_FOUND", Message: "Attachment not found", StatusCode: http.StatusNotFound}
 	ErrUnsupportedMediaType = &AppError{Code: "UNSUPPORTED_MEDIA_TYPE", Message: "Unsupported file type", StatusCode: http.StatusUnsupportedMediaType}
 	ErrPayloadTooLarge      = &AppError{Code: "PAYLOAD_TOO_LARGE", Message: "File exceeds the maximum allowed size", StatusCode: http.StatusRequestEntityTooLarge}
+	ErrReceiptsDisabled     = &AppError{Code: "RECEIPTS_DISABLED", Message: "Receipt storage isn't set up on this server", StatusCode: http.StatusServiceUnavailable}
 	ErrAttachmentLimit      = &AppError{Code: "ATTACHMENT_LIMIT", Message: "Maximum number of attachments reached for this transaction", StatusCode: http.StatusConflict}
 )
 
