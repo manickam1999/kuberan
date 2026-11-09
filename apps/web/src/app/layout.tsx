@@ -9,6 +9,8 @@ import {
   ChartThemeProvider,
   CHART_THEME_INIT_SCRIPT,
 } from "@/providers/chart-theme-provider";
+import { PALETTE_INIT_SCRIPT } from "@/lib/palette-apply";
+import { AppearanceSync } from "@/providers/appearance-sync";
 import { Toaster } from "@/components/ui/sonner";
 import "./globals.css";
 
@@ -60,6 +62,12 @@ export default async function RootLayout({
           suppressHydrationWarning
           dangerouslySetInnerHTML={{ __html: CHART_THEME_INIT_SCRIPT }}
         />
+        {/* Apply the mirrored palette (cookie, then localStorage) before paint. */}
+        <script
+          nonce={nonce}
+          suppressHydrationWarning
+          dangerouslySetInnerHTML={{ __html: PALETTE_INIT_SCRIPT }}
+        />
       </head>
       <body
         className={`${geistSans.variable} ${geistMono.variable} ${geistPixel.variable} antialiased`}
@@ -68,6 +76,7 @@ export default async function RootLayout({
           <ChartThemeProvider>
             <QueryProvider>
               <AuthProvider>
+                <AppearanceSync />
                 {children}
                 <Toaster />
               </AuthProvider>

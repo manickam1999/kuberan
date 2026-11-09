@@ -1,5 +1,7 @@
+import type { PaletteId } from "@/lib/palettes";
 import type {
   Account,
+  Appearance,
   Attachment,
   Budget,
   BudgetPeriod,
@@ -103,6 +105,13 @@ export interface UpdateProfileSettingsRequest {
   email?: string;
   /** Confirms an email change; 400 INVALID_CURRENT_PASSWORD if wrong (counts toward lockout). */
   current_password?: string;
+  /** Partial update merged server-side; unknown keys and values are a 400. */
+  appearance?: Appearance;
+}
+
+// GET /appearance (public): the server-wide default palette.
+export interface AppearanceDefaultResponse {
+  default_palette: PaletteId;
 }
 
 // POST /auth/password. Wrong current password: 400 INVALID_CURRENT_PASSWORD;

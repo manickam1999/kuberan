@@ -1,7 +1,7 @@
 "use client";
 
 import { Eye, EyeOff, LogOut, Moon, Sun, Monitor, Search } from "lucide-react";
-import { useTheme } from "next-themes";
+import { useAppearance } from "@/hooks/use-appearance";
 import { useAuth } from "@/hooks/use-auth";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -28,7 +28,7 @@ interface AppHeaderProps {
 
 export function AppHeader({ onOpenCommandPalette }: AppHeaderProps) {
   const { user, logout, hideBalances, toggleHideBalances } = useAuth();
-  const { setTheme } = useTheme();
+  const { setMode } = useAppearance();
 
   return (
     <header className="sticky top-0 z-20 flex h-16 shrink-0 items-center gap-2 border-b border-border/60 bg-background/80 px-4 backdrop-blur-md supports-[backdrop-filter]:bg-background/70">
@@ -73,15 +73,15 @@ export function AppHeader({ onOpenCommandPalette }: AppHeaderProps) {
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
-          <DropdownMenuItem onClick={() => setTheme("light")}>
+          <DropdownMenuItem onClick={() => setMode("light")}>
             <Sun />
             Light
           </DropdownMenuItem>
-          <DropdownMenuItem onClick={() => setTheme("dark")}>
+          <DropdownMenuItem onClick={() => setMode("dark")}>
             <Moon />
             Dark
           </DropdownMenuItem>
-          <DropdownMenuItem onClick={() => setTheme("system")}>
+          <DropdownMenuItem onClick={() => setMode("system")}>
             <Monitor />
             System
           </DropdownMenuItem>

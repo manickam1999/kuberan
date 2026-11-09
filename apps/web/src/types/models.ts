@@ -2,6 +2,8 @@
 // All monetary values are int64 cents (e.g., $10.50 = 1050).
 // All IDs are UUIDv7 strings.
 
+import type { PaletteId } from "@/lib/palettes";
+
 // Base fields present on all entities
 export interface BaseModel {
   id: string; // UUIDv7
@@ -22,6 +24,25 @@ export interface User {
   default_account_id: string | null; // account preselected for new transactions
   /** ISO 4217 reporting currency aggregates are converted to. */
   base_currency: string;
+  /** UI preferences; a missing key means "default". */
+  appearance?: Appearance;
+  /** The palette to render: the user's choice, else the server default. */
+  resolved_palette?: string;
+}
+
+/** Palette preference: a palette id, or "default" to follow the server. */
+export type AppearancePaletteChoice = "default" | PaletteId;
+export type AppearanceMode = "system" | "light" | "dark";
+export type AppearanceChartStyle = "clean" | "dither";
+export type AppearanceDensity = "comfortable" | "compact";
+
+/** users.appearance (plan 023 item 1.8). */
+export interface Appearance {
+  palette?: AppearancePaletteChoice;
+  mode?: AppearanceMode;
+  chart_style?: AppearanceChartStyle;
+  density?: AppearanceDensity;
+  show_cents?: boolean;
 }
 
 // Account types

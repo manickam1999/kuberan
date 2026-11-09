@@ -168,6 +168,8 @@ const PUBLIC_PATHS = [
   "/api/v1/auth/register",
   "/api/v1/auth/refresh",
   "/api/v1/auth/logout",
+  // The server's default palette: read by the sign-in pages before any session.
+  "/api/v1/appearance",
 ];
 const PUBLIC_PATH_PREFIXES = ["/api/v1/oauth/login", "/api/v1/oauth/consent"];
 

@@ -51,7 +51,8 @@ import {
 /**
  * Named category icons, keyed by Lucide icon name. A category's `icon` is
  * either one of these keys or a single emoji. Keep in sync with
- * categoryIconNames in apps/api/internal/services/category_icons.go.
+ * categoryIconNames in apps/api/internal/services/category_icons.go (a Go test
+ * compares the two lists).
  * Ordered for the picker: everyday spending first, then money and income.
  */
 export const CATEGORY_ICONS: ReadonlyArray<{ key: string; icon: LucideIcon }> = [
