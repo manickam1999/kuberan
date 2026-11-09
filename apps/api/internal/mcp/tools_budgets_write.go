@@ -70,6 +70,14 @@ func (s *Server) prepareCreateBudget(c caller, args map[string]interface{}) (*wr
 	if res != nil {
 		return nil, res
 	}
+	category, err := s.services.Categories.GetCategoryByID(c.UserID, categoryID)
+	if err != nil {
+		return nil, serviceError("find category", err)
+	}
+	if category.Type != models.CategoryTypeExpense {
+		return nil, mcp.NewToolResultError(fmt.Sprintf(
+			"category %s is an %s category: budgets limit spending, so they need an expense category", untrusted(category.Name), category.Type))
+	}
 	// A new budget is created in the user's base currency, which is also the
 	// unit of the per-change limit, so no conversion is involved.
 	user, err := s.services.Users.GetUserByID(c.UserID)

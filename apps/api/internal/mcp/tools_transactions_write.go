@@ -28,9 +28,12 @@ const clearCategory = "none"
 func (s *Server) registerTransactionWriteTools() {
 	s.addWriteTool(
 		writeTool("create_transaction",
-			"Record an income or expense transaction in one of the user's accounts and update its balance. "+
+			"Record an income or expense transaction in one of the user's cash, credit card or loan (debt) accounts and update its balance; "+
+				"fixed deposits and investment accounts cannot take plain transactions. "+
 				"Get account and category IDs from list_accounts and list_categories. The amount is in the account's own currency "+
-				"(shown by list_accounts). If no category is given, the user's categorization rules may assign one.",
+				"(shown by list_accounts); on a credit card or loan an expense raises what is owed and income lowers it. "+
+				"The category must be an income category for income and an expense category for an expense. "+
+				"If no category is given, the user's categorization rules may assign one. Use create_transfer, not this, to move money between accounts.",
 			false,
 			mcp.WithString("account_id", mcp.Required(), mcp.Description("Account ID")),
 			mcp.WithString("type", mcp.Required(), mcp.Enum("income", "expense"), mcp.Description("'income' or 'expense'")),
@@ -44,7 +47,7 @@ func (s *Server) registerTransactionWriteTools() {
 
 	s.addWriteTool(
 		writeTool("create_transfer",
-			"Move money between two of the user's accounts (for example paying a credit card from a cash account). "+
+			"Move money between two of the user's cash, credit card or loan (debt) accounts (for example paying a credit card or a loan from a cash account). "+
 				"Transfers are not income or spending. amount is in the source account's currency. When the two accounts have "+
 				"different currencies, to_amount (the amount arriving, in the destination account's currency) is required; "+
 				"otherwise omit it.",
@@ -62,7 +65,8 @@ func (s *Server) registerTransactionWriteTools() {
 	s.addWriteTool(
 		writeTool("update_transaction",
 			"Edit an income or expense transaction. Only the fields given change; the account balance is adjusted. "+
-				"The amount is in the transaction's account currency. "+
+				"The amount is in the transaction's account currency. A category must match the transaction's (new) type; "+
+				"changing the type needs a category_id that fits it, or 'none', when the transaction has a category. "+
 				"Transfers, investment transactions and repayments cannot be edited here.",
 			true,
 			mcp.WithString("transaction_id", mcp.Required(), mcp.Description("Transaction ID")),
@@ -100,9 +104,10 @@ func parseTxnType(v string) (models.TransactionType, *mcp.CallToolResult) {
 }
 
 // checkCategory verifies that categoryID belongs to the user and that its type
-// matches txType. The transaction service enforces ownership itself; the type
-// match is an MCP-only rule (the web app allows any category), applied because
-// a model picking an income category for an expense is almost always a mistake.
+// matches txType. The transaction service enforces both too (CATEGORY_TYPE_MISMATCH
+// on create and update); checking here first gives the model a message that names
+// the category and its type, and keeps a refused write from counting against the
+// rate limit.
 func (s *Server) checkCategory(userID, categoryID string, txType models.TransactionType) *mcp.CallToolResult {
 	category, err := s.services.Categories.GetCategoryByID(userID, categoryID)
 	if err != nil {
@@ -113,6 +118,34 @@ func (s *Server) checkCategory(userID, categoryID string, txType models.Transact
 			"category %s is an %s category and cannot be used for an %s transaction", untrusted(category.Name), category.Type, txType))
 	}
 	return nil
+}
+
+// spendingAccountOnly rejects accounts that income, expenses and transfers cannot
+// be recorded in. Cash, credit card and loan accounts take day-to-day
+// transactions; a fixed deposit and an investment account are changed by the
+// app's own flows (opening or closing the deposit, trades), and a plain
+// transaction there would leave a record that does not match the real balance.
+func spendingAccountOnly(a *models.Account) *mcp.CallToolResult {
+	if a.Type.IsSpending() {
+		return nil
+	}
+	return mcp.NewToolResultError(fmt.Sprintf(
+		"%s is a %s account: transactions can only be recorded in cash, credit card and loan (debt) accounts; use the Kuberan app for fixed deposits and investments",
+		untrusted(a.Name), a.Type))
+}
+
+// categoryLine reports a created transaction's category by name; byRule marks
+// one the user's categorization rules chose.
+func (s *Server) categoryLine(userID, categoryID string, byRule bool) string {
+	category, err := s.services.Categories.GetCategoryByID(userID, categoryID)
+	if err != nil {
+		return fmt.Sprintf("  Category ID: %s\n", categoryID)
+	}
+	suffix := ""
+	if byRule {
+		suffix = " (assigned by a rule)"
+	}
+	return fmt.Sprintf("  Category: %s%s\n    Category ID: %s\n", untrusted(category.Name), suffix, categoryID)
 }
 
 // balanceLine reports an account's balance after a write, or "" if it cannot
@@ -150,6 +183,9 @@ func (s *Server) prepareCreateTransaction(c caller, args map[string]interface{})
 	if err != nil {
 		return nil, serviceError("find account", err)
 	}
+	if res := spendingAccountOnly(account); res != nil {
+		return nil, res
+	}
 	if res := s.checkCeiling(c.UserID, "amount", amount, account.Currency); res != nil {
 		return nil, res
 	}
@@ -172,7 +208,7 @@ func (s *Server) prepareCreateTransaction(c caller, args map[string]interface{})
 			txn.Type, formatMoney(txn.Amount, account.Currency), txn.Date.Format("2006-01-02"), untrusted(txn.Description))
 		fmt.Fprintf(&sb, "  ID: %s\n", txn.ID)
 		if txn.CategoryID != nil {
-			fmt.Fprintf(&sb, "  Category ID: %s\n", *txn.CategoryID)
+			sb.WriteString(s.categoryLine(c.UserID, *txn.CategoryID, categoryID == nil))
 		}
 		sb.WriteString(s.balanceLine(c.UserID, accountID))
 		return sb.String(), []auditEntry{{
@@ -214,6 +250,12 @@ func (s *Server) prepareCreateTransfer(c caller, args map[string]interface{}) (*
 	toAcc, err := s.services.Accounts.GetAccountByID(c.UserID, toID)
 	if err != nil {
 		return nil, serviceError("find destination account", err)
+	}
+	if res := spendingAccountOnly(fromAcc); res != nil {
+		return nil, res
+	}
+	if res := spendingAccountOnly(toAcc); res != nil {
+		return nil, res
 	}
 	// to_amount follows the API's rules: required when the currencies differ,
 	// otherwise omitted or equal to amount. Both legs count against the ceiling.
@@ -307,6 +349,14 @@ func (s *Server) prepareUpdateTransaction(c caller, args map[string]interface{})
 	before, err := s.services.Transactions.GetTransactionByID(c.UserID, txnID)
 	if err != nil {
 		return nil, serviceError("find transaction", err)
+	}
+
+	switch before.Type {
+	case models.TransactionTypeTransfer, models.TransactionTypeInvestment, models.TransactionTypeReimbursement:
+		// Refused here, before it counts against the rate limit; the service
+		// refuses them too.
+		return nil, mcp.NewToolResultError(fmt.Sprintf(
+			"this is a %s transaction, which cannot be edited here: only income and expense transactions can be", before.Type))
 	}
 
 	account, err := s.services.Accounts.GetAccountByID(c.UserID, before.AccountID)
