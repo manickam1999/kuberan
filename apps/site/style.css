@@ -319,6 +319,17 @@ p {
 .cmd .copy[hidden] {
   display: none;
 }
+/* Narrow screens: the commands scroll sideways, so an overlaid button would
+   cover them. Put it in the flow, under the commands. */
+@media (max-width: 560px) {
+  .cmd pre {
+    padding-right: 0;
+  }
+  .cmd .copy {
+    position: static;
+    justify-self: start;
+  }
+}
 .cmd .note {
   font-size: 0.8125rem;
   color: var(--fg-3);
