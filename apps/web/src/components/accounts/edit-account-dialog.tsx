@@ -252,7 +252,7 @@ export function EditAccountDialog({
                 checked={isActive}
                 onChange={(e) => setIsActive(e.target.checked)}
                 disabled={isSubmitting}
-                className="h-4 w-4 rounded border-gray-300"
+                className="h-4 w-4 rounded border-input accent-primary"
               />
               <Label htmlFor="edit-account-active">Active</Label>
             </div>
@@ -263,7 +263,7 @@ export function EditAccountDialog({
                 checked={isPinned}
                 onChange={(e) => setIsPinned(e.target.checked)}
                 disabled={isSubmitting}
-                className="h-4 w-4 rounded border-gray-300"
+                className="h-4 w-4 rounded border-input accent-primary"
               />
               <Label htmlFor="edit-account-pinned">Pinned</Label>
             </div>

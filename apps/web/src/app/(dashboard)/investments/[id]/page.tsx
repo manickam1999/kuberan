@@ -69,11 +69,11 @@ const TX_TYPE_CONFIG: Record<
   InvestmentTransactionType,
   { label: string; color: string }
 > = {
-  buy: { label: "Buy", color: "text-green-600" },
-  sell: { label: "Sell", color: "text-red-600" },
-  dividend: { label: "Dividend", color: "text-blue-600" },
-  split: { label: "Split", color: "text-purple-600" },
-  transfer: { label: "Transfer", color: "text-orange-600" },
+  buy: { label: "Buy", color: "text-positive" },
+  sell: { label: "Sell", color: "text-negative" },
+  dividend: { label: "Dividend", color: "text-info" },
+  split: { label: "Split", color: "text-investment" },
+  transfer: { label: "Transfer", color: "text-warning" },
 };
 
 const PAGE_SIZE = 20;
@@ -170,7 +170,7 @@ function InvestmentTransactionListItem({
         {isSell && (
           <div className="flex justify-between">
             <span className="text-muted-foreground">Realized P&L:</span>
-            <span className={`font-mono font-medium ${transaction.realized_gain_loss >= 0 ? "text-green-600" : "text-red-600"}`}>
+            <span className={`font-mono font-medium ${transaction.realized_gain_loss >= 0 ? "text-positive" : "text-negative"}`}>
               {transaction.realized_gain_loss >= 0 ? "+" : ""}
               <Money
                 amount={transaction.realized_gain_loss}
@@ -305,14 +305,14 @@ export default function InvestmentDetailPage() {
             <CardHeader className="flex flex-row items-center justify-between pb-2">
               <CardDescription>Realized Gain / Loss</CardDescription>
               {isRealizedPositive ? (
-                <TrendingUp className="h-4 w-4 text-green-600" />
+                <TrendingUp className="h-4 w-4 text-positive" />
               ) : (
-                <TrendingDown className="h-4 w-4 text-red-600" />
+                <TrendingDown className="h-4 w-4 text-negative" />
               )}
             </CardHeader>
             <CardContent>
               <p
-                className={`text-2xl font-bold font-mono whitespace-nowrap ${isRealizedPositive ? "text-green-600" : "text-red-600"}`}
+                className={`text-2xl font-bold font-mono whitespace-nowrap ${isRealizedPositive ? "text-positive" : "text-negative"}`}
               >
                 {isRealizedPositive ? "+" : "-"}{" "}
                 <Money
@@ -437,14 +437,14 @@ export default function InvestmentDetailPage() {
             <CardHeader className="flex flex-row items-center justify-between pb-2">
               <CardDescription>{hasRealizedGainLoss ? "Unrealized Gain / Loss" : "Gain / Loss"}</CardDescription>
               {isPositive ? (
-                <TrendingUp className="h-4 w-4 text-green-600" />
+                <TrendingUp className="h-4 w-4 text-positive" />
               ) : (
-                <TrendingDown className="h-4 w-4 text-red-600" />
+                <TrendingDown className="h-4 w-4 text-negative" />
               )}
             </CardHeader>
             <CardContent>
               <p
-                className={`text-2xl font-bold font-mono whitespace-nowrap ${isPositive ? "text-green-600" : "text-red-600"}`}
+                className={`text-2xl font-bold font-mono whitespace-nowrap ${isPositive ? "text-positive" : "text-negative"}`}
               >
                 {isPositive ? "+" : "-"}{" "}
                 {formatMoney(
@@ -454,7 +454,7 @@ export default function InvestmentDetailPage() {
                 )}
               </p>
               <p
-                className={`text-sm ${isPositive ? "text-green-600" : "text-red-600"}`}
+                className={`text-sm ${isPositive ? "text-positive" : "text-negative"}`}
               >
                 {isPositive ? "+" : "-"}
                 {Math.abs(gainLossPct).toFixed(2)}%
@@ -472,14 +472,14 @@ export default function InvestmentDetailPage() {
               <CardHeader className="flex flex-row items-center justify-between pb-2">
                 <CardDescription>Realized Gain / Loss</CardDescription>
                 {isRealizedPositive ? (
-                  <TrendingUp className="h-4 w-4 text-green-600" />
+                  <TrendingUp className="h-4 w-4 text-positive" />
                 ) : (
-                  <TrendingDown className="h-4 w-4 text-red-600" />
+                  <TrendingDown className="h-4 w-4 text-negative" />
                 )}
               </CardHeader>
               <CardContent>
                 <p
-                  className={`text-2xl font-bold font-mono whitespace-nowrap ${isRealizedPositive ? "text-green-600" : "text-red-600"}`}
+                  className={`text-2xl font-bold font-mono whitespace-nowrap ${isRealizedPositive ? "text-positive" : "text-negative"}`}
                 >
                   {isRealizedPositive ? "+" : "-"}{" "}
                   <Money
@@ -666,7 +666,7 @@ export default function InvestmentDetailPage() {
                           </TableCell>
                           <TableCell className="text-right font-mono font-medium">
                             {tx.type === "sell" ? (
-                              <span className={tx.realized_gain_loss >= 0 ? "text-green-600" : "text-red-600"}>
+                              <span className={tx.realized_gain_loss >= 0 ? "text-positive" : "text-negative"}>
                                 {tx.realized_gain_loss >= 0 ? "+" : ""}
                                 <Money
                                   amount={tx.realized_gain_loss}

@@ -1263,3 +1263,14 @@ html[data-chart-theme="dither"] body {
   }
 }
 /* ===== end plan 023 phase 2.2 / 2.3 ====================================== */
+/* ===== Plan 023 item 2.4: primitive radii and hairlines (delimited block) =====
+   Cards 14px, controls 9px. Hairline borders come from the palette tokens
+   (--border is 8% in dark, 9-10% in light; --input is the stronger line).
+   Control height (34px) is applied per component at `md:` and up only. */
+@theme inline {
+  --radius-card: 14px;
+  --radius-control: 9px;
+  --color-line: var(--border);
+  --color-line-strong: var(--input);
+}
+/* ===== end 2.4 ===== */

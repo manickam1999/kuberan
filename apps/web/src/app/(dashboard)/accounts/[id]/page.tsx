@@ -85,22 +85,22 @@ const TRANSACTION_TYPE_CONFIG: Record<
   TransactionType,
   { label: string; color: string; icon: typeof ArrowUpRight }
 > = {
-  income: { label: "Income", color: "text-green-600", icon: ArrowUpRight },
+  income: { label: "Income", color: "text-positive", icon: ArrowUpRight },
   expense: { label: "Expense", color: "text-foreground", icon: ArrowDownRight },
   transfer: {
     label: "Transfer",
-    color: "text-blue-600",
+    color: "text-info",
     icon: ArrowLeftRight,
   },
   investment: {
     label: "Investment",
-    color: "text-purple-600",
+    color: "text-investment",
     icon: TrendingUp,
   },
   // Repayment of a receivable: a credit to the account, never income.
   reimbursement: {
     label: "Repayment",
-    color: "text-emerald-600",
+    color: "text-positive",
     icon: HandCoins,
   },
   // The account's starting balance: not income.
@@ -785,8 +785,8 @@ export default function AccountDetailPage() {
                               inv.fx_missing
                                 ? "text-muted-foreground"
                                 : isPositive
-                                  ? "text-green-600"
-                                  : "text-red-600"
+                                  ? "text-positive"
+                                  : "text-negative"
                             }`}
                           >
                             {inv.fx_missing ? (

@@ -22,7 +22,12 @@ const SankeyImpl = lazy(() =>
   import("./themed-sankey").then((m) => ({ default: m.ThemedSankey }))
 );
 
-/** Lazily loaded {@link ThemedAreaChartProps | ThemedAreaChart}. */
+export type { ChartMarker } from "./themed-area-chart";
+
+/**
+ * Lazily loaded {@link ThemedAreaChartProps | ThemedAreaChart}. All props,
+ * including `baseline` and `markers` (clean theme only), are forwarded.
+ */
 export function LazyThemedAreaChart(props: ThemedAreaChartProps) {
   return (
     <Suspense fallback={<Skeleton className={cn("w-full", props.className)} />}>

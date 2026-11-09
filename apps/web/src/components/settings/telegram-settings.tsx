@@ -96,7 +96,7 @@ export function TelegramSettings() {
               </CardDescription>
             </div>
             {isLinked && (
-              <Badge variant="default" className="bg-green-600">
+              <Badge variant="default" className="bg-positive text-positive-foreground">
                 Linked
               </Badge>
             )}
@@ -197,8 +197,8 @@ export function TelegramSettings() {
 
           {isLinked && (
             <div className="space-y-4">
-              <Alert className="border-green-200 bg-green-50 dark:border-green-800 dark:bg-green-950">
-                <AlertDescription className="text-green-900 dark:text-green-100">
+              <Alert className="border-positive/30 bg-positive-muted">
+                <AlertDescription className="text-foreground">
                   <strong>✅ Linked successfully!</strong>
                   <div className="mt-2 text-sm">
                     <p>Telegram: <strong>@{link.telegram_username || "Unknown"}</strong></p>

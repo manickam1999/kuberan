@@ -61,13 +61,13 @@ function DialogContent({
       <DialogPrimitive.Content
         data-slot="dialog-content"
         className={cn(
-          "bg-background scrollbar-slim fixed z-50 flex flex-col gap-4 border shadow-xl outline-none duration-200",
+          "bg-elevated scrollbar-slim fixed z-50 flex flex-col gap-4 border shadow-xl outline-none duration-200",
           "data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0",
           // Mobile: bottom sheet that slides up, full width, scrollable
           "inset-x-0 bottom-0 max-h-[92dvh] w-full overflow-y-auto rounded-t-2xl rounded-b-none border-b-0 px-5 pt-3 pb-[calc(1.25rem+env(safe-area-inset-bottom))]",
           "data-[state=closed]:slide-out-to-bottom data-[state=open]:slide-in-from-bottom",
           // Desktop: centered modal that fades/zooms in
-          "sm:inset-x-auto sm:top-1/2 sm:bottom-auto sm:left-1/2 sm:max-h-[85vh] sm:max-w-lg sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-xl sm:border-b sm:p-6",
+          "sm:inset-x-auto sm:top-1/2 sm:bottom-auto sm:left-1/2 sm:max-h-[85vh] sm:max-w-lg sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-card sm:border-b sm:p-6",
           "sm:data-[state=closed]:slide-out-to-bottom-0 sm:data-[state=open]:slide-in-from-bottom-0 sm:data-[state=closed]:zoom-out-95 sm:data-[state=open]:zoom-in-95",
           className
         )}
