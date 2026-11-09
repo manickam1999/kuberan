@@ -271,6 +271,7 @@ func (h *AccountHandler) CreateCreditCardAccount(c *gin.Context) {
 // @Security    BearerAuth
 // @Param       page      query int false "Page number (default 1)"
 // @Param       page_size query int false "Items per page (default 20, max 100)"
+// @Param       include_inactive query bool false "Also list deactivated accounts"
 // @Success     200 {object} pagination.PageResponse[models.Account] "Paginated accounts"
 // @Failure     401 {object} ErrorResponse "Unauthorized"
 // @Failure     500 {object} ErrorResponse "Server error"
@@ -288,7 +289,17 @@ func (h *AccountHandler) GetUserAccounts(c *gin.Context) {
 		return
 	}
 
-	result, err := h.accountService.GetUserAccounts(userID, page)
+	var opts services.AccountListOptions
+	switch c.Query("include_inactive") {
+	case "", "false":
+	case "true":
+		opts.IncludeInactive = true
+	default:
+		respondWithError(c, apperrors.WithMessage(apperrors.ErrInvalidInput, "include_inactive must be true or false"))
+		return
+	}
+
+	result, err := h.accountService.GetUserAccounts(userID, page, opts)
 	if err != nil {
 		respondWithError(c, err)
 		return

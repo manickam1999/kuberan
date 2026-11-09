@@ -63,7 +63,11 @@ function TransactionsView() {
 
   const filters = useMemo(() => toFilters(state, PAGE_SIZE), [state]);
   const { data, isLoading, isError, refetch } = useTransactions(filters);
-  const { data: accountsData } = useAccounts({ page_size: 100 });
+  // Inactive accounts too, so their past transactions keep their account name.
+  const { data: accountsData } = useAccounts({
+    page_size: 100,
+    include_inactive: true,
+  });
   const { data: categoriesData } = useCategories({ page_size: 100 });
   const currencyOf = useAccountCurrencies();
 

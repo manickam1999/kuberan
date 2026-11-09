@@ -29,7 +29,10 @@ export const accountKeys = {
   detail: (id: string) => [...accountKeys.details(), id] as const,
 };
 
-export function useAccounts(params?: PaginationParams) {
+/** List params; `include_inactive` also returns deactivated accounts. */
+export type AccountListParams = PaginationParams & { include_inactive?: boolean };
+
+export function useAccounts(params?: AccountListParams) {
   return useQuery({
     queryKey: accountKeys.list(params),
     queryFn: () =>
@@ -49,7 +52,8 @@ export function useAccountCurrencies(): (
   accountId: string | null | undefined,
   preloaded?: Pick<Account, "currency"> | null
 ) => string {
-  const { data } = useAccounts({ page_size: 100 });
+  // Inactive too: their past transactions still need a currency.
+  const { data } = useAccounts({ page_size: 100, include_inactive: true });
   const base = useBaseCurrency();
   // `||`, not `??`: an embedded account the API didn't preload arrives as a
   // zero value with currency "", which must fall through too.

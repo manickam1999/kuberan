@@ -22,13 +22,20 @@ export interface MoneyParts {
 
 function moneyFormatter(
   currency: string,
-  compact: boolean
+  compact: boolean,
+  major = 0
 ): Intl.NumberFormat {
+  // Compact notation only abbreviates from 1,000 up ("RM 1.2K"); below that
+  // it would print one decimal ("RM 281.9"), so show whole units instead.
+  const compactOpts =
+    Math.abs(major) >= 1000
+      ? { notation: "compact" as const, maximumFractionDigits: 1 }
+      : { minimumFractionDigits: 0, maximumFractionDigits: 0 };
   return new Intl.NumberFormat(MONEY_LOCALE, {
     style: "currency",
     currency,
     ...(compact
-      ? { notation: "compact" as const, maximumFractionDigits: 1 }
+      ? compactOpts
       : { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
   });
 }
@@ -47,9 +54,8 @@ export function formatMoneyParts(
   currency: string,
   compact = false
 ): MoneyParts {
-  const parts = moneyFormatter(currency, compact).formatToParts(
-    Math.abs(cents) / 100
-  );
+  const major = Math.abs(cents) / 100;
+  const parts = moneyFormatter(currency, compact, major).formatToParts(major);
   const out: MoneyParts = {
     prefix: "",
     minus: cents < 0 ? MINUS_SIGN : "",

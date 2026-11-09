@@ -48,7 +48,7 @@ func (m *mockAccountService) CreateCreditCardAccount(userID, name, description, 
 	return &models.Account{}, nil
 }
 
-func (m *mockAccountService) GetUserAccounts(userID string, page pagination.PageRequest) (*pagination.PageResponse[models.Account], error) {
+func (m *mockAccountService) GetUserAccounts(userID string, page pagination.PageRequest, _ ...services.AccountListOptions) (*pagination.PageResponse[models.Account], error) {
 	if m.getUserAccountsFn != nil {
 		return m.getUserAccountsFn(userID, page)
 	}

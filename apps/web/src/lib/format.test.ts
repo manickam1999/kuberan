@@ -58,3 +58,11 @@ describe("formatMoneyParts", () => {
     expect(p.fraction).toContain("2");
   });
 });
+
+describe("compact money below 1,000", () => {
+  it("shows whole units instead of one stray decimal", () => {
+    expect(formatMoneyParts(28190, "MYR", true).fraction).toBe("");
+    expect(formatMoneyParts(28190, "MYR", true).integer).toBe("282");
+    expect(formatMoneyParts(123456, "MYR", true).fraction).toMatch(/K/);
+  });
+});

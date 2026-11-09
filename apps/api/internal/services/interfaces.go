@@ -175,7 +175,7 @@ type AccountServicer interface {
 	// CloseFixedDeposit realizes a fixed deposit — returning principal and posting net
 	// interest as income — and marks the deposit closed (plan 020, B4).
 	CloseFixedDeposit(userID, accountID string, params CloseFixedDepositParams) (*models.Account, error)
-	GetUserAccounts(userID string, page pagination.PageRequest) (*pagination.PageResponse[models.Account], error)
+	GetUserAccounts(userID string, page pagination.PageRequest, opts ...AccountListOptions) (*pagination.PageResponse[models.Account], error)
 	GetAccountByID(userID, accountID string) (*models.Account, error)
 	UpdateAccount(userID, accountID string, updates AccountUpdateFields) (*models.Account, error)
 	// ApplyBalanceDelta applies a transaction's balance effect with a relative

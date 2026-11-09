@@ -208,12 +208,27 @@ func (s *accountService) CreateCreditCardAccount(userID, name, description, curr
 	return account, nil
 }
 
-// GetUserAccounts retrieves a paginated list of accounts for a user.
-func (s *accountService) GetUserAccounts(userID string, page pagination.PageRequest) (*pagination.PageResponse[models.Account], error) {
+// AccountListOptions tunes GetUserAccounts. The zero value lists active
+// accounts only.
+type AccountListOptions struct {
+	// IncludeInactive also lists deactivated accounts (is_active = false).
+	IncludeInactive bool
+}
+
+// GetUserAccounts retrieves a paginated list of accounts for a user: active
+// accounts only, unless an option asks for inactive ones too.
+func (s *accountService) GetUserAccounts(userID string, page pagination.PageRequest, opts ...AccountListOptions) (*pagination.PageResponse[models.Account], error) {
 	page.Defaults()
+	var opt AccountListOptions
+	if len(opts) > 0 {
+		opt = opts[0]
+	}
 
 	var totalItems int64
-	base := s.db.Model(&models.Account{}).Where("user_id = ? AND is_active = ?", userID, true)
+	base := s.db.Model(&models.Account{}).Where("user_id = ?", userID)
+	if !opt.IncludeInactive {
+		base = base.Where("is_active = ?", true)
+	}
 	if err := base.Count(&totalItems).Error; err != nil {
 		return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)
 	}

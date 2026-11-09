@@ -244,3 +244,36 @@ func TestUpdateTransaction_CategoryTypeCheck(t *testing.T) {
 		testutil.AssertNoError(t, err)
 	})
 }
+
+func TestGetUserAccounts_IncludeInactive(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	defer testutil.TeardownTestDB(t, db)
+	svc := NewAccountService(db)
+	user := testutil.CreateTestUser(t, db)
+	other := testutil.CreateTestUser(t, db)
+	active := testutil.CreateTestCashAccountWithBalance(t, db, user.ID, 100)
+	inactive := testutil.CreateTestCashAccountWithBalance(t, db, user.ID, 200)
+	testutil.CreateTestCashAccountWithBalance(t, db, other.ID, 300)
+	if err := db.Model(&models.Account{}).Where("id = ?", inactive.ID).Update("is_active", false).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	ids := func(opts ...AccountListOptions) map[string]bool {
+		res, err := svc.GetUserAccounts(user.ID, pagination.PageRequest{Page: 1, PageSize: 100}, opts...)
+		testutil.AssertNoError(t, err)
+		out := map[string]bool{}
+		for _, a := range res.Data {
+			out[a.ID] = true
+		}
+		return out
+	}
+
+	def := ids()
+	if !def[active.ID] || def[inactive.ID] || len(def) != 1 {
+		t.Errorf("default list = %v, want only the active account", def)
+	}
+	all := ids(AccountListOptions{IncludeInactive: true})
+	if !all[active.ID] || !all[inactive.ID] || len(all) != 2 {
+		t.Errorf("include_inactive list = %v, want both of the user's accounts and no one else's", all)
+	}
+}

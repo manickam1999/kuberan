@@ -45,7 +45,7 @@ function AccountsSkeleton() {
 export default function AccountsPage() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [showInactive, setShowInactive] = useState(false);
-  const { data, isLoading, isError, refetch } = useAccounts({ page_size: 100 });
+  const { data, isLoading, isError, refetch } = useAccounts({ page_size: 100, include_inactive: true });
   const baseCurrency = useBaseCurrency();
   const { data: owed } = useReceivablesSummary();
 
