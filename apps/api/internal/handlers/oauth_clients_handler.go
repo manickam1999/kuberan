@@ -13,6 +13,7 @@ import (
 	"kuberan/internal/logger"
 	"kuberan/internal/models"
 	"kuberan/internal/pagination"
+	"kuberan/internal/services"
 )
 
 // ConnectedAppResponse is one OAuth client the user has granted access to.
@@ -268,7 +269,8 @@ func (h *OAuthHandler) GetAppActivity(c *gin.Context) {
 		respondWithError(c, apperrors.ErrInternalServer)
 		return
 	}
-	result, err := h.activity.ListByClient(userID, c.Param("client_id"), page)
+	var result *pagination.PageResponse[services.AppActivityItem]
+	result, err = h.activity.ListByClient(userID, c.Param("client_id"), page)
 	if err != nil {
 		respondWithError(c, err)
 		return
@@ -305,7 +307,8 @@ func (h *OAuthHandler) GetAllAppActivity(c *gin.Context) {
 		respondWithError(c, apperrors.ErrInternalServer)
 		return
 	}
-	result, err := h.activity.ListAll(userID, page)
+	var result *pagination.PageResponse[services.AllAppActivityItem]
+	result, err = h.activity.ListAll(userID, page)
 	if err != nil {
 		respondWithError(c, err)
 		return

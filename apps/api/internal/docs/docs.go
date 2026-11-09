@@ -703,6 +703,26 @@ const docTemplate = `{
                 }
             }
         },
+        "/appearance": {
+            "get": {
+                "description": "Public. Returns only the palette used by users who have not picked one.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "appearance"
+                ],
+                "summary": "Get the server's default palette",
+                "responses": {
+                    "200": {
+                        "description": "Server default palette",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.AppearanceDefaultResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/auth/login": {
             "post": {
                 "description": "Authenticate a user and get access and refresh tokens",
@@ -2964,6 +2984,59 @@ const docTemplate = `{
                 }
             }
         },
+        "/oauth/clients/activity": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Page through the changes all connected apps made, newest first",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "oauth"
+                ],
+                "summary": "Changes made by all apps",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "default": 1,
+                        "description": "Page number",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 20,
+                        "description": "Items per page (max 100)",
+                        "name": "page_size",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/kuberan_internal_pagination.PageResponse-kuberan_internal_services_AllAppActivityItem"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid input",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/oauth/clients/{client_id}": {
             "delete": {
                 "security": [
@@ -2988,6 +3061,66 @@ const docTemplate = `{
                 "responses": {
                     "204": {
                         "description": "Disconnected"
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/oauth/clients/{client_id}/activity": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Page through the changes a connected app made, newest first",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "oauth"
+                ],
+                "summary": "Changes made by one app",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "OAuth client ID",
+                        "name": "client_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "default": 1,
+                        "description": "Page number",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 20,
+                        "description": "Items per page (max 100)",
+                        "name": "page_size",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/kuberan_internal_pagination.PageResponse-kuberan_internal_services_AppActivityItem"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid input",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
                     },
                     "401": {
                         "description": "Unauthorized",
@@ -3786,7 +3919,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Update the authenticated user's profile: name, email (needs current_password), dashboard balance visibility, default transaction account, base currency",
+                "description": "Update the authenticated user's profile: name, email (needs current_password), dashboard balance visibility, default transaction account, base currency, appearance preferences (partial merge)",
                 "consumes": [
                     "application/json"
                 ],
@@ -6524,6 +6657,16 @@ const docTemplate = `{
                 }
             }
         },
+        "internal_handlers.AppearanceDefaultResponse": {
+            "type": "object",
+            "properties": {
+                "default_palette": {
+                    "description": "DefaultPalette is the server-wide palette id (DEFAULT_PALETTE).",
+                    "type": "string",
+                    "example": "catppuccin"
+                }
+            }
+        },
         "internal_handlers.ApplyRuleRequest": {
             "type": "object",
             "properties": {
@@ -6714,6 +6857,10 @@ const docTemplate = `{
                 "auto_accept": {
                     "type": "boolean"
                 },
+                "client_host": {
+                    "description": "ClientHost is where the app connects from (claude.ai); \"\" until the\ngrant's next consent.",
+                    "type": "string"
+                },
                 "client_id": {
                     "type": "string"
                 },
@@ -6734,6 +6881,14 @@ const docTemplate = `{
                     "items": {
                         "type": "string"
                     }
+                },
+                "write_limits": {
+                    "description": "WriteLimits is set when the grant has any write:* scope.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/internal_handlers.WriteLimitsResponse"
+                        }
+                    ]
                 }
             }
         },
@@ -7989,6 +8144,14 @@ const docTemplate = `{
         "internal_handlers.UpdateProfileSettingsRequest": {
             "type": "object",
             "properties": {
+                "appearance": {
+                    "description": "Appearance is a partial update of the UI preferences (palette, mode,\nchart_style, density, show_cents). Only the keys sent change; unknown\nkeys and values are rejected.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/kuberan_internal_services.AppearancePatch"
+                        }
+                    ]
+                },
                 "base_currency": {
                     "description": "BaseCurrency sets the currency aggregates are reported in (ISO 4217,\nupper-case). It must be a supported currency with an exchange rate to USD.",
                     "type": "string"
@@ -8132,6 +8295,14 @@ const docTemplate = `{
         "internal_handlers.UserResponse": {
             "type": "object",
             "properties": {
+                "appearance": {
+                    "description": "Appearance holds the user's UI preferences; a missing key means default.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/kuberan_internal_models.Appearance"
+                        }
+                    ]
+                },
                 "base_currency": {
                     "description": "BaseCurrency is the ISO 4217 currency the user's aggregates are reported in.",
                     "type": "string"
@@ -8147,6 +8318,28 @@ const docTemplate = `{
                 },
                 "last_name": {
                     "type": "string"
+                },
+                "resolved_palette": {
+                    "description": "ResolvedPalette is the palette to render: the user's choice, else the\nserver's DEFAULT_PALETTE, else catppuccin.",
+                    "type": "string",
+                    "example": "catppuccin"
+                }
+            }
+        },
+        "internal_handlers.WriteLimitsResponse": {
+            "type": "object",
+            "properties": {
+                "currency": {
+                    "type": "string"
+                },
+                "max_amount": {
+                    "type": "integer"
+                },
+                "per_day": {
+                    "type": "integer"
+                },
+                "per_minute": {
+                    "type": "integer"
                 }
             }
         },
@@ -8410,6 +8603,31 @@ const docTemplate = `{
                 "AccountTypeCreditCard",
                 "AccountTypeFixedDeposit"
             ]
+        },
+        "kuberan_internal_models.Appearance": {
+            "type": "object",
+            "properties": {
+                "chart_style": {
+                    "description": "ChartStyle is \"clean\" or \"dither\".",
+                    "type": "string"
+                },
+                "density": {
+                    "description": "Density is \"comfortable\" or \"compact\".",
+                    "type": "string"
+                },
+                "mode": {
+                    "description": "Mode is \"system\", \"light\" or \"dark\".",
+                    "type": "string"
+                },
+                "palette": {
+                    "description": "Palette is \"default\" or a palette id (internal/appearance).",
+                    "type": "string"
+                },
+                "show_cents": {
+                    "description": "ShowCents toggles cents in money displays.",
+                    "type": "boolean"
+                }
+            }
         },
         "kuberan_internal_models.AssetType": {
             "type": "string",
@@ -9293,6 +9511,10 @@ const docTemplate = `{
                     "description": "SourceClientID is the OAuth client that wrote the row when Source is\n\"mcp\". NULL otherwise.",
                     "type": "string"
                 },
+                "source_client_name": {
+                    "description": "SourceClientName is the response-only display name of SourceClientID's\napp, taken from the user's grant (\"an app\" once the grant is gone).",
+                    "type": "string"
+                },
                 "to_account": {
                     "$ref": "#/definitions/kuberan_internal_models.Account"
                 },
@@ -9729,6 +9951,143 @@ const docTemplate = `{
                 },
                 "total_pages": {
                     "type": "integer"
+                }
+            }
+        },
+        "kuberan_internal_pagination.PageResponse-kuberan_internal_services_AllAppActivityItem": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/kuberan_internal_services.AllAppActivityItem"
+                    }
+                },
+                "page": {
+                    "type": "integer"
+                },
+                "page_size": {
+                    "type": "integer"
+                },
+                "total_items": {
+                    "type": "integer"
+                },
+                "total_pages": {
+                    "type": "integer"
+                }
+            }
+        },
+        "kuberan_internal_pagination.PageResponse-kuberan_internal_services_AppActivityItem": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/kuberan_internal_services.AppActivityItem"
+                    }
+                },
+                "page": {
+                    "type": "integer"
+                },
+                "page_size": {
+                    "type": "integer"
+                },
+                "total_items": {
+                    "type": "integer"
+                },
+                "total_pages": {
+                    "type": "integer"
+                }
+            }
+        },
+        "kuberan_internal_services.AllAppActivityItem": {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string"
+                },
+                "client_id": {
+                    "type": "string"
+                },
+                "client_name": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "resource_id": {
+                    "type": "string"
+                },
+                "resource_type": {
+                    "type": "string"
+                },
+                "summary": {
+                    "type": "string"
+                }
+            }
+        },
+        "kuberan_internal_services.AppActivityItem": {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "resource_id": {
+                    "type": "string"
+                },
+                "resource_type": {
+                    "type": "string"
+                },
+                "summary": {
+                    "type": "string"
+                }
+            }
+        },
+        "kuberan_internal_services.AppearancePatch": {
+            "type": "object",
+            "properties": {
+                "chart_style": {
+                    "description": "ChartStyle is clean or dither.",
+                    "type": "string",
+                    "enum": [
+                        "clean",
+                        "dither"
+                    ]
+                },
+                "density": {
+                    "description": "Density is comfortable or compact.",
+                    "type": "string",
+                    "enum": [
+                        "comfortable",
+                        "compact"
+                    ]
+                },
+                "mode": {
+                    "description": "Mode is system, light or dark.",
+                    "type": "string",
+                    "enum": [
+                        "system",
+                        "light",
+                        "dark"
+                    ]
+                },
+                "palette": {
+                    "description": "Palette is \"default\" (follow the server default) or a palette id.",
+                    "type": "string",
+                    "example": "catppuccin"
+                },
+                "show_cents": {
+                    "description": "ShowCents toggles cents in money displays.",
+                    "type": "boolean"
                 }
             }
         },

@@ -64,6 +64,13 @@ definitions:
     - quantity
     - security_id
     type: object
+  internal_handlers.AppearanceDefaultResponse:
+    properties:
+      default_palette:
+        description: DefaultPalette is the server-wide palette id (DEFAULT_PALETTE).
+        example: catppuccin
+        type: string
+    type: object
   internal_handlers.ApplyRuleRequest:
     properties:
       dry_run:
@@ -193,6 +200,11 @@ definitions:
     properties:
       auto_accept:
         type: boolean
+      client_host:
+        description: |-
+          ClientHost is where the app connects from (claude.ai); "" until the
+          grant's next consent.
+        type: string
       client_id:
         type: string
       client_name:
@@ -207,6 +219,10 @@ definitions:
         items:
           type: string
         type: array
+      write_limits:
+        allOf:
+        - $ref: '#/definitions/internal_handlers.WriteLimitsResponse'
+        description: WriteLimits is set when the grant has any write:* scope.
     type: object
   internal_handlers.ConnectedAppsResponse:
     properties:
@@ -1111,6 +1127,13 @@ definitions:
     type: object
   internal_handlers.UpdateProfileSettingsRequest:
     properties:
+      appearance:
+        allOf:
+        - $ref: '#/definitions/kuberan_internal_services.AppearancePatch'
+        description: |-
+          Appearance is a partial update of the UI preferences (palette, mode,
+          chart_style, density, show_cents). Only the keys sent change; unknown
+          keys and values are rejected.
       base_currency:
         description: |-
           BaseCurrency sets the currency aggregates are reported in (ISO 4217,
@@ -1221,6 +1244,11 @@ definitions:
     type: object
   internal_handlers.UserResponse:
     properties:
+      appearance:
+        allOf:
+        - $ref: '#/definitions/kuberan_internal_models.Appearance'
+        description: Appearance holds the user's UI preferences; a missing key means
+          default.
       base_currency:
         description: BaseCurrency is the ISO 4217 currency the user's aggregates are
           reported in.
@@ -1233,6 +1261,23 @@ definitions:
         type: integer
       last_name:
         type: string
+      resolved_palette:
+        description: |-
+          ResolvedPalette is the palette to render: the user's choice, else the
+          server's DEFAULT_PALETTE, else catppuccin.
+        example: catppuccin
+        type: string
+    type: object
+  internal_handlers.WriteLimitsResponse:
+    properties:
+      currency:
+        type: string
+      max_amount:
+        type: integer
+      per_day:
+        type: integer
+      per_minute:
+        type: integer
     type: object
   internal_handlers.WriteOffRequest:
     properties:
@@ -1415,6 +1460,24 @@ definitions:
     - AccountTypeDebt
     - AccountTypeCreditCard
     - AccountTypeFixedDeposit
+  kuberan_internal_models.Appearance:
+    properties:
+      chart_style:
+        description: ChartStyle is "clean" or "dither".
+        type: string
+      density:
+        description: Density is "comfortable" or "compact".
+        type: string
+      mode:
+        description: Mode is "system", "light" or "dark".
+        type: string
+      palette:
+        description: Palette is "default" or a palette id (internal/appearance).
+        type: string
+      show_cents:
+        description: ShowCents toggles cents in money displays.
+        type: boolean
+    type: object
   kuberan_internal_models.AssetType:
     enum:
     - stock
@@ -2068,6 +2131,11 @@ definitions:
           SourceClientID is the OAuth client that wrote the row when Source is
           "mcp". NULL otherwise.
         type: string
+      source_client_name:
+        description: |-
+          SourceClientName is the response-only display name of SourceClientID's
+          app, taken from the user's grant ("an app" once the grant is gone).
+        type: string
       to_account:
         $ref: '#/definitions/kuberan_internal_models.Account'
       to_account_id:
@@ -2368,6 +2436,100 @@ definitions:
         type: integer
       total_pages:
         type: integer
+    type: object
+  kuberan_internal_pagination.PageResponse-kuberan_internal_services_AllAppActivityItem:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/kuberan_internal_services.AllAppActivityItem'
+        type: array
+      page:
+        type: integer
+      page_size:
+        type: integer
+      total_items:
+        type: integer
+      total_pages:
+        type: integer
+    type: object
+  kuberan_internal_pagination.PageResponse-kuberan_internal_services_AppActivityItem:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/kuberan_internal_services.AppActivityItem'
+        type: array
+      page:
+        type: integer
+      page_size:
+        type: integer
+      total_items:
+        type: integer
+      total_pages:
+        type: integer
+    type: object
+  kuberan_internal_services.AllAppActivityItem:
+    properties:
+      action:
+        type: string
+      client_id:
+        type: string
+      client_name:
+        type: string
+      created_at:
+        type: string
+      id:
+        type: string
+      resource_id:
+        type: string
+      resource_type:
+        type: string
+      summary:
+        type: string
+    type: object
+  kuberan_internal_services.AppActivityItem:
+    properties:
+      action:
+        type: string
+      created_at:
+        type: string
+      id:
+        type: string
+      resource_id:
+        type: string
+      resource_type:
+        type: string
+      summary:
+        type: string
+    type: object
+  kuberan_internal_services.AppearancePatch:
+    properties:
+      chart_style:
+        description: ChartStyle is clean or dither.
+        enum:
+        - clean
+        - dither
+        type: string
+      density:
+        description: Density is comfortable or compact.
+        enum:
+        - comfortable
+        - compact
+        type: string
+      mode:
+        description: Mode is system, light or dark.
+        enum:
+        - system
+        - light
+        - dark
+        type: string
+      palette:
+        description: Palette is "default" (follow the server default) or a palette
+          id.
+        example: catppuccin
+        type: string
+      show_cents:
+        description: ShowCents toggles cents in money displays.
+        type: boolean
     type: object
   kuberan_internal_services.ApplyRuleResult:
     properties:
@@ -3373,6 +3535,20 @@ paths:
       summary: Create an investment account
       tags:
       - accounts
+  /appearance:
+    get:
+      description: Public. Returns only the palette used by users who have not picked
+        one.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Server default palette
+          schema:
+            $ref: '#/definitions/internal_handlers.AppearanceDefaultResponse'
+      summary: Get the server's default palette
+      tags:
+      - appearance
   /auth/login:
     post:
       consumes:
@@ -4892,6 +5068,79 @@ paths:
       summary: Disconnect an app
       tags:
       - oauth
+  /oauth/clients/{client_id}/activity:
+    get:
+      description: Page through the changes a connected app made, newest first
+      parameters:
+      - description: OAuth client ID
+        in: path
+        name: client_id
+        required: true
+        type: string
+      - default: 1
+        description: Page number
+        in: query
+        name: page
+        type: integer
+      - default: 20
+        description: Items per page (max 100)
+        in: query
+        name: page_size
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/kuberan_internal_pagination.PageResponse-kuberan_internal_services_AppActivityItem'
+        "400":
+          description: Invalid input
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Changes made by one app
+      tags:
+      - oauth
+  /oauth/clients/activity:
+    get:
+      description: Page through the changes all connected apps made, newest first
+      parameters:
+      - default: 1
+        description: Page number
+        in: query
+        name: page
+        type: integer
+      - default: 20
+        description: Items per page (max 100)
+        in: query
+        name: page_size
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/kuberan_internal_pagination.PageResponse-kuberan_internal_services_AllAppActivityItem'
+        "400":
+          description: Invalid input
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Changes made by all apps
+      tags:
+      - oauth
   /oauth/consent:
     get:
       description: Auto-accept remembered clients for reviewed scopes, or return details
@@ -5409,7 +5658,8 @@ paths:
       consumes:
       - application/json
       description: 'Update the authenticated user''s profile: name, email (needs current_password),
-        dashboard balance visibility, default transaction account, base currency'
+        dashboard balance visibility, default transaction account, base currency,
+        appearance preferences (partial merge)'
       parameters:
       - description: Profile settings to update
         in: body
