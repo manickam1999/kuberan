@@ -351,6 +351,7 @@ POST   /api/v1/transactions
 POST   /api/v1/transactions/transfer         # + to_amount (required when the accounts' currencies differ)
 POST   /api/v1/transactions/shared           # shared expense creating receivables
 POST   /api/v1/transactions/bulk             # bulk edit
+POST   /api/v1/transactions/suggest-category # {description, type} -> rule match, else last-used category (bot quick add)
 GET    /api/v1/transactions/spending-by-category
 GET    /api/v1/transactions/cashflow
 GET    /api/v1/transactions/monthly-summary

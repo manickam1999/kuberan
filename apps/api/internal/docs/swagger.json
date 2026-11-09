@@ -6614,6 +6614,63 @@
                 }
             }
         },
+        "/transactions/suggest-category": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Suggests a category for an income or expense description: the user's rules first (reason \"rule\"), then the most recent category used for the same description (reason \"history\"). category_id is null when nothing applies. Income and expense only.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "transactions"
+                ],
+                "summary": "Suggest a category",
+                "parameters": [
+                    {
+                        "description": "Description and type",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.SuggestCategoryRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Suggestion",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.SuggestCategoryResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid input or type is not income/expense",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Server error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/transactions/top-expenses": {
             "get": {
                 "security": [
@@ -8733,6 +8790,48 @@
                 },
                 "name": {
                     "type": "string"
+                }
+            }
+        },
+        "internal_handlers.SuggestCategoryRequest": {
+            "type": "object",
+            "required": [
+                "description",
+                "type"
+            ],
+            "properties": {
+                "account_id": {
+                    "type": "string"
+                },
+                "amount": {
+                    "description": "Amount (cents) and AccountID are optional; only rules that condition on them use them.",
+                    "type": "integer",
+                    "minimum": 0
+                },
+                "description": {
+                    "type": "string",
+                    "maxLength": 500
+                },
+                "type": {
+                    "$ref": "#/definitions/kuberan_internal_models.TransactionType"
+                }
+            }
+        },
+        "internal_handlers.SuggestCategoryResponse": {
+            "type": "object",
+            "properties": {
+                "category_id": {
+                    "type": "string"
+                },
+                "category_name": {
+                    "type": "string"
+                },
+                "reason": {
+                    "type": "string",
+                    "enum": [
+                        "rule",
+                        "history"
+                    ]
                 }
             }
         },

@@ -1,8 +1,9 @@
 # Plan 023 — Launch Redesign
 
-**Status: Phases 0–5 implemented** (migrations `000048`–`000057`: notes/source, backup runs, audit source, grant
-client host, appearance, account balance snapshots, rule stats, loan columns, reminders, demo rows). Phases 6–7 are
-proposed. Additions beyond the plan text: `GET /accounts?include_inactive=true`; `NEXT_PUBLIC_MCP_URL` (optional) for
+**Status: all phases (0–7) implemented** (migrations `000048`–`000057`: notes/source, backup runs, audit source, grant
+client host, appearance, account balance snapshots, rule stats, loan columns, reminders, demo rows). Phase 6 added
+`POST /transactions/suggest-category` (bot quick add); Phase 7 added `apps/site`, `docker-compose.demo.yml` with a
+nightly reset (`deploy/demo/`), the self-hosting, Telegram and AI-assistant guides, and `pnpm screenshots`. Additions beyond the plan text: `GET /accounts?include_inactive=true`; `NEXT_PUBLIC_MCP_URL` (optional) for
 the "Connect an assistant" steps; `GET /system/status` also reports `demo_enabled` / `demo_loaded`; CSV-imported rows
 stay editable (only `ibkr:` rows are locked); `DELETE /demo` also removes what the user added inside sample accounts
 and categories, and refuses with `DEMO_IN_USE` where removal would damage real data; reminders are one row per

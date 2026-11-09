@@ -69,6 +69,10 @@ the bot out: unlink it explicitly if a phone is lost.
 | `/budgets` | Budget status with progress for the current period. |
 | `/summary` | This month's income and spending summary. |
 | `/owed` | Who owes you money (shared expenses and loans), from the receivables summary. |
+| `coffee 18.40` (no command) | Quick add: an expense on your default account, with the amount first or last (`18.40 coffee`). The category comes from your rules, or from the last one you used for that description. The reply has buttons to change the category or account, or undo. Any message that ends in a number is recorded this way. |
+| `/undo` | Remove the transaction the bot added most recently, within the last 10 minutes. |
+| A photo or PDF | Attaches a receipt to the entry you made in the last 10 minutes; otherwise the bot asks which recent transaction it belongs to. JPEG, PNG, WebP or PDF, up to 10 MB. Receipts aren't read (no OCR). |
+| `/spent` | This month's spending by category, in your reporting currency. |
 | `/cancel` | Abort the current guided flow. Guided flows time out after 5 minutes of silence. |
 
 Tips: amounts can have decimals (`50.50`). While recording, you can create a new
@@ -80,18 +84,6 @@ Once linked, the bot messages you when a credit card or loan payment is due and
 when a fixed deposit matures. The web app queues them; the bot polls and
 confirms each delivery so a message is never sent twice. Turn them on and off in
 **Settings > Telegram > Reminders**, or per account on its page.
-
-### Coming in this release
-
-<!-- Merge point: another change adds these to the bot. Keep this section only
-     for what is in the release being documented, and move each item into the
-     Commands table above when it ships. -->
-
-- **Quick add:** send a plain message such as `coffee 18.40` (no command) to log
-  an expense.
-- **`/undo`:** remove the transaction you just added.
-- **Receipt photos:** send a photo of a receipt to attach it to a transaction.
-- **`/spent`:** how much you have spent, without opening the app.
 
 ## Troubleshooting
 
