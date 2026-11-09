@@ -8,7 +8,10 @@ import { REPORTING_CURRENCIES } from "@/lib/currencies";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Switch } from "@/components/ui/switch";
+import { Segmented } from "@/components/ui/segmented";
+import { Pill } from "@/components/ui/pill";
+import { BudgetAverageHint } from "./budget-average-hint";
+import { Pause, Play, Trash2 } from "lucide-react";
 import { CurrencyInput } from "@/components/ui/currency-input";
 import {
   Dialog,
@@ -42,18 +45,20 @@ interface EditBudgetDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   budget: Budget | null;
+  /** Asks the page to open the delete confirmation for this budget. */
+  onDelete?: (budget: Budget) => void;
 }
 
 export function EditBudgetDialog({
   open,
   onOpenChange,
   budget,
+  onDelete,
 }: EditBudgetDialogProps) {
   const [name, setName] = useState("");
   const [currency, setCurrency] = useState("");
   const [amount, setAmount] = useState(0);
   const [period, setPeriod] = useState<BudgetPeriod>("monthly");
-  const [isActive, setIsActive] = useState(true);
   const [error, setError] = useState("");
 
   const updateBudget = useUpdateBudget(budget?.id ?? "");
@@ -75,10 +80,27 @@ export function EditBudgetDialog({
       setCurrency(budget.currency);
       setAmount(budget.amount);
       setPeriod(budget.period);
-      setIsActive(budget.is_active);
       setError("");
     }
   }, [budget]);
+
+  function togglePaused() {
+    if (!budget) return;
+    updateBudget.mutate(
+      { is_active: !budget.is_active },
+      {
+        onSuccess: () => {
+          toast.success(
+            budget.is_active
+              ? `Budget "${budget.name}" paused`
+              : `Budget "${budget.name}" resumed`
+          );
+          onOpenChange(false);
+        },
+        onError: (err) => setError(getErrorMessage(err)),
+      }
+    );
+  }
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -104,7 +126,6 @@ export function EditBudgetDialog({
     if (amount !== budget.amount) payload.amount = amount;
     if (selectedCurrency !== budget.currency) payload.currency = selectedCurrency;
     if (period !== budget.period) payload.period = period;
-    if (isActive !== budget.is_active) payload.is_active = isActive;
 
     if (Object.keys(payload).length === 0) {
       onOpenChange(false);
@@ -120,12 +141,20 @@ export function EditBudgetDialog({
     });
   }
 
+  const categoryName = budget?.category?.name ?? "this category";
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Edit Budget</DialogTitle>
-          <DialogDescription>Update this budget&apos;s details.</DialogDescription>
+          <DialogTitle>
+            {budget?.category?.name ? `${budget.category.name} budget` : "Edit budget"}
+          </DialogTitle>
+          <DialogDescription>
+            {budget && !budget.is_active
+              ? "This budget is paused and left out of progress."
+              : "Change the cap, the currency or how often it repeats."}
+          </DialogDescription>
         </DialogHeader>
 
         {error && (
@@ -135,6 +164,30 @@ export function EditBudgetDialog({
         )}
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-5">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="flex flex-col gap-2">
+              <Label>Category</Label>
+              <div>
+                <Pill color={budget?.category?.color || undefined} className="h-9 px-3 text-sm">
+                  {categoryName}
+                </Pill>
+              </div>
+            </div>
+            <div className="flex flex-col gap-2">
+              <Label id="edit-budget-period-label">Repeats</Label>
+              <Segmented
+                aria-label="Repeats"
+                full
+                value={period}
+                onValueChange={(v) => setPeriod(v as BudgetPeriod)}
+                options={[
+                  { value: "monthly", label: "Monthly" },
+                  { value: "yearly", label: "Yearly" },
+                ]}
+              />
+            </div>
+          </div>
+
           <div className="flex flex-col gap-2">
             <Label htmlFor="edit-budget-name">Name</Label>
             <Input
@@ -146,72 +199,76 @@ export function EditBudgetDialog({
             />
           </div>
 
-          <div className="flex flex-col gap-2">
-            <Label htmlFor="edit-budget-currency">Currency</Label>
-            <Select
-              value={selectedCurrency}
-              onValueChange={setCurrency}
-              disabled={isSubmitting}
-            >
-              <SelectTrigger id="edit-budget-currency" className="w-full">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {currencyOptions.map((c) => (
-                  <SelectItem key={c.code} value={c.code}>
-                    {c.code} · {c.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="flex flex-col gap-2">
-            <Label htmlFor="edit-budget-amount">Amount</Label>
-            <CurrencyInput
-              id="edit-budget-amount"
-              currency={selectedCurrency}
-              value={amount}
-              onChange={setAmount}
-              disabled={isSubmitting}
-            />
-          </div>
-
-          <div className="flex flex-col gap-2">
-            <Label htmlFor="edit-budget-period">Period</Label>
-            <Select
-              value={period}
-              onValueChange={(v) => setPeriod(v as BudgetPeriod)}
-              disabled={isSubmitting}
-            >
-              <SelectTrigger id="edit-budget-period" className="w-full">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="monthly">Monthly</SelectItem>
-                <SelectItem value="yearly">Yearly</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="flex items-center justify-between rounded-lg border p-3">
-            <div className="flex flex-col gap-0.5">
-              <Label htmlFor="edit-budget-active">Active</Label>
-              <span className="text-xs text-muted-foreground">
-                Paused budgets are excluded from progress rollups.
-              </span>
+          <div className="grid gap-4 sm:grid-cols-[1fr_8rem]">
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="edit-budget-amount">Amount</Label>
+              <CurrencyInput
+                id="edit-budget-amount"
+                currency={selectedCurrency}
+                value={amount}
+                onChange={setAmount}
+                disabled={isSubmitting}
+              />
             </div>
-            <Switch
-              id="edit-budget-active"
-              checked={isActive}
-              onCheckedChange={setIsActive}
-              disabled={isSubmitting}
-            />
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="edit-budget-currency">Currency</Label>
+              <Select
+                value={selectedCurrency}
+                onValueChange={setCurrency}
+                disabled={isSubmitting}
+              >
+                <SelectTrigger id="edit-budget-currency" className="w-full">
+                  <SelectValue>{selectedCurrency}</SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  {currencyOptions.map((c) => (
+                    <SelectItem key={c.code} value={c.code}>
+                      {c.code} · {c.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
+          {budget && (
+            <BudgetAverageHint
+              categoryId={budget.category_id}
+              categoryName={categoryName}
+              currency={selectedCurrency}
+            />
+          )}
 
-          <DialogFooter>
+          <DialogFooter className="sm:justify-between">
+            <div className="flex gap-1">
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={togglePaused}
+                disabled={isSubmitting}
+              >
+                {budget?.is_active === false ? (
+                  <Play className="size-4" />
+                ) : (
+                  <Pause className="size-4" />
+                )}
+                {budget?.is_active === false ? "Resume" : "Pause"}
+              </Button>
+              {onDelete && budget && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="text-muted-foreground hover:text-destructive"
+                  aria-label="Delete budget"
+                  disabled={isSubmitting}
+                  onClick={() => onDelete(budget)}
+                >
+                  <Trash2 className="size-4" />
+                </Button>
+              )}
+            </div>
             <Button type="submit" disabled={isSubmitting}>
-              {isSubmitting ? "Saving..." : "Save Changes"}
+              {isSubmitting ? "Saving..." : "Save"}
             </Button>
           </DialogFooter>
         </form>

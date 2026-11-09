@@ -1,227 +1,123 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import {
-  Pencil,
-  Plus,
-  Trash2,
-  Wallet,
-  TrendingDown,
-  PiggyBank,
-  Pause,
-  Play,
-} from "lucide-react";
-import { useBudgets, useBudgetsProgress, useUpdateBudget } from "@/hooks/use-budgets";
-import { Button } from "@/components/ui/button";
+import { ChevronRight, Plus } from "lucide-react";
+import { useBudgets, useBudgetsProgress } from "@/hooks/use-budgets";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Card } from "@/components/ui/card";
-import { StatCard } from "@/components/ui/stat-card";
-import { formatMoney, formatPercentage } from "@/lib/format";
-import { useAuth } from "@/hooks/use-auth";
-import { useBaseCurrency } from "@/hooks/use-profile";
-import { FxNotice } from "@/components/ui/fx-notice";
+import { Tile } from "@/components/ui/tile";
+import { Money } from "@/components/ui/money";
+import { CategoryIcon } from "@/components/categories/category-icon";
+import { findProgress } from "@/components/budgets/budget-visuals";
+import { BudgetCard } from "@/components/budgets/budget-card";
 import {
-  BudgetProgressBar,
-  BudgetCategoryChip,
-  findProgress,
-} from "@/components/budgets/budget-visuals";
+  BudgetSummary,
+  summarySentence,
+  totalsByCurrency,
+} from "@/components/budgets/budget-summary";
 import { CreateBudgetDialog } from "@/components/budgets/create-budget-dialog";
 import { EditBudgetDialog } from "@/components/budgets/edit-budget-dialog";
 import { DeleteBudgetDialog } from "@/components/budgets/delete-budget-dialog";
-import type { Budget, BudgetProgress } from "@/types/models";
+import { periodDaysLeft } from "@/lib/budget-pace";
+import type { Budget } from "@/types/models";
 
-type TabValue = "all" | "active" | "inactive";
+function eyebrow(now: Date): string {
+  const month = now.toLocaleDateString("en-US", {
+    month: "long",
+    year: "numeric",
+  });
+  const left = periodDaysLeft("monthly", now);
+  return `${month} · ${left === 0 ? "last day" : `${left} ${left === 1 ? "day" : "days"} left`}`;
+}
 
-function BudgetCard({
-  budget,
-  progress,
-  onEdit,
-  onDelete,
-  onToggleActive,
-  toggling,
-}: {
-  budget: Budget;
-  progress?: BudgetProgress;
-  onEdit: () => void;
-  onDelete: () => void;
-  onToggleActive: () => void;
-  toggling: boolean;
-}) {
-  const { hideBalances } = useAuth();
-  // Budget amounts and progress are both in the budget's own currency.
-  const currency = budget.currency;
-  const spent = progress?.spent ?? 0;
-  const remaining = progress?.remaining ?? budget.amount;
-  const percentage = progress?.percentage ?? 0;
-  const overBudget = remaining < 0;
-
+function PausedRow({ budget, onOpen }: { budget: Budget; onOpen: () => void }) {
+  const name = budget.category?.name ?? budget.name;
   return (
-    <Card className="flex flex-col gap-4 p-4">
-      <div className="flex items-start gap-3">
-        <BudgetCategoryChip category={budget.category} />
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-medium">{budget.name}</p>
-          <p className="truncate text-xs text-muted-foreground">
-            {budget.category?.name ?? "Uncategorized"}
-          </p>
-        </div>
-        <div className="flex shrink-0 items-center gap-1.5">
-          <Badge variant={budget.period === "monthly" ? "secondary" : "outline"}>
-            {budget.period === "monthly" ? "Monthly" : "Yearly"}
-          </Badge>
-          {!budget.is_active && <Badge variant="outline">Paused</Badge>}
-        </div>
-      </div>
-
-      <div className="space-y-2">
-        <div className="flex items-baseline justify-between">
-          <span className="money text-lg font-semibold">
-            {formatMoney(budget.amount, currency, hideBalances)}
-          </span>
-          <span className="text-xs text-muted-foreground">
-            {formatPercentage(percentage, 0)}
-          </span>
-        </div>
-        <BudgetProgressBar percentage={percentage} />
-        <div className="flex items-center justify-between text-xs">
-          <span className="text-muted-foreground">
-            {formatMoney(spent, currency, hideBalances)} of{" "}
-            {formatMoney(budget.amount, currency, hideBalances)}
-          </span>
-          <span className={overBudget ? "text-negative" : "text-positive"}>
-            {overBudget
-              ? `Over by ${formatMoney(-remaining, currency, hideBalances)}`
-              : `${formatMoney(remaining, currency, hideBalances)} left`}
-          </span>
-        </div>
-        <FxNotice fxMissing={progress?.fx_missing} variant="inline" />
-      </div>
-
-      <div className="flex items-center justify-end gap-0.5 border-t pt-2">
-        <Button
-          variant="ghost"
-          size="icon"
-          className="size-8 text-muted-foreground"
-          onClick={onToggleActive}
-          disabled={toggling}
-          title={budget.is_active ? "Pause" : "Resume"}
-        >
-          {budget.is_active ? (
-            <Pause className="size-4" />
-          ) : (
-            <Play className="size-4" />
-          )}
-        </Button>
-        <Button variant="ghost" size="icon" className="size-8" onClick={onEdit}>
-          <Pencil className="size-4" />
-        </Button>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="size-8 text-muted-foreground hover:text-destructive"
-          onClick={onDelete}
-        >
-          <Trash2 className="size-4" />
-        </Button>
-      </div>
-    </Card>
+    <button
+      type="button"
+      onClick={onOpen}
+      className="hover:bg-accent/40 focus-visible:bg-accent/40 flex min-h-14 w-full items-center gap-3 px-4 py-2.5 text-left outline-none"
+    >
+      <Tile color={budget.category?.color || undefined} tone="neutral">
+        <CategoryIcon icon={budget.category?.icon} name={name} />
+      </Tile>
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-sm font-medium">{name}</span>
+        <span className="text-muted-foreground block truncate text-xs">
+          {budget.period === "monthly" ? "Monthly" : "Yearly"} ·{" "}
+          <Money amount={budget.amount} currency={budget.currency} sign="never" />
+        </span>
+      </span>
+      <Badge tone="neutral">Paused</Badge>
+      <ChevronRight className="text-muted-foreground size-4" aria-hidden />
+    </button>
   );
 }
 
-function BudgetCardWithActions({
-  budget,
-  onEdit,
-  onDelete,
-  progress,
-}: {
-  budget: Budget;
-  onEdit: () => void;
-  onDelete: () => void;
-  progress?: BudgetProgress;
-}) {
-  const updateBudget = useUpdateBudget(budget.id);
+function PageSkeleton() {
   return (
-    <BudgetCard
-      budget={budget}
-      progress={progress}
-      onEdit={onEdit}
-      onDelete={onDelete}
-      onToggleActive={() =>
-        updateBudget.mutate({ is_active: !budget.is_active })
-      }
-      toggling={updateBudget.isPending}
-    />
+    <div className="space-y-5" aria-busy="true" aria-label="Loading budgets">
+      <Skeleton className="h-36 w-full rounded-card" />
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+        {Array.from({ length: 6 }).map((_, i) => (
+          <Skeleton key={i} className="h-40 w-full rounded-card" />
+        ))}
+      </div>
+    </div>
   );
 }
 
 export default function BudgetsPage() {
-  const [tab, setTab] = useState<TabValue>("all");
-  const [page, setPage] = useState(1);
   const [createOpen, setCreateOpen] = useState(false);
   const [editBudget, setEditBudget] = useState<Budget | null>(null);
   const [deleteBudget, setDeleteBudget] = useState<Budget | null>(null);
 
-  const isActiveFilter =
-    tab === "all" ? undefined : tab === "active" ? true : false;
+  const active = useBudgets({ is_active: true, page_size: 100 });
+  const paused = useBudgets({ is_active: false, page_size: 100 });
+  const progressQuery = useBudgetsProgress();
+  const progressList = progressQuery.data;
 
-  const { data, isLoading } = useBudgets({ page, is_active: isActiveFilter });
-  const { data: progressList } = useBudgetsProgress();
-  const { hideBalances } = useAuth();
-  const baseCurrency = useBaseCurrency();
+  const now = useMemo(() => new Date(), []);
+  const activeBudgets = useMemo(() => active.data?.data ?? [], [active.data]);
+  const pausedBudgets = paused.data?.data ?? [];
 
-  const budgets = data?.data ?? [];
-  const totalPages = data?.total_pages ?? 1;
-  const currentPage = data?.page ?? 1;
+  const activeProgress = useMemo(
+    () =>
+      (progressList ?? []).filter((p) =>
+        activeBudgets.some((b) => b.id === p.budget_id)
+      ),
+    [progressList, activeBudgets]
+  );
+  const totals = useMemo(() => totalsByCurrency(activeProgress), [activeProgress]);
+  const sentence = useMemo(
+    () => summarySentence(activeBudgets, activeProgress),
+    [activeBudgets, activeProgress]
+  );
 
-  // Batch progress covers active budgets only. Totals are kept per currency:
-  // amounts in different currencies are never added together.
-  const totals = useMemo(() => {
-    const byCurrency = new Map<
-      string,
-      { currency: string; budgeted: number; spent: number }
-    >();
-    for (const p of progressList ?? []) {
-      const t = byCurrency.get(p.currency) ?? {
-        currency: p.currency,
-        budgeted: 0,
-        spent: 0,
-      };
-      t.budgeted += p.budgeted;
-      t.spent += p.spent;
-      byCurrency.set(p.currency, t);
-    }
-    return [...byCurrency.values()].map((t) => ({
-      ...t,
-      remaining: t.budgeted - t.spent,
-    }));
-  }, [progressList]);
+  // Most pressing first: highest share of the budget used.
+  const sorted = useMemo(
+    () =>
+      [...activeBudgets].sort(
+        (a, b) =>
+          (findProgress(progressList, b.id)?.percentage ?? 0) -
+          (findProgress(progressList, a.id)?.percentage ?? 0)
+      ),
+    [activeBudgets, progressList]
+  );
 
-  // One figure per currency; a single currency is the common case.
-  const totalText = (pick: "budgeted" | "spent" | "remaining") =>
-    totals.length === 0
-      ? formatMoney(0, baseCurrency, hideBalances)
-      : totals
-          .map((t) => formatMoney(t[pick], t.currency, hideBalances))
-          .join(" + ");
-  const mixedNote =
-    totals.length > 1 ? "Mixed currencies, not converted" : undefined;
-  const anyOver = totals.some((t) => t.remaining < 0);
-
-  const handleTabChange = (value: string) => {
-    setTab(value as TabValue);
-    setPage(1);
-  };
+  const isLoading = active.isLoading;
+  const isError = active.isError || progressQuery.isError;
+  const hasAny = activeBudgets.length > 0 || pausedBudgets.length > 0;
 
   return (
     <div className="space-y-5">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="font-display text-3xl leading-tight">Budgets</h1>
-          <p className="text-sm text-muted-foreground">
-            Set recurring spending caps and track them against this period
-          </p>
+          <p className="text-muted-foreground text-xs">{eyebrow(now)}</p>
+          <h1 className="font-display hidden text-3xl leading-tight md:block">
+            Budgets
+          </h1>
         </div>
         <Button size="sm" onClick={() => setCreateOpen(true)}>
           <Plus className="size-4" />
@@ -229,49 +125,35 @@ export default function BudgetsPage() {
         </Button>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-3">
-        <StatCard
-          label="Total budgeted"
-          value={totalText("budgeted")}
-          sub={mixedNote}
-          icon={PiggyBank}
-          tone="primary"
-        />
-        <StatCard
-          label="Spent this period"
-          value={totalText("spent")}
-          sub={mixedNote}
-          icon={TrendingDown}
-          tone="warning"
-        />
-        <StatCard
-          label="Remaining"
-          value={totalText("remaining")}
-          sub={mixedNote}
-          icon={Wallet}
-          tone={anyOver ? "negative" : "positive"}
-        />
-      </div>
-
-      <Tabs value={tab} onValueChange={handleTabChange}>
-        <TabsList>
-          <TabsTrigger value="all">All</TabsTrigger>
-          <TabsTrigger value="active">Active</TabsTrigger>
-          <TabsTrigger value="inactive">Inactive</TabsTrigger>
-        </TabsList>
-      </Tabs>
-
       {isLoading ? (
-        <div className="grid gap-4 sm:grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
-          {Array.from({ length: 6 }).map((_, i) => (
-            <Skeleton key={i} className="h-44 w-full rounded-xl" />
-          ))}
+        <PageSkeleton />
+      ) : isError ? (
+        <div
+          role="alert"
+          className="flex flex-col items-center rounded-card border border-dashed p-10 text-center"
+        >
+          <h3 className="text-base font-semibold">Couldn&apos;t load budgets</h3>
+          <p className="text-muted-foreground mt-1 text-sm">
+            Check your connection and try again.
+          </p>
+          <Button
+            variant="outline"
+            size="sm"
+            className="mt-4"
+            onClick={() => {
+              void active.refetch();
+              void progressQuery.refetch();
+            }}
+          >
+            Try again
+          </Button>
         </div>
-      ) : budgets.length === 0 ? (
-        <div className="flex flex-col items-center justify-center rounded-xl border border-dashed p-12 text-center">
+      ) : !hasAny ? (
+        <div className="flex flex-col items-center justify-center rounded-card border border-dashed p-12 text-center">
           <h3 className="text-lg font-semibold">No budgets yet</h3>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Create your first budget to cap spending on an expense category.
+          <p className="text-muted-foreground mt-1 text-sm">
+            Cap spending on a category and see at a glance whether you&apos;re on
+            track.
           </p>
           <Button className="mt-4" size="sm" onClick={() => setCreateOpen(true)}>
             <Plus className="size-4" />
@@ -279,43 +161,43 @@ export default function BudgetsPage() {
           </Button>
         </div>
       ) : (
-        <div className="grid gap-4 sm:grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
-          {budgets.map((budget) => (
-            <BudgetCardWithActions
-              key={budget.id}
-              budget={budget}
-              progress={findProgress(progressList, budget.id)}
-              onEdit={() => setEditBudget(budget)}
-              onDelete={() => setDeleteBudget(budget)}
-            />
-          ))}
-        </div>
-      )}
+        <>
+          {totals.length > 0 && (
+            <BudgetSummary totals={totals} sentence={sentence} now={now} />
+          )}
 
-      {totalPages > 1 && (
-        <div className="flex items-center justify-between">
-          <span className="text-sm text-muted-foreground">
-            Page {currentPage} of {totalPages}
-          </span>
-          <div className="flex gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setPage((p) => Math.max(1, p - 1))}
-              disabled={currentPage <= 1}
-            >
-              Previous
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-              disabled={currentPage >= totalPages}
-            >
-              Next
-            </Button>
-          </div>
-        </div>
+          {sorted.length > 0 && (
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+              {sorted.map((budget) => (
+                <BudgetCard
+                  key={budget.id}
+                  budget={budget}
+                  progress={findProgress(progressList, budget.id)}
+                  onOpen={() => setEditBudget(budget)}
+                  now={now}
+                />
+              ))}
+            </div>
+          )}
+
+          {pausedBudgets.length > 0 && (
+            <section aria-labelledby="paused-heading" className="space-y-2">
+              <div className="flex items-baseline gap-2">
+                <h2 id="paused-heading" className="text-sm font-semibold">
+                  Paused
+                </h2>
+                <span className="text-muted-foreground text-xs">
+                  {pausedBudgets.length}
+                </span>
+              </div>
+              <div className="bg-card divide-border/50 divide-y overflow-hidden rounded-card border">
+                {pausedBudgets.map((b) => (
+                  <PausedRow key={b.id} budget={b} onOpen={() => setEditBudget(b)} />
+                ))}
+              </div>
+            </section>
+          )}
+        </>
       )}
 
       <CreateBudgetDialog open={createOpen} onOpenChange={setCreateOpen} />
@@ -325,6 +207,10 @@ export default function BudgetsPage() {
           if (!open) setEditBudget(null);
         }}
         budget={editBudget}
+        onDelete={(b) => {
+          setEditBudget(null);
+          setDeleteBudget(b);
+        }}
       />
       <DeleteBudgetDialog
         open={!!deleteBudget}
