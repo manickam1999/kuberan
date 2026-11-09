@@ -114,7 +114,8 @@ export function TransactionsBulkBar({
         <CategoryPicker
           categories={options}
           value={null}
-          allowNone={categorisable}
+          // The bulk API can't clear a category, so don't offer "No category".
+          allowNone={false}
           onSelect={(id) =>
             id &&
             run(

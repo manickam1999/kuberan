@@ -1,3 +1,4 @@
+import { toUpdateBody } from "@/lib/transaction-update";
 import {
   keepPreviousData,
   useQuery,
@@ -327,7 +328,7 @@ export function useUpdateTransaction(id: string) {
     mutationFn: async (data) => {
       const res = await apiClient.put<TransactionResponse>(
         `/api/v1/transactions/${id}`,
-        data
+        toUpdateBody(data)
       );
       return res.transaction;
     },
