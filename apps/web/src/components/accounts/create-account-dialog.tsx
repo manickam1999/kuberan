@@ -24,7 +24,15 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tile, type TileTone } from "@/components/ui/tile";
+import {
+  ArrowLeft,
+  Banknote,
+  CreditCard,
+  Landmark,
+  Vault,
+  type LucideIcon,
+} from "lucide-react";
 import {
   Select,
   SelectContent,
@@ -33,6 +41,45 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import type { PayoutType, PayoutFrequency, Compounding } from "@/types/models";
+
+type AccountKind = "cash" | "credit-card" | "investment" | "fixed-deposit";
+
+const KIND_OPTIONS: {
+  kind: AccountKind;
+  title: string;
+  hint: string;
+  icon: LucideIcon;
+  tone: TileTone;
+}[] = [
+  {
+    kind: "cash",
+    title: "Cash",
+    hint: "Current or savings account",
+    icon: Banknote,
+    tone: "accent",
+  },
+  {
+    kind: "credit-card",
+    title: "Credit card",
+    hint: "Balance is what you owe",
+    icon: CreditCard,
+    tone: "warn",
+  },
+  {
+    kind: "investment",
+    title: "Investment",
+    hint: "Brokerage with holdings",
+    icon: Landmark,
+    tone: "investment",
+  },
+  {
+    kind: "fixed-deposit",
+    title: "Fixed deposit",
+    hint: "Locked until maturity",
+    icon: Vault,
+    tone: "info",
+  },
+];
 
 function getErrorMessage(error: unknown): string {
   if (error instanceof ApiClientError) {
@@ -50,7 +97,7 @@ export function CreateAccountDialog({
   open,
   onOpenChange,
 }: CreateAccountDialogProps) {
-  const [tab, setTab] = useState<string>("cash");
+  const [kind, setKind] = useState<AccountKind | null>(null);
 
   // Cash account fields
   const [cashName, setCashName] = useState("");
@@ -86,7 +133,8 @@ export function CreateAccountDialog({
   const [fdStartDate, setFdStartDate] = useState("");
   const [fdMaturityDate, setFdMaturityDate] = useState("");
   const [fdPayoutType, setFdPayoutType] = useState<PayoutType>("cumulative");
-  const [fdPayoutFrequency, setFdPayoutFrequency] = useState<PayoutFrequency>("monthly");
+  const [fdPayoutFrequency, setFdPayoutFrequency] =
+    useState<PayoutFrequency>("monthly");
   const [fdCompounding, setFdCompounding] = useState<Compounding>("annual");
   const [fdLinkedAccountId, setFdLinkedAccountId] = useState("");
 
@@ -107,12 +155,14 @@ export function CreateAccountDialog({
         baseCurrency,
         ...REPORTING_CURRENCIES.map((c) => c.code),
         selected,
-      ])
+      ]),
     );
+
+  const selected = KIND_OPTIONS.find((o) => o.kind === kind);
 
   const { data: accountsData } = useAccounts({ page_size: 100 });
   const cashAccounts = (accountsData?.data ?? []).filter(
-    (a) => a.type === "cash" && a.is_active
+    (a) => a.type === "cash" && a.is_active,
   );
 
   const isSubmitting =
@@ -150,7 +200,7 @@ export function CreateAccountDialog({
     setFdCompounding("annual");
     setFdLinkedAccountId("");
     setError("");
-    setTab("cash");
+    setKind(null);
   }
 
   function handleOpenChange(nextOpen: boolean) {
@@ -191,7 +241,7 @@ export function CreateAccountDialog({
           handleOpenChange(false);
         },
         onError: (err) => setError(getErrorMessage(err)),
-      }
+      },
     );
   }
 
@@ -235,7 +285,7 @@ export function CreateAccountDialog({
           handleOpenChange(false);
         },
         onError: (err) => setError(getErrorMessage(err)),
-      }
+      },
     );
   }
 
@@ -279,7 +329,7 @@ export function CreateAccountDialog({
           handleOpenChange(false);
         },
         onError: (err) => setError(getErrorMessage(err)),
-      }
+      },
     );
   }
 
@@ -331,7 +381,8 @@ export function CreateAccountDialog({
     }
 
     const currency =
-      cashAccounts.find((a) => a.id === fdSourceAccountId)?.currency ?? baseCurrency;
+      cashAccounts.find((a) => a.id === fdSourceAccountId)?.currency ??
+      baseCurrency;
 
     createFD.mutate(
       {
@@ -355,7 +406,7 @@ export function CreateAccountDialog({
           handleOpenChange(false);
         },
         onError: (err) => setError(getErrorMessage(err)),
-      }
+      },
     );
   }
 
@@ -363,35 +414,78 @@ export function CreateAccountDialog({
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Create Account</DialogTitle>
+          <DialogTitle>
+            {selected
+              ? `New ${selected.title.toLowerCase()} account`
+              : "New account"}
+          </DialogTitle>
           <DialogDescription>
-            Add a new cash, investment, credit card, or fixed deposit account.
+            {selected
+              ? selected.hint
+              : "What kind of account is it? You can add more later."}
           </DialogDescription>
         </DialogHeader>
 
         {error && (
-          <div className="bg-destructive/10 text-destructive rounded-md p-3 text-sm">
+          <div
+            role="alert"
+            className="bg-destructive/10 text-destructive rounded-md p-3 text-sm"
+          >
             {error}
           </div>
         )}
 
-        <Tabs value={tab} onValueChange={setTab}>
-          <TabsList className="w-full">
-            <TabsTrigger value="cash" className="flex-1">
-              Cash
-            </TabsTrigger>
-            <TabsTrigger value="investment" className="flex-1">
-              Investment
-            </TabsTrigger>
-            <TabsTrigger value="credit-card" className="flex-1">
-              Credit Card
-            </TabsTrigger>
-            <TabsTrigger value="fixed-deposit" className="flex-1">
-              Fixed Deposit
-            </TabsTrigger>
-          </TabsList>
+        {!selected && (
+          <div
+            role="group"
+            aria-label="Account type"
+            className="grid gap-2 sm:grid-cols-2"
+          >
+            {KIND_OPTIONS.map((o) => {
+              const Icon = o.icon;
+              return (
+                <button
+                  key={o.kind}
+                  type="button"
+                  onClick={() => {
+                    setError("");
+                    setKind(o.kind);
+                  }}
+                  className="hover:border-primary/50 hover:bg-muted/50 focus-visible:ring-ring/50 flex items-center gap-3 rounded-card border p-3 text-left outline-none transition-colors focus-visible:ring-[3px]"
+                >
+                  <Tile tone={o.tone} size="lg">
+                    <Icon />
+                  </Tile>
+                  <span className="grid gap-0.5">
+                    <span className="text-sm font-medium">{o.title}</span>
+                    <span className="text-muted-foreground text-xs">
+                      {o.hint}
+                    </span>
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        )}
 
-          <TabsContent value="cash">
+        {selected && (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="-mt-2 w-fit"
+            onClick={() => {
+              setError("");
+              setKind(null);
+            }}
+          >
+            <ArrowLeft className="size-4" />
+            Account type
+          </Button>
+        )}
+
+        <>
+          {kind === "cash" && (
             <form onSubmit={handleSubmitCash} className="flex flex-col gap-5">
               <div className="flex flex-col gap-2">
                 <Label htmlFor="cash-name">Name</Label>
@@ -435,7 +529,12 @@ export function CreateAccountDialog({
                 </Select>
               </div>
               <div className="flex flex-col gap-2">
-                <Label htmlFor="cash-balance">Initial Balance</Label>
+                <Label htmlFor="cash-balance">
+                  Opening balance
+                  <span className="ml-2 text-xs font-normal text-muted-foreground">
+                    (not counted as income)
+                  </span>
+                </Label>
                 <CurrencyInput
                   id="cash-balance"
                   value={cashBalance}
@@ -451,9 +550,9 @@ export function CreateAccountDialog({
                 </Button>
               </DialogFooter>
             </form>
-          </TabsContent>
+          )}
 
-          <TabsContent value="investment">
+          {kind === "investment" && (
             <form
               onSubmit={handleSubmitInvestment}
               className="flex flex-col gap-5"
@@ -527,9 +626,9 @@ export function CreateAccountDialog({
                 </Button>
               </DialogFooter>
             </form>
-          </TabsContent>
+          )}
 
-          <TabsContent value="credit-card">
+          {kind === "credit-card" && (
             <form
               onSubmit={handleSubmitCreditCard}
               className="flex flex-col gap-5"
@@ -632,9 +731,9 @@ export function CreateAccountDialog({
                 </Button>
               </DialogFooter>
             </form>
-          </TabsContent>
+          )}
 
-          <TabsContent value="fixed-deposit">
+          {kind === "fixed-deposit" && (
             <form
               onSubmit={handleSubmitFixedDeposit}
               className="flex flex-col gap-5"
@@ -692,7 +791,10 @@ export function CreateAccountDialog({
                   id="fd-principal"
                   value={fdPrincipal}
                   onChange={setFdPrincipal}
-                  currency={cashAccounts.find((a) => a.id === fdSourceAccountId)?.currency ?? baseCurrency}
+                  currency={
+                    cashAccounts.find((a) => a.id === fdSourceAccountId)
+                      ?.currency ?? baseCurrency
+                  }
                   placeholder="0.00"
                   disabled={isSubmitting}
                 />
@@ -826,8 +928,8 @@ export function CreateAccountDialog({
                 </Button>
               </DialogFooter>
             </form>
-          </TabsContent>
-        </Tabs>
+          )}
+        </>
       </DialogContent>
     </Dialog>
   );
