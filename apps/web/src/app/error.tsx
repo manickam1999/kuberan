@@ -12,7 +12,7 @@ export default function RootError({
   reset: () => void;
 }) {
   return (
-    <div className="flex min-h-screen items-center justify-center p-4">
+    <div className="flex min-h-dvh items-center justify-center p-4">
       <RouteError error={error} reset={reset} />
     </div>
   );

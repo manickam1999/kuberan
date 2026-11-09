@@ -1,5 +1,6 @@
 "use client";
 
+import { WealthSwitch } from "@/components/layout/wealth-switch";
 import { useState } from "react";
 import Link from "next/link";
 import { Plus, Pin, ArrowRight, Coins, Scale, Wallet, Vault } from "lucide-react";
@@ -239,6 +240,7 @@ export default function AccountsPage() {
 
   return (
     <div className="space-y-6">
+      <WealthSwitch current="/accounts" />
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="font-display text-3xl leading-tight">Accounts</h1>

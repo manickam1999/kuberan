@@ -1277,3 +1277,19 @@ body {
   --color-line-strong: var(--input);
 }
 /* ===== end 2.4 ===== */
+
+/* ===== Plan 023 phase 3: app shell insets (delimited block) =====
+   --safe-bottom is the one definition of the bottom safe-area inset; the tab
+   bar and the dialog sheet both read it (the sheet covers the bar, so the
+   inset is applied once at any time). --tabbar-h is non-zero only while the
+   mobile tab bar is mounted below `md`, and is what page content pads by. */
+:root {
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --tabbar-h: 0px;
+}
+@media (max-width: 767.98px) {
+  :root:has([data-slot="mobile-tab-bar"]) {
+    --tabbar-h: calc(58px + var(--safe-bottom));
+  }
+}
+/* ===== end phase 3 insets ===== */

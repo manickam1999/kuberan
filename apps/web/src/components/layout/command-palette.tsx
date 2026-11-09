@@ -42,6 +42,10 @@ const CreateCategoryDialog = dynamic(
 
 export interface CommandPaletteRef {
   toggle: () => void;
+  /** Opens the palette (no-op when already open). */
+  open: () => void;
+  /** Opens one of the quick-action dialogs directly (e.g. add transaction). */
+  openAction: (action: QuickAction) => void;
 }
 
 export const CommandPalette = forwardRef<CommandPaletteRef>(
@@ -61,9 +65,18 @@ export const CommandPalette = forwardRef<CommandPaletteRef>(
       setOpen(next);
     };
 
-    // Expose toggle method to parent components
+    const openAction = (action: QuickAction) => {
+      setOpen(false);
+      setUsedActions((prev) => new Set(prev).add(action));
+      setActiveAction(action);
+    };
+
+    // Expose the palette and quick actions to the shell (header, tab bar,
+    // keyboard shortcuts).
     useImperativeHandle(ref, () => ({
       toggle: () => setPaletteOpen((prev) => !prev),
+      open: () => setPaletteOpen(true),
+      openAction,
     }));
 
     // Keyboard listener for Cmd+K / Ctrl+K
@@ -83,12 +96,6 @@ export const CommandPalette = forwardRef<CommandPaletteRef>(
     const navigateTo = (path: string) => {
       setOpen(false);
       router.push(path);
-    };
-
-    const openAction = (action: QuickAction) => {
-      setOpen(false);
-      setUsedActions((prev) => new Set(prev).add(action));
-      setActiveAction(action);
     };
 
     const dialogProps = (action: QuickAction) => ({

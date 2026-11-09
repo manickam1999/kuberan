@@ -402,7 +402,7 @@ export function CreateTransactionDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent mobileFull className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>
             {isTransfer ? "Transfer funds" : "New transaction"}

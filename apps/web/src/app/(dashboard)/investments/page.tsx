@@ -1,5 +1,6 @@
 "use client";
 
+import { WealthSwitch } from "@/components/layout/wealth-switch";
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -737,6 +738,7 @@ export default function InvestmentsPage() {
   if (!portfolio) {
     return (
       <div className="space-y-6">
+        <WealthSwitch current="/investments" />
         <h1 className="font-display text-3xl leading-tight">Investments</h1>
         <Card>
           <CardHeader>
@@ -779,6 +781,7 @@ export default function InvestmentsPage() {
 
   return (
     <div className="space-y-6">
+      <WealthSwitch current="/investments" />
       <div>
         <h1 className="font-display text-3xl leading-tight">Investments</h1>
         <p className="text-sm text-muted-foreground">

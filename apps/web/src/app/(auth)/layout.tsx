@@ -24,7 +24,7 @@ export default function AuthLayout({
   }
 
   return (
-    <div className="relative flex min-h-screen items-center justify-center overflow-hidden p-4">
+    <div className="relative flex min-h-dvh items-center justify-center overflow-hidden p-4">
       {/* Ambient brand glow */}
       <div
         aria-hidden

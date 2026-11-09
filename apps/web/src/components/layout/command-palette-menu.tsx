@@ -1,19 +1,11 @@
 "use client";
 
 import {
-  LayoutDashboard,
-  Wallet,
-  ArrowLeftRight,
-  Tag,
-  Filter,
-  PiggyBank,
-  HandCoins,
-  Database,
-  TrendingUp,
   Plus,
   Receipt,
   FolderPlus,
   Handshake,
+  Keyboard,
 } from "lucide-react";
 import {
   CommandDialog,
@@ -23,7 +15,9 @@ import {
   CommandItem,
   CommandList,
   CommandSeparator,
+  CommandShortcut,
 } from "@/components/ui/command";
+import { PALETTE_NAV } from "@/lib/nav";
 
 export type QuickAction = "account" | "transaction" | "lend" | "category";
 
@@ -34,23 +28,17 @@ interface CommandPaletteMenuProps {
   onAction: (action: QuickAction) => void;
 }
 
-const NAV_ITEMS = [
-  { path: "/", label: "Dashboard", icon: LayoutDashboard },
-  { path: "/accounts", label: "Accounts", icon: Wallet },
-  { path: "/transactions", label: "Transactions", icon: ArrowLeftRight },
-  { path: "/categories", label: "Categories", icon: Tag },
-  { path: "/rules", label: "Rules", icon: Filter },
-  { path: "/budgets", label: "Budgets", icon: PiggyBank },
-  { path: "/receivables", label: "Owed to me", icon: HandCoins },
-  { path: "/securities", label: "Securities", icon: Database },
-  { path: "/investments", label: "Investments", icon: TrendingUp },
+const ACTION_ITEMS = [
+  { action: "account", label: "Create Account", icon: Plus, hint: "" },
+  { action: "transaction", label: "Add Transaction", icon: Receipt, hint: "N" },
+  { action: "lend", label: "Lend money", icon: Handshake, hint: "" },
+  { action: "category", label: "Create Category", icon: FolderPlus, hint: "" },
 ] as const;
 
-const ACTION_ITEMS = [
-  { action: "account", label: "Create Account", icon: Plus },
-  { action: "transaction", label: "Add Transaction", icon: Receipt },
-  { action: "lend", label: "Lend money", icon: Handshake },
-  { action: "category", label: "Create Category", icon: FolderPlus },
+/** Global shortcuts that aren't tied to a palette entry. */
+const OTHER_SHORTCUTS = [
+  { label: "Open this palette", keys: "⌘K  or  /" },
+  { label: "Toggle sidebar", keys: "⌘B" },
 ] as const;
 
 /**
@@ -70,10 +58,11 @@ export default function CommandPaletteMenu({
         <CommandEmpty>No results found.</CommandEmpty>
 
         <CommandGroup heading="Navigation">
-          {NAV_ITEMS.map(({ path, label, icon: Icon }) => (
-            <CommandItem key={path} onSelect={() => onNavigate(path)}>
+          {PALETTE_NAV.map(({ href, title, icon: Icon, goKey }) => (
+            <CommandItem key={href} onSelect={() => onNavigate(href)}>
               <Icon />
-              <span>{label}</span>
+              <span>{title}</span>
+              {goKey && <CommandShortcut>G {goKey.toUpperCase()}</CommandShortcut>}
             </CommandItem>
           ))}
         </CommandGroup>
@@ -81,10 +70,28 @@ export default function CommandPaletteMenu({
         <CommandSeparator />
 
         <CommandGroup heading="Quick Actions">
-          {ACTION_ITEMS.map(({ action, label, icon: Icon }) => (
+          {ACTION_ITEMS.map(({ action, label, icon: Icon, hint }) => (
             <CommandItem key={action} onSelect={() => onAction(action)}>
               <Icon />
               <span>{label}</span>
+              {hint && <CommandShortcut>{hint}</CommandShortcut>}
+            </CommandItem>
+          ))}
+        </CommandGroup>
+
+        <CommandSeparator />
+
+        <CommandGroup heading="Keyboard shortcuts">
+          {OTHER_SHORTCUTS.map(({ label, keys }) => (
+            <CommandItem
+              key={label}
+              // Informational rows: selecting one just closes the palette.
+              onSelect={() => onOpenChange(false)}
+              keywords={["shortcut", "keyboard", "keys"]}
+            >
+              <Keyboard />
+              <span>{label}</span>
+              <CommandShortcut>{keys}</CommandShortcut>
             </CommandItem>
           ))}
         </CommandGroup>
