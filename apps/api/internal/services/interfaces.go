@@ -414,6 +414,9 @@ type TransactionServicer interface {
 	UpdateTransaction(userID, transactionID string, updates TransactionUpdateFields) (*models.Transaction, error)
 	DeleteTransaction(userID, transactionID string) error
 	BulkUpdateTransactions(userID string, in BulkTransactionInput) (*BulkTransactionResult, error)
+	// SuggestCategory proposes a category for a new income/expense from the user's
+	// rules, then from their history; nil when nothing applies.
+	SuggestCategory(userID string, in CategorySuggestionInput) (*CategorySuggestion, error)
 	GetSpendingByCategory(userID string, from, to time.Time) (*SpendingByCategory, error)
 	GetCashflow(userID string, from, to time.Time) (*Cashflow, error)
 	GetMonthlySummary(userID string, months int) ([]MonthlySummaryItem, error)

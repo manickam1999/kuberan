@@ -104,6 +104,65 @@ func (h *TransactionHandler) CreateTransaction(c *gin.Context) {
 	c.JSON(http.StatusCreated, gin.H{"transaction": transaction})
 }
 
+// SuggestCategoryRequest is the payload for suggesting a category.
+type SuggestCategoryRequest struct {
+	Description string                 `json:"description" binding:"required,max=500"`
+	Type        models.TransactionType `json:"type" binding:"required"`
+	// Amount (cents) and AccountID are optional; only rules that condition on them use them.
+	Amount    int64  `json:"amount" binding:"gte=0"`
+	AccountID string `json:"account_id"`
+}
+
+// SuggestCategoryResponse is the suggestion; category_id is null (and the
+// other fields empty) when nothing applies.
+type SuggestCategoryResponse struct {
+	CategoryID   *string `json:"category_id"`
+	CategoryName string  `json:"category_name"`
+	Reason       string  `json:"reason" enums:"rule,history"`
+}
+
+// SuggestCategory suggests a category for a transaction that is about to be created.
+// @Summary     Suggest a category
+// @Description Suggests a category for an income or expense description: the user's rules first (reason "rule"), then the most recent category used for the same description (reason "history"). category_id is null when nothing applies. Income and expense only.
+// @Tags        transactions
+// @Accept      json
+// @Produce     json
+// @Security    BearerAuth
+// @Param       request body SuggestCategoryRequest true "Description and type"
+// @Success     200 {object} SuggestCategoryResponse "Suggestion"
+// @Failure     400 {object} ErrorResponse "Invalid input or type is not income/expense"
+// @Failure     401 {object} ErrorResponse "Unauthorized"
+// @Failure     500 {object} ErrorResponse "Server error"
+// @Router      /transactions/suggest-category [post]
+func (h *TransactionHandler) SuggestCategory(c *gin.Context) {
+	userID, err := getUserID(c)
+	if err != nil {
+		respondWithError(c, err)
+		return
+	}
+	var req SuggestCategoryRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		respondWithError(c, apperrors.WithMessage(apperrors.ErrInvalidInput, err.Error()))
+		return
+	}
+	if req.Type != models.TransactionTypeIncome && req.Type != models.TransactionTypeExpense {
+		respondWithError(c, apperrors.WithMessage(apperrors.ErrInvalidInput, "type must be income or expense"))
+		return
+	}
+	s, err := h.transactionService.SuggestCategory(userID, services.CategorySuggestionInput{
+		Description: req.Description, Type: req.Type, Amount: req.Amount, AccountID: req.AccountID,
+	})
+	if err != nil {
+		respondWithError(c, err)
+		return
+	}
+	resp := SuggestCategoryResponse{}
+	if s != nil {
+		resp = SuggestCategoryResponse{CategoryID: &s.CategoryID, CategoryName: s.CategoryName, Reason: s.Reason}
+	}
+	c.JSON(http.StatusOK, resp)
+}
+
 // CreateTransferRequest represents the request payload for creating a transfer
 type CreateTransferRequest struct {
 	FromAccountID string `json:"from_account_id" binding:"required"`
