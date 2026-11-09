@@ -89,6 +89,15 @@ export type TransactionType =
   | "reimbursement"
   | "opening_balance";
 
+/** Where a transaction row came from. */
+export type TransactionSource =
+  | "web"
+  | "telegram"
+  | "mcp"
+  | "rule"
+  | "import"
+  | "system";
+
 export interface Transaction extends BaseModel {
   user_id: string; // UUIDv7
   account_id: string; // UUIDv7
@@ -96,6 +105,12 @@ export interface Transaction extends BaseModel {
   type: TransactionType;
   amount: number; // cents, always positive
   description: string;
+  /** Free text, max 2,000 characters; empty string when unset. */
+  notes: string;
+  /** Where the row came from. */
+  source: TransactionSource;
+  /** OAuth client id that wrote the row when source is "mcp". */
+  source_client_id?: string | null;
   date: string; // ISO 8601
   to_account_id?: string | null; // UUIDv7, for transfers
   account?: Account; // preloaded relation

@@ -229,7 +229,7 @@ func TestUpdateTransactionLowersSharedExpenseAmount(t *testing.T) {
 // GetAccountByID, which only returns active accounts).
 func TestUpdateAndDeleteOnDeactivatedAccountMatchMain(t *testing.T) {
 	e := newRecEnv(t)
-	x, err := e.txn.CreateTransaction(e.user.ID, e.cash.ID, nil, models.TransactionTypeExpense, 300, "coffee", time.Now())
+	x, err := e.txn.CreateTransaction(e.user.ID, e.cash.ID, nil, models.TransactionTypeExpense, 300, "coffee", time.Now(), TransactionMeta{})
 	testutil.AssertNoError(t, err)
 	testutil.AssertNoError(t, e.db.Model(e.cash).Update("is_active", false).Error)
 
@@ -237,7 +237,7 @@ func TestUpdateAndDeleteOnDeactivatedAccountMatchMain(t *testing.T) {
 	_, err = e.updateTxn(x.ID, TransactionUpdateFields{Description: &desc})
 	assertAppCode(t, err, "ACCOUNT_NOT_FOUND", http.StatusNotFound)
 	assertAppCode(t, e.deleteTxn(x.ID), "ACCOUNT_NOT_FOUND", http.StatusNotFound)
-	_, err = e.txn.CreateTransaction(e.user.ID, e.cash.ID, nil, models.TransactionTypeExpense, 100, "x", time.Now())
+	_, err = e.txn.CreateTransaction(e.user.ID, e.cash.ID, nil, models.TransactionTypeExpense, 100, "x", time.Now(), TransactionMeta{})
 	assertAppCode(t, err, "ACCOUNT_NOT_FOUND", http.StatusNotFound)
 }
 
@@ -262,7 +262,7 @@ func TestShareSumsCannotOverflow(t *testing.T) {
 
 	t.Run("update diff", func(t *testing.T) {
 		e := newRecEnv(t)
-		x, err := e.txn.CreateTransaction(e.user.ID, e.cash.ID, nil, models.TransactionTypeExpense, math.MaxInt64, "huge", time.Now())
+		x, err := e.txn.CreateTransaction(e.user.ID, e.cash.ID, nil, models.TransactionTypeExpense, math.MaxInt64, "huge", time.Now(), TransactionMeta{})
 		testutil.AssertNoError(t, err)
 		_, err = e.update(x.ID, UpdateReceivablesInput{Receivables: []ReceivableShareInput{
 			{Name: "A", Amount: half}, {Name: "B", Amount: half},
@@ -317,7 +317,7 @@ func TestControlCharactersAreRejected(t *testing.T) {
 	t.Run("transaction descriptions", func(t *testing.T) {
 		e := newRecEnv(t)
 		bad := "co\x00ffee"
-		_, err := e.txn.CreateTransaction(e.user.ID, e.cash.ID, nil, models.TransactionTypeExpense, 100, bad, time.Now())
+		_, err := e.txn.CreateTransaction(e.user.ID, e.cash.ID, nil, models.TransactionTypeExpense, 100, bad, time.Now(), TransactionMeta{})
 		assertAppCode(t, err, "INVALID_INPUT", http.StatusBadRequest)
 		in := e.in(900, ShareModeEqual, models.ReceivableKindSplit, rcpEqual("Alice")...)
 		in.Description = bad
@@ -325,10 +325,10 @@ func TestControlCharactersAreRejected(t *testing.T) {
 		assertAppCode(t, err, "INVALID_INPUT", http.StatusBadRequest)
 
 		to := testutil.CreateTestCashAccountWithBalance(t, e.db, e.user.ID, 0)
-		_, err = e.txn.CreateTransfer(e.user.ID, e.cash.ID, to.ID, 100, nil, bad, time.Now())
+		_, err = e.txn.CreateTransfer(e.user.ID, e.cash.ID, to.ID, 100, nil, bad, time.Now(), TransactionMeta{})
 		assertAppCode(t, err, "INVALID_INPUT", http.StatusBadRequest)
 
-		ok, err := e.txn.CreateTransaction(e.user.ID, e.cash.ID, nil, models.TransactionTypeExpense, 100, "line one\n\tline two", time.Now())
+		ok, err := e.txn.CreateTransaction(e.user.ID, e.cash.ID, nil, models.TransactionTypeExpense, 100, "line one\n\tline two", time.Now(), TransactionMeta{})
 		testutil.AssertNoError(t, err)
 		_, err = e.updateTxn(ok.ID, TransactionUpdateFields{Description: &bad})
 		assertAppCode(t, err, "INVALID_INPUT", http.StatusBadRequest)

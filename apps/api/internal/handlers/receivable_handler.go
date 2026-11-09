@@ -41,6 +41,7 @@ type CreateSharedExpenseRequest struct {
 	Kind           models.ReceivableKind       `json:"kind" binding:"required"`
 	Mode           services.ShareMode          `json:"mode" binding:"required,oneof=equal custom full"`
 	Counterparties []SharedCounterpartyRequest `json:"counterparties"`
+	Notes          string                      `json:"notes" binding:"max=2000"`
 }
 
 // TransactionEnvelope wraps a single transaction in a response.
@@ -124,6 +125,7 @@ func (h *ReceivableHandler) CreateSharedExpense(c *gin.Context) {
 		Kind:           req.Kind,
 		Mode:           req.Mode,
 		Counterparties: counterparties,
+		Meta:           transactionMeta(c, req.Notes),
 	})
 	if err != nil {
 		respondWithError(c, err)

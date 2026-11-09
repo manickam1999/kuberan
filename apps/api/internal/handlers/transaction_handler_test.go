@@ -31,16 +31,29 @@ type mockTransactionService struct {
 	applyRuleFn              func(userID, ruleID string, opts services.ApplyRuleOptions) (*services.ApplyRuleResult, error)
 	getDailySummaryFn        func(userID string, from, to time.Time) ([]services.DailySummaryItem, error)
 	getTopExpensesFn         func(userID string, from, to time.Time, limit int, categoryID *string) (*services.TopExpenses, error)
+	bulkUpdateFn             func(userID string, in services.BulkTransactionInput) (*services.BulkTransactionResult, error)
+
+	// lastMeta records the provenance passed to the latest create call.
+	lastMeta services.TransactionMeta
 }
 
-func (m *mockTransactionService) CreateTransaction(userID, accountID string, categoryID *string, transactionType models.TransactionType, amount int64, description string, date time.Time) (*models.Transaction, error) {
+func (m *mockTransactionService) BulkUpdateTransactions(userID string, in services.BulkTransactionInput) (*services.BulkTransactionResult, error) {
+	if m.bulkUpdateFn != nil {
+		return m.bulkUpdateFn(userID, in)
+	}
+	return &services.BulkTransactionResult{}, nil
+}
+
+func (m *mockTransactionService) CreateTransaction(userID, accountID string, categoryID *string, transactionType models.TransactionType, amount int64, description string, date time.Time, meta services.TransactionMeta) (*models.Transaction, error) {
+	m.lastMeta = meta
 	if m.createTransactionFn != nil {
 		return m.createTransactionFn(userID, accountID, categoryID, transactionType, amount, description, date)
 	}
 	return &models.Transaction{}, nil
 }
 
-func (m *mockTransactionService) CreateTransfer(userID, fromAccountID, toAccountID string, amount int64, toAmount *int64, description string, date time.Time) (*models.Transaction, error) {
+func (m *mockTransactionService) CreateTransfer(userID, fromAccountID, toAccountID string, amount int64, toAmount *int64, description string, date time.Time, meta services.TransactionMeta) (*models.Transaction, error) {
+	m.lastMeta = meta
 	if m.createTransferFn != nil {
 		return m.createTransferFn(userID, fromAccountID, toAccountID, amount, toAmount, description, date)
 	}
@@ -151,6 +164,7 @@ func setupTransactionRouter(handler *TransactionHandler) *gin.Engine {
 	auth.GET("/transactions", handler.GetUserTransactions)
 	auth.POST("/transactions", handler.CreateTransaction)
 	auth.POST("/transactions/transfer", handler.CreateTransfer)
+	auth.POST("/transactions/bulk", handler.BulkTransactions)
 	auth.GET("/transactions/spending-by-category", handler.GetSpendingByCategory)
 	auth.GET("/transactions/monthly-summary", handler.GetMonthlySummary)
 	auth.GET("/transactions/daily-spending", handler.GetDailySpending)

@@ -223,6 +223,7 @@ func registerTransactionRoutes(protected *gin.RouterGroup, h Routes) {
 	transactions.POST("", h.Transaction.CreateTransaction)
 	transactions.POST("/transfer", h.Transaction.CreateTransfer)
 	transactions.POST("/shared", h.Receivable.CreateSharedExpense)
+	transactions.POST("/bulk", h.Transaction.BulkTransactions)
 	transactions.GET("/spending-by-category", h.Transaction.GetSpendingByCategory)
 	transactions.GET("/cashflow", h.Transaction.GetCashflow)
 	transactions.GET("/monthly-summary", h.Transaction.GetMonthlySummary)

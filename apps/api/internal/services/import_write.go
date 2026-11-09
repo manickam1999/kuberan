@@ -191,7 +191,7 @@ func (s *importService) writeCash(tx *gorm.DB, pl *importPlan) error {
 		ref := r.ref
 		t := models.Transaction{
 			UserID: pl.userID, AccountID: pl.cash.ID, Type: r.typ, Amount: r.amount,
-			Description: r.desc, Date: r.date, ImportRef: &ref,
+			Description: r.desc, Date: r.date, ImportRef: &ref, Source: models.TransactionSourceImport,
 		}
 		if err := tx.Create(&t).Error; err != nil {
 			return apperrors.Wrap(apperrors.ErrInternalServer, err)

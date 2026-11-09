@@ -369,6 +369,14 @@ func TestCreateTransactionTool(t *testing.T) {
 			!strings.Contains(log.Changes, testClientID) || !strings.Contains(log.Changes, `"via":"mcp"`) {
 			t.Errorf("unexpected audit row: %+v", log)
 		}
+
+		var txn models.Transaction
+		if err := e.db.Where("account_id = ? AND type = ?", acct.ID, models.TransactionTypeExpense).First(&txn).Error; err != nil {
+			t.Fatal(err)
+		}
+		if txn.Source != models.TransactionSourceMCP || txn.SourceClientID == nil || *txn.SourceClientID != testClientID {
+			t.Errorf("source = %q client = %v, want mcp / %s", txn.Source, txn.SourceClientID, testClientID)
+		}
 	})
 
 	t.Run("an expense on a credit card increases the balance owed", func(t *testing.T) {
@@ -505,7 +513,7 @@ func TestUpdateTransactionTool(t *testing.T) {
 		acct := testutil.CreateTestCashAccountWithBalance(t, e.db, e.user.ID, 10_000)
 		cat := testutil.CreateTestCategory(t, e.db, e.user.ID, models.CategoryTypeExpense)
 		txn, err := e.s.services.Transactions.CreateTransaction(e.user.ID, acct.ID, &cat.ID,
-			models.TransactionTypeExpense, 1_000, "Groceries", time.Date(2026, 1, 10, 0, 0, 0, 0, time.UTC))
+			models.TransactionTypeExpense, 1_000, "Groceries", time.Date(2026, 1, 10, 0, 0, 0, 0, time.UTC), services.TransactionMeta{})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -534,7 +542,7 @@ func TestUpdateTransactionTool(t *testing.T) {
 		acct := testutil.CreateTestCashAccount(t, e.db, e.user.ID)
 		cat := testutil.CreateTestCategory(t, e.db, e.user.ID, models.CategoryTypeExpense)
 		txn, _ := e.s.services.Transactions.CreateTransaction(e.user.ID, acct.ID, &cat.ID,
-			models.TransactionTypeExpense, 100, "x", time.Time{})
+			models.TransactionTypeExpense, 100, "x", time.Time{}, services.TransactionMeta{})
 
 		wantOK(t, e.call(t, e.ctx(scope), "update_transaction", map[string]any{
 			"transaction_id": txn.ID, "category_id": "none",
@@ -551,7 +559,7 @@ func TestUpdateTransactionTool(t *testing.T) {
 		acct := testutil.CreateTestCashAccount(t, e.db, e.user.ID)
 		cat := testutil.CreateTestCategory(t, e.db, e.user.ID, models.CategoryTypeExpense)
 		txn, _ := e.s.services.Transactions.CreateTransaction(e.user.ID, acct.ID, &cat.ID,
-			models.TransactionTypeExpense, 100, "x", time.Time{})
+			models.TransactionTypeExpense, 100, "x", time.Time{}, services.TransactionMeta{})
 
 		res := e.call(t, e.ctx(scope), "update_transaction", map[string]any{
 			"transaction_id": txn.ID, "type": "income",
@@ -949,7 +957,7 @@ func TestUpdateTransactionTypeFlipWithOldCategory(t *testing.T) {
 		acct := testutil.CreateTestCashAccountWithBalance(t, e.db, e.user.ID, 10_000)
 		cat := testutil.CreateTestCategory(t, e.db, e.user.ID, models.CategoryTypeExpense)
 		txn, err := e.s.services.Transactions.CreateTransaction(e.user.ID, acct.ID, &cat.ID,
-			models.TransactionTypeExpense, 500, "Refund", time.Now())
+			models.TransactionTypeExpense, 500, "Refund", time.Now(), services.TransactionMeta{})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -975,7 +983,7 @@ func TestUpdateTransactionTypeFlipWithOldCategory(t *testing.T) {
 		acct := testutil.CreateTestCashAccount(t, e.db, e.user.ID)
 		cat := testutil.CreateTestCategory(t, e.db, e.user.ID, models.CategoryTypeExpense)
 		txn, _ := e.s.services.Transactions.CreateTransaction(e.user.ID, acct.ID, &cat.ID,
-			models.TransactionTypeExpense, 500, "x", time.Now())
+			models.TransactionTypeExpense, 500, "x", time.Now(), services.TransactionMeta{})
 
 		wantError(t, e.call(t, e.ctx(scope), "update_transaction", map[string]any{
 			"transaction_id": txn.ID, "type": "income",

@@ -9,6 +9,15 @@ import (
 	"kuberan/internal/models"
 )
 
+// ensureCategoryMatchesType returns CATEGORY_TYPE_MISMATCH unless the category's
+// type (income/expense) equals the transaction's type.
+func ensureCategoryMatchesType(category *models.Category, txnType models.TransactionType) error {
+	if string(category.Type) != string(txnType) {
+		return apperrors.ErrCategoryTypeMismatch
+	}
+	return nil
+}
+
 // ensureCategoryOwned returns ErrCategoryNotFound unless categoryID (when set)
 // is a live category owned by userID. Transactions reference categories by ID,
 // so without this check a caller could attach, and then read back the name of,

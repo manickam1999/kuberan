@@ -194,6 +194,7 @@ func (s *fixedDepositService) processPeriodicPayouts(acct *models.Account, asOfD
 				Amount:      interestAmount,
 				Description: fmt.Sprintf("Interest payout from %s", acct.Name),
 				Date:        nextDate,
+				Source:      models.TransactionSourceSystem,
 			}
 			if err := tx.Create(txn).Error; err != nil {
 				return fmt.Errorf("creating interest transaction: %w", err)

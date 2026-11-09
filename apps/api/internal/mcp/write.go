@@ -14,6 +14,7 @@ import (
 	apperrors "kuberan/internal/errors"
 	"kuberan/internal/fx"
 	"kuberan/internal/logger"
+	"kuberan/internal/models"
 	"kuberan/internal/services"
 )
 
@@ -51,6 +52,12 @@ type caller struct {
 	UserID   string
 	ClientID string
 	IP       string
+}
+
+// mcpMeta is the provenance recorded on transactions an MCP tool creates: the
+// "mcp" source and the OAuth client that made the call.
+func mcpMeta(c caller) services.TransactionMeta {
+	return services.TransactionMeta{Source: models.TransactionSourceMCP, SourceClientID: c.ClientID}
 }
 
 // auditEntry is one audit_logs row produced by a write.

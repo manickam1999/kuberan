@@ -31,7 +31,7 @@ func TestUpdateTransaction_RejectsMoveAcrossCurrencies(t *testing.T) {
 	same := testutil.CreateTestCashAccountWithBalance(t, db, user.ID, 100000)
 	relabelAccount(t, db, same, "usd") // case-insensitive match
 
-	tx, err := txSvc.CreateTransaction(user.ID, usd.ID, nil, models.TransactionTypeExpense, 5000, "x", time.Now())
+	tx, err := txSvc.CreateTransaction(user.ID, usd.ID, nil, models.TransactionTypeExpense, 5000, "x", time.Now(), TransactionMeta{})
 	testutil.AssertNoError(t, err)
 
 	_, err = txSvc.UpdateTransaction(user.ID, tx.ID, TransactionUpdateFields{AccountID: &myr.ID})

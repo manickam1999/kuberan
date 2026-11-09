@@ -196,6 +196,16 @@ type TransactionUpdateFields struct {
 	Amount      *int64
 	Description *string
 	Date        *time.Time
+	Notes       *string
+}
+
+// TransactionMeta carries the provenance of a new transaction: free-text notes
+// and where the row came from. An empty Source is stored as "web".
+// SourceClientID is the OAuth client id for source "mcp".
+type TransactionMeta struct {
+	Notes          string
+	Source         models.TransactionSource
+	SourceClientID string
 }
 
 // TransactionFilter holds optional filter parameters for listing transactions.
@@ -207,6 +217,13 @@ type TransactionFilter struct {
 	MinAmount  *int64
 	MaxAmount  *int64
 	AccountID  *string
+	// Search matches description or notes (case-insensitive substring) and, when
+	// it parses as an amount such as "64.73", the amount in cents.
+	Search *string
+	// Shared keeps only rows that have (true) or lack (false) receivables.
+	Shared *bool
+	// HasAttachment keeps only rows that have (true) or lack (false) receipts.
+	HasAttachment *bool
 }
 
 // SpendingByCategoryItem represents spending total for a single category.
@@ -325,13 +342,14 @@ type TopExpenses struct {
 
 // TransactionServicer defines the contract for transaction-related business logic.
 type TransactionServicer interface {
-	CreateTransaction(userID, accountID string, categoryID *string, transactionType models.TransactionType, amount int64, description string, date time.Time) (*models.Transaction, error)
-	CreateTransfer(userID, fromAccountID, toAccountID string, amount int64, toAmount *int64, description string, date time.Time) (*models.Transaction, error)
+	CreateTransaction(userID, accountID string, categoryID *string, transactionType models.TransactionType, amount int64, description string, date time.Time, meta TransactionMeta) (*models.Transaction, error)
+	CreateTransfer(userID, fromAccountID, toAccountID string, amount int64, toAmount *int64, description string, date time.Time, meta TransactionMeta) (*models.Transaction, error)
 	GetAccountTransactions(userID, accountID string, page pagination.PageRequest, filter TransactionFilter) (*pagination.PageResponse[models.Transaction], error)
 	GetUserTransactions(userID string, page pagination.PageRequest, filter TransactionFilter) (*pagination.PageResponse[models.Transaction], error)
 	GetTransactionByID(userID, transactionID string) (*models.Transaction, error)
 	UpdateTransaction(userID, transactionID string, updates TransactionUpdateFields) (*models.Transaction, error)
 	DeleteTransaction(userID, transactionID string) error
+	BulkUpdateTransactions(userID string, in BulkTransactionInput) (*BulkTransactionResult, error)
 	GetSpendingByCategory(userID string, from, to time.Time) (*SpendingByCategory, error)
 	GetCashflow(userID string, from, to time.Time) (*Cashflow, error)
 	GetMonthlySummary(userID string, months int) ([]MonthlySummaryItem, error)
@@ -784,6 +802,7 @@ type CreateSharedExpenseInput struct {
 	Kind           models.ReceivableKind
 	Mode           ShareMode
 	Counterparties []SharedCounterpartyInput
+	Meta           TransactionMeta
 }
 
 // ReceivableShareInput is one entry of the D7 receivables diff. A non-nil ID

@@ -256,6 +256,9 @@ var (
 	// ErrAccountCurrencyMismatch is returned when an operation would reinterpret cents in another currency.
 	ErrAccountCurrencyMismatch = &AppError{Code: "ACCOUNT_CURRENCY_MISMATCH", Message: "A transaction can't move to an account in a different currency", StatusCode: http.StatusBadRequest}
 
+	// ErrCategoryTypeMismatch is returned when a category's type (income/expense) differs from the transaction's.
+	ErrCategoryTypeMismatch = &AppError{Code: "CATEGORY_TYPE_MISMATCH", Message: "The category's type does not match the transaction's type", StatusCode: http.StatusBadRequest}
+
 	// ErrImportedTransactionLocked is returned when an imported row's type, amount or account is edited.
 	ErrImportedTransactionLocked = &AppError{Code: "IMPORTED_TRANSACTION_LOCKED", Message: "Imported transactions can't be changed; re-run the import instead", StatusCode: http.StatusConflict}
 )

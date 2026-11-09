@@ -289,15 +289,19 @@ func insertTransaction(
 	amount int64,
 	description string,
 	date time.Time,
+	meta TransactionMeta,
 ) (*models.Transaction, error) {
 	txn := &models.Transaction{
-		UserID:      userID,
-		AccountID:   account.ID,
-		CategoryID:  categoryID,
-		Type:        txnType,
-		Amount:      amount,
-		Description: description,
-		Date:        date,
+		UserID:         userID,
+		AccountID:      account.ID,
+		CategoryID:     categoryID,
+		Type:           txnType,
+		Amount:         amount,
+		Description:    description,
+		Date:           date,
+		Notes:          meta.Notes,
+		Source:         meta.Source,
+		SourceClientID: sourceClientPtr(meta.SourceClientID),
 	}
 	if err := tx.Create(txn).Error; err != nil {
 		return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)

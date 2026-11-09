@@ -116,7 +116,7 @@ func TestDebtAccountTransactionsAreInverted(t *testing.T) {
 	debt := testutil.CreateTestDebtAccount(t, db, user.ID, 10000)
 
 	// An expense on a debt account increases what is owed; editing and deleting reverse it.
-	tx, err := txSvc.CreateTransaction(user.ID, debt.ID, nil, models.TransactionTypeExpense, 3000, "Charge", time.Now())
+	tx, err := txSvc.CreateTransaction(user.ID, debt.ID, nil, models.TransactionTypeExpense, 3000, "Charge", time.Now(), TransactionMeta{})
 	testutil.AssertNoError(t, err)
 	assertBalance(t, acctSvc, user.ID, debt.ID, 13000)
 
@@ -139,7 +139,7 @@ func TestCreateTransfer_DebtSourceExemptFromInsufficientBalance(t *testing.T) {
 	cash := testutil.CreateTestCashAccount(t, db, user.ID)
 
 	// Borrowing from a debt account (balance 0) must not fail the balance check.
-	_, err := txSvc.CreateTransfer(user.ID, debt.ID, cash.ID, 4000, nil, "Draw", time.Now())
+	_, err := txSvc.CreateTransfer(user.ID, debt.ID, cash.ID, 4000, nil, "Draw", time.Now(), TransactionMeta{})
 	testutil.AssertNoError(t, err)
 	assertBalance(t, acctSvc, user.ID, debt.ID, 4000)
 	assertBalance(t, acctSvc, user.ID, cash.ID, 4000)
@@ -208,7 +208,7 @@ func TestReimbursementGuards(t *testing.T) {
 		txSvc := NewTransactionService(db, acctSvc, nil)
 		user := testutil.CreateTestUser(t, db)
 		account := testutil.CreateTestCashAccountWithBalance(t, db, user.ID, 10000)
-		tx, err := txSvc.CreateTransaction(user.ID, account.ID, nil, models.TransactionTypeExpense, 1000, "x", time.Now())
+		tx, err := txSvc.CreateTransaction(user.ID, account.ID, nil, models.TransactionTypeExpense, 1000, "x", time.Now(), TransactionMeta{})
 		testutil.AssertNoError(t, err)
 
 		newType := models.TransactionTypeReimbursement

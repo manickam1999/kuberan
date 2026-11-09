@@ -20,7 +20,7 @@ func TestCreateTransaction(t *testing.T) {
 		user := testutil.CreateTestUser(t, db)
 		account := testutil.CreateTestCashAccount(t, db, user.ID)
 
-		tx, err := txSvc.CreateTransaction(user.ID, account.ID, nil, models.TransactionTypeIncome, 5000, "Salary", time.Now())
+		tx, err := txSvc.CreateTransaction(user.ID, account.ID, nil, models.TransactionTypeIncome, 5000, "Salary", time.Now(), TransactionMeta{})
 		testutil.AssertNoError(t, err)
 
 		if tx.ID == "" {
@@ -46,7 +46,7 @@ func TestCreateTransaction(t *testing.T) {
 		user := testutil.CreateTestUser(t, db)
 		account := testutil.CreateTestCashAccountWithBalance(t, db, user.ID, 10000)
 
-		_, err := txSvc.CreateTransaction(user.ID, account.ID, nil, models.TransactionTypeExpense, 3000, "Lunch", time.Now())
+		_, err := txSvc.CreateTransaction(user.ID, account.ID, nil, models.TransactionTypeExpense, 3000, "Lunch", time.Now(), TransactionMeta{})
 		testutil.AssertNoError(t, err)
 
 		updated, err := acctSvc.GetAccountByID(user.ID, account.ID)
@@ -64,7 +64,7 @@ func TestCreateTransaction(t *testing.T) {
 		user := testutil.CreateTestUser(t, db)
 		account := testutil.CreateTestCashAccount(t, db, user.ID)
 
-		_, err := txSvc.CreateTransaction(user.ID, account.ID, nil, models.TransactionTypeIncome, 0, "", time.Now())
+		_, err := txSvc.CreateTransaction(user.ID, account.ID, nil, models.TransactionTypeIncome, 0, "", time.Now(), TransactionMeta{})
 		testutil.AssertAppError(t, err, "INVALID_INPUT")
 	})
 
@@ -76,7 +76,7 @@ func TestCreateTransaction(t *testing.T) {
 		user := testutil.CreateTestUser(t, db)
 		account := testutil.CreateTestCashAccount(t, db, user.ID)
 
-		_, err := txSvc.CreateTransaction(user.ID, account.ID, nil, models.TransactionTypeIncome, -100, "", time.Now())
+		_, err := txSvc.CreateTransaction(user.ID, account.ID, nil, models.TransactionTypeIncome, -100, "", time.Now(), TransactionMeta{})
 		testutil.AssertAppError(t, err, "INVALID_INPUT")
 	})
 
@@ -86,7 +86,7 @@ func TestCreateTransaction(t *testing.T) {
 		acctSvc := NewAccountService(db)
 		txSvc := NewTransactionService(db, acctSvc, nil)
 
-		_, err := txSvc.CreateTransaction("1", "", nil, models.TransactionTypeIncome, 1000, "", time.Now())
+		_, err := txSvc.CreateTransaction("1", "", nil, models.TransactionTypeIncome, 1000, "", time.Now(), TransactionMeta{})
 		testutil.AssertAppError(t, err, "INVALID_INPUT")
 	})
 
@@ -97,7 +97,7 @@ func TestCreateTransaction(t *testing.T) {
 		txSvc := NewTransactionService(db, acctSvc, nil)
 		user := testutil.CreateTestUser(t, db)
 
-		_, err := txSvc.CreateTransaction(user.ID, "99999", nil, models.TransactionTypeIncome, 1000, "", time.Now())
+		_, err := txSvc.CreateTransaction(user.ID, "99999", nil, models.TransactionTypeIncome, 1000, "", time.Now(), TransactionMeta{})
 		testutil.AssertAppError(t, err, "ACCOUNT_NOT_FOUND")
 	})
 
@@ -110,7 +110,7 @@ func TestCreateTransaction(t *testing.T) {
 		user2 := testutil.CreateTestUser(t, db)
 		account := testutil.CreateTestCashAccount(t, db, user1.ID)
 
-		_, err := txSvc.CreateTransaction(user2.ID, account.ID, nil, models.TransactionTypeIncome, 1000, "", time.Now())
+		_, err := txSvc.CreateTransaction(user2.ID, account.ID, nil, models.TransactionTypeIncome, 1000, "", time.Now(), TransactionMeta{})
 		testutil.AssertAppError(t, err, "ACCOUNT_NOT_FOUND")
 	})
 
@@ -123,7 +123,7 @@ func TestCreateTransaction(t *testing.T) {
 		account := testutil.CreateTestCashAccount(t, db, user.ID)
 		cat := testutil.CreateTestCategory(t, db, user.ID, models.CategoryTypeExpense)
 
-		tx, err := txSvc.CreateTransaction(user.ID, account.ID, &cat.ID, models.TransactionTypeExpense, 500, "Coffee", time.Now())
+		tx, err := txSvc.CreateTransaction(user.ID, account.ID, &cat.ID, models.TransactionTypeExpense, 500, "Coffee", time.Now(), TransactionMeta{})
 		testutil.AssertNoError(t, err)
 
 		if tx.CategoryID == nil || *tx.CategoryID != cat.ID {
@@ -139,7 +139,7 @@ func TestCreateTransaction(t *testing.T) {
 		user := testutil.CreateTestUser(t, db)
 		account := testutil.CreateTestCashAccount(t, db, user.ID)
 
-		tx, err := txSvc.CreateTransaction(user.ID, account.ID, nil, models.TransactionTypeIncome, 1000, "", time.Time{})
+		tx, err := txSvc.CreateTransaction(user.ID, account.ID, nil, models.TransactionTypeIncome, 1000, "", time.Time{}, TransactionMeta{})
 		testutil.AssertNoError(t, err)
 
 		if tx.Date.IsZero() {
@@ -158,7 +158,7 @@ func TestCreateTransfer(t *testing.T) {
 		from := testutil.CreateTestCashAccountWithBalance(t, db, user.ID, 10000)
 		to := testutil.CreateTestCashAccount(t, db, user.ID)
 
-		tx, err := txSvc.CreateTransfer(user.ID, from.ID, to.ID, 3000, nil, "Transfer", time.Now())
+		tx, err := txSvc.CreateTransfer(user.ID, from.ID, to.ID, 3000, nil, "Transfer", time.Now(), TransactionMeta{})
 		testutil.AssertNoError(t, err)
 
 		if tx.Type != models.TransactionTypeTransfer {
@@ -191,7 +191,7 @@ func TestCreateTransfer(t *testing.T) {
 		user := testutil.CreateTestUser(t, db)
 		account := testutil.CreateTestCashAccountWithBalance(t, db, user.ID, 10000)
 
-		_, err := txSvc.CreateTransfer(user.ID, account.ID, account.ID, 1000, nil, "", time.Now())
+		_, err := txSvc.CreateTransfer(user.ID, account.ID, account.ID, 1000, nil, "", time.Now(), TransactionMeta{})
 		testutil.AssertAppError(t, err, "SAME_ACCOUNT_TRANSFER")
 	})
 
@@ -204,7 +204,7 @@ func TestCreateTransfer(t *testing.T) {
 		from := testutil.CreateTestCashAccountWithBalance(t, db, user.ID, 1000)
 		to := testutil.CreateTestCashAccount(t, db, user.ID)
 
-		_, err := txSvc.CreateTransfer(user.ID, from.ID, to.ID, 5000, nil, "", time.Now())
+		_, err := txSvc.CreateTransfer(user.ID, from.ID, to.ID, 5000, nil, "", time.Now(), TransactionMeta{})
 		testutil.AssertAppError(t, err, "INSUFFICIENT_BALANCE")
 
 		// Verify balances unchanged
@@ -224,7 +224,7 @@ func TestCreateTransfer(t *testing.T) {
 		from := testutil.CreateTestCashAccountWithBalance(t, db, user.ID, 10000)
 		to := testutil.CreateTestCashAccount(t, db, user.ID)
 
-		_, err := txSvc.CreateTransfer(user.ID, from.ID, to.ID, 0, nil, "", time.Now())
+		_, err := txSvc.CreateTransfer(user.ID, from.ID, to.ID, 0, nil, "", time.Now(), TransactionMeta{})
 		testutil.AssertAppError(t, err, "INVALID_INPUT")
 	})
 
@@ -236,7 +236,7 @@ func TestCreateTransfer(t *testing.T) {
 		user := testutil.CreateTestUser(t, db)
 		to := testutil.CreateTestCashAccount(t, db, user.ID)
 
-		_, err := txSvc.CreateTransfer(user.ID, "99999", to.ID, 1000, nil, "", time.Now())
+		_, err := txSvc.CreateTransfer(user.ID, "99999", to.ID, 1000, nil, "", time.Now(), TransactionMeta{})
 		testutil.AssertAppError(t, err, "ACCOUNT_NOT_FOUND")
 	})
 
@@ -248,7 +248,7 @@ func TestCreateTransfer(t *testing.T) {
 		user := testutil.CreateTestUser(t, db)
 		from := testutil.CreateTestCashAccountWithBalance(t, db, user.ID, 10000)
 
-		_, err := txSvc.CreateTransfer(user.ID, from.ID, "99999", 1000, nil, "", time.Now())
+		_, err := txSvc.CreateTransfer(user.ID, from.ID, "99999", 1000, nil, "", time.Now(), TransactionMeta{})
 		testutil.AssertAppError(t, err, "ACCOUNT_NOT_FOUND")
 	})
 }
@@ -728,7 +728,7 @@ func TestDeleteTransaction(t *testing.T) {
 		user := testutil.CreateTestUser(t, db)
 		account := testutil.CreateTestCashAccount(t, db, user.ID)
 
-		tx, err := txSvc.CreateTransaction(user.ID, account.ID, nil, models.TransactionTypeIncome, 5000, "Income", time.Now())
+		tx, err := txSvc.CreateTransaction(user.ID, account.ID, nil, models.TransactionTypeIncome, 5000, "Income", time.Now(), TransactionMeta{})
 		testutil.AssertNoError(t, err)
 
 		// Verify balance increased
@@ -756,7 +756,7 @@ func TestDeleteTransaction(t *testing.T) {
 		user := testutil.CreateTestUser(t, db)
 		account := testutil.CreateTestCashAccountWithBalance(t, db, user.ID, 10000)
 
-		tx, err := txSvc.CreateTransaction(user.ID, account.ID, nil, models.TransactionTypeExpense, 3000, "Expense", time.Now())
+		tx, err := txSvc.CreateTransaction(user.ID, account.ID, nil, models.TransactionTypeExpense, 3000, "Expense", time.Now(), TransactionMeta{})
 		testutil.AssertNoError(t, err)
 
 		// Verify balance decreased
@@ -785,7 +785,7 @@ func TestDeleteTransaction(t *testing.T) {
 		from := testutil.CreateTestCashAccountWithBalance(t, db, user.ID, 10000)
 		to := testutil.CreateTestCashAccount(t, db, user.ID)
 
-		tx, err := txSvc.CreateTransfer(user.ID, from.ID, to.ID, 4000, nil, "Transfer", time.Now())
+		tx, err := txSvc.CreateTransfer(user.ID, from.ID, to.ID, 4000, nil, "Transfer", time.Now(), TransactionMeta{})
 		testutil.AssertNoError(t, err)
 
 		// Verify balances after transfer
@@ -833,7 +833,7 @@ func TestDeleteTransaction(t *testing.T) {
 		user2 := testutil.CreateTestUser(t, db)
 		account := testutil.CreateTestCashAccount(t, db, user1.ID)
 
-		tx, err := txSvc.CreateTransaction(user1.ID, account.ID, nil, models.TransactionTypeIncome, 1000, "", time.Now())
+		tx, err := txSvc.CreateTransaction(user1.ID, account.ID, nil, models.TransactionTypeIncome, 1000, "", time.Now(), TransactionMeta{})
 		testutil.AssertNoError(t, err)
 
 		err = txSvc.DeleteTransaction(user2.ID, tx.ID)
@@ -850,7 +850,7 @@ func TestUpdateTransaction(t *testing.T) {
 		user := testutil.CreateTestUser(t, db)
 		account := testutil.CreateTestCashAccount(t, db, user.ID)
 
-		tx, err := txSvc.CreateTransaction(user.ID, account.ID, nil, models.TransactionTypeIncome, 5000, "Salary", time.Now())
+		tx, err := txSvc.CreateTransaction(user.ID, account.ID, nil, models.TransactionTypeIncome, 5000, "Salary", time.Now(), TransactionMeta{})
 		testutil.AssertNoError(t, err)
 
 		// Balance should be 5000
@@ -883,7 +883,7 @@ func TestUpdateTransaction(t *testing.T) {
 		user := testutil.CreateTestUser(t, db)
 		account := testutil.CreateTestCashAccountWithBalance(t, db, user.ID, 10000)
 
-		tx, err := txSvc.CreateTransaction(user.ID, account.ID, nil, models.TransactionTypeIncome, 5000, "Income", time.Now())
+		tx, err := txSvc.CreateTransaction(user.ID, account.ID, nil, models.TransactionTypeIncome, 5000, "Income", time.Now(), TransactionMeta{})
 		testutil.AssertNoError(t, err)
 
 		// Verify balance is now 15000 (10000 initial + 5000 income)
@@ -912,7 +912,7 @@ func TestUpdateTransaction(t *testing.T) {
 		user := testutil.CreateTestUser(t, db)
 		account := testutil.CreateTestCashAccountWithBalance(t, db, user.ID, 10000)
 
-		tx, err := txSvc.CreateTransaction(user.ID, account.ID, nil, models.TransactionTypeExpense, 3000, "Expense", time.Now())
+		tx, err := txSvc.CreateTransaction(user.ID, account.ID, nil, models.TransactionTypeExpense, 3000, "Expense", time.Now(), TransactionMeta{})
 		testutil.AssertNoError(t, err)
 
 		// Verify balance is now 7000 (10000 initial - 3000 expense)
@@ -942,7 +942,7 @@ func TestUpdateTransaction(t *testing.T) {
 		acctA := testutil.CreateTestCashAccount(t, db, user.ID)
 		acctB := testutil.CreateTestCashAccount(t, db, user.ID)
 
-		tx, err := txSvc.CreateTransaction(user.ID, acctA.ID, nil, models.TransactionTypeIncome, 5000, "Income", time.Now())
+		tx, err := txSvc.CreateTransaction(user.ID, acctA.ID, nil, models.TransactionTypeIncome, 5000, "Income", time.Now(), TransactionMeta{})
 		testutil.AssertNoError(t, err)
 
 		// A: 5000, B: 0
@@ -977,7 +977,7 @@ func TestUpdateTransaction(t *testing.T) {
 		cat1 := testutil.CreateTestCategory(t, db, user.ID, models.CategoryTypeExpense)
 		cat2 := testutil.CreateTestCategory(t, db, user.ID, models.CategoryTypeExpense)
 
-		tx, err := txSvc.CreateTransaction(user.ID, account.ID, &cat1.ID, models.TransactionTypeExpense, 1000, "Expense", time.Now())
+		tx, err := txSvc.CreateTransaction(user.ID, account.ID, &cat1.ID, models.TransactionTypeExpense, 1000, "Expense", time.Now(), TransactionMeta{})
 		testutil.AssertNoError(t, err)
 
 		// Update to cat2
@@ -999,7 +999,7 @@ func TestUpdateTransaction(t *testing.T) {
 		account := testutil.CreateTestCashAccount(t, db, user.ID)
 		cat := testutil.CreateTestCategory(t, db, user.ID, models.CategoryTypeExpense)
 
-		tx, err := txSvc.CreateTransaction(user.ID, account.ID, &cat.ID, models.TransactionTypeExpense, 1000, "Expense", time.Now())
+		tx, err := txSvc.CreateTransaction(user.ID, account.ID, &cat.ID, models.TransactionTypeExpense, 1000, "Expense", time.Now(), TransactionMeta{})
 		testutil.AssertNoError(t, err)
 
 		// Clear category: double pointer with nil inner
@@ -1020,7 +1020,7 @@ func TestUpdateTransaction(t *testing.T) {
 		user := testutil.CreateTestUser(t, db)
 		account := testutil.CreateTestCashAccount(t, db, user.ID)
 
-		tx, err := txSvc.CreateTransaction(user.ID, account.ID, nil, models.TransactionTypeIncome, 1000, "Old desc", time.Now())
+		tx, err := txSvc.CreateTransaction(user.ID, account.ID, nil, models.TransactionTypeIncome, 1000, "Old desc", time.Now(), TransactionMeta{})
 		testutil.AssertNoError(t, err)
 
 		newDesc := "New description"
@@ -1048,7 +1048,7 @@ func TestUpdateTransaction(t *testing.T) {
 		from := testutil.CreateTestCashAccountWithBalance(t, db, user.ID, 10000)
 		to := testutil.CreateTestCashAccount(t, db, user.ID)
 
-		tx, err := txSvc.CreateTransfer(user.ID, from.ID, to.ID, 3000, nil, "Transfer", time.Now())
+		tx, err := txSvc.CreateTransfer(user.ID, from.ID, to.ID, 3000, nil, "Transfer", time.Now(), TransactionMeta{})
 		testutil.AssertNoError(t, err)
 
 		newAmount := int64(5000)
@@ -1087,7 +1087,7 @@ func TestUpdateTransaction(t *testing.T) {
 		user := testutil.CreateTestUser(t, db)
 		account := testutil.CreateTestCashAccount(t, db, user.ID)
 
-		tx, err := txSvc.CreateTransaction(user.ID, account.ID, nil, models.TransactionTypeIncome, 1000, "", time.Now())
+		tx, err := txSvc.CreateTransaction(user.ID, account.ID, nil, models.TransactionTypeIncome, 1000, "", time.Now(), TransactionMeta{})
 		testutil.AssertNoError(t, err)
 
 		transferType := models.TransactionTypeTransfer
@@ -1103,7 +1103,7 @@ func TestUpdateTransaction(t *testing.T) {
 		user := testutil.CreateTestUser(t, db)
 		account := testutil.CreateTestCashAccount(t, db, user.ID)
 
-		tx, err := txSvc.CreateTransaction(user.ID, account.ID, nil, models.TransactionTypeIncome, 1000, "", time.Now())
+		tx, err := txSvc.CreateTransaction(user.ID, account.ID, nil, models.TransactionTypeIncome, 1000, "", time.Now(), TransactionMeta{})
 		testutil.AssertNoError(t, err)
 
 		investType := models.TransactionTypeInvestment
@@ -1120,7 +1120,7 @@ func TestUpdateTransaction(t *testing.T) {
 		user2 := testutil.CreateTestUser(t, db)
 		account := testutil.CreateTestCashAccount(t, db, user1.ID)
 
-		tx, err := txSvc.CreateTransaction(user1.ID, account.ID, nil, models.TransactionTypeIncome, 1000, "", time.Now())
+		tx, err := txSvc.CreateTransaction(user1.ID, account.ID, nil, models.TransactionTypeIncome, 1000, "", time.Now(), TransactionMeta{})
 		testutil.AssertNoError(t, err)
 
 		newAmount := int64(2000)
@@ -1147,13 +1147,13 @@ func TestGetSpendingByCategory(t *testing.T) {
 		catB := testutil.CreateTestCategory(t, db, user.ID, models.CategoryTypeExpense)
 
 		// Two expenses for catA
-		_, err := txSvc.CreateTransaction(user.ID, account.ID, &catA.ID, models.TransactionTypeExpense, 3000, "", from.Add(time.Hour))
+		_, err := txSvc.CreateTransaction(user.ID, account.ID, &catA.ID, models.TransactionTypeExpense, 3000, "", from.Add(time.Hour), TransactionMeta{})
 		testutil.AssertNoError(t, err)
-		_, err = txSvc.CreateTransaction(user.ID, account.ID, &catA.ID, models.TransactionTypeExpense, 2000, "", from.Add(2*time.Hour))
+		_, err = txSvc.CreateTransaction(user.ID, account.ID, &catA.ID, models.TransactionTypeExpense, 2000, "", from.Add(2*time.Hour), TransactionMeta{})
 		testutil.AssertNoError(t, err)
 
 		// One expense for catB
-		_, err = txSvc.CreateTransaction(user.ID, account.ID, &catB.ID, models.TransactionTypeExpense, 1500, "", from.Add(3*time.Hour))
+		_, err = txSvc.CreateTransaction(user.ID, account.ID, &catB.ID, models.TransactionTypeExpense, 1500, "", from.Add(3*time.Hour), TransactionMeta{})
 		testutil.AssertNoError(t, err)
 
 		result, err := txSvc.GetSpendingByCategory(user.ID, from, to)
@@ -1183,7 +1183,7 @@ func TestGetSpendingByCategory(t *testing.T) {
 		setBaseUSD(t, db, user.ID)
 		account := testutil.CreateTestCashAccountWithBalance(t, db, user.ID, 100000)
 
-		_, err := txSvc.CreateTransaction(user.ID, account.ID, nil, models.TransactionTypeExpense, 2500, "", from.Add(time.Hour))
+		_, err := txSvc.CreateTransaction(user.ID, account.ID, nil, models.TransactionTypeExpense, 2500, "", from.Add(time.Hour), TransactionMeta{})
 		testutil.AssertNoError(t, err)
 
 		result, err := txSvc.GetSpendingByCategory(user.ID, from, to)
@@ -1216,12 +1216,12 @@ func TestGetSpendingByCategory(t *testing.T) {
 
 		// January expense (out of range for February query)
 		jan := time.Date(now.Year(), 1, 15, 12, 0, 0, 0, time.UTC)
-		_, err := txSvc.CreateTransaction(user.ID, account.ID, &cat.ID, models.TransactionTypeExpense, 1000, "", jan)
+		_, err := txSvc.CreateTransaction(user.ID, account.ID, &cat.ID, models.TransactionTypeExpense, 1000, "", jan, TransactionMeta{})
 		testutil.AssertNoError(t, err)
 
 		// February expense (in range)
 		feb := time.Date(now.Year(), 2, 15, 12, 0, 0, 0, time.UTC)
-		_, err = txSvc.CreateTransaction(user.ID, account.ID, &cat.ID, models.TransactionTypeExpense, 2000, "", feb)
+		_, err = txSvc.CreateTransaction(user.ID, account.ID, &cat.ID, models.TransactionTypeExpense, 2000, "", feb, TransactionMeta{})
 		testutil.AssertNoError(t, err)
 
 		febFrom := time.Date(now.Year(), 2, 1, 0, 0, 0, 0, time.UTC)
@@ -1245,11 +1245,11 @@ func TestGetSpendingByCategory(t *testing.T) {
 		account2 := testutil.CreateTestCashAccount(t, db, user.ID)
 
 		// Income transaction
-		_, err := txSvc.CreateTransaction(user.ID, account.ID, nil, models.TransactionTypeIncome, 5000, "", from.Add(time.Hour))
+		_, err := txSvc.CreateTransaction(user.ID, account.ID, nil, models.TransactionTypeIncome, 5000, "", from.Add(time.Hour), TransactionMeta{})
 		testutil.AssertNoError(t, err)
 
 		// Transfer transaction
-		_, err = txSvc.CreateTransfer(user.ID, account.ID, account2.ID, 1000, nil, "", from.Add(2*time.Hour))
+		_, err = txSvc.CreateTransfer(user.ID, account.ID, account2.ID, 1000, nil, "", from.Add(2*time.Hour), TransactionMeta{})
 		testutil.AssertNoError(t, err)
 
 		result, err := txSvc.GetSpendingByCategory(user.ID, from, to)
@@ -1294,9 +1294,9 @@ func TestGetSpendingByCategory(t *testing.T) {
 		accountA := testutil.CreateTestCashAccountWithBalance(t, db, userA.ID, 100000)
 		accountB := testutil.CreateTestCashAccountWithBalance(t, db, userB.ID, 100000)
 
-		_, err := txSvc.CreateTransaction(userA.ID, accountA.ID, nil, models.TransactionTypeExpense, 3000, "", from.Add(time.Hour))
+		_, err := txSvc.CreateTransaction(userA.ID, accountA.ID, nil, models.TransactionTypeExpense, 3000, "", from.Add(time.Hour), TransactionMeta{})
 		testutil.AssertNoError(t, err)
-		_, err = txSvc.CreateTransaction(userB.ID, accountB.ID, nil, models.TransactionTypeExpense, 5000, "", from.Add(time.Hour))
+		_, err = txSvc.CreateTransaction(userB.ID, accountB.ID, nil, models.TransactionTypeExpense, 5000, "", from.Add(time.Hour), TransactionMeta{})
 		testutil.AssertNoError(t, err)
 
 		result, err := txSvc.GetSpendingByCategory(userA.ID, from, to)
@@ -1319,7 +1319,7 @@ func TestGetSpendingByCategory(t *testing.T) {
 		// CreateTestCategory creates categories without a color set
 		cat := testutil.CreateTestCategory(t, db, user.ID, models.CategoryTypeExpense)
 
-		_, err := txSvc.CreateTransaction(user.ID, account.ID, &cat.ID, models.TransactionTypeExpense, 1000, "", from.Add(time.Hour))
+		_, err := txSvc.CreateTransaction(user.ID, account.ID, &cat.ID, models.TransactionTypeExpense, 1000, "", from.Add(time.Hour), TransactionMeta{})
 		testutil.AssertNoError(t, err)
 
 		result, err := txSvc.GetSpendingByCategory(user.ID, from, to)
@@ -1359,7 +1359,7 @@ func TestGetSpendingByCategory(t *testing.T) {
 			t.Fatalf("failed to create category: %v", err)
 		}
 
-		_, err := txSvc.CreateTransaction(user.ID, account.ID, &cat.ID, models.TransactionTypeExpense, 1000, "", from.Add(time.Hour))
+		_, err := txSvc.CreateTransaction(user.ID, account.ID, &cat.ID, models.TransactionTypeExpense, 1000, "", from.Add(time.Hour), TransactionMeta{})
 		testutil.AssertNoError(t, err)
 
 		result, err := txSvc.GetSpendingByCategory(user.ID, from, to)
@@ -1386,11 +1386,11 @@ func TestGetSpendingByCategory(t *testing.T) {
 		catMedium := testutil.CreateTestCategory(t, db, user.ID, models.CategoryTypeExpense)
 		catLarge := testutil.CreateTestCategory(t, db, user.ID, models.CategoryTypeExpense)
 
-		_, err := txSvc.CreateTransaction(user.ID, account.ID, &catSmall.ID, models.TransactionTypeExpense, 1000, "", from.Add(time.Hour))
+		_, err := txSvc.CreateTransaction(user.ID, account.ID, &catSmall.ID, models.TransactionTypeExpense, 1000, "", from.Add(time.Hour), TransactionMeta{})
 		testutil.AssertNoError(t, err)
-		_, err = txSvc.CreateTransaction(user.ID, account.ID, &catMedium.ID, models.TransactionTypeExpense, 3000, "", from.Add(2*time.Hour))
+		_, err = txSvc.CreateTransaction(user.ID, account.ID, &catMedium.ID, models.TransactionTypeExpense, 3000, "", from.Add(2*time.Hour), TransactionMeta{})
 		testutil.AssertNoError(t, err)
-		_, err = txSvc.CreateTransaction(user.ID, account.ID, &catLarge.ID, models.TransactionTypeExpense, 5000, "", from.Add(3*time.Hour))
+		_, err = txSvc.CreateTransaction(user.ID, account.ID, &catLarge.ID, models.TransactionTypeExpense, 5000, "", from.Add(3*time.Hour), TransactionMeta{})
 		testutil.AssertNoError(t, err)
 
 		result, err := txSvc.GetSpendingByCategory(user.ID, from, to)
@@ -1429,11 +1429,11 @@ func TestGetCashflow(t *testing.T) {
 		dividends := testutil.CreateTestCategory(t, db, user.ID, models.CategoryTypeIncome)
 		rent := testutil.CreateTestCategory(t, db, user.ID, models.CategoryTypeExpense)
 
-		_, err := txSvc.CreateTransaction(user.ID, account.ID, &salary.ID, models.TransactionTypeIncome, 8000, "", from.Add(time.Hour))
+		_, err := txSvc.CreateTransaction(user.ID, account.ID, &salary.ID, models.TransactionTypeIncome, 8000, "", from.Add(time.Hour), TransactionMeta{})
 		testutil.AssertNoError(t, err)
-		_, err = txSvc.CreateTransaction(user.ID, account.ID, &dividends.ID, models.TransactionTypeIncome, 2000, "", from.Add(2*time.Hour))
+		_, err = txSvc.CreateTransaction(user.ID, account.ID, &dividends.ID, models.TransactionTypeIncome, 2000, "", from.Add(2*time.Hour), TransactionMeta{})
 		testutil.AssertNoError(t, err)
-		_, err = txSvc.CreateTransaction(user.ID, account.ID, &rent.ID, models.TransactionTypeExpense, 3000, "", from.Add(3*time.Hour))
+		_, err = txSvc.CreateTransaction(user.ID, account.ID, &rent.ID, models.TransactionTypeExpense, 3000, "", from.Add(3*time.Hour), TransactionMeta{})
 		testutil.AssertNoError(t, err)
 
 		result, err := txSvc.GetCashflow(user.ID, from, to)
@@ -1470,9 +1470,9 @@ func TestGetCashflow(t *testing.T) {
 		account := testutil.CreateTestCashAccountWithBalance(t, db, user.ID, 100000)
 		account2 := testutil.CreateTestCashAccount(t, db, user.ID)
 
-		_, err := txSvc.CreateTransaction(user.ID, account.ID, nil, models.TransactionTypeIncome, 5000, "", from.Add(time.Hour))
+		_, err := txSvc.CreateTransaction(user.ID, account.ID, nil, models.TransactionTypeIncome, 5000, "", from.Add(time.Hour), TransactionMeta{})
 		testutil.AssertNoError(t, err)
-		_, err = txSvc.CreateTransfer(user.ID, account.ID, account2.ID, 1000, nil, "", from.Add(2*time.Hour))
+		_, err = txSvc.CreateTransfer(user.ID, account.ID, account2.ID, 1000, nil, "", from.Add(2*time.Hour), TransactionMeta{})
 		testutil.AssertNoError(t, err)
 
 		result, err := txSvc.GetCashflow(user.ID, from, to)
@@ -1517,9 +1517,9 @@ func TestGetCashflow(t *testing.T) {
 		accountA := testutil.CreateTestCashAccountWithBalance(t, db, userA.ID, 100000)
 		accountB := testutil.CreateTestCashAccountWithBalance(t, db, userB.ID, 100000)
 
-		_, err := txSvc.CreateTransaction(userA.ID, accountA.ID, nil, models.TransactionTypeIncome, 3000, "", from.Add(time.Hour))
+		_, err := txSvc.CreateTransaction(userA.ID, accountA.ID, nil, models.TransactionTypeIncome, 3000, "", from.Add(time.Hour), TransactionMeta{})
 		testutil.AssertNoError(t, err)
-		_, err = txSvc.CreateTransaction(userB.ID, accountB.ID, nil, models.TransactionTypeIncome, 9000, "", from.Add(time.Hour))
+		_, err = txSvc.CreateTransaction(userB.ID, accountB.ID, nil, models.TransactionTypeIncome, 9000, "", from.Add(time.Hour), TransactionMeta{})
 		testutil.AssertNoError(t, err)
 
 		result, err := txSvc.GetCashflow(userA.ID, from, to)
@@ -1545,16 +1545,16 @@ func TestGetMonthlySummary(t *testing.T) {
 
 		// Current month: income 10000, expense 5000
 		curMonth := time.Date(now.Year(), now.Month(), 10, 12, 0, 0, 0, time.UTC)
-		_, err := txSvc.CreateTransaction(user.ID, account.ID, nil, models.TransactionTypeIncome, 10000, "", curMonth)
+		_, err := txSvc.CreateTransaction(user.ID, account.ID, nil, models.TransactionTypeIncome, 10000, "", curMonth, TransactionMeta{})
 		testutil.AssertNoError(t, err)
-		_, err = txSvc.CreateTransaction(user.ID, account.ID, nil, models.TransactionTypeExpense, 5000, "", curMonth)
+		_, err = txSvc.CreateTransaction(user.ID, account.ID, nil, models.TransactionTypeExpense, 5000, "", curMonth, TransactionMeta{})
 		testutil.AssertNoError(t, err)
 
 		// Previous month: income 8000, expense 3000
 		prevMonth := curMonth.AddDate(0, -1, 0)
-		_, err = txSvc.CreateTransaction(user.ID, account.ID, nil, models.TransactionTypeIncome, 8000, "", prevMonth)
+		_, err = txSvc.CreateTransaction(user.ID, account.ID, nil, models.TransactionTypeIncome, 8000, "", prevMonth, TransactionMeta{})
 		testutil.AssertNoError(t, err)
-		_, err = txSvc.CreateTransaction(user.ID, account.ID, nil, models.TransactionTypeExpense, 3000, "", prevMonth)
+		_, err = txSvc.CreateTransaction(user.ID, account.ID, nil, models.TransactionTypeExpense, 3000, "", prevMonth, TransactionMeta{})
 		testutil.AssertNoError(t, err)
 
 		result, err := txSvc.GetMonthlySummary(user.ID, 2)
@@ -1616,7 +1616,7 @@ func TestGetMonthlySummary(t *testing.T) {
 		curMonth := time.Date(now.Year(), now.Month(), 10, 12, 0, 0, 0, time.UTC)
 
 		// Transfer
-		_, err := txSvc.CreateTransfer(user.ID, account.ID, account2.ID, 2000, nil, "", curMonth)
+		_, err := txSvc.CreateTransfer(user.ID, account.ID, account2.ID, 2000, nil, "", curMonth, TransactionMeta{})
 		testutil.AssertNoError(t, err)
 
 		result, err := txSvc.GetMonthlySummary(user.ID, 1)
@@ -1647,7 +1647,7 @@ func TestGetMonthlySummary(t *testing.T) {
 
 		// Add a regular income transaction in the current month
 		curMonth := time.Date(now.Year(), now.Month(), 10, 12, 0, 0, 0, time.UTC)
-		_, err = txSvc.CreateTransaction(user.ID, account.ID, nil, models.TransactionTypeIncome, 7000, "Salary", curMonth)
+		_, err = txSvc.CreateTransaction(user.ID, account.ID, nil, models.TransactionTypeIncome, 7000, "Salary", curMonth, TransactionMeta{})
 		testutil.AssertNoError(t, err)
 
 		result, err := txSvc.GetMonthlySummary(user.ID, 1)
@@ -1676,9 +1676,9 @@ func TestGetMonthlySummary(t *testing.T) {
 
 		curMonth := time.Date(now.Year(), now.Month(), 10, 12, 0, 0, 0, time.UTC)
 
-		_, err := txSvc.CreateTransaction(userA.ID, accountA.ID, nil, models.TransactionTypeIncome, 5000, "", curMonth)
+		_, err := txSvc.CreateTransaction(userA.ID, accountA.ID, nil, models.TransactionTypeIncome, 5000, "", curMonth, TransactionMeta{})
 		testutil.AssertNoError(t, err)
-		_, err = txSvc.CreateTransaction(userB.ID, accountB.ID, nil, models.TransactionTypeIncome, 9000, "", curMonth)
+		_, err = txSvc.CreateTransaction(userB.ID, accountB.ID, nil, models.TransactionTypeIncome, 9000, "", curMonth, TransactionMeta{})
 		testutil.AssertNoError(t, err)
 
 		result, err := txSvc.GetMonthlySummary(userA.ID, 1)
@@ -1707,13 +1707,13 @@ func TestGetDailySpending(t *testing.T) {
 		account := testutil.CreateTestCashAccountWithBalance(t, db, user.ID, 100000)
 
 		// Day 1: two expenses (3000 + 2000 = 5000)
-		_, err := txSvc.CreateTransaction(user.ID, account.ID, nil, models.TransactionTypeExpense, 3000, "", time.Date(2026, 2, 1, 10, 0, 0, 0, time.UTC))
+		_, err := txSvc.CreateTransaction(user.ID, account.ID, nil, models.TransactionTypeExpense, 3000, "", time.Date(2026, 2, 1, 10, 0, 0, 0, time.UTC), TransactionMeta{})
 		testutil.AssertNoError(t, err)
-		_, err = txSvc.CreateTransaction(user.ID, account.ID, nil, models.TransactionTypeExpense, 2000, "", time.Date(2026, 2, 1, 14, 0, 0, 0, time.UTC))
+		_, err = txSvc.CreateTransaction(user.ID, account.ID, nil, models.TransactionTypeExpense, 2000, "", time.Date(2026, 2, 1, 14, 0, 0, 0, time.UTC), TransactionMeta{})
 		testutil.AssertNoError(t, err)
 
 		// Day 3: one expense (1500)
-		_, err = txSvc.CreateTransaction(user.ID, account.ID, nil, models.TransactionTypeExpense, 1500, "", time.Date(2026, 2, 3, 12, 0, 0, 0, time.UTC))
+		_, err = txSvc.CreateTransaction(user.ID, account.ID, nil, models.TransactionTypeExpense, 1500, "", time.Date(2026, 2, 3, 12, 0, 0, 0, time.UTC), TransactionMeta{})
 		testutil.AssertNoError(t, err)
 
 		result, err := txSvc.GetDailySpending(user.ID, from, to)
@@ -1744,7 +1744,7 @@ func TestGetDailySpending(t *testing.T) {
 
 		fiveDay := time.Date(2026, 2, 5, 23, 59, 59, 0, time.UTC)
 
-		_, err := txSvc.CreateTransaction(user.ID, account.ID, nil, models.TransactionTypeExpense, 1000, "", time.Date(2026, 2, 1, 12, 0, 0, 0, time.UTC))
+		_, err := txSvc.CreateTransaction(user.ID, account.ID, nil, models.TransactionTypeExpense, 1000, "", time.Date(2026, 2, 1, 12, 0, 0, 0, time.UTC), TransactionMeta{})
 		testutil.AssertNoError(t, err)
 
 		result, err := txSvc.GetDailySpending(user.ID, from, fiveDay)
@@ -1773,11 +1773,11 @@ func TestGetDailySpending(t *testing.T) {
 		day1 := time.Date(2026, 2, 1, 12, 0, 0, 0, time.UTC)
 
 		// Income
-		_, err := txSvc.CreateTransaction(user.ID, account.ID, nil, models.TransactionTypeIncome, 5000, "", day1)
+		_, err := txSvc.CreateTransaction(user.ID, account.ID, nil, models.TransactionTypeIncome, 5000, "", day1, TransactionMeta{})
 		testutil.AssertNoError(t, err)
 
 		// Transfer
-		_, err = txSvc.CreateTransfer(user.ID, account.ID, account2.ID, 1000, nil, "", day1)
+		_, err = txSvc.CreateTransfer(user.ID, account.ID, account2.ID, 1000, nil, "", day1, TransactionMeta{})
 		testutil.AssertNoError(t, err)
 
 		result, err := txSvc.GetDailySpending(user.ID, from, to)
@@ -1800,11 +1800,11 @@ func TestGetDailySpending(t *testing.T) {
 		account := testutil.CreateTestCashAccountWithBalance(t, db, user.ID, 100000)
 
 		// Expense before range
-		_, err := txSvc.CreateTransaction(user.ID, account.ID, nil, models.TransactionTypeExpense, 1000, "", time.Date(2026, 1, 31, 12, 0, 0, 0, time.UTC))
+		_, err := txSvc.CreateTransaction(user.ID, account.ID, nil, models.TransactionTypeExpense, 1000, "", time.Date(2026, 1, 31, 12, 0, 0, 0, time.UTC), TransactionMeta{})
 		testutil.AssertNoError(t, err)
 
 		// Expense after range
-		_, err = txSvc.CreateTransaction(user.ID, account.ID, nil, models.TransactionTypeExpense, 2000, "", time.Date(2026, 2, 4, 12, 0, 0, 0, time.UTC))
+		_, err = txSvc.CreateTransaction(user.ID, account.ID, nil, models.TransactionTypeExpense, 2000, "", time.Date(2026, 2, 4, 12, 0, 0, 0, time.UTC), TransactionMeta{})
 		testutil.AssertNoError(t, err)
 
 		result, err := txSvc.GetDailySpending(user.ID, from, to)
@@ -1831,9 +1831,9 @@ func TestGetDailySpending(t *testing.T) {
 
 		day1 := time.Date(2026, 2, 1, 12, 0, 0, 0, time.UTC)
 
-		_, err := txSvc.CreateTransaction(userA.ID, accountA.ID, nil, models.TransactionTypeExpense, 3000, "", day1)
+		_, err := txSvc.CreateTransaction(userA.ID, accountA.ID, nil, models.TransactionTypeExpense, 3000, "", day1, TransactionMeta{})
 		testutil.AssertNoError(t, err)
-		_, err = txSvc.CreateTransaction(userB.ID, accountB.ID, nil, models.TransactionTypeExpense, 7000, "", day1)
+		_, err = txSvc.CreateTransaction(userB.ID, accountB.ID, nil, models.TransactionTypeExpense, 7000, "", day1, TransactionMeta{})
 		testutil.AssertNoError(t, err)
 
 		result, err := txSvc.GetDailySpending(userA.ID, from, to)
@@ -1859,13 +1859,13 @@ func TestGetDailySummary(t *testing.T) {
 		account := testutil.CreateTestCashAccountWithBalance(t, db, user.ID, 100000)
 
 		// Day 1: income 10000, expense 3000
-		_, err := txSvc.CreateTransaction(user.ID, account.ID, nil, models.TransactionTypeIncome, 10000, "salary", time.Date(2026, 2, 1, 9, 0, 0, 0, time.UTC))
+		_, err := txSvc.CreateTransaction(user.ID, account.ID, nil, models.TransactionTypeIncome, 10000, "salary", time.Date(2026, 2, 1, 9, 0, 0, 0, time.UTC), TransactionMeta{})
 		testutil.AssertNoError(t, err)
-		_, err = txSvc.CreateTransaction(user.ID, account.ID, nil, models.TransactionTypeExpense, 3000, "", time.Date(2026, 2, 1, 14, 0, 0, 0, time.UTC))
+		_, err = txSvc.CreateTransaction(user.ID, account.ID, nil, models.TransactionTypeExpense, 3000, "", time.Date(2026, 2, 1, 14, 0, 0, 0, time.UTC), TransactionMeta{})
 		testutil.AssertNoError(t, err)
 
 		// Day 3: expense only (1500)
-		_, err = txSvc.CreateTransaction(user.ID, account.ID, nil, models.TransactionTypeExpense, 1500, "", time.Date(2026, 2, 3, 12, 0, 0, 0, time.UTC))
+		_, err = txSvc.CreateTransaction(user.ID, account.ID, nil, models.TransactionTypeExpense, 1500, "", time.Date(2026, 2, 3, 12, 0, 0, 0, time.UTC), TransactionMeta{})
 		testutil.AssertNoError(t, err)
 
 		result, err := txSvc.GetDailySummary(user.ID, from, to)
@@ -1922,9 +1922,9 @@ func TestGetDailySummary(t *testing.T) {
 
 		day1 := time.Date(2026, 2, 1, 12, 0, 0, 0, time.UTC)
 
-		_, err := txSvc.CreateTransaction(userA.ID, accountA.ID, nil, models.TransactionTypeExpense, 3000, "", day1)
+		_, err := txSvc.CreateTransaction(userA.ID, accountA.ID, nil, models.TransactionTypeExpense, 3000, "", day1, TransactionMeta{})
 		testutil.AssertNoError(t, err)
-		_, err = txSvc.CreateTransaction(userB.ID, accountB.ID, nil, models.TransactionTypeExpense, 7000, "", day1)
+		_, err = txSvc.CreateTransaction(userB.ID, accountB.ID, nil, models.TransactionTypeExpense, 7000, "", day1, TransactionMeta{})
 		testutil.AssertNoError(t, err)
 
 		result, err := txSvc.GetDailySummary(userA.ID, from, to)
@@ -1950,11 +1950,11 @@ func TestGetTopExpenses(t *testing.T) {
 		account := testutil.CreateTestCashAccountWithBalance(t, db, user.ID, 100000)
 		cat := testutil.CreateTestCategory(t, db, user.ID, models.CategoryTypeExpense)
 
-		_, err := txSvc.CreateTransaction(user.ID, account.ID, &cat.ID, models.TransactionTypeExpense, 1500, "small", from.Add(time.Hour))
+		_, err := txSvc.CreateTransaction(user.ID, account.ID, &cat.ID, models.TransactionTypeExpense, 1500, "small", from.Add(time.Hour), TransactionMeta{})
 		testutil.AssertNoError(t, err)
-		_, err = txSvc.CreateTransaction(user.ID, account.ID, &cat.ID, models.TransactionTypeExpense, 5000, "big", from.Add(2*time.Hour))
+		_, err = txSvc.CreateTransaction(user.ID, account.ID, &cat.ID, models.TransactionTypeExpense, 5000, "big", from.Add(2*time.Hour), TransactionMeta{})
 		testutil.AssertNoError(t, err)
-		_, err = txSvc.CreateTransaction(user.ID, account.ID, &cat.ID, models.TransactionTypeExpense, 3000, "medium", from.Add(3*time.Hour))
+		_, err = txSvc.CreateTransaction(user.ID, account.ID, &cat.ID, models.TransactionTypeExpense, 3000, "medium", from.Add(3*time.Hour), TransactionMeta{})
 		testutil.AssertNoError(t, err)
 
 		result, err := txSvc.GetTopExpenses(user.ID, from, to, 10, nil)
@@ -1981,7 +1981,7 @@ func TestGetTopExpenses(t *testing.T) {
 		account := testutil.CreateTestCashAccountWithBalance(t, db, user.ID, 100000)
 
 		for i := 1; i <= 5; i++ {
-			_, err := txSvc.CreateTransaction(user.ID, account.ID, nil, models.TransactionTypeExpense, int64(i*1000), "", from.Add(time.Duration(i)*time.Hour))
+			_, err := txSvc.CreateTransaction(user.ID, account.ID, nil, models.TransactionTypeExpense, int64(i*1000), "", from.Add(time.Duration(i)*time.Hour), TransactionMeta{})
 			testutil.AssertNoError(t, err)
 		}
 
@@ -2005,11 +2005,11 @@ func TestGetTopExpenses(t *testing.T) {
 		account := testutil.CreateTestCashAccountWithBalance(t, db, user.ID, 100000)
 		account2 := testutil.CreateTestCashAccount(t, db, user.ID)
 
-		_, err := txSvc.CreateTransaction(user.ID, account.ID, nil, models.TransactionTypeIncome, 9000, "", from.Add(time.Hour))
+		_, err := txSvc.CreateTransaction(user.ID, account.ID, nil, models.TransactionTypeIncome, 9000, "", from.Add(time.Hour), TransactionMeta{})
 		testutil.AssertNoError(t, err)
-		_, err = txSvc.CreateTransfer(user.ID, account.ID, account2.ID, 8000, nil, "", from.Add(2*time.Hour))
+		_, err = txSvc.CreateTransfer(user.ID, account.ID, account2.ID, 8000, nil, "", from.Add(2*time.Hour), TransactionMeta{})
 		testutil.AssertNoError(t, err)
-		_, err = txSvc.CreateTransaction(user.ID, account.ID, nil, models.TransactionTypeExpense, 500, "only expense", from.Add(3*time.Hour))
+		_, err = txSvc.CreateTransaction(user.ID, account.ID, nil, models.TransactionTypeExpense, 500, "only expense", from.Add(3*time.Hour), TransactionMeta{})
 		testutil.AssertNoError(t, err)
 
 		result, err := txSvc.GetTopExpenses(user.ID, from, to, 10, nil)
@@ -2032,11 +2032,11 @@ func TestGetTopExpenses(t *testing.T) {
 		account := testutil.CreateTestCashAccountWithBalance(t, db, user.ID, 100000)
 
 		jan := time.Date(now.Year(), 1, 15, 12, 0, 0, 0, time.UTC)
-		_, err := txSvc.CreateTransaction(user.ID, account.ID, nil, models.TransactionTypeExpense, 9999, "out of range", jan)
+		_, err := txSvc.CreateTransaction(user.ID, account.ID, nil, models.TransactionTypeExpense, 9999, "out of range", jan, TransactionMeta{})
 		testutil.AssertNoError(t, err)
 
 		feb := time.Date(now.Year(), 2, 15, 12, 0, 0, 0, time.UTC)
-		_, err = txSvc.CreateTransaction(user.ID, account.ID, nil, models.TransactionTypeExpense, 4000, "in range", feb)
+		_, err = txSvc.CreateTransaction(user.ID, account.ID, nil, models.TransactionTypeExpense, 4000, "in range", feb, TransactionMeta{})
 		testutil.AssertNoError(t, err)
 
 		febFrom := time.Date(now.Year(), 2, 1, 0, 0, 0, 0, time.UTC)
@@ -2060,7 +2060,7 @@ func TestGetTopExpenses(t *testing.T) {
 		user := testutil.CreateTestUser(t, db)
 		account := testutil.CreateTestCashAccountWithBalance(t, db, user.ID, 100000)
 
-		_, err := txSvc.CreateTransaction(user.ID, account.ID, nil, models.TransactionTypeExpense, 2500, "", from.Add(time.Hour))
+		_, err := txSvc.CreateTransaction(user.ID, account.ID, nil, models.TransactionTypeExpense, 2500, "", from.Add(time.Hour), TransactionMeta{})
 		testutil.AssertNoError(t, err)
 
 		result, err := txSvc.GetTopExpenses(user.ID, from, to, 10, nil)
@@ -2089,7 +2089,7 @@ func TestGetTopExpenses(t *testing.T) {
 		account := testutil.CreateTestCashAccountWithBalance(t, db, user.ID, 100000)
 		cat := testutil.CreateTestCategory(t, db, user.ID, models.CategoryTypeExpense)
 
-		_, err := txSvc.CreateTransaction(user.ID, account.ID, &cat.ID, models.TransactionTypeExpense, 1000, "", from.Add(time.Hour))
+		_, err := txSvc.CreateTransaction(user.ID, account.ID, &cat.ID, models.TransactionTypeExpense, 1000, "", from.Add(time.Hour), TransactionMeta{})
 		testutil.AssertNoError(t, err)
 
 		result, err := txSvc.GetTopExpenses(user.ID, from, to, 10, nil)
@@ -2114,9 +2114,9 @@ func TestGetTopExpenses(t *testing.T) {
 		accountA := testutil.CreateTestCashAccountWithBalance(t, db, userA.ID, 100000)
 		accountB := testutil.CreateTestCashAccountWithBalance(t, db, userB.ID, 100000)
 
-		_, err := txSvc.CreateTransaction(userA.ID, accountA.ID, nil, models.TransactionTypeExpense, 3000, "", from.Add(time.Hour))
+		_, err := txSvc.CreateTransaction(userA.ID, accountA.ID, nil, models.TransactionTypeExpense, 3000, "", from.Add(time.Hour), TransactionMeta{})
 		testutil.AssertNoError(t, err)
-		_, err = txSvc.CreateTransaction(userB.ID, accountB.ID, nil, models.TransactionTypeExpense, 9000, "", from.Add(time.Hour))
+		_, err = txSvc.CreateTransaction(userB.ID, accountB.ID, nil, models.TransactionTypeExpense, 9000, "", from.Add(time.Hour), TransactionMeta{})
 		testutil.AssertNoError(t, err)
 
 		result, err := txSvc.GetTopExpenses(userA.ID, from, to, 10, nil)
@@ -2155,11 +2155,11 @@ func TestGetTopExpenses(t *testing.T) {
 		catA := testutil.CreateTestCategory(t, db, user.ID, models.CategoryTypeExpense)
 		catB := testutil.CreateTestCategory(t, db, user.ID, models.CategoryTypeExpense)
 
-		_, err := txSvc.CreateTransaction(user.ID, account.ID, &catA.ID, models.TransactionTypeExpense, 9000, "catA big", from.Add(time.Hour))
+		_, err := txSvc.CreateTransaction(user.ID, account.ID, &catA.ID, models.TransactionTypeExpense, 9000, "catA big", from.Add(time.Hour), TransactionMeta{})
 		testutil.AssertNoError(t, err)
-		_, err = txSvc.CreateTransaction(user.ID, account.ID, &catB.ID, models.TransactionTypeExpense, 5000, "catB", from.Add(2*time.Hour))
+		_, err = txSvc.CreateTransaction(user.ID, account.ID, &catB.ID, models.TransactionTypeExpense, 5000, "catB", from.Add(2*time.Hour), TransactionMeta{})
 		testutil.AssertNoError(t, err)
-		_, err = txSvc.CreateTransaction(user.ID, account.ID, nil, models.TransactionTypeExpense, 20000, "uncategorized biggest", from.Add(3*time.Hour))
+		_, err = txSvc.CreateTransaction(user.ID, account.ID, nil, models.TransactionTypeExpense, 20000, "uncategorized biggest", from.Add(3*time.Hour), TransactionMeta{})
 		testutil.AssertNoError(t, err)
 
 		result, err := txSvc.GetTopExpenses(user.ID, from, to, 10, &catA.ID)
@@ -2189,12 +2189,12 @@ func TestGetSpendingByCategory_ExcludesZeroEffectiveTotals(t *testing.T) {
 	food := testutil.CreateTestCategory(t, db, user.ID, models.CategoryTypeExpense)
 
 	// Travel is entirely a work claim: the user's own share is 0.
-	tx, err := txSvc.CreateTransaction(user.ID, account.ID, &travel.ID, models.TransactionTypeExpense, 5000, "", from.Add(time.Hour))
+	tx, err := txSvc.CreateTransaction(user.ID, account.ID, &travel.ID, models.TransactionTypeExpense, 5000, "", from.Add(time.Hour), TransactionMeta{})
 	testutil.AssertNoError(t, err)
 	zero := int64(0)
 	testutil.AssertNoError(t, db.Model(&models.Transaction{}).Where("id = ?", tx.ID).Update("personal_amount", zero).Error)
 
-	_, err = txSvc.CreateTransaction(user.ID, account.ID, &food.ID, models.TransactionTypeExpense, 1500, "", from.Add(2*time.Hour))
+	_, err = txSvc.CreateTransaction(user.ID, account.ID, &food.ID, models.TransactionTypeExpense, 1500, "", from.Add(2*time.Hour), TransactionMeta{})
 	testutil.AssertNoError(t, err)
 
 	result, err := txSvc.GetSpendingByCategory(user.ID, from, to)
@@ -2246,14 +2246,14 @@ func TestTransactionCategoryOwnership(t *testing.T) {
 			name: "create_with_own_category",
 			run: func(t *testing.T, svc TransactionServicer, db *gorm.DB, user *models.User, account *models.Account, _ *models.Category) error {
 				own := testutil.CreateTestCategory(t, db, user.ID, models.CategoryTypeExpense)
-				_, err := svc.CreateTransaction(user.ID, account.ID, &own.ID, models.TransactionTypeExpense, 500, "Lunch", time.Now())
+				_, err := svc.CreateTransaction(user.ID, account.ID, &own.ID, models.TransactionTypeExpense, 500, "Lunch", time.Now(), TransactionMeta{})
 				return err
 			},
 		},
 		{
 			name: "create_with_another_users_category",
 			run: func(_ *testing.T, svc TransactionServicer, _ *gorm.DB, user *models.User, account *models.Account, foreign *models.Category) error {
-				_, err := svc.CreateTransaction(user.ID, account.ID, &foreign.ID, models.TransactionTypeExpense, 500, "Lunch", time.Now())
+				_, err := svc.CreateTransaction(user.ID, account.ID, &foreign.ID, models.TransactionTypeExpense, 500, "Lunch", time.Now(), TransactionMeta{})
 				return err
 			},
 			want: "CATEGORY_NOT_FOUND",
@@ -2262,7 +2262,7 @@ func TestTransactionCategoryOwnership(t *testing.T) {
 			name: "create_with_unknown_category",
 			run: func(_ *testing.T, svc TransactionServicer, _ *gorm.DB, user *models.User, account *models.Account, _ *models.Category) error {
 				missing := "01a00000-0000-7000-8000-000000000000"
-				_, err := svc.CreateTransaction(user.ID, account.ID, &missing, models.TransactionTypeExpense, 500, "Lunch", time.Now())
+				_, err := svc.CreateTransaction(user.ID, account.ID, &missing, models.TransactionTypeExpense, 500, "Lunch", time.Now(), TransactionMeta{})
 				return err
 			},
 			want: "CATEGORY_NOT_FOUND",
@@ -2271,7 +2271,7 @@ func TestTransactionCategoryOwnership(t *testing.T) {
 			name: "create_with_empty_category_means_none",
 			run: func(_ *testing.T, svc TransactionServicer, _ *gorm.DB, user *models.User, account *models.Account, _ *models.Category) error {
 				empty := ""
-				txn, err := svc.CreateTransaction(user.ID, account.ID, &empty, models.TransactionTypeExpense, 500, "Lunch", time.Now())
+				txn, err := svc.CreateTransaction(user.ID, account.ID, &empty, models.TransactionTypeExpense, 500, "Lunch", time.Now(), TransactionMeta{})
 				if err == nil && txn.CategoryID != nil {
 					t.Errorf("expected no category, got %q", *txn.CategoryID)
 				}
@@ -2299,7 +2299,7 @@ func TestTransactionCategoryOwnership(t *testing.T) {
 	t.Run("update_to_another_users_category_changes_nothing", func(t *testing.T) {
 		svc, db, user, account, foreign := setup(t)
 		own := testutil.CreateTestCategory(t, db, user.ID, models.CategoryTypeExpense)
-		txn, err := svc.CreateTransaction(user.ID, account.ID, &own.ID, models.TransactionTypeExpense, 500, "Lunch", time.Now())
+		txn, err := svc.CreateTransaction(user.ID, account.ID, &own.ID, models.TransactionTypeExpense, 500, "Lunch", time.Now(), TransactionMeta{})
 		testutil.AssertNoError(t, err)
 
 		newAmount := int64(900)
@@ -2319,7 +2319,7 @@ func TestTransactionCategoryOwnership(t *testing.T) {
 
 	t.Run("update_to_own_category_and_clear", func(t *testing.T) {
 		svc, db, user, account, _ := setup(t)
-		txn, err := svc.CreateTransaction(user.ID, account.ID, nil, models.TransactionTypeExpense, 500, "Lunch", time.Now())
+		txn, err := svc.CreateTransaction(user.ID, account.ID, nil, models.TransactionTypeExpense, 500, "Lunch", time.Now(), TransactionMeta{})
 		testutil.AssertNoError(t, err)
 		own := testutil.CreateTestCategory(t, db, user.ID, models.CategoryTypeExpense)
 

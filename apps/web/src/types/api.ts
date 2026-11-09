@@ -235,6 +235,7 @@ export interface CreateTransactionRequest {
   amount: number; // cents, > 0
   description?: string;
   date?: string; // ISO 8601
+  notes?: string; // max 2000 characters
 }
 
 export interface CreateTransferRequest {
@@ -245,6 +246,7 @@ export interface CreateTransferRequest {
   date?: string; // ISO 8601
   /** Cents credited to the destination, in its currency. Required when the accounts' currencies differ (else 400 FX_AMOUNT_REQUIRED), omit otherwise. */
   to_amount?: number;
+  notes?: string; // max 2000 characters
 }
 
 export interface UpdateTransactionRequest {
@@ -254,6 +256,7 @@ export interface UpdateTransactionRequest {
   amount?: number; // cents, > 0
   description?: string;
   date?: string; // ISO 8601
+  notes?: string; // replaces the notes; max 2000 characters
 }
 
 export interface TransactionFilters extends PaginationParams {
@@ -263,10 +266,37 @@ export interface TransactionFilters extends PaginationParams {
   category_id?: string; // UUIDv7
   min_amount?: number;
   max_amount?: number;
+  /** Search description and notes (case-insensitive, max 100 chars); a number such as 64.73 also matches the amount. */
+  q?: string;
+  /** true: only transactions with receivables; false: only those without. */
+  shared?: boolean;
+  /** true: only transactions with receipts; false: only those without. */
+  has_attachment?: boolean;
 }
 
 export interface UserTransactionFilters extends TransactionFilters {
   account_id?: string; // UUIDv7
+}
+
+// POST /transactions/bulk
+export interface BulkTransactionsRequest {
+  ids: string[]; // 1..200, all owned by the user (404 otherwise)
+  /** Changes to apply to every id; omit when deleting. */
+  set?: {
+    /** Must match each transaction's type (400 CATEGORY_TYPE_MISMATCH). */
+    category_id?: string;
+    /** Appended to each row's notes on a new line. */
+    notes_append?: string;
+    /** Only false: removes the receivables of the selected expenses. */
+    shared?: false;
+  };
+  /** Delete the selected transactions (cannot be combined with set). */
+  delete?: boolean;
+}
+
+export interface BulkTransactionsResponse {
+  updated: number;
+  deleted: number;
 }
 
 // Category requests
@@ -662,6 +692,7 @@ export interface CreateSharedExpenseRequest {
   amount: number; // cents, > 0
   description?: string; // max 500
   date?: string; // ISO 8601
+  notes?: string; // max 2000 characters
   kind: ReceivableKind;
   mode: ShareMode;
   counterparties: ShareCounterpartyInput[]; // 1..20

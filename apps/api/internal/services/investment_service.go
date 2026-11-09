@@ -578,6 +578,7 @@ func (s *investmentService) applyCashLeg(tx *gorm.DB, userID, accountID string, 
 		Amount:      amount,
 		Description: description,
 		Date:        date,
+		Source:      models.TransactionSourceSystem,
 	}
 	if err := tx.Create(&cashTx).Error; err != nil {
 		return apperrors.Wrap(apperrors.ErrInternalServer, err)

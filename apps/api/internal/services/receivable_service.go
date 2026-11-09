@@ -145,6 +145,10 @@ func (s *receivableService) CreateSharedExpense(userID string, in CreateSharedEx
 	if err != nil {
 		return nil, err
 	}
+	meta, err := normalizeMeta(in.Meta)
+	if err != nil {
+		return nil, err
+	}
 
 	date := in.Date
 	if date.IsZero() {
@@ -174,7 +178,7 @@ func (s *receivableService) CreateSharedExpense(userID string, in CreateSharedEx
 			return txErr
 		}
 		expense, txErr := insertTransaction(tx, s.accountService, userID, accounts[in.AccountID],
-			categoryID, models.TransactionTypeExpense, in.Amount, in.Description, date)
+			categoryID, models.TransactionTypeExpense, in.Amount, in.Description, date, meta)
 		if txErr != nil {
 			return txErr
 		}
@@ -455,6 +459,7 @@ func (s *receivableService) Settle(userID, receivableID string, in SettleInput) 
 			Amount:      credit,
 			Description: description,
 			Date:        date,
+			Source:      models.TransactionSourceSystem,
 		}
 		if txErr := tx.Create(reimbursement).Error; txErr != nil {
 			return apperrors.Wrap(apperrors.ErrInternalServer, txErr)

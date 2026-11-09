@@ -26,7 +26,7 @@ func TestAutoCategorizeOnCreate(t *testing.T) {
 	testutil.AssertNoError(t, err)
 
 	t.Run("matching transaction is auto-categorized", func(t *testing.T) {
-		tx, err := txSvc.CreateTransaction(user.ID, account.ID, nil, models.TransactionTypeExpense, 2500, "GRAB *RIDE KL", time.Now())
+		tx, err := txSvc.CreateTransaction(user.ID, account.ID, nil, models.TransactionTypeExpense, 2500, "GRAB *RIDE KL", time.Now(), TransactionMeta{})
 		testutil.AssertNoError(t, err)
 		if tx.CategoryID == nil || *tx.CategoryID != transport.ID {
 			t.Errorf("expected auto-category %s, got %v", transport.ID, tx.CategoryID)
@@ -34,7 +34,7 @@ func TestAutoCategorizeOnCreate(t *testing.T) {
 	})
 
 	t.Run("explicit category is never overridden", func(t *testing.T) {
-		tx, err := txSvc.CreateTransaction(user.ID, account.ID, &other.ID, models.TransactionTypeExpense, 2500, "GRAB *RIDE KL", time.Now())
+		tx, err := txSvc.CreateTransaction(user.ID, account.ID, &other.ID, models.TransactionTypeExpense, 2500, "GRAB *RIDE KL", time.Now(), TransactionMeta{})
 		testutil.AssertNoError(t, err)
 		if tx.CategoryID == nil || *tx.CategoryID != other.ID {
 			t.Errorf("expected explicit category %s preserved, got %v", other.ID, tx.CategoryID)
@@ -42,7 +42,7 @@ func TestAutoCategorizeOnCreate(t *testing.T) {
 	})
 
 	t.Run("non-matching transaction stays uncategorized", func(t *testing.T) {
-		tx, err := txSvc.CreateTransaction(user.ID, account.ID, nil, models.TransactionTypeExpense, 2500, "STARBUCKS", time.Now())
+		tx, err := txSvc.CreateTransaction(user.ID, account.ID, nil, models.TransactionTypeExpense, 2500, "STARBUCKS", time.Now(), TransactionMeta{})
 		testutil.AssertNoError(t, err)
 		if tx.CategoryID != nil {
 			t.Errorf("expected no category, got %v", *tx.CategoryID)

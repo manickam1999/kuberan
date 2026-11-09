@@ -101,6 +101,7 @@ func (s *accountService) CreateCashAccount(userID, name, description, currency s
 				Amount:      initialBalance,
 				Description: "Initial balance",
 				Date:        time.Now(),
+				Source:      models.TransactionSourceSystem,
 			}
 			if err := tx.Create(transaction).Error; err != nil {
 				return apperrors.Wrap(apperrors.ErrInternalServer, err)
@@ -711,6 +712,7 @@ func (s *accountService) CreateFixedDepositAccount(userID string, params CreateF
 			Amount:      params.Principal,
 			Description: "Fixed deposit funding - " + params.Name,
 			Date:        params.StartDate,
+			Source:      models.TransactionSourceSystem,
 		}
 		if txErr := tx.Create(transferTx).Error; txErr != nil {
 			return apperrors.Wrap(apperrors.ErrInternalServer, txErr)
@@ -868,6 +870,7 @@ func (s *accountService) CloseFixedDeposit(userID, accountID string, params Clos
 			Amount:      principal,
 			Description: "Fixed deposit closure - principal return",
 			Date:        time.Now(),
+			Source:      models.TransactionSourceSystem,
 		}
 		if txErr := tx.Create(transferTx).Error; txErr != nil {
 			return apperrors.Wrap(apperrors.ErrInternalServer, txErr)
@@ -894,6 +897,7 @@ func (s *accountService) CloseFixedDeposit(userID, accountID string, params Clos
 				Amount:      netInterest,
 				Description: "Fixed deposit interest - " + fdAccount.Name,
 				Date:        time.Now(),
+				Source:      models.TransactionSourceSystem,
 			}
 			if txErr := tx.Create(interestTx).Error; txErr != nil {
 				return apperrors.Wrap(apperrors.ErrInternalServer, txErr)

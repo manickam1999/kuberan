@@ -162,7 +162,7 @@ func (s *Server) prepareCreateTransaction(c caller, args map[string]interface{})
 	}
 
 	return &writeOp{Cost: 1, Run: func() (string, []auditEntry, *mcp.CallToolResult) {
-		txn, err := s.services.Transactions.CreateTransaction(c.UserID, accountID, categoryID, txType, amount, description, date)
+		txn, err := s.services.Transactions.CreateTransaction(c.UserID, accountID, categoryID, txType, amount, description, date, mcpMeta(c))
 		if err != nil {
 			return "", nil, serviceError("create transaction", err)
 		}
@@ -238,7 +238,7 @@ func (s *Server) prepareCreateTransfer(c caller, args map[string]interface{}) (*
 	}
 
 	return &writeOp{Cost: 1, Run: func() (string, []auditEntry, *mcp.CallToolResult) {
-		txn, err := s.services.Transactions.CreateTransfer(c.UserID, fromID, toID, amount, toArg, description, date)
+		txn, err := s.services.Transactions.CreateTransfer(c.UserID, fromID, toID, amount, toArg, description, date, mcpMeta(c))
 		if err != nil {
 			return "", nil, serviceError("create transfer", err)
 		}

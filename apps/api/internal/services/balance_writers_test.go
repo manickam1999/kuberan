@@ -145,7 +145,7 @@ func TestBalanceWritersKeepConcurrentChanges(t *testing.T) {
 	t.Run("CreateTransaction expense", func(t *testing.T) {
 		e := newRecEnv(t)
 		defer bumpAfterFirstTxnInsert(t, e.db, e.cash.ID, concurrentBump)()
-		_, err := e.txn.CreateTransaction(e.user.ID, e.cash.ID, nil, models.TransactionTypeExpense, 300, "coffee", time.Now())
+		_, err := e.txn.CreateTransaction(e.user.ID, e.cash.ID, nil, models.TransactionTypeExpense, 300, "coffee", time.Now(), TransactionMeta{})
 		testutil.AssertNoError(t, err)
 		e.wantBalance(e.cash.ID, recCashStart-300+concurrentBump)
 	})
@@ -153,7 +153,7 @@ func TestBalanceWritersKeepConcurrentChanges(t *testing.T) {
 	t.Run("CreateTransaction income", func(t *testing.T) {
 		e := newRecEnv(t)
 		defer bumpAfterFirstTxnInsert(t, e.db, e.cash.ID, concurrentBump)()
-		_, err := e.txn.CreateTransaction(e.user.ID, e.cash.ID, nil, models.TransactionTypeIncome, 300, "gift", time.Now())
+		_, err := e.txn.CreateTransaction(e.user.ID, e.cash.ID, nil, models.TransactionTypeIncome, 300, "gift", time.Now(), TransactionMeta{})
 		testutil.AssertNoError(t, err)
 		e.wantBalance(e.cash.ID, recCashStart+300+concurrentBump)
 	})
@@ -170,7 +170,7 @@ func TestBalanceWritersKeepConcurrentChanges(t *testing.T) {
 		e := newRecEnv(t)
 		to := e.track(testutil.CreateTestCashAccountWithBalance(t, e.db, e.user.ID, 1000))
 		defer bumpAfterFirstTxnInsert(t, e.db, e.cash.ID, concurrentBump)()
-		_, err := e.txn.CreateTransfer(e.user.ID, e.cash.ID, to.ID, 400, nil, "move", time.Now())
+		_, err := e.txn.CreateTransfer(e.user.ID, e.cash.ID, to.ID, 400, nil, "move", time.Now(), TransactionMeta{})
 		testutil.AssertNoError(t, err)
 		e.wantBalance(e.cash.ID, recCashStart-400+concurrentBump)
 		e.wantBalance(to.ID, 1400)
@@ -180,14 +180,14 @@ func TestBalanceWritersKeepConcurrentChanges(t *testing.T) {
 		e := newRecEnv(t)
 		to := testutil.CreateTestCashAccountWithBalance(t, e.db, e.user.ID, 1000)
 		defer bumpAfterFirstTxnInsert(t, e.db, to.ID, concurrentBump)()
-		_, err := e.txn.CreateTransfer(e.user.ID, e.cash.ID, to.ID, 400, nil, "move", time.Now())
+		_, err := e.txn.CreateTransfer(e.user.ID, e.cash.ID, to.ID, 400, nil, "move", time.Now(), TransactionMeta{})
 		testutil.AssertNoError(t, err)
 		e.wantBalance(to.ID, 1000+400+concurrentBump)
 	})
 
 	t.Run("UpdateTransaction", func(t *testing.T) {
 		e := newRecEnv(t)
-		x, err := e.txn.CreateTransaction(e.user.ID, e.cash.ID, nil, models.TransactionTypeExpense, 300, "coffee", time.Now())
+		x, err := e.txn.CreateTransaction(e.user.ID, e.cash.ID, nil, models.TransactionTypeExpense, 300, "coffee", time.Now(), TransactionMeta{})
 		testutil.AssertNoError(t, err)
 		defer bumpAfterFirstTxnInsert(t, e.db, e.cash.ID, concurrentBump)()
 		e.initial[e.cash.ID] += concurrentBump // the injected change is part of the ledger
@@ -219,7 +219,7 @@ func TestBalanceWritersKeepConcurrentChanges(t *testing.T) {
 
 	t.Run("DeleteTransaction restores relatively", func(t *testing.T) {
 		e := newRecEnv(t)
-		x, err := e.txn.CreateTransaction(e.user.ID, e.cash.ID, nil, models.TransactionTypeExpense, 300, "coffee", time.Now())
+		x, err := e.txn.CreateTransaction(e.user.ID, e.cash.ID, nil, models.TransactionTypeExpense, 300, "coffee", time.Now(), TransactionMeta{})
 		testutil.AssertNoError(t, err)
 		defer bumpAfterFirstTxnInsert(t, e.db, e.cash.ID, concurrentBump)() // fires on the soft delete
 		e.initial[e.cash.ID] += concurrentBump
@@ -230,7 +230,7 @@ func TestBalanceWritersKeepConcurrentChanges(t *testing.T) {
 	t.Run("UpdateTransaction reverses the old account relatively", func(t *testing.T) {
 		e := newRecEnv(t)
 		other := e.track(testutil.CreateTestCashAccountWithBalance(t, e.db, e.user.ID, 20000))
-		x, err := e.txn.CreateTransaction(e.user.ID, e.cash.ID, nil, models.TransactionTypeExpense, 300, "coffee", time.Now())
+		x, err := e.txn.CreateTransaction(e.user.ID, e.cash.ID, nil, models.TransactionTypeExpense, 300, "coffee", time.Now(), TransactionMeta{})
 		testutil.AssertNoError(t, err)
 		// The bump lands on the old account after it is locked, before the reversal is written.
 		defer bumpAfterAccountLock(t, e.db, e.cash.ID, concurrentBump)()
@@ -367,7 +367,7 @@ func TestCreateTransferChecksBalanceOnLockedRow(t *testing.T) {
 
 	// Another writer drains the source after the request started but before the lock.
 	restore := drainBeforeFirstLock(t, e.db, e.cash.ID, 100)
-	_, err := e.txn.CreateTransfer(e.user.ID, e.cash.ID, to.ID, 5000, nil, "raced", time.Now())
+	_, err := e.txn.CreateTransfer(e.user.ID, e.cash.ID, to.ID, 5000, nil, "raced", time.Now(), TransactionMeta{})
 	restore()
 	assertAppCode(t, err, "INSUFFICIENT_BALANCE", http.StatusBadRequest)
 	var transfers int64
@@ -377,14 +377,14 @@ func TestCreateTransferChecksBalanceOnLockedRow(t *testing.T) {
 	}
 	e.wantBalance(to.ID, 0)
 
-	_, err = e.txn.CreateTransfer(e.user.ID, e.cash.ID, to.ID, recCashStart+1, nil, "too much", time.Now())
+	_, err = e.txn.CreateTransfer(e.user.ID, e.cash.ID, to.ID, recCashStart+1, nil, "too much", time.Now(), TransactionMeta{})
 	assertAppCode(t, err, "INSUFFICIENT_BALANCE", http.StatusBadRequest)
 	e.wantBalance(e.cash.ID, recCashStart)
 	e.wantBalance(to.ID, 0)
 
 	// Credit-card (liability) sources are exempt from the check.
 	card := testutil.CreateTestCreditCardAccount(t, e.db, e.user.ID, 0)
-	_, err = e.txn.CreateTransfer(e.user.ID, card.ID, to.ID, 5000, nil, "cash advance", time.Now())
+	_, err = e.txn.CreateTransfer(e.user.ID, card.ID, to.ID, 5000, nil, "cash advance", time.Now(), TransactionMeta{})
 	testutil.AssertNoError(t, err)
 	e.wantBalance(card.ID, 5000)
 	e.wantBalance(to.ID, 5000)

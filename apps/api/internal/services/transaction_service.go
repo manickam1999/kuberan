@@ -2,7 +2,9 @@ package services
 
 import (
 	"fmt"
+	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -65,8 +67,13 @@ func (s *transactionService) CreateTransaction(
 	amount int64,
 	description string,
 	date time.Time,
+	meta TransactionMeta,
 ) (*models.Transaction, error) {
 	if err := validateTransactionInput(accountID, amount, description); err != nil {
+		return nil, err
+	}
+	meta, err := normalizeMeta(meta)
+	if err != nil {
 		return nil, err
 	}
 	// Opening balances are written only by account creation.
@@ -94,13 +101,13 @@ func (s *transactionService) CreateTransaction(
 	})
 
 	var result *models.Transaction
-	err := s.db.Transaction(func(tx *gorm.DB) error {
+	err = s.db.Transaction(func(tx *gorm.DB) error {
 		accounts, txErr := lockAccounts(tx, userID, []string{accountID}, true)
 		if txErr != nil {
 			return txErr
 		}
 		result, txErr = insertTransaction(tx, s.accountService, userID, accounts[accountID],
-			categoryID, transactionType, amount, description, date)
+			categoryID, transactionType, amount, description, date, meta)
 		return txErr
 	})
 	if err != nil {
@@ -123,6 +130,7 @@ func (s *transactionService) CreateTransfer(
 	toAmount *int64,
 	description string,
 	date time.Time,
+	meta TransactionMeta,
 ) (*models.Transaction, error) {
 	if fromAccountID == toAccountID {
 		return nil, apperrors.ErrSameAccountTransfer
@@ -134,13 +142,17 @@ func (s *transactionService) CreateTransfer(
 	if err := validateDescription(description); err != nil {
 		return nil, err
 	}
+	meta, err := normalizeMeta(meta)
+	if err != nil {
+		return nil, err
+	}
 
 	if date.IsZero() {
 		date = time.Now()
 	}
 
 	var result *models.Transaction
-	err := s.db.Transaction(func(tx *gorm.DB) error {
+	err = s.db.Transaction(func(tx *gorm.DB) error {
 		accounts, txErr := lockAccounts(tx, userID, []string{fromAccountID, toAccountID}, true)
 		if txErr != nil {
 			return txErr
@@ -165,6 +177,10 @@ func (s *transactionService) CreateTransfer(
 			ToAmount:    stored,
 			Description: description,
 			Date:        date,
+
+			Notes:          meta.Notes,
+			Source:         meta.Source,
+			SourceClientID: sourceClientPtr(meta.SourceClientID),
 		}
 		if txErr := tx.Create(transaction).Error; txErr != nil {
 			return apperrors.Wrap(apperrors.ErrInternalServer, txErr)
@@ -442,6 +458,11 @@ func (s *transactionService) UpdateTransaction(userID, transactionID string, upd
 			return nil, err
 		}
 	}
+	if updates.Notes != nil {
+		if err := validateNotes(*updates.Notes); err != nil {
+			return nil, err
+		}
+	}
 
 	err := s.db.Transaction(func(tx *gorm.DB) error {
 		transaction, err := lockTransaction(tx, userID, transactionID)
@@ -565,6 +586,9 @@ func (s *transactionService) UpdateTransaction(userID, transactionID string, upd
 		if updates.Date != nil {
 			transaction.Date = *updates.Date
 		}
+		if updates.Notes != nil {
+			transaction.Notes = *updates.Notes
+		}
 		if updates.CategoryID != nil {
 			if err := ensureCategoryOwned(tx, userID, *updates.CategoryID); err != nil {
 				return err
@@ -669,7 +693,76 @@ func applyTransactionFilters(q *gorm.DB, f TransactionFilter) *gorm.DB {
 	if f.AccountID != nil {
 		q = q.Where("account_id = ?", *f.AccountID)
 	}
+	if f.Search != nil {
+		q = applyTransactionSearch(q, *f.Search)
+	}
+	if f.Shared != nil {
+		q = q.Where(existsClause(*f.Shared,
+			"SELECT 1 FROM receivables r WHERE r.transaction_id = transactions.id AND r.deleted_at IS NULL"))
+	}
+	if f.HasAttachment != nil {
+		q = q.Where(existsClause(*f.HasAttachment,
+			"SELECT 1 FROM transaction_attachments a WHERE a.transaction_id = transactions.id AND a.deleted_at IS NULL"))
+	}
 	return q
+}
+
+// existsClause returns EXISTS (sub) or NOT EXISTS (sub).
+func existsClause(want bool, sub string) string {
+	if want {
+		return "EXISTS (" + sub + ")"
+	}
+	return "NOT EXISTS (" + sub + ")"
+}
+
+// amountSearchPattern matches a plain amount such as "64", "64.7" or "64.73".
+var amountSearchPattern = regexp.MustCompile(`^\d{1,12}(\.\d{1,2})?$`)
+
+// searchAmountCents parses a search term like "64.73" into cents.
+func searchAmountCents(term string) (int64, bool) {
+	if !amountSearchPattern.MatchString(term) {
+		return 0, false
+	}
+	whole, frac, _ := strings.Cut(term, ".")
+	for len(frac) < 2 {
+		frac += "0"
+	}
+	w, err := strconv.ParseInt(whole, 10, 64)
+	if err != nil {
+		return 0, false
+	}
+	f, err := strconv.ParseInt(frac, 10, 64)
+	if err != nil {
+		return 0, false
+	}
+	return w*100 + f, true
+}
+
+// applyTransactionSearch matches the trimmed, length-capped term against the
+// description and notes (case-insensitive substring) and, for a numeric term,
+// the amount in cents.
+func applyTransactionSearch(q *gorm.DB, raw string) *gorm.DB {
+	term := strings.TrimSpace(raw)
+	if r := []rune(term); len(r) > MaxSearchLen {
+		term = string(r[:MaxSearchLen])
+	}
+	if term == "" {
+		return q
+	}
+	pattern := "%" + likeEscaper.Replace(term) + "%"
+	// ILIKE lets Postgres use the trigram indexes; SQLite (tests) lacks it.
+	var cond string
+	if q.Name() == "postgres" {
+		cond = `(description ILIKE ? ESCAPE '\' OR notes ILIKE ? ESCAPE '\'`
+	} else {
+		cond = `(LOWER(description) LIKE LOWER(?) ESCAPE '\' OR LOWER(notes) LIKE LOWER(?) ESCAPE '\'`
+	}
+	args := []any{pattern, pattern}
+	if cents, ok := searchAmountCents(term); ok {
+		cond += " OR amount = ?"
+		args = append(args, cents)
+	}
+	return q.Where(cond+")", args...)
 }
 
 // GetUserTransactions retrieves a paginated, filtered list of all transactions for a user across all accounts.
@@ -755,6 +848,14 @@ func (s *transactionService) GetTransactionByID(userID, transactionID string) (*
 // the same DB transaction.
 func (s *transactionService) DeleteTransaction(userID, transactionID string) error {
 	return s.db.Transaction(func(tx *gorm.DB) error {
+		return s.deleteTransactionTx(tx, userID, transactionID)
+	})
+}
+
+// deleteTransactionTx is DeleteTransaction inside an open DB transaction (also
+// used by the bulk delete).
+func (s *transactionService) deleteTransactionTx(tx *gorm.DB, userID, transactionID string) error {
+	{
 		transaction, err := lockTransaction(tx, userID, transactionID)
 		if err != nil {
 			return err
@@ -807,7 +908,7 @@ func (s *transactionService) DeleteTransaction(userID, transactionID string) err
 			return err
 		}
 		return s.accountService.ApplyBalanceDelta(tx, account.ID, account.Type, reversal, transaction.Amount)
-	})
+	}
 }
 
 // deleteReceivablesOfExpense implements D8 inside an open DB transaction whose
