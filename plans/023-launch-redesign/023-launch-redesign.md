@@ -61,7 +61,7 @@ Re-checked against `main` at `3b3bea4`, after Phase 0 (#39), the security harden
 | 1.5 | Edit name and email, change password, list and revoke signed-in devices | Settings → Profile & security | `PATCH /profile` takes only `hide_balances`, `default_account_id`, `base_currency`; `refresh_sessions` exist but aren't exposed |
 | 1.6 | MCP change log and write limits | Settings → Connected apps | MCP writes are audited with `via`/`client_id` inside the `changes` JSON, but `audit_logs` has no columns for them and nothing reads them back; limits live only in config |
 | 1.7 | Data export and server status | Settings → Data, sidebar host chip | None |
-| 1.8 | Appearance preferences on the profile (new) | Settings → Appearance, theme picker | Theme and chart style live in each browser's `localStorage` only |
+| 1.8 | Appearance preferences on the profile, plus a server default palette (`DEFAULT_PALETTE`, Catppuccin when unset) | Settings → Appearance, theme picker, sign-in pages | Theme and chart style live in each browser's `localStorage` only |
 | 1.9 | Credit-card "current balance owed" on create (moved from Phase 0) | New account | `CreateCreditCardAccountRequest` has no opening amount |
 
 **Still missing, can follow launch (Phase 5 and 6):**
@@ -346,17 +346,39 @@ covered in `tests/integration/`.
 
 ### 1.8 Appearance preferences (theme picker)
 
-Lets the theme picker follow the user across devices instead of resetting per browser.
+Users pick a palette, or keep the server default. Whoever runs the server picks that default. With neither set,
+Kuberan uses **Catppuccin**. Settings follow the user across devices instead of resetting per browser.
 
+- **Server default:** new env var `DEFAULT_PALETTE` on the api.
+  - Validated at startup against the palette list.
+  - Unset falls back to `catppuccin`. An unknown value logs a warning and falls back too, so a typo never stops
+    the server.
 - **Migration `000050_add_appearance_to_users`:** `users.appearance JSONB NOT NULL DEFAULT '{}'`.
-- **Shape:** `{ "palette": "cobalt", "mode": "system" | "light" | "dark", "chart_style": "clean" | "dither",
-  "density": "comfortable" | "compact", "show_cents": true }`. The server validates `palette` against the
-  list the web app ships, so an unknown palette can't be stored.
-- **API:** `GET /profile` returns it; `PATCH /profile` accepts `appearance` as a partial update (merge, not
-  replace).
-- **Web:** apply it before first paint from a cookie mirror, as the chart-theme init script does today, so
-  there's no flash. `localStorage` stays as the fallback when signed out.
-- **Tests:** validation of unknown keys and values, merge semantics.
+- **Shape:** `{ "palette": "default" | "<palette id>", "mode": "system" | "light" | "dark", "chart_style":
+  "clean" | "dither", "density": "comfortable" | "compact", "show_cents": true }`.
+  - A missing key means "default".
+  - The server validates `palette` against the same list as `DEFAULT_PALETTE`, so an unknown palette can't be
+    stored.
+- **Palette list:** one Go list shared by the config check and the validator. It is mirrored by the web
+  app's palette registry and checked by a test, in the same way as the category icon list.
+- **API:**
+  - `GET /profile` returns `appearance` plus `resolved_palette`, so the client never repeats the fallback
+    logic.
+  - `PATCH /profile` accepts `appearance` as a partial update (merge, not replace).
+  - The new public `GET /api/v1/appearance` returns `{ "default_palette": "catppuccin" }`. The sign-in,
+    register and OAuth consent pages render before anyone is signed in, so they need it.
+- **Resolution order:** the user's choice, then `DEFAULT_PALETTE`, then `catppuccin`.
+- **Web:**
+  - Apply the resolved palette and mode before first paint from a small cookie mirror (as the chart-theme init
+    script does today), so there's no flash. `localStorage` stays as the fallback when signed out.
+  - Settings → Appearance shows "Server default (<name>)" first, then every palette as a tile previewing its
+    own colours.
+- **Tests:**
+  - config fallback (unset and unknown values);
+  - validation of unknown keys and values;
+  - merge semantics;
+  - `resolved_palette` for each layer;
+  - the public endpoint needs no auth and exposes nothing else.
 
 ### 1.9 Credit-card opening balance
 
@@ -377,8 +399,8 @@ D1 must be signed off first.
   - Add `--k1..--k8` as the category palette, with one shared hue order for light and dark.
   - Replace `--chart-1..6`.
   - Ship each palette as a token set under `:root[data-palette="…"]`, with dark and light values, the way the
-    prototype does. Every component already reads tokens, so a palette is data, not code. Start with the
-    default plus the shortlist the owner picks from the prototype's eight. Each palette must pass the contrast
+    prototype does. Every component already reads tokens, so a palette is data, not code. Ship the eight
+    prototype palettes, with Catppuccin as the built-in default (1.8). Each palette must pass the contrast
     checks the prototype's palettes were held to (text 7:1, secondary text and money colours 4.5:1).
 - **2.2 Type.** Load Instrument Serif and Source Serif 4 (opsz) through `next/font/google`. Add `--font-display`
   and `--font-figures`. Body stays Geist.
