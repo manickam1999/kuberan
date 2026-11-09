@@ -2,9 +2,9 @@ import { test, expect, uid } from "./lib/fixtures";
 import { isoDay, pickOption } from "./lib/ui";
 import type { Api, Json } from "./lib/api";
 
-/** Rate of a pair on a UTC day: the latest stored observation on or before it. */
-async function dayRate(api: Api, base: string, day: string): Promise<number> {
-  if (base === "MYR") return 1;
+/** Rate (decimal string) of a pair on a UTC day: the latest observation on or before it. */
+async function dayRate(api: Api, base: string, day: string): Promise<string> {
+  if (base === "MYR") return "1";
   const r = await api.get("/api/v1/fx-rates", {
     base,
     quote: "MYR",
@@ -15,7 +15,21 @@ async function dayRate(api: Api, base: string, day: string): Promise<number> {
   const upTo = points
     .filter((p) => p.recorded_at.slice(0, 10) <= day)
     .sort((a, b) => a.recorded_at.localeCompare(b.recorded_at));
-  return Number(upTo[upTo.length - 1].rate);
+  return String(upTo[upTo.length - 1].rate);
+}
+
+/**
+ * cents x rate with exact integer math, rounded half to even like the API
+ * (internal/fx: money is converted once per group with banker's rounding).
+ */
+function convert(cents: number, rate: string): number {
+  const [whole, frac = ""] = rate.split(".");
+  const scale = 10n ** BigInt(frac.length);
+  const num = BigInt(cents) * (BigInt(whole) * scale + BigInt(frac || "0"));
+  let q = num / scale;
+  const r2 = (num % scale) * 2n;
+  if (r2 > scale || (r2 === scale && q % 2n === 1n)) q += 1n;
+  return Number(q);
 }
 
 const money = (cents: number): string =>
@@ -139,7 +153,7 @@ test.describe("insights", () => {
       let total = 0;
       for (const [key, cents] of groups) {
         const [day, c] = key.split("|");
-        total += Math.round(cents * (await dayRate(api, c, day)));
+        total += convert(cents, await dayRate(api, c, day));
       }
       return total;
     };

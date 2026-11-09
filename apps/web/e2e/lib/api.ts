@@ -77,7 +77,7 @@ export class Api {
   }
 
   async accounts(): Promise<Json[]> {
-    const r = await this.get("/api/v1/accounts");
+    const r = await this.get("/api/v1/accounts", { page_size: 100 });
     return Array.isArray(r) ? r : (r.accounts ?? r.data);
   }
   async account(id: string): Promise<Json> {

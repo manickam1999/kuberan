@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test as base, expect, type Page } from "@playwright/test";
-import { Api, login, type Json } from "./api";
+import { Api, login, register, type Json } from "./api";
 import type { E2EState } from "../global-setup";
 
 export { expect };
@@ -17,7 +17,13 @@ interface Fixtures {
   app: Page;
   /** Create a cash account through the API with a unique name. */
   mkCash: (name: string, currency: string, balance: number) => Promise<Json>;
-  consoleErrors: string[];
+  /**
+   * Console errors collected so far. A test that provokes an API refusal on
+   * purpose lists the browser's "Failed to load resource" line in `allowed`.
+   */
+  consoleErrors: string[] & { allowed: RegExp[] };
+  /** A page signed in as a brand-new user (for tests that change credentials). */
+  freshApp: { page: Page; email: string; password: string; api: Api };
 }
 
 /**
@@ -42,9 +48,10 @@ export const test = base.extend<Fixtures>({
     await use(await login(state.email, state.password));
   },
   consoleErrors: async ({}, use) => {
-    const errors: string[] = [];
+    const errors = Object.assign([] as string[], { allowed: [] as RegExp[] });
     await use(errors);
-    expect(errors, "console errors").toEqual([]);
+    const left = errors.filter((e) => !errors.allowed.some((p) => p.test(e)));
+    expect(left, "console errors").toEqual([]);
   },
   app: async ({ page, state, consoleErrors }, use) => {
     watchConsole(page, consoleErrors);
@@ -54,6 +61,18 @@ export const test = base.extend<Fixtures>({
     await page.getByRole("button", { name: /sign in|log in/i }).click();
     await page.waitForURL((u) => !u.pathname.startsWith("/login"));
     await use(page);
+  },
+  freshApp: async ({ page, consoleErrors }, use) => {
+    watchConsole(page, consoleErrors);
+    const email = `fresh+${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}@kuberan.test`;
+    const password = "fresh-password-1";
+    await register({ email, password, first_name: "Fresh", last_name: "User", base_currency: "MYR" });
+    await page.goto("/login");
+    await page.locator("#email").fill(email);
+    await page.locator("#password").fill(password);
+    await page.getByRole("button", { name: /sign in|log in/i }).click();
+    await page.waitForURL((u) => !u.pathname.startsWith("/login"));
+    await use({ page, email, password, api: await login(email, password) });
   },
   mkCash: async ({ api }, use) => {
     await use(async (name, currency, balance) => {
