@@ -1,10 +1,10 @@
 "use client";
 
-import { AlertTriangle } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { useBaseCurrency } from "@/hooks/use-profile";
-import { formatMoney } from "@/lib/format";
+import { moneyText } from "@/lib/money-display";
 import { cn } from "@/lib/utils";
+import { Money } from "@/components/ui/money";
 import {
   Tooltip,
   TooltipContent,
@@ -12,49 +12,13 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import type { Investment } from "@/types/models";
+import { holdingFigures } from "@/lib/holding-math";
 
-/**
- * Per-holding figures. Native figures (security currency) and base figures
- * (user's reporting currency) are never combined: each P&L subtracts a cost
- * basis from a value in the same currency.
- */
-export interface HoldingFigures {
-  /** Security currency. */
-  currency: string;
-  /** quantity x current_price_native, in `currency`. */
-  nativeValue: number;
-  /** quantity x current_price, in the base currency; null without an FX rate. */
-  baseValue: number | null;
-  /** nativeValue - cost_basis, in `currency`. */
-  nativePnl: number;
-  /** baseValue - cost_basis_base, in the base currency; null without an FX rate. */
-  basePnl: number | null;
-}
-
-/** Computes the native and base value / unrealized P&L of an open holding. */
-export function holdingFigures(inv: Investment): HoldingFigures {
-  const nativeValue = Math.round(inv.quantity * inv.current_price_native);
-  const baseValue = inv.fx_missing
-    ? null
-    : Math.round(inv.quantity * inv.current_price);
-  return {
-    currency: inv.price_currency || inv.currency,
-    nativeValue,
-    baseValue,
-    nativePnl: nativeValue - inv.cost_basis,
-    basePnl: baseValue === null ? null : baseValue - inv.cost_basis_base,
-  };
-}
-
-/** Signed money text: "+US$1.00" / "US$\u22121.00" (the sign comes from the amount). */
-export function formatSigned(
-  cents: number,
-  currency: string,
-  masked: boolean
-): string {
-  if (masked) return formatMoney(cents, currency, true);
-  return `${cents > 0 ? "+" : ""}${formatMoney(cents, currency)}`;
-}
+export {
+  holdingFigures,
+  holdingReturnPct,
+  type HoldingFigures,
+} from "@/lib/holding-math";
 
 /**
  * Unrealized P&L of a holding in the BASE currency; the tooltip shows the
@@ -78,18 +42,17 @@ export function UnrealizedPnl({
   const tone = shown >= 0 ? "text-positive" : "text-negative";
 
   const text = (
-    <span className={cn("tabular-nums", tone, className)}>
-      {formatSigned(shown, shownCurrency, hideBalances)}
-      {f.basePnl === null && (
-        <AlertTriangle
-          className="ml-1 inline size-3.5 text-negative"
-          aria-label="No exchange rate"
-        />
-      )}
-    </span>
+    <Money
+      amount={shown}
+      currency={shownCurrency}
+      sign="always"
+      fxMissing={f.basePnl === null}
+      className={cn(tone, className)}
+    />
   );
 
-  if (!foreign) return text;
+  // Without a rate <Money> already explains it; with one, the tooltip adds the native figure.
+  if (!foreign || f.basePnl === null) return text;
 
   return (
     <TooltipProvider>
@@ -98,9 +61,7 @@ export function UnrealizedPnl({
           <span className="cursor-help">{text}</span>
         </TooltipTrigger>
         <TooltipContent>
-          {f.basePnl === null
-            ? `No exchange rate for ${f.currency} to ${baseCurrency}`
-            : `In ${f.currency}: ${formatSigned(f.nativePnl, f.currency, hideBalances)}`}
+          {`In ${f.currency}: ${moneyText(f.nativePnl, f.currency, "always", false, hideBalances)}`}
         </TooltipContent>
       </Tooltip>
     </TooltipProvider>

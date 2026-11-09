@@ -316,6 +316,8 @@ export interface Security extends BaseModel {
   asset_type: AssetType;
   currency: string; // ISO 4217
   exchange?: string;
+  /** Symbol at the price provider (e.g. "VWRA.L"); absent when the same as `symbol`. */
+  provider_symbol?: string;
   maturity_date?: string | null; // bonds, ISO 8601
   yield_to_maturity?: number; // bonds, float
   coupon_rate?: number; // bonds, float

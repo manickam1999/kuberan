@@ -83,7 +83,7 @@ export function AssetAllocationChart({
     return (
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Asset allocation</CardTitle>
+          <CardTitle className="text-base">Allocation</CardTitle>
         </CardHeader>
         <CardContent className="py-10 text-center text-sm text-muted-foreground">
           No holdings
@@ -98,7 +98,7 @@ export function AssetAllocationChart({
   return (
     <Card className="h-full">
       <CardHeader>
-        <CardTitle className="text-base">Asset allocation</CardTitle>
+        <CardTitle className="text-base">Allocation</CardTitle>
         <CardDescription>By asset class</CardDescription>
       </CardHeader>
       <CardContent className="flex flex-1 flex-col items-center gap-5">

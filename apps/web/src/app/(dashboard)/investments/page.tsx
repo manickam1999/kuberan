@@ -1,31 +1,22 @@
 "use client";
 
-import { WealthSwitch } from "@/components/layout/wealth-switch";
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
-  TrendingUp,
-  TrendingDown,
-  Wallet,
-  Coins,
-  Landmark,
+  ArrowDown,
+  ArrowUp,
+  ArrowUpDown,
   ChevronLeft,
   ChevronRight,
-  List,
-  ArrowUp,
-  ArrowDown,
-  ArrowUpDown,
+  Plus,
 } from "lucide-react";
 
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { WealthSwitch } from "@/components/layout/wealth-switch";
 import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { Money } from "@/components/ui/money";
+import { Segmented } from "@/components/ui/segmented";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table,
@@ -35,49 +26,32 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { StatCard } from "@/components/ui/stat-card";
 import {
   usePortfolio,
   useAllInvestments,
   usePrefetchInvestment,
   type InvestmentStatus,
 } from "@/hooks/use-investments";
-import { useAuth } from "@/hooks/use-auth";
-import { useBaseCurrency } from "@/hooks/use-profile";
-import { formatMoney, formatPercentage } from "@/lib/format";
-import { Money } from "@/components/ui/money";
-import { FxNotice } from "@/components/ui/fx-notice";
+import { assetTypeLabel } from "@/lib/asset-types";
+import { signedPercent, weightPct } from "@/lib/price-series";
+import { cn } from "@/lib/utils";
 import {
   UnrealizedPnl,
-  formatSigned,
   holdingFigures,
+  holdingReturnPct,
 } from "@/components/investments/holding-figures";
 import { CurrencyExposureChart } from "@/components/investments/currency-exposure-chart";
-import type { AssetType, Investment } from "@/types/models";
 import { AssetAllocationChart } from "@/components/investments/asset-allocation-chart";
-import { InvestmentValueChart } from "@/components/investments/investment-value-chart";
-
-function InvestmentsSkeleton() {
-  return (
-    <div className="space-y-6">
-      <Skeleton className="h-8 w-48" />
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
-        {Array.from({ length: 5 }).map((_, i) => (
-          <Skeleton key={i} className="h-28" />
-        ))}
-      </div>
-      <Skeleton className="h-[350px] w-full" />
-      <Skeleton className="h-64 w-full" />
-    </div>
-  );
-}
+import { PortfolioHero } from "@/components/investments/portfolio-hero";
+import { ReturnBreakdown } from "@/components/investments/return-breakdown";
+import { RecordTradeSheet } from "@/components/investments/record-trade-sheet";
+import { SymbolTile } from "@/components/investments/symbol-tile";
+import type { Investment } from "@/types/models";
 
 const HOLDINGS_PAGE_SIZE = 20;
 
 type SortColumn =
   | "symbol"
-  | "name"
   | "qty"
   | "price"
   | "market_value"
@@ -97,222 +71,165 @@ function approxBase(investment: Investment, native: number): number {
   return native * (Number.isFinite(rate) && rate > 0 ? rate : 1);
 }
 
-function returnPct(investment: Investment) {
+/** Realised return of a closed position, as a percentage of what was invested. */
+function closedReturnPct(investment: Investment) {
   if (investment.total_invested === 0) return 0;
   return (investment.realized_gain_loss / investment.total_invested) * 100;
 }
 
-function HoldingCard({
+function qtyText(quantity: number) {
+  return quantity.toLocaleString(undefined, { maximumFractionDigits: 6 });
+}
+
+function toneOf(n: number) {
+  return n > 0 ? "text-positive" : n < 0 ? "text-negative" : "";
+}
+
+/** Mobile list row of an open holding. */
+function HoldingRow({
   investment,
-  onClick,
   onPrefetch,
 }: {
   investment: Investment;
-  onClick: () => void;
   onPrefetch: () => void;
 }) {
   const f = holdingFigures(investment);
-  const isRealizedPositive = investment.realized_gain_loss >= 0;
-
+  const pct = holdingReturnPct(investment);
   return (
-    <Card
-      className="cursor-pointer transition-colors hover:bg-accent/50"
-      onClick={onClick}
-      onMouseEnter={onPrefetch}
-    >
-      <CardHeader className="pb-3">
-        <div className="flex items-start justify-between gap-2 overflow-hidden">
-          <div className="min-w-0 flex-shrink overflow-hidden max-w-[50%] sm:max-w-[60%]">
-            <CardTitle className="text-base font-mono font-semibold truncate">
-              <Link
-                href={`/investments/${investment.id}`}
-                onClick={(e) => e.stopPropagation()}
-              >
-                {investment.security.symbol}
-              </Link>
-            </CardTitle>
-            <p className="text-sm text-muted-foreground truncate">
-              {investment.security.name}
-            </p>
-          </div>
-          <div className="text-right flex-shrink-0 min-w-0 overflow-hidden">
-            <p className="text-sm sm:text-base font-semibold font-mono">
-              <Money
-                amount={f.nativeValue}
-                currency={f.currency}
-                baseAmount={f.baseValue}
-                fxRate={investment.fx_rate}
-                fxStale={investment.fx_stale}
-                fxMissing={investment.fx_missing}
-                layout="stacked"
-                className="items-end"
-              />
-            </p>
-          </div>
-        </div>
-      </CardHeader>
-      <CardContent className="space-y-2 overflow-hidden">
-        <div className="grid grid-cols-2 gap-2 text-sm">
-          <div className="min-w-0">
-            <p className="text-muted-foreground text-xs">Quantity</p>
-            <p className="font-medium font-mono tabular-nums truncate">
-              {investment.quantity.toFixed(Number.isInteger(investment.quantity) ? 0 : 6)}
-            </p>
-          </div>
-          <div className="text-right min-w-0">
-            <p className="text-muted-foreground text-xs">Price</p>
-            <p className="font-medium font-mono">
-              <Money
-                amount={investment.current_price_native}
-                currency={f.currency}
-                fxRate={investment.fx_rate}
-                fxStale={investment.fx_stale}
-                fxMissing={investment.fx_missing}
-              />
-            </p>
-          </div>
-        </div>
-        <div className="flex items-center justify-between gap-2 text-sm min-w-0">
-          <span className="text-muted-foreground shrink-0">Unrealized G/L</span>
-          <UnrealizedPnl
-            investment={investment}
-            className="font-medium font-mono"
-          />
-        </div>
-        <div className="flex items-center justify-between gap-2 text-sm min-w-0">
-          <span className="text-muted-foreground shrink-0">Realized G/L</span>
-          <span
-            className={`font-medium font-mono ${
-              isRealizedPositive ? "text-positive" : "text-negative"
-            }`}
-          >
-            {isRealizedPositive ? "+" : ""}
+    <li>
+      <Link
+        href={`/investments/${investment.id}`}
+        onMouseEnter={onPrefetch}
+        onFocus={onPrefetch}
+        className="hover:bg-accent/40 focus-visible:ring-ring/50 flex items-center gap-3 px-4 py-3 outline-none focus-visible:ring-[3px] focus-visible:ring-inset"
+      >
+        <SymbolTile
+          symbol={investment.security.symbol}
+          assetType={investment.security.asset_type}
+        />
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-sm font-medium">
+            {investment.security.name}
+          </span>
+          <span className="text-muted-foreground block truncate text-xs">
+            {qtyText(investment.quantity)} ×{" "}
             <Money
-              amount={investment.realized_gain_loss}
-              currency={investment.currency}
-              baseAmount={investment.realized_gain_loss_base}
+              amount={investment.current_price_native}
+              currency={f.currency}
               fxMissing={investment.fx_missing}
             />
           </span>
-        </div>
-        <div className="pt-1 min-w-0">
-          <Link
-            href={`/accounts/${investment.account_id}`}
-            className="text-xs text-primary hover:underline truncate block"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {investment.account?.name ?? `Account #${investment.account_id}`}
-          </Link>
-        </div>
-      </CardContent>
-    </Card>
+        </span>
+        <span className="flex shrink-0 flex-col items-end gap-0.5 text-sm">
+          <Money
+            amount={f.nativeValue}
+            currency={f.currency}
+            baseAmount={f.baseValue}
+            fxRate={investment.fx_rate}
+            fxStale={investment.fx_stale}
+            fxMissing={investment.fx_missing}
+            layout="stacked"
+            className="items-end font-medium"
+          />
+          <span className={cn("text-xs tabular-nums", toneOf(pct))}>
+            {signedPercent(pct, 0)}
+          </span>
+        </span>
+      </Link>
+    </li>
   );
 }
 
-function ClosedHoldingCard({
+/** Mobile list row of a closed position. */
+function ClosedRow({
   investment,
-  onClick,
   onPrefetch,
 }: {
   investment: Investment;
-  onClick: () => void;
   onPrefetch: () => void;
 }) {
-  const { hideBalances } = useAuth();
-  const isRealizedPositive = investment.realized_gain_loss >= 0;
-  const pct = returnPct(investment);
-
+  const pct = closedReturnPct(investment);
   return (
-    <Card
-      className="cursor-pointer transition-colors hover:bg-accent/50"
-      onClick={onClick}
-      onMouseEnter={onPrefetch}
-    >
-      <CardHeader className="pb-3">
-        <div className="flex items-start justify-between gap-2 overflow-hidden">
-          <div className="min-w-0 flex-shrink overflow-hidden max-w-[55%] sm:max-w-[65%]">
-            <CardTitle className="text-base font-mono font-semibold truncate">
-              <Link
-                href={`/investments/${investment.id}`}
-                onClick={(e) => e.stopPropagation()}
-              >
-                {investment.security.symbol}
-              </Link>
-            </CardTitle>
-            <p className="text-sm text-muted-foreground truncate">
-              {investment.security.name}
-            </p>
-          </div>
-          <div className="text-right flex-shrink-0 min-w-0 overflow-hidden">
-            <p
-              className={`text-sm sm:text-base font-semibold font-mono ${
-                isRealizedPositive ? "text-positive" : "text-negative"
-              }`}
-            >
-              {isRealizedPositive ? "+" : ""}
-              <Money
-                amount={investment.realized_gain_loss}
-                currency={investment.currency}
-                baseAmount={investment.realized_gain_loss_base}
-                layout="stacked"
-                className="items-end"
-              />
-            </p>
-          </div>
-        </div>
-      </CardHeader>
-      <CardContent className="space-y-2 overflow-hidden">
-        <div className="flex items-center justify-between gap-2 text-sm min-w-0">
-          <span className="text-muted-foreground shrink-0">Invested</span>
-          <span className="font-medium font-mono tabular-nums truncate">
-            {formatMoney(
-              investment.total_invested,
-              investment.currency,
-              hideBalances
-            )}
+    <li>
+      <Link
+        href={`/investments/${investment.id}`}
+        onMouseEnter={onPrefetch}
+        onFocus={onPrefetch}
+        className="hover:bg-accent/40 focus-visible:ring-ring/50 flex items-center gap-3 px-4 py-3 outline-none focus-visible:ring-[3px] focus-visible:ring-inset"
+      >
+        <SymbolTile
+          symbol={investment.security.symbol}
+          assetType={investment.security.asset_type}
+        />
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-sm font-medium">
+            {investment.security.name}
           </span>
-        </div>
-        <div className="flex items-center justify-between gap-2 text-sm min-w-0">
-          <span className="text-muted-foreground shrink-0">Return</span>
-          <span
-            className={`font-medium font-mono tabular-nums truncate ${
-              isRealizedPositive ? "text-positive" : "text-negative"
-            }`}
-          >
-            {isRealizedPositive ? "+" : ""}
-            {formatPercentage(Math.abs(pct))}
+          <span className="text-muted-foreground block truncate text-xs">
+            Invested{" "}
+            <Money amount={investment.total_invested} currency={investment.currency} />
           </span>
-        </div>
-        <div className="pt-1 min-w-0">
-          <Link
-            href={`/accounts/${investment.account_id}`}
-            className="text-xs text-primary hover:underline truncate block"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {investment.account?.name ?? `Account #${investment.account_id}`}
-          </Link>
-        </div>
-      </CardContent>
-    </Card>
+        </span>
+        <span className="flex shrink-0 flex-col items-end gap-0.5 text-sm">
+          <Money
+            amount={investment.realized_gain_loss}
+            currency={investment.currency}
+            baseAmount={investment.realized_gain_loss_base}
+            sign="always"
+            layout="stacked"
+            className={cn("items-end font-medium", toneOf(investment.realized_gain_loss))}
+          />
+          <span className={cn("text-xs tabular-nums", toneOf(pct))}>
+            {signedPercent(pct, 0)}
+          </span>
+        </span>
+      </Link>
+    </li>
   );
 }
 
-function AllHoldingsTable() {
+function HoldingsSkeleton() {
+  return (
+    <>
+      <div className="divide-border/60 divide-y md:hidden">
+        {Array.from({ length: 5 }).map((_, i) => (
+          <div key={i} className="flex items-center gap-3 px-4 py-3">
+            <Skeleton className="size-9 rounded-control" />
+            <div className="flex-1 space-y-1.5">
+              <Skeleton className="h-4 w-2/3" />
+              <Skeleton className="h-3 w-1/3" />
+            </div>
+            <Skeleton className="h-8 w-20" />
+          </div>
+        ))}
+      </div>
+      <div className="hidden space-y-3 p-4 md:block">
+        {Array.from({ length: 5 }).map((_, i) => (
+          <Skeleton key={i} className="h-10 w-full" />
+        ))}
+      </div>
+    </>
+  );
+}
+
+function HoldingsSection({ totalValue }: { totalValue: number }) {
   const router = useRouter();
-  const { hideBalances } = useAuth();
   const prefetchInvestment = usePrefetchInvestment();
   const [page, setPage] = useState(1);
   const [status, setStatus] = useState<InvestmentStatus>("open");
   const [sortColumn, setSortColumn] = useState<SortColumn | null>(null);
   const [sortDirection, setSortDirection] = useState<SortDirection>(null);
-  const { data, isLoading } = useAllInvestments({
+  const { data, isLoading, isError, refetch } = useAllInvestments({
     page,
     page_size: HOLDINGS_PAGE_SIZE,
     status,
   });
 
-  const handleTabChange = (next: string) => {
-    if (next !== "open" && next !== "closed") return;
+  const handleTabChange = (next: "open" | "closed" | "securities") => {
+    if (next === "securities") {
+      router.push("/securities");
+      return;
+    }
     if (next === status) return;
     setStatus(next);
     setPage(1);
@@ -322,7 +239,6 @@ function AllHoldingsTable() {
 
   const investments = useMemo(() => data?.data ?? [], [data?.data]);
   const totalPages = data?.total_pages ?? 1;
-  const totalItems = data?.total_items ?? 0;
 
   const handleSort = (column: SortColumn) => {
     if (sortColumn !== column) {
@@ -330,80 +246,49 @@ function AllHoldingsTable() {
       setSortDirection("asc");
     } else if (sortDirection === "asc") {
       setSortDirection("desc");
-    } else if (sortDirection === "desc") {
+    } else {
       setSortColumn(null);
       setSortDirection(null);
-    } else {
-      setSortDirection("asc");
     }
   };
 
   const sortedInvestments = useMemo(() => {
     if (!sortColumn || !sortDirection) return investments;
+    const dir = sortDirection === "asc" ? 1 : -1;
     return [...investments].sort((a, b) => {
-      let aVal: number | string;
-      let bVal: number | string;
       switch (sortColumn) {
         case "symbol":
-          aVal = a.security.symbol;
-          bVal = b.security.symbol;
-          break;
-        case "name":
-          aVal = a.security.name;
-          bVal = b.security.name;
-          break;
+          return dir * a.security.symbol.localeCompare(b.security.symbol);
         case "qty":
-          aVal = a.quantity;
-          bVal = b.quantity;
-          break;
+          return dir * (a.quantity - b.quantity);
         case "price":
-          // Base price keeps holdings in different currencies comparable.
-          aVal = a.current_price;
-          bVal = b.current_price;
-          break;
+          // The base price keeps holdings in different currencies comparable.
+          return dir * (a.current_price - b.current_price);
         case "market_value":
-          aVal = Math.round(a.quantity * a.current_price);
-          bVal = Math.round(b.quantity * b.current_price);
-          break;
+          return (
+            dir *
+            (Math.round(a.quantity * a.current_price) -
+              Math.round(b.quantity * b.current_price))
+          );
         case "unrealized_gl":
-          aVal = holdingFigures(a).basePnl ?? 0;
-          bVal = holdingFigures(b).basePnl ?? 0;
-          break;
+          return dir * ((holdingFigures(a).basePnl ?? 0) - (holdingFigures(b).basePnl ?? 0));
         case "realized_gl":
-          aVal = a.realized_gain_loss_base;
-          bVal = b.realized_gain_loss_base;
-          break;
+          return dir * (a.realized_gain_loss_base - b.realized_gain_loss_base);
         case "total_invested":
-          aVal = approxBase(a, a.total_invested);
-          bVal = approxBase(b, b.total_invested);
-          break;
+          return (
+            dir *
+            (approxBase(a, a.total_invested) - approxBase(b, b.total_invested))
+          );
         case "return_pct":
-          aVal = returnPct(a);
-          bVal = returnPct(b);
-          break;
-        default:
-          return 0;
+          return dir * (closedReturnPct(a) - closedReturnPct(b));
       }
-      if (typeof aVal === "string" && typeof bVal === "string") {
-        return sortDirection === "asc"
-          ? aVal.localeCompare(bVal)
-          : bVal.localeCompare(aVal);
-      }
-      return sortDirection === "asc"
-        ? (aVal as number) - (bVal as number)
-        : (bVal as number) - (aVal as number);
     });
   }, [investments, sortColumn, sortDirection]);
 
-  const SortableHeader = ({
-    column,
-    label,
-    align = "",
-  }: {
-    column: SortColumn;
-    label: string;
-    align?: string;
-  }) => {
+  const isClosed = status === "closed";
+  const tab: "open" | "closed" | "securities" = status === "closed" ? "closed" : "open";
+
+  const sortableHeader = (column: SortColumn, label: string, right?: boolean) => {
     const isActive = sortColumn === column;
     const Icon =
       isActive && sortDirection === "asc"
@@ -413,212 +298,128 @@ function AllHoldingsTable() {
           : ArrowUpDown;
     return (
       <TableHead
-        className={`cursor-pointer select-none ${align}`}
-        onClick={() => handleSort(column)}
+        key={column}
+        aria-sort={
+          isActive
+            ? sortDirection === "asc"
+              ? "ascending"
+              : "descending"
+            : undefined
+        }
+        className={right ? "text-right" : undefined}
       >
-        <div
-          className={`flex items-center gap-1 ${align === "text-right" ? "justify-end" : ""}`}
+        <button
+          type="button"
+          onClick={() => handleSort(column)}
+          className={cn(
+            "focus-visible:ring-ring/50 inline-flex items-center gap-1 rounded-sm outline-none select-none focus-visible:ring-[3px]",
+            right && "flex-row-reverse"
+          )}
         >
           {label}
           <Icon
-            className={`h-3 w-3 ${isActive ? "text-foreground" : "text-muted-foreground/50"}`}
+            className={cn(
+              "size-3",
+              isActive ? "text-foreground" : "text-muted-foreground/50"
+            )}
           />
-        </div>
+        </button>
       </TableHead>
     );
   };
 
-  const isClosed = status === "closed";
-  const itemNoun = isClosed ? "closed position" : "holding";
-
   return (
-    <Card>
-      <CardHeader>
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-2">
-            <List className="h-4 w-4 text-muted-foreground" />
-            <CardTitle>All Holdings</CardTitle>
-          </div>
-          <Tabs value={status} onValueChange={handleTabChange}>
-            <TabsList>
-              <TabsTrigger value="open">Current</TabsTrigger>
-              <TabsTrigger value="closed">Closed</TabsTrigger>
-            </TabsList>
-          </Tabs>
-        </div>
-        <CardDescription>
-          {totalItems} {itemNoun}
-          {totalItems !== 1 ? "s" : ""} across all investment accounts
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
+    <section className="space-y-3">
+      <div className="flex items-center justify-between gap-3">
+        <h2 className="font-semibold">Holdings</h2>
+        <Segmented
+          aria-label="Holdings view"
+          value={tab}
+          onValueChange={handleTabChange}
+          options={[
+            { value: "open", label: "Current" },
+            { value: "closed", label: "Closed" },
+            { value: "securities", label: "Securities" },
+          ]}
+        />
+      </div>
+
+      <Card className="gap-0 overflow-hidden py-0">
         {isLoading ? (
-          <>
-            {/* Mobile: Card skeletons */}
-            <div className="md:hidden grid gap-3">
-              {Array.from({ length: 5 }).map((_, i) => (
-                <Skeleton key={i} className="h-40 w-full rounded-lg" />
-              ))}
-            </div>
-            {/* Desktop: Table skeletons */}
-            <div className="hidden md:block space-y-3">
-              {Array.from({ length: 5 }).map((_, i) => (
-                <Skeleton key={i} className="h-12 w-full" />
-              ))}
-            </div>
-          </>
-        ) : investments.length === 0 ? (
-          <div className="flex flex-col items-center justify-center rounded-lg border border-dashed p-8 text-center">
-            <h3 className="text-lg font-semibold">
-              {isClosed ? "No closed positions yet" : "No holdings yet"}
-            </h3>
-            <p className="mt-1 text-sm text-muted-foreground">
-              {isClosed
-                ? "Positions you fully sell will appear here with their realized P/L."
-                : "Add investments to your accounts to see them here."}
+          <HoldingsSkeleton />
+        ) : isError ? (
+          <div className="flex flex-col items-center gap-3 p-10 text-center">
+            <p className="text-muted-foreground text-sm">
+              Couldn&apos;t load your holdings.
             </p>
+            <Button variant="outline" size="sm" onClick={() => void refetch()}>
+              Try again
+            </Button>
+          </div>
+        ) : investments.length === 0 ? (
+          <div className="flex flex-col items-center gap-3 p-10 text-center">
+            <p className="text-muted-foreground text-sm">
+              {isClosed
+                ? "Positions you fully sell will appear here with their realised gain."
+                : "No holdings yet. Open an investment account to add your first."}
+            </p>
+            {!isClosed && (
+              <Button size="sm" asChild>
+                <Link href="/accounts">Go to Accounts</Link>
+              </Button>
+            )}
           </div>
         ) : (
           <>
-            {/* Mobile: Cards */}
-            <div className="md:hidden grid gap-3">
+            {/* Phones: list */}
+            <ul className="divide-border/60 divide-y md:hidden">
               {sortedInvestments.map((inv) =>
                 isClosed ? (
-                  <ClosedHoldingCard
+                  <ClosedRow
                     key={inv.id}
                     investment={inv}
-                    onClick={() => router.push(`/investments/${inv.id}`)}
                     onPrefetch={() => prefetchInvestment(inv.id)}
                   />
                 ) : (
-                  <HoldingCard
+                  <HoldingRow
                     key={inv.id}
                     investment={inv}
-                    onClick={() => router.push(`/investments/${inv.id}`)}
                     onPrefetch={() => prefetchInvestment(inv.id)}
                   />
                 )
               )}
-            </div>
+            </ul>
 
-            {/* Desktop: Sortable Table */}
+            {/* Desktop: sortable table */}
             <div className="hidden md:block">
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <SortableHeader column="symbol" label="Symbol" />
-                    <SortableHeader column="name" label="Name" />
+                    {sortableHeader("symbol", "Holding")}
+                    <TableHead>Type</TableHead>
                     <TableHead>Account</TableHead>
                     {isClosed ? (
                       <>
-                        <SortableHeader
-                          column="total_invested"
-                          label="Invested"
-                          align="text-right"
-                        />
-                        <SortableHeader
-                          column="realized_gl"
-                          label="Realized G/L"
-                          align="text-right"
-                        />
-                        <SortableHeader
-                          column="return_pct"
-                          label="Return"
-                          align="text-right"
-                        />
+                        {sortableHeader("total_invested", "Invested", true)}
+                        {sortableHeader("realized_gl", "Realised gain", true)}
+                        {sortableHeader("return_pct", "Return", true)}
                       </>
                     ) : (
                       <>
-                        <SortableHeader
-                          column="qty"
-                          label="Qty"
-                          align="text-right"
-                        />
-                        <SortableHeader
-                          column="price"
-                          label="Price"
-                          align="text-right"
-                        />
-                        <SortableHeader
-                          column="market_value"
-                          label="Market Value"
-                          align="text-right"
-                        />
-                        <SortableHeader
-                          column="unrealized_gl"
-                          label="Unrealized G/L"
-                          align="text-right"
-                        />
-                        <SortableHeader
-                          column="realized_gl"
-                          label="Realized G/L"
-                          align="text-right"
-                        />
+                        {sortableHeader("qty", "Qty", true)}
+                        {sortableHeader("price", "Price", true)}
+                        {sortableHeader("market_value", "Value", true)}
+                        {sortableHeader("unrealized_gl", "Gain", true)}
+                        <TableHead className="text-right">Weight</TableHead>
                       </>
                     )}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {sortedInvestments.map((inv) => {
-                    const realizedPositive = inv.realized_gain_loss >= 0;
-                    if (isClosed) {
-                      const pct = returnPct(inv);
-                      return (
-                        <TableRow
-                          key={inv.id}
-                          className="cursor-pointer"
-                          onClick={() => router.push(`/investments/${inv.id}`)}
-                          onMouseEnter={() => prefetchInvestment(inv.id)}
-                        >
-                          <TableCell className="font-mono font-semibold">
-                            <Link
-                              href={`/investments/${inv.id}`}
-                              onClick={(e) => e.stopPropagation()}
-                            >
-                              {inv.security.symbol}
-                            </Link>
-                          </TableCell>
-                          <TableCell>{inv.security.name}</TableCell>
-                          <TableCell>
-                            <Link
-                              href={`/accounts/${inv.account_id}`}
-                              className="text-primary hover:underline"
-                              onClick={(e) => e.stopPropagation()}
-                            >
-                              {inv.account?.name ?? `Account #${inv.account_id}`}
-                            </Link>
-                          </TableCell>
-                          <TableCell className="text-right font-mono tabular-nums">
-                            {formatMoney(
-                              inv.total_invested,
-                              inv.currency,
-                              hideBalances
-                            )}
-                          </TableCell>
-                          <TableCell
-                            className={`text-right font-medium font-mono tabular-nums ${
-                              realizedPositive ? "text-positive" : "text-negative"
-                            }`}
-                          >
-                            {realizedPositive ? "+" : ""}
-                            <Money
-                              amount={inv.realized_gain_loss}
-                              currency={inv.currency}
-                              baseAmount={inv.realized_gain_loss_base}
-                            />
-                          </TableCell>
-                          <TableCell
-                            className={`text-right font-medium font-mono tabular-nums ${
-                              realizedPositive ? "text-positive" : "text-negative"
-                            }`}
-                          >
-                            {realizedPositive ? "+" : ""}
-                            {formatPercentage(Math.abs(pct))}
-                          </TableCell>
-                        </TableRow>
-                      );
-                    }
                     const f = holdingFigures(inv);
+                    const weight =
+                      f.baseValue === null ? null : weightPct(f.baseValue, totalValue);
                     return (
                       <TableRow
                         key={inv.id}
@@ -626,15 +427,29 @@ function AllHoldingsTable() {
                         onClick={() => router.push(`/investments/${inv.id}`)}
                         onMouseEnter={() => prefetchInvestment(inv.id)}
                       >
-                        <TableCell className="font-mono font-semibold">
+                        <TableCell>
                           <Link
                             href={`/investments/${inv.id}`}
                             onClick={(e) => e.stopPropagation()}
+                            className="focus-visible:ring-ring/50 flex items-center gap-3 rounded-sm outline-none focus-visible:ring-[3px]"
                           >
-                            {inv.security.symbol}
+                            <SymbolTile
+                              symbol={inv.security.symbol}
+                              assetType={inv.security.asset_type}
+                            />
+                            <span className="min-w-0">
+                              <span className="block font-mono text-xs font-semibold">
+                                {inv.security.symbol}
+                              </span>
+                              <span className="block max-w-56 truncate text-sm font-medium">
+                                {inv.security.name}
+                              </span>
+                            </span>
                           </Link>
                         </TableCell>
-                        <TableCell>{inv.security.name}</TableCell>
+                        <TableCell className="text-muted-foreground">
+                          {assetTypeLabel(inv.security.asset_type)}
+                        </TableCell>
                         <TableCell>
                           <Link
                             href={`/accounts/${inv.account_id}`}
@@ -644,47 +459,89 @@ function AllHoldingsTable() {
                             {inv.account?.name ?? `Account #${inv.account_id}`}
                           </Link>
                         </TableCell>
-                        <TableCell className="text-right font-mono tabular-nums">
-                          {inv.quantity.toFixed(
-                            Number.isInteger(inv.quantity) ? 0 : 6
-                          )}
-                        </TableCell>
-                        <TableCell className="text-right font-mono tabular-nums">
-                          <Money
-                            amount={inv.current_price_native}
-                            currency={f.currency}
-                            fxRate={inv.fx_rate}
-                            fxStale={inv.fx_stale}
-                            fxMissing={inv.fx_missing}
-                          />
-                        </TableCell>
-                        <TableCell className="text-right font-medium font-mono">
-                          <Money
-                            amount={f.nativeValue}
-                            currency={f.currency}
-                            baseAmount={f.baseValue}
-                            fxRate={inv.fx_rate}
-                            fxStale={inv.fx_stale}
-                            fxMissing={inv.fx_missing}
-                            className="justify-end"
-                          />
-                        </TableCell>
-                        <TableCell className="text-right font-medium font-mono">
-                          <UnrealizedPnl investment={inv} />
-                        </TableCell>
-                        <TableCell
-                          className={`text-right font-medium font-mono tabular-nums ${
-                            realizedPositive ? "text-positive" : "text-negative"
-                          }`}
-                        >
-                          {realizedPositive ? "+" : ""}
-                          <Money
-                            amount={inv.realized_gain_loss}
-                            currency={inv.currency}
-                            baseAmount={inv.realized_gain_loss_base}
-                            className="justify-end"
-                          />
-                        </TableCell>
+                        {isClosed ? (
+                          <>
+                            <TableCell className="text-right">
+                              <Money
+                                amount={inv.total_invested}
+                                currency={inv.currency}
+                              />
+                            </TableCell>
+                            <TableCell className="text-right font-medium">
+                              <Money
+                                amount={inv.realized_gain_loss}
+                                currency={inv.currency}
+                                baseAmount={inv.realized_gain_loss_base}
+                                sign="always"
+                                className={cn("justify-end", toneOf(inv.realized_gain_loss))}
+                              />
+                            </TableCell>
+                            <TableCell
+                              className={cn(
+                                "text-right font-medium tabular-nums",
+                                toneOf(inv.realized_gain_loss)
+                              )}
+                            >
+                              {signedPercent(closedReturnPct(inv))}
+                            </TableCell>
+                          </>
+                        ) : (
+                          <>
+                            <TableCell className="text-right tabular-nums">
+                              {qtyText(inv.quantity)}
+                            </TableCell>
+                            <TableCell className="text-right">
+                              <Money
+                                amount={inv.current_price_native}
+                                currency={f.currency}
+                                fxRate={inv.fx_rate}
+                                fxStale={inv.fx_stale}
+                                fxMissing={inv.fx_missing}
+                              />
+                            </TableCell>
+                            <TableCell className="text-right font-medium">
+                              <Money
+                                amount={f.nativeValue}
+                                currency={f.currency}
+                                baseAmount={f.baseValue}
+                                fxRate={inv.fx_rate}
+                                fxStale={inv.fx_stale}
+                                fxMissing={inv.fx_missing}
+                                className="justify-end"
+                              />
+                            </TableCell>
+                            <TableCell className="text-right font-medium">
+                              <UnrealizedPnl investment={inv} className="justify-end" />
+                              <span
+                                className={cn(
+                                  "text-muted-foreground block text-xs font-normal tabular-nums"
+                                )}
+                              >
+                                {signedPercent(holdingReturnPct(inv))}
+                              </span>
+                            </TableCell>
+                            <TableCell className="text-right">
+                              {weight === null ? (
+                                <span className="text-muted-foreground">—</span>
+                              ) : (
+                                <span className="inline-flex items-center justify-end gap-2">
+                                  <span
+                                    aria-hidden
+                                    className="bg-muted relative h-1.5 w-14 overflow-hidden rounded-full"
+                                  >
+                                    <i
+                                      className="bg-primary absolute inset-y-0 left-0 rounded-full"
+                                      style={{ width: `${Math.min(weight, 100)}%` }}
+                                    />
+                                  </span>
+                                  <span className="text-muted-foreground w-9 text-xs tabular-nums">
+                                    {weight}%
+                                  </span>
+                                </span>
+                              )}
+                            </TableCell>
+                          </>
+                        )}
                       </TableRow>
                     );
                   })}
@@ -693,8 +550,8 @@ function AllHoldingsTable() {
             </div>
 
             {totalPages > 1 && (
-              <div className="mt-4 flex items-center justify-between">
-                <span className="text-sm text-muted-foreground">
+              <div className="flex items-center justify-between border-t px-4 py-3">
+                <span className="text-muted-foreground text-sm">
                   Page {page} of {totalPages}
                 </span>
                 <div className="flex gap-2">
@@ -704,7 +561,7 @@ function AllHoldingsTable() {
                     disabled={page <= 1}
                     onClick={() => setPage((p) => p - 1)}
                   >
-                    <ChevronLeft className="h-4 w-4" />
+                    <ChevronLeft className="size-4" />
                     <span className="ml-1 hidden sm:inline">Previous</span>
                   </Button>
                   <Button
@@ -714,154 +571,142 @@ function AllHoldingsTable() {
                     onClick={() => setPage((p) => p + 1)}
                   >
                     <span className="mr-1 hidden sm:inline">Next</span>
-                    <ChevronRight className="h-4 w-4" />
+                    <ChevronRight className="size-4" />
                   </Button>
                 </div>
               </div>
             )}
           </>
         )}
-      </CardContent>
-    </Card>
+      </Card>
+    </section>
+  );
+}
+
+function InvestmentsSkeleton() {
+  return (
+    <div className="space-y-5" aria-busy="true" aria-label="Loading">
+      <Skeleton className="h-9 w-full md:hidden" />
+      <div className="hidden items-center justify-between md:flex">
+        <div className="space-y-2">
+          <Skeleton className="h-9 w-48" />
+          <Skeleton className="h-4 w-64" />
+        </div>
+        <Skeleton className="h-9 w-32" />
+      </div>
+      <div className="grid gap-4 lg:grid-cols-3">
+        <Skeleton className="h-[480px] rounded-card lg:col-span-2" />
+        <Skeleton className="h-[480px] rounded-card" />
+      </div>
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Skeleton className="h-60 rounded-card" />
+        <Skeleton className="h-60 rounded-card" />
+      </div>
+      <Skeleton className="h-64 rounded-card" />
+    </div>
   );
 }
 
 export default function InvestmentsPage() {
-  const { data: portfolio, isLoading } = usePortfolio();
-  const { hideBalances } = useAuth();
-  const baseCurrency = useBaseCurrency();
+  const { data: portfolio, isLoading, isError, refetch } = usePortfolio();
+  const { data: allHoldings } = useAllInvestments({
+    page: 1,
+    page_size: 1,
+    status: "all",
+  });
+  const [tradeOpen, setTradeOpen] = useState(false);
 
-  if (isLoading) {
-    return <InvestmentsSkeleton />;
-  }
+  if (isLoading) return <InvestmentsSkeleton />;
 
-  if (!portfolio) {
+  if (isError || !portfolio) {
     return (
-      <div className="space-y-6">
+      <div className="space-y-5">
         <WealthSwitch current="/investments" />
-        <h1 className="font-display text-3xl leading-tight">Investments</h1>
-        <Card>
-          <CardHeader>
-            <CardTitle>No Portfolio Data</CardTitle>
-            <CardDescription>
-              Add investments to your investment accounts to see your portfolio
-              here.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <p className="text-sm text-muted-foreground">
-              Go to an{" "}
-              <Link href="/accounts" className="text-primary underline">
-                investment account
-              </Link>{" "}
-              and add your first investment to get started.
-            </p>
-          </CardContent>
-        </Card>
+        <h1 className="font-display hidden text-3xl leading-tight md:block">
+          Investments
+        </h1>
+        <div className="flex flex-col items-center gap-3 rounded-card border border-dashed p-12 text-center">
+          <p className="font-medium">Couldn&apos;t load your portfolio</p>
+          <p className="text-muted-foreground text-sm">
+            Something went wrong while loading it.
+          </p>
+          <Button variant="outline" size="sm" onClick={() => void refetch()}>
+            Try again
+          </Button>
+        </div>
       </div>
     );
   }
 
-  const portfolioCurrency = portfolio.currency || baseCurrency;
-  const money = (cents: number) =>
-    formatMoney(cents, portfolioCurrency, hideBalances);
-  const signed = (cents: number) =>
-    formatSigned(cents, portfolioCurrency, hideBalances);
-  const gainUp = portfolio.total_gain_loss >= 0;
-  const realizedUp = portfolio.total_realized_gain_loss >= 0;
-
-  const holdingsCount = Object.values(portfolio.holdings_by_type).reduce(
-    (sum, h) => sum + h.count,
-    0
-  );
-
-  const holdingsEntries = Object.entries(portfolio.holdings_by_type).filter(
-    ([, h]) => h.count > 0
-  ) as [AssetType, { value: number; count: number }][];
+  const holdingsTotal = allHoldings?.total_items;
+  const classCount = Object.values(portfolio.holdings_by_type).filter(
+    (h) => h.count > 0
+  ).length;
+  const empty = holdingsTotal === 0;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       <WealthSwitch current="/investments" />
-      <div>
-        <h1 className="font-display text-3xl leading-tight">Investments</h1>
-        <p className="text-sm text-muted-foreground">
-          {holdingsCount} holding{holdingsCount !== 1 ? "s" : ""} across{" "}
-          {holdingsEntries.length} asset class
-          {holdingsEntries.length !== 1 ? "es" : ""}
-        </p>
-      </div>
 
-      {/* Summary Cards (base currency) */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        <StatCard
-          label="Total value"
-          value={money(portfolio.total_value)}
-          icon={Wallet}
-          tone="primary"
-          delta={{
-            text: `${gainUp ? "+" : ""}${formatPercentage(portfolio.gain_loss_pct)}`,
-            direction: gainUp ? "up" : "down",
-          }}
-          sub="market value"
-        />
-        <StatCard
-          label="Cost basis"
-          value={money(portfolio.total_cost_basis)}
-          icon={Coins}
-          sub="Total invested"
-        />
-        <StatCard
-          label="Unrealized G/L"
-          value={signed(portfolio.total_gain_loss)}
-          icon={gainUp ? TrendingUp : TrendingDown}
-          tone={gainUp ? "positive" : "negative"}
-          sub="open positions"
-        />
-        <StatCard
-          label="Price return"
-          value={signed(portfolio.total_price_return)}
-          icon={portfolio.total_price_return >= 0 ? TrendingUp : TrendingDown}
-          tone={portfolio.total_price_return >= 0 ? "positive" : "negative"}
-          sub="from price movement"
-        />
-        <StatCard
-          label="FX return"
-          value={signed(portfolio.total_fx_return)}
-          icon={Landmark}
-          tone={portfolio.total_fx_return >= 0 ? "positive" : "negative"}
-          sub="from currency movement"
-        />
-        <StatCard
-          label="Realized G/L"
-          value={signed(portfolio.total_realized_gain_loss)}
-          icon={realizedUp ? TrendingUp : TrendingDown}
-          tone={realizedUp ? "positive" : "negative"}
-          sub="closed positions"
-        />
-      </div>
-
-      <FxNotice
-        unconverted={portfolio.unconverted}
-        fxStale={portfolio.fx_stale}
-      />
-
-      {/* Value trend + allocation / currency exposure */}
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-        <div className="min-w-0 lg:col-span-2">
-          <InvestmentValueChart />
+      <div className="flex items-center justify-between gap-3">
+        <div className="hidden md:block">
+          <h1 className="font-display text-3xl leading-tight">Investments</h1>
+          {holdingsTotal !== undefined && !empty && (
+            <p className="text-muted-foreground text-sm">
+              {holdingsTotal} holding{holdingsTotal !== 1 ? "s" : ""}
+              {classCount > 0 &&
+                ` across ${classCount} asset class${classCount !== 1 ? "es" : ""}`}
+            </p>
+          )}
         </div>
-        <div className="flex min-w-0 flex-col gap-4">
-          <AssetAllocationChart
-            holdingsByType={portfolio.holdings_by_type}
-            totalValue={portfolio.total_value}
-            currency={portfolioCurrency}
-          />
-          <CurrencyExposureChart />
-        </div>
+        {!empty && (
+          <Button
+            size="sm"
+            className="ml-auto hidden md:inline-flex"
+            onClick={() => setTradeOpen(true)}
+          >
+            <Plus className="size-4" />
+            Record trade
+          </Button>
+        )}
       </div>
 
-      {/* All Holdings Table */}
-      <AllHoldingsTable />
+      {empty ? (
+        <div className="flex flex-col items-center gap-3 rounded-card border border-dashed p-12 text-center">
+          <p className="font-medium">No investments yet</p>
+          <p className="text-muted-foreground max-w-sm text-sm">
+            Add an investment account, then record your first buy to see your
+            portfolio here.
+          </p>
+          <Button size="sm" asChild>
+            <Link href="/accounts">Go to Accounts</Link>
+          </Button>
+        </div>
+      ) : (
+        <>
+          <div className="grid gap-4 lg:grid-cols-3">
+            <div className="min-w-0 lg:col-span-2">
+              <PortfolioHero portfolio={portfolio} />
+            </div>
+            <div className="min-w-0">
+              <AssetAllocationChart
+                holdingsByType={portfolio.holdings_by_type}
+                totalValue={portfolio.total_value}
+                currency={portfolio.currency}
+              />
+            </div>
+          </div>
+
+          <div className="grid gap-4 lg:grid-cols-2">
+            <ReturnBreakdown portfolio={portfolio} />
+            <CurrencyExposureChart />
+          </div>
+
+          <HoldingsSection totalValue={portfolio.total_value} />
+        </>
+      )}
+
+      <RecordTradeSheet open={tradeOpen} onOpenChange={setTradeOpen} />
     </div>
   );
 }

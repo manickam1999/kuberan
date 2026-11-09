@@ -66,6 +66,12 @@ export type ThemedAreaChartProps = {
   margin?: { top?: number; right?: number; bottom?: number; left?: number };
   /** Hide the x axis labels (phone-width hero charts). Both themes. */
   hideXAxis?: boolean;
+  /**
+   * Padding added above and below the data on the Y axis (clean theme), in
+   * the units of `value`. Defaults to 100, which suits money in major units;
+   * pass a smaller number for series of small values such as share prices.
+   */
+  yPadding?: number;
 };
 
 const MARKER_STROKE: Record<NonNullable<ChartMarker["tone"]>, string> = {
@@ -95,6 +101,7 @@ export function ThemedAreaChart({
   markers,
   margin,
   hideXAxis = false,
+  yPadding = 100,
 }: ThemedAreaChartProps) {
   const { chartTheme } = useChartTheme();
   const isMobile = useIsMobile();
@@ -163,10 +170,10 @@ export function ThemedAreaChart({
           hide
           domain={
             baseline === undefined
-              ? ["dataMin - 100", "dataMax + 100"]
+              ? [`dataMin - ${yPadding}`, `dataMax + ${yPadding}`]
               : [
-                  (min: number) => Math.min(min, baseline) - 100,
-                  (max: number) => Math.max(max, baseline) + 100,
+                  (min: number) => Math.min(min, baseline) - yPadding,
+                  (max: number) => Math.max(max, baseline) + yPadding,
                 ]
           }
         />
