@@ -148,8 +148,8 @@ At the end, every screen in the prototype either works against the real API or h
 
 | # | Decision | Recommendation | Alternative |
 |---|---|---|---|
-| D1 | Visual direction | **Gold Ledger** as prototyped: warm charcoal and paper themes, one gold accent, Instrument Serif for titles, Source Serif 4 for large figures, Geist for UI, Geist Mono for labels. The dither chart theme stays as an opt-in in Appearance. | Rework the direction before building: the owner flagged that it still reads as AI-made. This should be settled before Phase 2. Phases 0–1 don't depend on it. |
-| D2 | Currency at launch | **One base currency per user.** New accounts default to it and the account form hides the currency picker. Existing accounts in another currency are flagged, not converted. | Exchange-rate conversion now: oracle-fed rates and conversion in snapshots, budgets and analytics. That's large, and goes in its own plan. |
+| D1 | Visual direction | **Decided (9 Nov):** the layout, type and components as prototyped, with colour as a user-selectable palette. Eight palettes (Catppuccin, Gold Ledger, Cobalt, Saffron, Graphite, Lagoon, Nord, Gruvbox), each in light and dark. Users can keep the server default, which the server owner sets with `DEFAULT_PALETTE`; Catppuccin when unset (item 1.8). The dither chart theme stays an Appearance option. | Owner earlier felt Gold Ledger read as AI-made; the palette picker replaces a single fixed look. |
+| D2 | Currency at launch | **Superseded by plan 024:** amounts are stored in their own currency and converted to the user's reporting currency on read, with FX rates from the oracle. | — |
 | D3 | Opening balances | **New transaction type `opening_balance`.** It affects balance like income but is excluded from all income, spending, budget and cash-flow figures. Existing rows are backfilled. | Flag column `is_opening_balance`. Rejected: every query would need two conditions. |
 | D4 | Navigation | **Six main destinations:** Home, Transactions, Accounts, Investments, Budgets, Insights. Owed to me sits under "People"; Categories and Rules under "Organize". Securities becomes a tab in Investments. Routes stay where they are; only the nav changes. Mobile tabs: Home, Activity, ＋, Wealth, More. | Keep the current flat nav. |
 | D5 | Rename Analytics to Insights | **Rename the label only.** Keep `/analytics` and add a redirect from `/insights`. | Move the route. |
@@ -499,13 +499,13 @@ Each screen is its own PR, matching the prototype screen of the same name. The o
 | Edit category (`category-edit`) | overlay | Curated icon picker (Phase 0.2 set), eight-colour swatches, parent | Today |
 | Rules (`organize-rules`) | `/rules` | Sentence-style rows, drag reorder, match counts, suggestion card | Today; counts and suggestions need 5.2 |
 | Edit rule (`rule-edit`) | overlay | Conditions builder; live "matches N existing" (existing `preview`); "Recategorise them" | Today |
-| Settings: Profile and security (`prefs-profile`) | `/settings` | Editable profile, base currency, default account, devices list, change password, log out | 1.1, 1.5 |
+| Settings: Profile and security (`prefs-profile`) | `/settings` | Editable profile, base currency, default account, devices list, change password, log out | 1.5 (base currency done in plan 024) |
 | Settings: Appearance (`prefs-appearance`) | `/settings?tab=appearance` | Theme cards, Clean/Dither, hide-on-open (exists), compact rows and show cents (localStorage) | Today |
 | Settings: Telegram (`prefs-telegram`) | `/settings?tab=telegram` | Linked state with username, last message and message count (all exist on `telegram_links`); a sample chat showing only commands that really exist | Today; the quick-add sample needs Phase 6 |
 | Settings: Connected apps (`prefs-apps`) | `/settings?tab=apps` | Can see / can change per app, write limits, change log, connector URL with copy | 1.6 |
 | Settings: Data and export (`prefs-data`) | `/settings?tab=data` | Export, backup status, demo data | 1.7, plus 5.7 and 5.8 (import) |
 | More (`more`) | `/more` (new) | Mobile hub and Add to Home Screen | Today |
-| Sign in, create account (`signin`, `signup`) | `/login`, `/register` | Split layout, lockout copy, base currency at signup, `autocomplete` attributes | 1.1 |
+| Sign in, create account (`signin`, `signup`) | `/login`, `/register` | Split layout, lockout copy, base currency at signup, `autocomplete` attributes | Today (base currency done in plan 024) |
 | OAuth sign-in and consent (`connect-signin`, `connect-consent`) | `/oauth/login`, `/oauth/consent` | Client banner; read scopes; separate "Also allow changes" with limits; remember toggle | Today (plus `write_limits` from 1.6) |
 
 Every screen PR includes:
