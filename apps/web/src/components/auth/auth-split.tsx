@@ -1,12 +1,12 @@
 "use client";
 
 import { useEffect, useState, type ReactNode } from "react";
-import { RingMark } from "@/components/brand/ring-mark";
+import { PolarisMark } from "@/components/brand/polaris-mark";
 
 function Wordmark() {
   return (
     <span className="flex items-center gap-2.5">
-      <RingMark className="size-8" />
+      <PolarisMark className="size-8" />
       <span className="text-lg font-semibold tracking-tight">Kuberan</span>
     </span>
   );

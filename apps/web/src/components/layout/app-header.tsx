@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Eye, EyeOff, LogOut, Plus, Search } from "lucide-react";
-import { RingMark } from "@/components/brand/ring-mark";
+import { PolarisMark } from "@/components/brand/polaris-mark";
 import { HEADER_SLOT_ID } from "@/components/layout/header-slot";
 import { useAuth } from "@/hooks/use-auth";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -51,7 +51,7 @@ export function AppHeader({ onOpenCommandPalette, onNew }: AppHeaderProps) {
         aria-label="Kuberan home"
         className="mr-1.5 flex items-center md:hidden"
       >
-        <RingMark className="size-7" />
+        <PolarisMark className="size-7" />
       </Link>
       <span className="flex-1 truncate text-[15px] font-semibold md:hidden">
         {pageTitle(pathname)}

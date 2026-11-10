@@ -1,6 +1,6 @@
 "use client";
 
-import { RingMark } from "@/components/brand/ring-mark";
+import { PolarisMark } from "@/components/brand/polaris-mark";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Search, Settings } from "lucide-react";
@@ -92,7 +92,7 @@ export function AppSidebar({ onOpenCommandPalette }: AppSidebarProps) {
           onClick={handleLinkClick}
           className="flex items-center gap-2.5 px-2 py-2"
         >
-          <RingMark className="size-9" />
+          <PolarisMark className="size-9" />
           <div className="flex flex-col group-data-[collapsible=icon]:hidden">
             <span className="font-display text-[22px] leading-none">
               Kuberan

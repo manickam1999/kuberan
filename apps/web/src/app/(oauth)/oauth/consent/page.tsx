@@ -10,7 +10,7 @@ import type {
 } from "@/types/api";
 import { isProtocolScope, isWriteScope, scopeLabel } from "@/lib/oauth-scopes";
 import { describeRedirect, followHydraRedirect } from "../redirect";
-import { RingMark } from "@/components/brand/ring-mark";
+import { PolarisMark } from "@/components/brand/polaris-mark";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -258,7 +258,7 @@ function OAuthConsent() {
           {clientName.charAt(0).toUpperCase()}
         </Tile>
         <span className="bg-border h-px w-8" />
-        <RingMark className="size-[42px]" />
+        <PolarisMark className="size-[42px]" />
       </div>
       <div>
         <h1 className="font-display text-3xl sm:text-4xl leading-[1.05]">
