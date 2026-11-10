@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { Eye, EyeOff, LogOut, Plus, Search } from "lucide-react";
 import { PolarisMark } from "@/components/brand/polaris-mark";
 import { HEADER_SLOT_ID } from "@/components/layout/header-slot";
+import { RefreshIndicator } from "@/components/layout/refresh-indicator";
 import { useAuth } from "@/hooks/use-auth";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -36,6 +37,7 @@ interface AppHeaderProps {
  * Desktop: sidebar trigger, an optional month-switcher slot (`HeaderSlot`),
  * search, hide balances, "＋ New" and the account menu. Phones: the mark and
  * page title with search and hide balances (navigation is the tab bar).
+ * A thin bar on the bottom edge shows background refetches.
  */
 export function AppHeader({ onOpenCommandPalette, onNew }: AppHeaderProps) {
   const { user, logout, hideBalances, toggleHideBalances } = useAuth();
@@ -130,6 +132,7 @@ export function AppHeader({ onOpenCommandPalette, onNew }: AppHeaderProps) {
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
+      <RefreshIndicator />
     </header>
   );
 }

@@ -14,5 +14,7 @@ export function useSystemStatus() {
     queryFn: () => apiClient.get<SystemStatus>("/api/v1/system/status"),
     staleTime: 60_000,
     refetchInterval: 5 * 60_000,
+    // Routine poll: don't flash the header refresh bar every 5 minutes.
+    meta: { silentRefetch: true },
   });
 }
