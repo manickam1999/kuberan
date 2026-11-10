@@ -1198,6 +1198,26 @@ html[data-chart-theme="dither"] body {
     font-feature-settings: "cv11", "ss01";
   }
 
+  /* iOS Safari draws date/time inputs natively: they ignore the box's
+     height, take an intrinsic min-width wider than a phone column (so they
+     overflow their container) and centre the value. Drop the native look
+     on iOS only (desktop keeps its calendar picker) and align like text. */
+  @supports (-webkit-touch-callout: none) {
+    input[type="date"],
+    input[type="datetime-local"],
+    input[type="time"],
+    input[type="month"] {
+      -webkit-appearance: none;
+      appearance: none;
+      min-width: 0;
+      max-width: 100%;
+    }
+  }
+  input::-webkit-date-and-time-value {
+    text-align: left;
+    min-height: 1.5em;
+  }
+
   /* Numbers align in columns and read as intentional data, not prose. */
   .tabular-nums,
   .font-mono {
