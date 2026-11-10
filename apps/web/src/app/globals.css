@@ -1308,25 +1308,14 @@ html.palette-transition *::after {
     stroke 240ms ease !important;
 }
 
-/* Area chart endpoint dot and trade markers (ThemedAreaChart): wait for the
-   line's draw-in (DRAW_MS = 1500 ms there), then pop in. */
-@keyframes chart-dot-in {
-  from {
-    opacity: 0;
-    transform: scale(0.4);
-  }
-  to {
-    opacity: 1;
-    transform: scale(1);
-  }
+/* Area chart draw-in (ThemedAreaChart + use-draw-in.ts). Until the hook has
+   found the rendered curve the series is hidden so it never flashes in full;
+   trade markers fade in as the line's tip passes them. */
+[data-drawing="pending"] .chart-draw,
+[data-drawing="pending"] .chart-end,
+[data-drawing="pending"] .chart-marker {
+  visibility: hidden;
 }
-.chart-dot-in {
-  transform-box: fill-box;
-  transform-origin: center;
-  animation: chart-dot-in 260ms ease-out 1500ms both;
-}
-@media (prefers-reduced-motion: reduce) {
-  .chart-dot-in {
-    animation: none;
-  }
+[data-drawing] .chart-marker {
+  transition: opacity 180ms ease-out;
 }
