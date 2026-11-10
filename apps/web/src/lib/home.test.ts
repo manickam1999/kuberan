@@ -7,6 +7,7 @@ import {
   groupByDay,
   needsOnboarding,
   onboardingSteps,
+  monthFlow,
 } from "./home";
 
 describe("balanceSheet", () => {
@@ -102,5 +103,29 @@ describe("cumulative", () => {
         { date: "b", total: 2 },
       ]).map((d) => d.total)
     ).toEqual([1, 3]);
+  });
+});
+
+describe("monthFlow", () => {
+  it("reports the amount and share saved", () => {
+    expect(monthFlow(780000, 376689)).toEqual({
+      net: 403311,
+      overspent: false,
+      savedPercent: 52,
+    });
+  });
+
+  it("reports an overspend as an amount with no percentage", () => {
+    // RM 168.15 in, RM 2,556.63 out: "-1420%" said nothing useful.
+    expect(monthFlow(16815, 255663)).toEqual({
+      net: -238848,
+      overspent: true,
+      savedPercent: null,
+    });
+  });
+
+  it("has no percentage without income", () => {
+    expect(monthFlow(0, 0)).toEqual({ net: 0, overspent: false, savedPercent: null });
+    expect(monthFlow(0, 500).savedPercent).toBeNull();
   });
 });
