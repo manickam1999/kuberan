@@ -79,6 +79,14 @@ export type ThemedAreaChartProps = {
   reference?: readonly number[];
 };
 
+/**
+ * Duration of the line's draw-in (Recharts' default, pinned here). The
+ * endpoint dot and trade markers (`.chart-dot-in` in globals.css, whose delay
+ * must match) fade in once the line has drawn, instead of sitting at their
+ * final spot while it draws.
+ */
+const DRAW_MS = 1500;
+
 const MARKER_STROKE: Record<NonNullable<ChartMarker["tone"]>, string> = {
   pos: "var(--positive)",
   neg: "var(--negative)",
@@ -149,6 +157,11 @@ export function ThemedAreaChart({
     ? data.map((d, i) => ({ ...d, reference: reference[i] }))
     : data;
   const last = data[data.length - 1];
+  // Remount the dots when the series changes so they wait for the line's
+  // morph to the new data, as they do for the first draw.
+  const dotKey = last
+    ? `${data.length}:${data[0].label}:${last.label}:${last.value}`
+    : "";
   const config = {
     value: { label: seriesLabel, color: cleanColor },
   } satisfies ChartConfig;
@@ -206,6 +219,7 @@ export function ThemedAreaChart({
           stroke="var(--color-value)"
           fill={`url(#${gradientId})`}
           strokeWidth={2}
+          animationDuration={DRAW_MS}
         />
         {reference && (
           <RechartsArea
@@ -234,7 +248,8 @@ export function ThemedAreaChart({
           if (y === undefined) return null;
           return (
             <ReferenceDot
-              key={m.label}
+              key={`${m.label}:${dotKey}`}
+              className="chart-dot-in"
               x={m.label}
               y={y}
               r={5}
@@ -247,7 +262,8 @@ export function ThemedAreaChart({
         })}
         {last && (
           <ReferenceDot
-            key="end-halo"
+            key={`end-halo:${dotKey}`}
+            className="chart-dot-in"
             x={last.label}
             y={last.value}
             r={8}
@@ -259,7 +275,8 @@ export function ThemedAreaChart({
         )}
         {last && (
           <ReferenceDot
-            key="end-dot"
+            key={`end-dot:${dotKey}`}
+            className="chart-dot-in"
             x={last.label}
             y={last.value}
             r={3.5}

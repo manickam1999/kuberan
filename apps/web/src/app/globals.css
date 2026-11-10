@@ -1307,3 +1307,26 @@ html.palette-transition *::after {
     fill 240ms ease,
     stroke 240ms ease !important;
 }
+
+/* Area chart endpoint dot and trade markers (ThemedAreaChart): wait for the
+   line's draw-in (DRAW_MS = 1500 ms there), then pop in. */
+@keyframes chart-dot-in {
+  from {
+    opacity: 0;
+    transform: scale(0.4);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+.chart-dot-in {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: chart-dot-in 260ms ease-out 1500ms both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .chart-dot-in {
+    animation: none;
+  }
+}
