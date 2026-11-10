@@ -110,6 +110,13 @@ jobs:
             apps/bot/requirements-dev.txt
       - run: pip install -r requirements-dev.txt
       - run: pytest -q
+      # The tests run from the source tree; this proves the production image
+      # contains every module the bot imports (a hand-picked COPY once missed
+      # reminders.py and the bot crash-looped in production).
+      - name: image imports the bot
+        run: |
+          docker build -t kuberan-bot-ci .
+          docker run --rm --entrypoint python kuberan-bot-ci -c "import main"
 
   compose:
     name: compose (config)
