@@ -10,11 +10,13 @@ import { formatMoney } from "@/lib/format";
 import { useAuth } from "@/hooks/use-auth";
 import { monthBounds, savingsRate, transactionsHref } from "@/lib/insights";
 
+/** Minimum bar-area height; the chart grows to fill a taller card. */
 const CHART_HEIGHT = 150;
 
 /**
  * Income against spending for the last six months, as paired bars. Each month
- * links to that month's transactions.
+ * links to that month's transactions. The chart stretches to the card's
+ * height, so it fills the space beside a longer card.
  */
 export function MonthlyTrendCard() {
   const { data, isLoading, isError } = useMonthlySummary(6);
@@ -37,7 +39,7 @@ export function MonthlyTrendCard() {
           variant="inline"
         />
       </CardHeader>
-      <CardContent className="space-y-3">
+      <CardContent className="flex flex-1 flex-col gap-3">
         {isLoading ? (
           <Skeleton className="h-[190px] w-full" />
         ) : isError ? (
@@ -50,7 +52,7 @@ export function MonthlyTrendCard() {
           </p>
         ) : (
           <div
-            className="grid items-end gap-2"
+            className="grid flex-1 gap-2"
             style={{
               gridTemplateColumns: `repeat(${months.length}, minmax(0, 1fr))`,
             }}
@@ -66,22 +68,22 @@ export function MonthlyTrendCard() {
                   key={m.month}
                   href={transactionsHref({ from, to })}
                   aria-label={`${label} ${y}: income ${money(m.income)}, spending ${money(m.expenses)}`}
-                  className="focus-visible:ring-ring/50 hover:bg-accent/40 grid gap-1.5 rounded-md p-1 outline-none focus-visible:ring-[3px]"
+                  className="focus-visible:ring-ring/50 hover:bg-accent/40 flex flex-col gap-1.5 rounded-md p-1 outline-none focus-visible:ring-[3px]"
                 >
                   <span
-                    className="flex items-end justify-center gap-1"
-                    style={{ height: CHART_HEIGHT }}
+                    className="flex flex-1 items-end justify-center gap-1"
+                    style={{ minHeight: CHART_HEIGHT }}
                   >
                     <span
                       className="bg-positive w-full max-w-5 rounded-t-sm"
                       style={{
-                        height: `${Math.max(2, (m.income / max) * CHART_HEIGHT)}px`,
+                        height: `max(2px, ${(m.income / max) * 100}%)`,
                       }}
                     />
                     <span
                       className="bg-muted-foreground/50 w-full max-w-5 rounded-t-sm"
                       style={{
-                        height: `${Math.max(2, (m.expenses / max) * CHART_HEIGHT)}px`,
+                        height: `max(2px, ${(m.expenses / max) * 100}%)`,
                       }}
                     />
                   </span>

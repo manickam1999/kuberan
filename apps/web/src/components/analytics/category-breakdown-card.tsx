@@ -29,6 +29,11 @@ import {
 import { cn } from "@/lib/utils";
 
 const MAX_ROWS = 8;
+/**
+ * Below this many categories the list leaves room in the card, so each row
+ * also shows how it compares with a typical month (no toggle needed).
+ */
+const INLINE_TYPICAL_BELOW = 5;
 
 /** Spending by category, ranked; each row opens that category's expenses. */
 export function CategoryBreakdownCard({
@@ -65,8 +70,12 @@ export function CategoryBreakdownCard({
       ? categoryComparison(items, typicalData, scale)
       : null;
   const vsTypical = view === "typical" && comparison !== null;
-  // The bars share one scale; in the comparison it has to fit the typical ticks.
-  const barMax = vsTypical
+  // A short list has room to show the comparison under each bar as well.
+  const inlineTypical =
+    !vsTypical && comparison !== null && items.length < INLINE_TYPICAL_BELOW;
+  const showTicks = vsTypical || inlineTypical;
+  // The bars share one scale; with the typical ticks it has to fit them too.
+  const barMax = showTicks
     ? Math.max(max, ...[...comparison.values()].map((c) => c.typical))
     : max;
 
@@ -88,7 +97,7 @@ export function CategoryBreakdownCard({
           </CardAction>
         )}
       </CardHeader>
-      <CardContent>
+      <CardContent className="flex flex-1 flex-col">
         {isLoading ? (
           <div className="space-y-3">
             {Array.from({ length: 6 }).map((_, i) => (
@@ -107,7 +116,7 @@ export function CategoryBreakdownCard({
             No spending recorded for this period.
           </p>
         ) : (
-          <ul className="space-y-3">
+          <ul className="mb-4 space-y-3">
             {shown.map((i) => {
               const cmp = comparison?.get(categoryKey(i));
               return (
@@ -168,7 +177,7 @@ export function CategoryBreakdownCard({
                           backgroundColor: i.category_color || "var(--primary)",
                         }}
                       />
-                      {vsTypical && cmp && cmp.typical > 0 && (
+                      {showTicks && cmp && cmp.typical > 0 && (
                         <span
                           aria-hidden
                           className="bg-foreground/70 absolute top-0 h-full w-0.5"
@@ -178,6 +187,22 @@ export function CategoryBreakdownCard({
                         />
                       )}
                     </span>
+                    {inlineTypical && cmp && (
+                      <span
+                        className={cn(
+                          "col-span-3 text-xs",
+                          vsTypicalTone(cmp.pct) === "pos"
+                            ? "text-positive"
+                            : vsTypicalTone(cmp.pct) === "neg"
+                              ? "text-negative"
+                              : "text-muted-foreground",
+                        )}
+                      >
+                        {cmp.pct === null
+                          ? "No history for this category"
+                          : vsTypicalLabel(cmp.pct)}
+                      </span>
+                    )}
                   </Link>
                 </li>
               );
@@ -189,6 +214,32 @@ export function CategoryBreakdownCard({
               </li>
             )}
           </ul>
+        )}
+        {!isLoading && !isError && items.length > 0 && (
+          // Pinned to the bottom: when the card is taller than its list, the
+          // spare room sits between the list and this line.
+          <div className="text-muted-foreground mt-auto flex flex-wrap items-center justify-between gap-x-4 gap-y-1 border-t pt-3 text-sm">
+            <span>
+              Total{" "}
+              <Money
+                amount={data?.total_spent ?? 0}
+                currency={currency}
+                sign="never"
+              />{" "}
+              · {items.length}{" "}
+              {items.length === 1 ? "category" : "categories"}
+            </span>
+            <Link
+              href={transactionsHref({
+                from: fromDate,
+                to: toDate,
+                type: "expense",
+              })}
+              className="text-primary focus-visible:ring-ring/50 rounded-sm outline-none hover:underline focus-visible:ring-[3px]"
+            >
+              All expenses →
+            </Link>
+          </div>
         )}
       </CardContent>
     </Card>

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { CategoryIcon } from "@/components/categories/category-icon";
 import { useTopExpenses, useTransaction } from "@/hooks/use-transactions";
 import { EditTransactionDialog } from "@/components/transactions/edit-transaction-dialog";
@@ -9,6 +10,7 @@ import { Money } from "@/components/ui/money";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tile } from "@/components/ui/tile";
 import { formatDate } from "@/lib/format";
+import { transactionsHref } from "@/lib/insights";
 import { useBaseCurrency } from "@/hooks/use-profile";
 import { FxNotice } from "@/components/ui/fx-notice";
 
@@ -48,7 +50,7 @@ export function TopExpensesList({
         <CardTitle className="text-base">Largest expenses</CardTitle>
         <FxNotice fxMissing={data?.fx_missing} variant="inline" />
       </CardHeader>
-      <CardContent>
+      <CardContent className="flex flex-1 flex-col">
         {isLoading ? (
           <div className="space-y-2">
             {Array.from({ length: LIMIT }).map((_, i) => (
@@ -64,7 +66,7 @@ export function TopExpensesList({
             No expenses recorded for this period.
           </p>
         ) : (
-          <ol className="-mx-2">
+          <ol className="-mx-2 mb-4">
             {items.map((item, index) => {
               const effective = item.personal_amount ?? item.amount;
               return (
@@ -111,6 +113,26 @@ export function TopExpensesList({
               );
             })}
           </ol>
+        )}
+        {!isLoading && !isError && items.length > 0 && (
+          // Pinned to the bottom, like the category card beside the calendar.
+          <div className="text-muted-foreground mt-auto flex items-center justify-between gap-4 border-t pt-3 text-sm">
+            <span>
+              {data && data.total_count > items.length
+                ? `Top ${items.length} of ${data.total_count} expenses`
+                : `${items.length} ${items.length === 1 ? "expense" : "expenses"}`}
+            </span>
+            <Link
+              href={transactionsHref({
+                from: fromDate,
+                to: toDate,
+                type: "expense",
+              })}
+              className="text-primary focus-visible:ring-ring/50 rounded-sm outline-none hover:underline focus-visible:ring-[3px]"
+            >
+              See all →
+            </Link>
+          </div>
         )}
       </CardContent>
 
