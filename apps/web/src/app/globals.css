@@ -1293,3 +1293,17 @@ body {
   }
 }
 /* ===== end phase 3 insets ===== */
+
+/* Palette switch cross-fade: added to <html> for ~280 ms by applyPalette
+   ({ animate: true }), never under prefers-reduced-motion. */
+html.palette-transition,
+html.palette-transition *,
+html.palette-transition *::before,
+html.palette-transition *::after {
+  transition:
+    background-color 240ms ease,
+    border-color 240ms ease,
+    color 240ms ease,
+    fill 240ms ease,
+    stroke 240ms ease !important;
+}

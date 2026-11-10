@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback } from "react";
+import { useCallback, useMemo, useSyncExternalStore } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTheme } from "next-themes";
 import { toast } from "sonner";
@@ -8,6 +8,11 @@ import { apiClient } from "@/lib/api-client";
 import { useAuth } from "@/hooks/use-auth";
 import { profileKeys } from "@/hooks/use-profile";
 import { applyAndPersistPalette } from "@/lib/palette-apply";
+import {
+  appearanceSaver,
+  type ConfirmedAppearance,
+  type SaveStatus,
+} from "@/lib/appearance-saver";
 import {
   BUILT_IN_PALETTE,
   isPaletteId,
@@ -103,91 +108,127 @@ export function useUpdateAppearance() {
 
 /**
  * The signed-in user's appearance with setters that apply a change at once
- * (palette attribute, next-themes mode, chart style) and save it to the
- * account. A failed save puts the previous look back.
+ * (palette attribute, next-themes mode, chart style, and the session user so
+ * every control shows it as selected) and save it to the account in the
+ * background (`appearanceSaver`: quick changes are merged, only the newest
+ * save counts, and a failed save puts the last saved look back).
  */
 export function useAppearance() {
-  const { user } = useAuth();
+  const { user, patchUser } = useAuth();
+  const queryClient = useQueryClient();
   const { theme, setTheme } = useTheme();
   const { chartTheme, setChartTheme } = useChartTheme();
   const { data: serverDefault } = useServerDefaultPalette();
-  const update = useUpdateAppearance();
-  const { mutate } = update;
+  const saveStatus = useSyncExternalStore(
+    (cb) => appearanceSaver.subscribe(cb),
+    () => appearanceSaver.getStatus(),
+    () => "idle" as SaveStatus
+  );
 
-  const appearance: Appearance = user?.appearance ?? {};
+  const stored = user?.appearance;
+  const appearance: Appearance = useMemo(() => stored ?? {}, [stored]);
   const paletteChoice: AppearancePaletteChoice = appearance.palette ?? "default";
   const serverDefaultPalette = serverDefault ?? BUILT_IN_PALETTE;
   const resolvedPalette =
     resolvePalette(user, serverDefault) ?? serverDefaultPalette;
 
-  const setPalette = useCallback(
-    (choice: AppearancePaletteChoice) => {
-      const previous = resolvedPalette;
-      applyAndPersistPalette(
-        choice === "default" ? serverDefaultPalette : choice
-      );
-      mutate(
-        { palette: choice },
-        {
-          onError: () => {
-            applyAndPersistPalette(previous);
-            toast.error("Could not save your palette");
-          },
-        }
+  /** Writes appearance fields into the session user and the profile cache. */
+  const showFields = useCallback(
+    (fields: { appearance: Appearance; resolved_palette?: string }) => {
+      patchUser(fields);
+      queryClient.setQueryData<User>(profileKeys.all, (prev) =>
+        prev ? { ...prev, ...fields } : prev
       );
     },
-    [mutate, resolvedPalette, serverDefaultPalette]
+    [patchUser, queryClient]
+  );
+
+  /** Puts a confirmed state back on screen after a failed save. */
+  const restore = useCallback(
+    (confirmed: ConfirmedAppearance) => {
+      showFields(confirmed);
+      const palette = isPaletteId(confirmed.resolved_palette)
+        ? confirmed.resolved_palette
+        : serverDefaultPalette;
+      applyAndPersistPalette(palette, { animate: true });
+      setTheme(confirmed.appearance.mode ?? "system");
+      setChartTheme(confirmed.appearance.chart_style ?? "clean");
+    },
+    [serverDefaultPalette, setChartTheme, setTheme, showFields]
+  );
+
+  const change = useCallback(
+    (patch: Appearance, failMessage: string) => {
+      const current: ConfirmedAppearance = {
+        appearance,
+        resolved_palette: resolvedPalette,
+      };
+      const nextAppearance = { ...appearance, ...patch };
+      const nextResolved =
+        patch.palette === undefined
+          ? resolvedPalette
+          : patch.palette === "default"
+            ? serverDefaultPalette
+            : patch.palette;
+      showFields({ appearance: nextAppearance, resolved_palette: nextResolved });
+
+      appearanceSaver.schedule(patch, current, {
+        send: async (body) => {
+          const req: UpdateProfileSettingsRequest = { appearance: body };
+          const res = await apiClient.patch<ProfileResponse>(
+            "/api/v1/profile",
+            req
+          );
+          return {
+            appearance: res.user.appearance ?? {},
+            resolved_palette: res.user.resolved_palette,
+          };
+        },
+        onSaved: (confirmed) => showFields(confirmed),
+        onFailed: (confirmed) => {
+          restore(confirmed);
+          toast.error(failMessage);
+        },
+      });
+    },
+    [appearance, resolvedPalette, restore, serverDefaultPalette, showFields]
+  );
+
+  const setPalette = useCallback(
+    (choice: AppearancePaletteChoice) => {
+      applyAndPersistPalette(
+        choice === "default" ? serverDefaultPalette : choice,
+        { animate: true }
+      );
+      change({ palette: choice }, "Could not save your palette");
+    },
+    [change, serverDefaultPalette]
   );
 
   const setMode = useCallback(
     (mode: AppearanceMode) => {
-      const previous = theme;
       setTheme(mode);
-      mutate(
-        { mode },
-        {
-          onError: () => {
-            if (previous) setTheme(previous);
-            toast.error("Could not save your colour mode");
-          },
-        }
-      );
+      change({ mode }, "Could not save your colour mode");
     },
-    [mutate, setTheme, theme]
+    [change, setTheme]
   );
 
   const setChartStyle = useCallback(
     (style: AppearanceChartStyle) => {
-      const previous = chartTheme;
       setChartTheme(style);
-      mutate(
-        { chart_style: style },
-        {
-          onError: () => {
-            setChartTheme(previous);
-            toast.error("Could not save your chart style");
-          },
-        }
-      );
+      change({ chart_style: style }, "Could not save your chart style");
     },
-    [chartTheme, mutate, setChartTheme]
-  );
-
-  const setDisplayPref = useCallback(
-    (patch: Pick<Appearance, "density" | "show_cents">) => {
-      mutate(patch, {
-        onError: () => toast.error("Could not save your display setting"),
-      });
-    },
-    [mutate]
+    [change, setChartTheme]
   );
 
   return {
     appearance,
     /** Saves `density` (stored only; consumers read `appearance.density`). */
-    setDensity: (density: AppearanceDensity) => setDisplayPref({ density }),
+    setDensity: (density: AppearanceDensity) =>
+      change({ density }, "Could not save your display setting"),
     /** Saves `show_cents` (stored only; `<Money hideCents>` opts in). */
-    setShowCents: (show: boolean) => setDisplayPref({ show_cents: show }),
+    setShowCents: (show: boolean) =>
+      change({ show_cents: show }, "Could not save your display setting"),
     paletteChoice,
     serverDefaultPalette,
     resolvedPalette,
@@ -196,6 +237,8 @@ export function useAppearance() {
     setPalette,
     setMode,
     setChartStyle,
-    isSaving: update.isPending,
+    /** Background save state, for a quiet "Saving…" / "Saved" note. */
+    saveStatus,
+    isSaving: saveStatus === "saving",
   };
 }

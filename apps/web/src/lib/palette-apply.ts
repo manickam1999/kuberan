@@ -27,10 +27,35 @@ export const PALETTE_INIT_SCRIPT = `(function(){try{var ids=${JSON.stringify(
   PALETTES.map((p) => p.id)
 )};var v=null;var m=document.cookie.match(/(?:^|; )${PALETTE_COOKIE}=([^;]*)/);if(m){v=decodeURIComponent(m[1]);}if(ids.indexOf(v)<0){try{v=localStorage.getItem('${PALETTE_STORAGE_KEY}');}catch(e){v=null;}}if(ids.indexOf(v)>=0){document.documentElement.dataset.palette=v;}}catch(e){}})();`;
 
-/** Sets the palette on <html> for the current page. */
-export function applyPalette(id: PaletteId): void {
+/** Class that cross-fades colours while a palette change lands (globals.css). */
+export const PALETTE_TRANSITION_CLASS = "palette-transition";
+const TRANSITION_MS = 280;
+let transitionTimer: ReturnType<typeof setTimeout> | null = null;
+
+/**
+ * Sets the palette on <html> for the current page. With `animate`, colours
+ * cross-fade instead of snapping (skipped under prefers-reduced-motion, and
+ * when the palette is unchanged).
+ */
+export function applyPalette(
+  id: PaletteId,
+  options: { animate?: boolean } = {}
+): void {
   if (typeof document === "undefined") return;
-  document.documentElement.dataset.palette = id;
+  const root = document.documentElement;
+  if (root.dataset.palette === id) return;
+  const reduceMotion =
+    typeof window.matchMedia === "function" &&
+    window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  if (options.animate && !reduceMotion) {
+    root.classList.add(PALETTE_TRANSITION_CLASS);
+    if (transitionTimer !== null) clearTimeout(transitionTimer);
+    transitionTimer = setTimeout(() => {
+      root.classList.remove(PALETTE_TRANSITION_CLASS);
+      transitionTimer = null;
+    }, TRANSITION_MS);
+  }
+  root.dataset.palette = id;
 }
 
 /** Mirrors the palette for the next page load's init script. */
@@ -50,8 +75,11 @@ export function persistPalette(id: PaletteId): void {
 }
 
 /** Applies a palette now and mirrors it for the next load. */
-export function applyAndPersistPalette(id: PaletteId): void {
-  applyPalette(id);
+export function applyAndPersistPalette(
+  id: PaletteId,
+  options: { animate?: boolean } = {}
+): void {
+  applyPalette(id, options);
   persistPalette(id);
 }
 
