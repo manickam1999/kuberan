@@ -11,7 +11,7 @@ apps/site/
   site.js        copy-to-clipboard for the install commands (the page works without it)
   fonts/         Instrument Serif, Geist, Geist Mono (Latin subsets, SIL OFL 1.1)
   img/           WebP screenshots of the demo household, light and dark
-  favicon.svg    the ring mark
+  favicon.svg    the Polaris mark (solid, for small sizes)
   _headers       CSP and cache headers for Netlify / Cloudflare Pages
 ```
 

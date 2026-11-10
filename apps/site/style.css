@@ -204,7 +204,7 @@ p {
   font-size: 1.75rem;
   line-height: 1;
 }
-.ring {
+.mark {
   width: 32px;
   height: 32px;
   color: var(--accent);

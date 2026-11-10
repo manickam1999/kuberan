@@ -10,6 +10,7 @@
     "lint": "next lint",
     "test": "vitest run",
     "screenshots": "node scripts/screenshots.mjs",
+    "icons": "node scripts/render-icons.mjs",
     "e2e": "playwright test -c e2e/playwright.config.ts --trace off"
   },
   "dependencies": {

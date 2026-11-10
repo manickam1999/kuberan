@@ -124,7 +124,7 @@ apps/web/src/
 ├── components/
 │   ├── ui/                       # ShadCN UI primitives (~39 files, incl. custom stat-card, currency-input, color-palette)
 │   ├── layout/                   # App sidebar, header, mobile tab bar (Home, Activity, +, Wealth, More), command palette, status chip
-│   ├── brand/                    # RingMark (the logo) and brand assets
+│   ├── brand/                    # PolarisMark (the logo) and brand assets
 │   ├── accounts/                 # Account dialogs (create, edit)
 │   ├── transactions/             # Transaction dialogs (create, edit)
 │   ├── categories/               # Category dialogs (create, edit, delete)
