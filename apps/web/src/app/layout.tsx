@@ -16,6 +16,7 @@ import {
 } from "@/providers/chart-theme-provider";
 import { PALETTE_INIT_SCRIPT } from "@/lib/palette-apply";
 import { AppearanceSync } from "@/providers/appearance-sync";
+import { ViewportInsets } from "@/providers/viewport-insets";
 import { Toaster } from "@/components/ui/sonner";
 import "./globals.css";
 
@@ -125,6 +126,7 @@ export default async function RootLayout({
             <QueryProvider>
               <AuthProvider>
                 <AppearanceSync />
+                <ViewportInsets />
                 {children}
                 <Toaster />
               </AuthProvider>

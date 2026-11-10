@@ -67,12 +67,14 @@ function DialogContent({
           "bg-elevated scrollbar-slim fixed z-50 flex flex-col gap-4 border shadow-xl outline-none duration-200",
           "data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0",
           // Mobile: bottom sheet that slides up, full width, scrollable
-          "inset-x-0 bottom-0 max-h-[92dvh] w-full overflow-y-auto rounded-t-2xl rounded-b-none border-b-0 px-5 pt-3 pb-[calc(1.25rem+var(--safe-bottom))]",
+          // It rides on top of the on-screen keyboard (--kb-inset) and fits the
+          // space above it (--sheet-max-h); see globals.css.
+          "inset-x-0 bottom-(--kb-inset) max-h-(--sheet-max-h) w-full overflow-y-auto overscroll-contain rounded-t-2xl rounded-b-none border-b-0 px-5 pt-3 pb-[calc(1.25rem+var(--sheet-safe-bottom))] transition-[bottom] ease-out",
           "data-[state=closed]:slide-out-to-bottom data-[state=open]:slide-in-from-bottom",
           // Desktop: centered modal that fades/zooms in
           "sm:inset-x-auto sm:top-1/2 sm:bottom-auto sm:left-1/2 sm:max-h-[85dvh] sm:max-w-lg sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-card sm:border-b sm:p-6",
           "sm:data-[state=closed]:slide-out-to-bottom-0 sm:data-[state=open]:slide-in-from-bottom-0 sm:data-[state=closed]:zoom-out-95 sm:data-[state=open]:zoom-in-95",
-          mobileFull && "max-sm:h-[92dvh]",
+          mobileFull && "max-sm:h-(--sheet-max-h)",
           className
         )}
         {...props}
