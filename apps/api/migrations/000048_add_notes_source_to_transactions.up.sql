@@ -17,9 +17,33 @@ UPDATE transactions SET source = 'system'
     WHERE type IN ('opening_balance', 'reimbursement', 'investment');
 UPDATE transactions SET source = 'import' WHERE import_ref IS NOT NULL;
 
-CREATE EXTENSION IF NOT EXISTS pg_trgm;
+-- pg_trgm may live in any schema: Supabase keeps extensions in "extensions",
+-- which the migrating role's search_path may not include. Install it only if
+-- missing (into "extensions" when that schema exists, as Supabase expects),
+-- then name the operator class with its schema so the index never depends on
+-- search_path.
+DO $$
+DECLARE
+    trgm_schema text;
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pg_trgm') THEN
+        IF EXISTS (SELECT 1 FROM pg_namespace WHERE nspname = 'extensions') THEN
+            CREATE EXTENSION pg_trgm WITH SCHEMA extensions;
+        ELSE
+            CREATE EXTENSION pg_trgm;
+        END IF;
+    END IF;
 
-CREATE INDEX idx_transactions_description_trgm
-    ON transactions USING gin (description gin_trgm_ops);
-CREATE INDEX idx_transactions_notes_trgm
-    ON transactions USING gin (notes gin_trgm_ops);
+    SELECT n.nspname INTO trgm_schema
+    FROM pg_extension e
+    JOIN pg_namespace n ON n.oid = e.extnamespace
+    WHERE e.extname = 'pg_trgm';
+
+    EXECUTE format(
+        'CREATE INDEX idx_transactions_description_trgm ON transactions USING gin (description %I.gin_trgm_ops)',
+        trgm_schema);
+    EXECUTE format(
+        'CREATE INDEX idx_transactions_notes_trgm ON transactions USING gin (notes %I.gin_trgm_ops)',
+        trgm_schema);
+END
+$$;
