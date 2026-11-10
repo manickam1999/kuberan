@@ -11,7 +11,9 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install -r requirements.txt
 
-COPY main.py config.py api_client.py ./
+# Every top-level module (main.py imports reminders.py, among others); a
+# hand-picked list here once left a new module out of the image.
+COPY *.py ./
 COPY handlers/ ./handlers/
 COPY utils/ ./utils/
 
