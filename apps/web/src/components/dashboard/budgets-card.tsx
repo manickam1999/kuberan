@@ -16,7 +16,12 @@ import {
   findProgress,
 } from "@/components/budgets/budget-visuals";
 
-const TOP_N = 4;
+/**
+ * How many budgets the Home card lists. It sits in a row beside the spend and
+ * cash-flow cards, so it must not grow with the number of budgets: the rest
+ * are summarised in a "+N more" link to the budgets page.
+ */
+const TOP_N = 3;
 
 /** Budgets closest to (or past) their limit, most used first. */
 export function BudgetsCard() {
@@ -33,17 +38,21 @@ export function BudgetsCard() {
 
   const isLoading = budgetsLoading || progressLoading;
 
-  const rows = useMemo(() => {
+  const { rows, hidden } = useMemo(() => {
     const budgets = budgetsData?.data ?? [];
-    return budgets
+    const sorted = budgets
       .map((budget) => ({
         budget,
         progress: findProgress(progressList, budget.id),
       }))
       .sort(
         (a, b) => (b.progress?.percentage ?? 0) - (a.progress?.percentage ?? 0)
-      )
-      .slice(0, TOP_N);
+      );
+    const total = budgetsData?.total_items ?? sorted.length;
+    return {
+      rows: sorted.slice(0, TOP_N),
+      hidden: Math.max(total - TOP_N, 0),
+    };
   }, [budgetsData, progressList]);
 
   const anyFxMissing = rows.some((r) => r.progress?.fx_missing ?? false);
@@ -51,9 +60,11 @@ export function BudgetsCard() {
   if (isLoading) {
     return (
       <HomeCard title="Budgets" href="/budgets" linkLabel="All">
-        {Array.from({ length: 3 }).map((_, i) => (
-          <Skeleton key={i} className="h-10 w-full" />
-        ))}
+        <div className="space-y-2.5">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <Skeleton key={i} className="h-8 w-full" />
+          ))}
+        </div>
       </HomeCard>
     );
   }
@@ -88,7 +99,7 @@ export function BudgetsCard() {
 
   return (
     <HomeCard title="Budgets" href="/budgets" linkLabel="All">
-      <div className="space-y-3.5">
+      <div className="space-y-1">
         {rows.map(({ budget, progress }) => {
           const percentage = progress?.percentage ?? 0;
           const spent = progress?.spent ?? 0;
@@ -97,42 +108,56 @@ export function BudgetsCard() {
             <Link
               key={budget.id}
               href="/budgets"
-              className="-mx-2 block space-y-1.5 rounded-lg px-2 py-1 transition-colors hover:bg-accent/40 focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
+              className="-mx-2 flex items-center gap-2.5 rounded-lg px-2 py-1.5 transition-colors hover:bg-accent/40 focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
             >
-              <div className="flex items-center gap-2.5">
-                <CategoryTile category={budget.category} />
-                <span className="min-w-0 flex-1 truncate text-sm font-medium">
-                  {budget.name}
-                </span>
-                {status === "over" ? (
-                  <Badge tone="neg">
-                    Over{" "}
-                    <Money
-                      amount={spent - budget.amount}
-                      currency={budget.currency}
-                      sign="never"
-                    />
-                  </Badge>
-                ) : (
-                  <span className="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
-                    {status === "close" && <Badge tone="warn">Close</Badge>}
-                    <span className="tabular-nums">
-                      <Money amount={spent} currency={budget.currency} compact />
-                      {" / "}
-                      <Money
-                        amount={budget.amount}
-                        currency={budget.currency}
-                        compact
-                      />
-                    </span>
+              <CategoryTile category={budget.category} size="sm" />
+              <div className="min-w-0 flex-1 space-y-1.5">
+                <div className="flex items-center gap-2">
+                  <span className="min-w-0 flex-1 truncate text-sm font-medium leading-none">
+                    {budget.name}
                   </span>
-                )}
+                  {status === "over" ? (
+                    <Badge tone="neg">
+                      Over{" "}
+                      <Money
+                        amount={spent - budget.amount}
+                        currency={budget.currency}
+                        sign="never"
+                      />
+                    </Badge>
+                  ) : (
+                    <span className="flex shrink-0 items-center gap-1.5 text-xs leading-none text-muted-foreground">
+                      {status === "close" && <Badge tone="warn">Close</Badge>}
+                      <span className="tabular-nums">
+                        <Money
+                          amount={spent}
+                          currency={budget.currency}
+                          compact
+                        />
+                        {" / "}
+                        <Money
+                          amount={budget.amount}
+                          currency={budget.currency}
+                          compact
+                        />
+                      </span>
+                    </span>
+                  )}
+                </div>
+                <BudgetProgressBar percentage={percentage} size="sm" />
               </div>
-              <BudgetProgressBar percentage={percentage} size="sm" />
             </Link>
           );
         })}
       </div>
+      {hidden > 0 && (
+        <Link
+          href="/budgets"
+          className="self-start rounded-sm text-xs text-muted-foreground transition-colors hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
+        >
+          +{hidden} more {hidden === 1 ? "budget" : "budgets"}
+        </Link>
+      )}
       <FxNotice fxMissing={anyFxMissing} variant="inline" />
     </HomeCard>
   );
