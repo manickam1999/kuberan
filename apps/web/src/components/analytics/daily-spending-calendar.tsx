@@ -48,7 +48,8 @@ function spanningMonths(from: string, to: string) {
 
 /**
  * Daily spending as a calendar heatmap: darker cells are bigger spending
- * days, with the compact amount in each cell. Every day with spending links
+ * days, with the compact amount in each cell. The cells grow to fill the
+ * card's height, so the calendar matches the card beside it. Every day with spending links
  * to that day's expenses in Transactions.
  */
 export function DailySpendingCalendar({
@@ -113,7 +114,7 @@ export function DailySpendingCalendar({
         </CardDescription>
         <FxNotice fxMissing={anyFxMissing} variant="inline" className="mt-1" />
       </CardHeader>
-      <CardContent className={cn("space-y-5")}>
+      <CardContent className="flex flex-1 flex-col gap-5">
         {isError ? (
           <p role="alert" className="text-muted-foreground py-8 text-center text-sm">
             Couldn&apos;t load daily spending.
@@ -127,7 +128,7 @@ export function DailySpendingCalendar({
               year: "numeric",
             });
             return (
-              <div key={`${year}-${month}`}>
+              <div key={`${year}-${month}`} className="flex flex-1 flex-col">
                 {multi && (
                   <p className="text-muted-foreground mb-2 text-xs font-medium">
                     {label}
@@ -140,7 +141,7 @@ export function DailySpendingCalendar({
                     </span>
                   ))}
                 </div>
-                <div className="grid grid-cols-7 gap-1">
+                <div className="grid flex-1 auto-rows-[minmax(2.5rem,1fr)] grid-cols-7 gap-1">
                   {Array.from({ length: lead }).map((_, i) => (
                     <span key={`lead-${i}`} />
                   ))}
@@ -164,7 +165,7 @@ export function DailySpendingCalendar({
                       </>
                     );
                     const className = cn(
-                      "flex aspect-square min-w-0 flex-col items-center justify-center rounded-md border border-transparent p-0.5",
+                      "flex min-w-0 flex-col items-center justify-center rounded-md border border-transparent p-0.5",
                       !inRange && "opacity-25",
                       isToday && "border-primary/60",
                       cents > 0 ? "text-foreground" : "text-muted-foreground"
