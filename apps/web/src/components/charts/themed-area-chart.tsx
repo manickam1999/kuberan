@@ -1,6 +1,6 @@
 "use client";
 
-import { useId } from "react";
+import { useId, useRef } from "react";
 import {
   AreaChart as RechartsAreaChart,
   Area as RechartsArea,
@@ -25,6 +25,7 @@ import type { DitherColor } from "@/components/dither-kit/palette";
 import { useChartTheme } from "@/providers/chart-theme-provider";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { formatCompact } from "@/lib/format";
+import { DRAW_CLASS, useDrawIn } from "@/components/charts/use-draw-in";
 
 /** A trade (or other event) pinned to a point of the series. */
 export type ChartMarker = {
@@ -112,6 +113,14 @@ export function ThemedAreaChart({
   const { chartTheme } = useChartTheme();
   const isMobile = useIsMobile();
   const gradientId = `area-${useId().replace(/:/g, "")}`;
+  const containerRef = useRef<HTMLDivElement>(null);
+  const last = data[data.length - 1];
+  // Redraw (line from the left, endpoint dot riding its tip) when the series
+  // changes, e.g. on a range switch.
+  const drawKey = last
+    ? `${data.length}:${data[0].label}:${last.label}:${last.value}`
+    : "";
+  useDrawIn(containerRef, drawKey, chartTheme !== "dither" && data.length > 1);
 
   if (chartTheme === "dither") {
     return (
@@ -148,13 +157,12 @@ export function ThemedAreaChart({
   const chartData = reference
     ? data.map((d, i) => ({ ...d, reference: reference[i] }))
     : data;
-  const last = data[data.length - 1];
   const config = {
     value: { label: seriesLabel, color: cleanColor },
   } satisfies ChartConfig;
 
   return (
-    <ChartContainer config={config} className={className}>
+    <ChartContainer ref={containerRef} config={config} className={className}>
       <RechartsAreaChart accessibilityLayer data={chartData} margin={margin}>
         <defs>
           <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
@@ -165,6 +173,10 @@ export function ThemedAreaChart({
               stopOpacity={0.1}
             />
           </linearGradient>
+          {/* Reveals the series left to right while useDrawIn runs. */}
+          <clipPath id={`${gradientId}-draw`} data-draw-clip>
+            <rect x={-10000} y={-10000} width={0} height={20000} />
+          </clipPath>
         </defs>
         <CartesianGrid vertical={false} />
         <RechartsXAxis
@@ -206,6 +218,8 @@ export function ThemedAreaChart({
           stroke="var(--color-value)"
           fill={`url(#${gradientId})`}
           strokeWidth={2}
+          className={DRAW_CLASS.area}
+          isAnimationActive={false}
         />
         {reference && (
           <RechartsArea
@@ -235,6 +249,7 @@ export function ThemedAreaChart({
           return (
             <ReferenceDot
               key={m.label}
+              className={DRAW_CLASS.marker}
               x={m.label}
               y={y}
               r={5}
@@ -248,6 +263,7 @@ export function ThemedAreaChart({
         {last && (
           <ReferenceDot
             key="end-halo"
+            className={DRAW_CLASS.end}
             x={last.label}
             y={last.value}
             r={8}
@@ -260,6 +276,7 @@ export function ThemedAreaChart({
         {last && (
           <ReferenceDot
             key="end-dot"
+            className={DRAW_CLASS.end}
             x={last.label}
             y={last.value}
             r={3.5}
