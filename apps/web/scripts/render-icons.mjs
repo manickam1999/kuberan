@@ -3,6 +3,7 @@
 // as src/components/brand/polaris-mark.tsx):
 //
 //   src/app/icon.svg, ../site/favicon.svg   solid star on a rounded tile (tab favicons)
+//   ../site/logo.svg                        facets on a rounded tile (README header, large uses)
 //   src/app/favicon.ico                     16 + 32 px, solid star
 //   src/app/apple-icon.png                  180 px, full bleed (iOS rounds it), facets
 //   public/icon-192.png, public/icon-512.png rounded tile, facets
@@ -63,6 +64,10 @@ function iconSvg({ size, rx, mark, solid }) {
 const favicon = iconSvg({ size: 32, rx: 7, mark: 0.8, solid: true });
 writeFileSync(join(web, "src/app/icon.svg"), favicon);
 writeFileSync(join(web, "../site/favicon.svg"), favicon);
+writeFileSync(
+  join(web, "../site/logo.svg"),
+  iconSvg({ size: 512, rx: 112, mark: 0.66, solid: false }),
+);
 
 const rasters = [
   {

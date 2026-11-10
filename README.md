@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="apps/site/favicon.svg" width="72" height="72" alt="Kuberan">
+  <img src="apps/site/logo.svg" width="72" height="72" alt="Kuberan">
 </p>
 
 <h1 align="center">Kuberan</h1>
