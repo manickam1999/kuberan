@@ -1,176 +1,191 @@
-# Kuberan
+<p align="center">
+  <img src="apps/site/favicon.svg" width="72" height="72" alt="Kuberan">
+</p>
 
-A self-hosted, privacy-first personal finance application. Named after the Hindu god of wealth (Kubera).
+<h1 align="center">Kuberan</h1>
 
-Built with a Go backend and Next.js frontend, organized as a monorepo.
+<p align="center">
+  Self-hosted personal finance: accounts, budgets and investments in one place you run yourself.<br>
+  Ask Claude about your money, or log an expense from Telegram. Your data stays in your own database.
+</p>
+
+<p align="center">
+  <a href="docs/self-hosting.md">Self-hosting</a> ·
+  <a href="docs/connect-ai-assistant.md">Connect Claude</a> ·
+  <a href="docs/telegram-bot.md">Telegram bot</a> ·
+  <a href="#development">Development</a> ·
+  <a href="#documentation">Docs</a>
+</p>
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="apps/site/img/dashboard-dark.webp">
+    <img src="apps/site/img/dashboard-light.webp" alt="The Kuberan home screen: net worth over six months, balance sheet, spending this month, budgets and cash flow" width="900">
+  </picture>
+</p>
+
+Named after Kubera, the Hindu god of wealth. No bank logins, no ads, no third party holding your data: Kuberan
+runs on your own server (or your own Supabase project), and everything it knows can be exported as CSV at any time.
 
 ## Features
 
-- **Account Management** -- Cash, investment, credit card, and debt accounts with multi-currency support
-- **Transaction Tracking** -- Income, expenses, and account-to-account transfers with editing support
-- **Analytics & Charts** -- Spending by category, monthly income/expenses summary, daily spending trends
-- **Budgets** -- Monthly/yearly budgets with spending progress tracking
-- **Investment Portfolio** -- Track stocks, ETFs, bonds, crypto, and REITs with buy/sell/dividend/split transactions and realized gain/loss tracking
-- **Securities & Pricing** -- Browse securities, view price history, pipeline API for automated price ingestion
-- **Portfolio Snapshots** -- Historical net worth tracking (cash + investments - debt) with time-series charts
-- **Categories** -- Hierarchical income/expense categories with icons and colors
-- **Receipt Attachments** -- Attach receipt images/PDFs to transactions, stored in a private S3-compatible object store (MinIO) with server-side sanitization; see [docs/receipts.md](docs/receipts.md)
-- **Telegram Bot** -- Link a Telegram account and interact with your finances via chat (`apps/bot`)
-- **Price Oracle** -- Standalone worker that ingests security prices and triggers portfolio snapshots via the pipeline API (`apps/oracle`)
-- **MCP Server** -- Read-only finance tools for MCP clients (e.g. Claude connectors), secured with OAuth 2.1 via Ory Hydra (`apps/api/cmd/mcp`)
-- **Automated Backups** -- Cron-based pg_dump backup service with retention pruning, plus off-host client-side-encrypted replication of the DB dumps and receipts bucket to Cloudflare R2 (`apps/backup`); see [docs/backup-and-dr.md](docs/backup-and-dr.md)
-- **Dark Mode** -- Dark-first UI with light and system theme support
-- **Audit Logging** -- All sensitive operations are logged for accountability
+**Everyday money**
 
-## Tech Stack
+- Cash, credit-card, loan, fixed-deposit and investment accounts, each in its own currency
+- Income, expenses and transfers (including between currencies), with notes, receipts and shared expenses
+- Fast search across descriptions, notes and amounts; filters; bulk recategorise and delete
+- Rules that categorise new transactions automatically, with match counts and suggestions
+- Budgets with pace tracking, money owed to you, and due-date reminders for cards, loans and deposits
+- Bank-statement CSV import and Interactive Brokers activity-statement import
 
-| Layer        | Technology                                        |
-|--------------|---------------------------------------------------|
-| Backend      | Go 1.24, Gin, GORM, PostgreSQL 16                |
-| Frontend     | Next.js 15 (App Router), React 19, Tailwind CSS v4, ShadCN UI, react-query, Recharts |
-| Auth         | JWT (access + refresh tokens), bcrypt; OAuth 2.1 via Ory Hydra for MCP clients |
-| Logging      | Zap (structured)                                  |
-| Migrations   | golang-migrate (SQL-based)                        |
-| API Docs     | Swagger/OpenAPI via swaggo                        |
-| Dev Env      | Docker Compose, Air (hot reload), Turbopack       |
+**Investing**
 
-## Project Structure
+- Holdings, buys, sells, dividends (with withholding) and splits, with realised and unrealised gains
+- Multi-currency done properly: trades keep the rate they happened at, and returns split into price and FX
+- Daily prices and exchange rates from the price oracle, portfolio and net-worth history
 
-```
-/
-├── apps/
-│   ├── api/                  # Go backend (Gin + GORM + PostgreSQL); also hosts the MCP server (cmd/mcp)
-│   ├── web/                  # Next.js frontend (React 19 + Tailwind CSS v4)
-│   ├── bot/                  # Python Telegram bot
-│   ├── oracle/               # Go price-ingestion + snapshot worker
-│   └── backup/               # Cron-based pg_dump backup service
-├── deploy/                   # Deployment scripts
-├── docs/                     # Documentation (MCP OAuth, database setup, receipts, backup & DR)
-├── ory/                      # Ory Hydra (OAuth authorization server) config
-├── plans/                    # Architecture and upgrade plans
-├── scripts/                  # Utility scripts (check-go.sh, etc.)
-├── docker-compose.yml        # Development environment
-└── docker-compose.prod.yml   # Production environment
-```
+**Insights**
 
-## Getting Started
+- Net worth over time, a balance sheet, and where your money went this month
+- Spending against your typical month, by category, by day and as an income-to-spending flow
 
-### Prerequisites
+**Assistants**
 
-- Docker and Docker Compose
-- Go 1.24+ (for local backend development)
-- Node.js 20+ (for local frontend development)
-- Python 3 (for local Telegram bot development)
+- **Claude** through MCP: ask about balances, spending, budgets or your portfolio, and (if you allow it) let it
+  record transactions. Every app's access is scoped, rate-limited, audited and revocable from Settings.
+- **Telegram**: type `coffee 18.40`, confirm, done. `/spent`, `/balance`, `/budgets`, `/undo`, receipt photos and
+  due-date reminders.
 
-### Development (Docker)
+**Your data**
+
+- Self-hosted on Docker Compose with Postgres, or on Supabase
+- Full CSV export, nightly encrypted off-site backups, an audit log of every sensitive change
+- Eight colour palettes, light and dark, installable as an app on your phone
+
+## Screenshots
+
+<table>
+  <tr>
+    <td width="50%"><img src="apps/site/img/insights-dark.webp" alt="Insights: spending against a typical month and an income-to-spending flow"></td>
+    <td width="50%"><img src="apps/site/img/investments-light.webp" alt="Investments: portfolio value against cost basis, allocation by asset class"></td>
+  </tr>
+  <tr>
+    <td align="center">Insights</td>
+    <td align="center">Investments</td>
+  </tr>
+</table>
+
+<p align="center">
+  <img src="apps/site/img/phone-dashboard-light.webp" alt="Home on a phone" width="260">
+  &nbsp;&nbsp;
+  <img src="apps/site/img/phone-transactions-dark.webp" alt="Transactions on a phone" width="260">
+</p>
+
+## Getting started
+
+You need a machine with Docker Compose. Postgres is included, or you can point Kuberan at a Supabase project.
 
 ```bash
-# Start the default services (API + frontend + MCP + Hydra + PostgreSQL)
-npm run dev
+git clone https://github.com/zihangg/kuberan && cd kuberan
+cp .env.prod.example .env.prod   # fill in your secrets and domain
+./deploy/deploy.sh
 ```
 
-This starts:
-- **API** at http://localhost:8080
-- **Frontend** at http://localhost:3000
-- **MCP server** at http://localhost:8081
-- **Ory Hydra** (OAuth authorization server) at http://localhost:4444 (public), plus a one-shot `hydra-migrate` job
-- **PostgreSQL** on port 5433 (host) / 5432 (container)
-- **Swagger UI** at http://localhost:8080/swagger/index.html
+`deploy.sh` builds the images, takes a pre-migration backup, runs database migrations and starts everything once
+it is healthy; if a step fails it prints how to roll back. Read **[docs/self-hosting.md](docs/self-hosting.md)**
+first: it walks through every required setting, TLS, upgrades and backups. Upgrading later is the same command.
 
-The `bot`, `oracle`, and `backup` services sit behind Docker Compose profiles and are not started by default (`npm run dev:bot` starts the bot profile).
+## How it fits together
 
-### Development (Local)
-
-```bash
-# Backend only (requires PostgreSQL running)
-cd apps/api && air
-
-# Frontend only
-cd apps/web && pnpm dev
+```
+                        ┌──────────────┐
+  Browser / phone ────▶ │  web         │  Next.js app
+                        └──────┬───────┘
+                               ▼
+  Telegram ──▶ bot ───▶ ┌──────────────┐ ◀─── oracle (prices, FX rates, snapshots; every 30 min)
+                        │  api         │
+  Claude ──▶ mcp ─────▶ │  Go + Gin    │ ───▶ Postgres (or Supabase)
+     ▲                  └──────────────┘ ───▶ MinIO / S3 (receipts)
+     └── OAuth 2.1 ── Ory Hydra                backup ──▶ pg_dump + encrypted off-site copy
 ```
 
-### Common Commands
+| App | What it is |
+|---|---|
+| [`apps/api`](apps/api) | Go API (Gin, GORM, Postgres 16, golang-migrate). Also builds the MCP server (`cmd/mcp`), an OAuth 2.1 resource server in front of the same services. |
+| [`apps/web`](apps/web) | Next.js 15 / React 19 web app (Tailwind CSS v4, shadcn/ui, TanStack Query). |
+| [`apps/bot`](apps/bot) | Python Telegram bot; talks to the API over HTTP as the linked user. |
+| [`apps/oracle`](apps/oracle) | Go worker that publishes security prices and FX rates and triggers daily snapshots. |
+| [`apps/backup`](apps/backup) | Scheduled `pg_dump` with retention, plus client-side-encrypted replication to Cloudflare R2. |
+| [`apps/site`](apps/site) | Static landing page (deployed separately; never served by an instance). |
+
+Design notes worth knowing before you change anything:
+
+- **Money is int64 cents**, never floats, and every amount carries its currency. Totals across currencies are
+  converted to your reporting currency and never assume a 1:1 rate (see [docs/multi-currency.md](docs/multi-currency.md)).
+- **Handlers → services → models.** Services are interfaces; every query is scoped to the signed-in user; every
+  balance change happens in one database transaction; sensitive operations are audited.
+- **Schema changes are SQL migrations** in `apps/api/migrations`, never GORM AutoMigrate.
+
+[`CLAUDE.md`](CLAUDE.md) is the full reference: conventions, every endpoint and every environment variable.
+
+## Development
+
+Prerequisites: Docker, Go 1.26, Node 20 with pnpm 10, Python 3.12.
 
 ```bash
-# Run backend tests
-cd apps/api && go test ./... -v
+npm run dev          # api, web, mcp, hydra and postgres with hot reload
+npm run dev:bot      # the same, plus the Telegram bot
+```
 
-# Run tests with coverage
-cd apps/api && go test ./... -coverprofile=coverage.out && go tool cover -html=coverage.out
+| Service | URL |
+|---|---|
+| Web app | http://localhost:3000 |
+| API | http://localhost:8080 (Swagger UI at `/swagger/index.html`) |
+| MCP server | http://localhost:8081 |
+| Ory Hydra | http://localhost:4444 |
+| Postgres | `localhost:5433` |
 
-# Run full verification (build + vet + lint + test + race detection)
-./scripts/check-go.sh apps/api
+Or run pieces on their own: `cd apps/api && air` for the API, `cd apps/web && pnpm dev` for the web app.
+
+### Checks
+
+Every change runs through these in CI:
+
+```bash
+./scripts/check-go.sh apps/api       # build, vet, golangci-lint, tests, race detector
 ./scripts/check-go.sh apps/oracle
-
-# Quick check (build + vet + lint, no tests)
-cd apps/api && make check-fast
-
-# Run migrations
-cd apps/api && go run cmd/migrate/main.go up
-cd apps/api && go run cmd/migrate/main.go down 1
-
-# Build backend
-cd apps/api && go build -o bin/api ./cmd/api
-
-# Generate Swagger docs
-cd apps/api && swag init -g cmd/api/main.go -d . --output internal/docs --parseDependency
-
-# Lint
-cd apps/api && golangci-lint run ./...
+cd apps/web && pnpm lint && pnpm exec tsc --noEmit && pnpm test && pnpm build
+cd apps/bot && pytest -q
 ```
 
-## API Overview
+End-to-end tests drive the real web app against a real API and Postgres
+([docs/e2e.md](docs/e2e.md)): `cd apps/web && pnpm e2e`.
 
-All endpoints are prefixed with `/api/v1/`. Authentication uses Bearer JWT tokens.
+### Common tasks
 
-**Public:** Register, login, token refresh, health check (`/api/health`), Swagger docs, and the OAuth endpoints for the MCP flow (login/consent bridge under `/api/v1/oauth/*` and the RFC 7591 dynamic client registration proxy at `/oauth2/register`).
-
-**Protected:** CRUD for accounts (cash, investment, credit card), transactions, categories, budgets, and investments. Includes transfer support, budget progress tracking, portfolio summary, spending analytics (by category, monthly summary, daily trends), securities browsing, portfolio snapshots, user profile, and Telegram account linking.
-
-**Internal (bot secret auth):** Telegram link completion, user resolution, and activity tracking for the bot service.
-
-**Pipeline (API key auth):** Security creation and listing, price recording, and portfolio snapshot computation for automated data ingestion.
-
-See the [Swagger UI](http://localhost:8080/swagger/index.html) for full API documentation or refer to `CLAUDE.md` for the complete endpoint listing.
-
-## Architecture
-
-The backend follows a 3-layer architecture:
-
-```
-Handlers (HTTP) → Services (Business Logic) → Models (Database)
+```bash
+cd apps/api && go run cmd/migrate/main.go up        # apply migrations (down 1 to step back)
+cd apps/api && swag init -g cmd/api/main.go -d . --output internal/docs --parseDependency   # regenerate Swagger
+cd apps/web && pnpm screenshots --email … --password …  # every route, light and dark (docs/screenshots.md)
 ```
 
-Key patterns:
-- Interface-based services for testability
-- All monetary values stored as **int64 cents** (not floats)
-- Custom `AppError` types with error codes and HTTP status mapping
-- Soft deletes on all models
-- User-scoped queries for data isolation
-- Audit logging on sensitive operations
+## Documentation
 
-The MCP server (`apps/api/cmd/mcp`) exposes read-only finance tools to MCP
-clients (e.g. Claude connectors) and authenticates them with OAuth 2.1, using
-Ory Hydra as the authorization server. See
-[docs/mcp-oauth.md](docs/mcp-oauth.md) for the flow, the rationale, and
-deployment topology.
+| Guide | |
+|---|---|
+| [Self-hosting](docs/self-hosting.md) | Install, configure, upgrade |
+| [Database setup](docs/database-setup.md) | Bundled Postgres or Supabase |
+| [Backups and disaster recovery](docs/backup-and-dr.md) | Backups, off-site copies, restores, upgrade notes |
+| [Connect an AI assistant](docs/connect-ai-assistant.md) | Adding Kuberan to Claude, permissions and limits |
+| [MCP and OAuth](docs/mcp-oauth.md) | How the MCP server and Hydra fit together |
+| [Telegram bot](docs/telegram-bot.md) | Setup, linking and every command |
+| [Multi-currency](docs/multi-currency.md) | How amounts, rates and totals work |
+| [CSV import](docs/csv-import.md) · [IBKR import](docs/ibkr-import.md) | Importing statements |
+| [Receipts](docs/receipts.md) | Attachment storage and limits |
+| [End-to-end tests](docs/e2e.md) · [Screenshots](docs/screenshots.md) | Testing tools |
+| [Public demo](docs/public-demo.md) | Optional demo instance with a nightly reset |
 
-## Environment Variables
-
-See `.env.prod.example` for the full documented production template and `apps/api/.env` for local development values. Key variables:
-
-| Variable              | Description                                         | Default            |
-|-----------------------|-----------------------------------------------------|--------------------|
-| `ENV`                 | Environment (development/production)                | `development`      |
-| `PORT`                | API server port                                     | `8080`             |
-| `DB_HOST` / `DB_PORT` | PostgreSQL host/port (`5433` on host in local dev)  | `localhost`/`5432` |
-| `JWT_SECRET`          | JWT signing key (required in prod)                  | dev default        |
-| `PIPELINE_API_KEY`    | API key for pipeline endpoints (used by the oracle) | --                 |
-| `BOT_INTERNAL_SECRET` | Shared secret between the API and the Telegram bot  | --                 |
-| `CORS_ORIGIN`         | Allowed CORS origin                                 | `*`                |
-| `HYDRA_*`             | Ory Hydra wiring (DSN, issuer/admin URLs, login/consent URLs) | see `.env.prod.example` |
-| `MCP_RESOURCE_URL` / `MCP_PORT` | MCP resource server URL and port          | `http://localhost:8081` / `8081` |
-| `TELEGRAM_BOT_TOKEN`  | Telegram bot token (bot service)                    | --                 |
+Design history and upcoming work live in [`plans/`](plans).
 
 ## License
 
