@@ -21,7 +21,7 @@ import {
  * cash-flow cards, so it must not grow with the number of budgets: the rest
  * are summarised in a "+N more" link to the budgets page.
  */
-const TOP_N = 4;
+const TOP_N = 3;
 
 /** Budgets closest to (or past) their limit, most used first. */
 export function BudgetsCard() {
