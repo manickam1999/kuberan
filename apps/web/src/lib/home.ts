@@ -161,3 +161,25 @@ export function cumulative(
     return { date: d.date, total: sum };
   });
 }
+
+/** What the cash-flow card shows for one month. */
+export interface MonthFlow {
+  /** Income minus spending, in cents (negative when overspent). */
+  net: number;
+  /** True when spending exceeded income. */
+  overspent: boolean;
+  /**
+   * Share of income kept, as a whole percent, only when something was saved
+   * (a percentage of a tiny or zero income says nothing useful).
+   */
+  savedPercent: number | null;
+}
+
+/** Net flow for a month, for the cash-flow card's third figure. */
+export function monthFlow(income: number, expenses: number): MonthFlow {
+  const net = income - expenses;
+  const overspent = net < 0;
+  const savedPercent =
+    !overspent && income > 0 ? Math.round((net / income) * 100) : null;
+  return { net, overspent, savedPercent };
+}
