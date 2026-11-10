@@ -125,15 +125,83 @@ func (s *fxService) Rates(pairs []CurrencyPair, at time.Time) (map[CurrencyPair]
 	if err != nil {
 		return nil, err
 	}
+	var unresolved []CurrencyPair
 	for _, p := range wanted {
 		if _, done := out[p]; done {
 			continue
 		}
 		if q := s.resolve(p, legs, at); q != nil {
 			out[p] = q
+		} else {
+			unresolved = append(unresolved, p)
+		}
+	}
+	if len(unresolved) > 0 {
+		if err := s.resolveViaHubs(unresolved, legs, at, out); err != nil {
+			return nil, err
 		}
 	}
 	return out, nil
+}
+
+// resolveViaHubs crosses pairs that neither a stored row nor the USD pivot
+// resolve through a user's reporting currency. The oracle publishes each
+// currency in use against every base currency (SGD→MYR, USD→MYR) but not the
+// pairs between them, so USD→SGD exists only as the product of two such legs.
+// It runs only for unresolved pairs, so the common path costs no extra query.
+func (s *fxService) resolveViaHubs(pairs []CurrencyPair, legs map[CurrencyPair]fxLeg, at time.Time, out map[CurrencyPair]*FXQuote) error {
+	var hubs []string
+	if err := s.db.Model(&models.User{}).Distinct().Pluck("UPPER(base_currency)", &hubs).Error; err != nil {
+		return apperrors.Wrap(apperrors.ErrInternalServer, err)
+	}
+	hubs = sortedUnique(hubs)
+
+	need := map[CurrencyPair]struct{}{}
+	for _, p := range pairs {
+		for _, h := range hubs {
+			if h == p.Base || h == p.Quote {
+				continue
+			}
+			for _, c := range []string{p.Base, p.Quote} {
+				need[CurrencyPair{c, h}] = struct{}{}
+				need[CurrencyPair{h, c}] = struct{}{}
+			}
+		}
+	}
+	if len(need) == 0 {
+		return nil
+	}
+	more, err := s.loadLegs(need, at)
+	if err != nil {
+		return err
+	}
+	for k, v := range more {
+		legs[k] = v
+	}
+
+	for _, p := range pairs {
+		for _, h := range hubs {
+			if h == p.Base || h == p.Quote {
+				continue
+			}
+			r1, t1, _, ok1 := oneLeg(p.Base, h, legs)
+			r2, t2, _, ok2 := oneLeg(h, p.Quote, legs)
+			if !ok1 || !ok2 {
+				continue
+			}
+			rate, err := fx.Mul(r1, r2)
+			if err != nil {
+				continue
+			}
+			older := t1
+			if t2.Before(t1) {
+				older = t2
+			}
+			out[p] = s.quote(p, rate, older, FXPathPivotPrefix+h, at)
+			break
+		}
+	}
+	return nil
 }
 
 // loadLegs fetches the latest row <= at for every directed pair in need, with

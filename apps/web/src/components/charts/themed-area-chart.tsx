@@ -7,6 +7,8 @@ import {
   XAxis as RechartsXAxis,
   YAxis as RechartsYAxis,
   CartesianGrid,
+  ReferenceDot,
+  ReferenceLine,
 } from "recharts";
 import {
   ChartContainer,
@@ -24,6 +26,13 @@ import { useChartTheme } from "@/providers/chart-theme-provider";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { formatCompact } from "@/lib/format";
 
+/** A trade (or other event) pinned to a point of the series. */
+export type ChartMarker = {
+  /** `label` of the data point the marker sits on. */
+  label: string;
+  tone?: "pos" | "neg" | "neutral";
+};
+
 export type ThemedAreaChartProps = {
   /** Chart points, oldest → newest. `value` is in display units. */
   data: { label: string; value: number }[];
@@ -38,12 +47,52 @@ export type ThemedAreaChartProps = {
   cleanColor?: string;
   /** Y-axis tick formatter for the dither theme (defaults to compact). */
   axisFormatter?: (value: number) => string;
+  /**
+   * Dashed reference line (e.g. cost basis), in the same units as `value`.
+   * Clean theme only: the dither theme ignores it until dither-kit has an
+   * equivalent.
+   */
+  baseline?: number;
+  /**
+   * Trade points drawn as hollow dots on the line. Clean theme only: the
+   * dither theme ignores them until dither-kit has an equivalent.
+   */
+  markers?: readonly ChartMarker[];
+  /**
+   * Clean theme only: Recharts plot margins in px. Pass a right margin of
+   * about 10 so the endpoint dot and its halo are not clipped at the edge.
+   * Omitted: Recharts' default, so existing charts do not change.
+   */
+  margin?: { top?: number; right?: number; bottom?: number; left?: number };
+  /** Hide the x axis labels (phone-width hero charts). Both themes. */
+  hideXAxis?: boolean;
+  /**
+   * Padding added above and below the data on the Y axis (clean theme), in
+   * the units of `value`. Defaults to 100, which suits money in major units;
+   * pass a smaller number for series of small values such as share prices.
+   */
+  yPadding?: number;
+  /**
+   * A second, dashed comparison line (e.g. a typical month), one value per
+   * point of `data` in the same units. Clean theme only.
+   */
+  reference?: readonly number[];
+};
+
+const MARKER_STROKE: Record<NonNullable<ChartMarker["tone"]>, string> = {
+  pos: "var(--positive)",
+  neg: "var(--negative)",
+  neutral: "var(--muted-foreground)",
 };
 
 /**
  * Time-series area chart that renders the flat Recharts look (`clean`) or the
  * ordered-dither look (`dither`) based on the active chart theme. Call sites
  * pass the same data + formatters regardless of theme.
+ *
+ * The clean look draws an emphasised endpoint dot (halo + solid dot), an
+ * optional dashed `baseline` and trade `markers`. Under the dither theme
+ * `baseline` and `markers` are ignored (dither-kit has no equivalents yet).
  */
 export function ThemedAreaChart({
   data,
@@ -53,6 +102,12 @@ export function ThemedAreaChart({
   ditherColor = "green",
   cleanColor = "var(--chart-1)",
   axisFormatter = formatCompact,
+  baseline,
+  markers,
+  margin,
+  hideXAxis = false,
+  yPadding = 100,
+  reference,
 }: ThemedAreaChartProps) {
   const { chartTheme } = useChartTheme();
   const isMobile = useIsMobile();
@@ -67,10 +122,17 @@ export function ThemedAreaChart({
           yDomain="auto"
           bloom="low"
           bloomOnHover
-          margins={{ top: 10, right: 10, bottom: 22, left: 44 }}
+          margins={{
+            top: 10,
+            right: 10,
+            bottom: hideXAxis ? 6 : 22,
+            left: 44,
+          }}
         >
           <Grid />
-          <XAxis dataKey="label" maxTicks={isMobile ? 4 : 7} />
+          {!hideXAxis && (
+            <XAxis dataKey="label" maxTicks={isMobile ? 4 : 7} />
+          )}
           <YAxis tickFormatter={(v) => axisFormatter(v)} tickCount={4} />
           <Area dataKey="value" variant="gradient" />
           <Tooltip
@@ -82,13 +144,18 @@ export function ThemedAreaChart({
     );
   }
 
+  const valueByLabel = new Map(data.map((d) => [d.label, d.value]));
+  const chartData = reference
+    ? data.map((d, i) => ({ ...d, reference: reference[i] }))
+    : data;
+  const last = data[data.length - 1];
   const config = {
     value: { label: seriesLabel, color: cleanColor },
   } satisfies ChartConfig;
 
   return (
     <ChartContainer config={config} className={className}>
-      <RechartsAreaChart accessibilityLayer data={data}>
+      <RechartsAreaChart accessibilityLayer data={chartData} margin={margin}>
         <defs>
           <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
             <stop offset="0%" stopColor="var(--color-value)" stopOpacity={0.4} />
@@ -102,12 +169,23 @@ export function ThemedAreaChart({
         <CartesianGrid vertical={false} />
         <RechartsXAxis
           dataKey="label"
+          hide={hideXAxis}
           tickLine={false}
           axisLine={false}
           tickMargin={8}
           minTickGap={isMobile ? 50 : 30}
         />
-        <RechartsYAxis hide domain={["dataMin - 100", "dataMax + 100"]} />
+        <RechartsYAxis
+          hide
+          domain={
+            baseline === undefined
+              ? [`dataMin - ${yPadding}`, `dataMax + ${yPadding}`]
+              : [
+                  (min: number) => Math.min(min, baseline) - yPadding,
+                  (max: number) => Math.max(max, baseline) + yPadding,
+                ]
+          }
+        />
         <ChartTooltip
           content={({ active, payload, label }) => {
             if (!active || !payload?.length) return null;
@@ -129,6 +207,67 @@ export function ThemedAreaChart({
           fill={`url(#${gradientId})`}
           strokeWidth={2}
         />
+        {reference && (
+          <RechartsArea
+            type="monotone"
+            dataKey="reference"
+            stroke="var(--muted-foreground)"
+            strokeDasharray="3 3"
+            strokeWidth={1.4}
+            fill="none"
+            dot={false}
+            activeDot={false}
+            isAnimationActive={false}
+            legendType="none"
+          />
+        )}
+        {baseline !== undefined && (
+          <ReferenceLine
+            y={baseline}
+            stroke="var(--muted-foreground)"
+            strokeDasharray="3 4"
+            ifOverflow="extendDomain"
+          />
+        )}
+        {markers?.map((m) => {
+          const y = valueByLabel.get(m.label);
+          if (y === undefined) return null;
+          return (
+            <ReferenceDot
+              key={m.label}
+              x={m.label}
+              y={y}
+              r={5}
+              fill="var(--card)"
+              stroke={MARKER_STROKE[m.tone ?? "neutral"]}
+              strokeWidth={2}
+              ifOverflow="visible"
+            />
+          );
+        })}
+        {last && (
+          <ReferenceDot
+            key="end-halo"
+            x={last.label}
+            y={last.value}
+            r={8}
+            fill="var(--color-value)"
+            fillOpacity={0.18}
+            stroke="none"
+            ifOverflow="visible"
+          />
+        )}
+        {last && (
+          <ReferenceDot
+            key="end-dot"
+            x={last.label}
+            y={last.value}
+            r={3.5}
+            fill="var(--color-value)"
+            stroke="none"
+            ifOverflow="visible"
+          />
+        )}
       </RechartsAreaChart>
     </ChartContainer>
   );

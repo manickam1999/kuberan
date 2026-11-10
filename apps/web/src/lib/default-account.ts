@@ -8,6 +8,15 @@ const DEFAULT_ACCOUNT_TYPES: readonly AccountType[] = [
   "debt",
 ];
 
+/**
+ * Whether plain income, expenses and transfers can be recorded on this type.
+ * Investment balances come from holdings and a fixed deposit's principal is
+ * locked, so the API refuses (400 ACCOUNT_TYPE_NOT_ALLOWED) and pickers hide them.
+ */
+export function takesPlainActivity(account: Pick<Account, "type">): boolean {
+  return DEFAULT_ACCOUNT_TYPES.includes(account.type);
+}
+
 /** Whether an account may be chosen as the default for new transactions. */
 export function canBeDefaultAccount(account: Account): boolean {
   return account.is_active && DEFAULT_ACCOUNT_TYPES.includes(account.type);

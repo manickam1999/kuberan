@@ -3,6 +3,7 @@ package handlers
 import (
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -32,6 +33,7 @@ type CreateTransactionRequest struct {
 	Amount      int64                  `json:"amount" binding:"required,gt=0"`
 	Description string                 `json:"description" binding:"max=500"`
 	Date        *string                `json:"date"`
+	Notes       string                 `json:"notes" binding:"max=2000"`
 }
 
 // TransactionResponse represents a transaction in the response
@@ -89,6 +91,7 @@ func (h *TransactionHandler) CreateTransaction(c *gin.Context) {
 		req.Amount,
 		req.Description,
 		transactionDate,
+		transactionMeta(c, req.Notes),
 	)
 	if err != nil {
 		respondWithError(c, err)
@@ -101,6 +104,65 @@ func (h *TransactionHandler) CreateTransaction(c *gin.Context) {
 	c.JSON(http.StatusCreated, gin.H{"transaction": transaction})
 }
 
+// SuggestCategoryRequest is the payload for suggesting a category.
+type SuggestCategoryRequest struct {
+	Description string                 `json:"description" binding:"required,max=500"`
+	Type        models.TransactionType `json:"type" binding:"required"`
+	// Amount (cents) and AccountID are optional; only rules that condition on them use them.
+	Amount    int64  `json:"amount" binding:"gte=0"`
+	AccountID string `json:"account_id"`
+}
+
+// SuggestCategoryResponse is the suggestion; category_id is null (and the
+// other fields empty) when nothing applies.
+type SuggestCategoryResponse struct {
+	CategoryID   *string `json:"category_id"`
+	CategoryName string  `json:"category_name"`
+	Reason       string  `json:"reason" enums:"rule,history"`
+}
+
+// SuggestCategory suggests a category for a transaction that is about to be created.
+// @Summary     Suggest a category
+// @Description Suggests a category for an income or expense description: the user's rules first (reason "rule"), then the most recent category used for the same description (reason "history"). category_id is null when nothing applies. Income and expense only.
+// @Tags        transactions
+// @Accept      json
+// @Produce     json
+// @Security    BearerAuth
+// @Param       request body SuggestCategoryRequest true "Description and type"
+// @Success     200 {object} SuggestCategoryResponse "Suggestion"
+// @Failure     400 {object} ErrorResponse "Invalid input or type is not income/expense"
+// @Failure     401 {object} ErrorResponse "Unauthorized"
+// @Failure     500 {object} ErrorResponse "Server error"
+// @Router      /transactions/suggest-category [post]
+func (h *TransactionHandler) SuggestCategory(c *gin.Context) {
+	userID, err := getUserID(c)
+	if err != nil {
+		respondWithError(c, err)
+		return
+	}
+	var req SuggestCategoryRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		respondWithError(c, apperrors.WithMessage(apperrors.ErrInvalidInput, err.Error()))
+		return
+	}
+	if req.Type != models.TransactionTypeIncome && req.Type != models.TransactionTypeExpense {
+		respondWithError(c, apperrors.WithMessage(apperrors.ErrInvalidInput, "type must be income or expense"))
+		return
+	}
+	s, err := h.transactionService.SuggestCategory(userID, services.CategorySuggestionInput{
+		Description: req.Description, Type: req.Type, Amount: req.Amount, AccountID: req.AccountID,
+	})
+	if err != nil {
+		respondWithError(c, err)
+		return
+	}
+	resp := SuggestCategoryResponse{}
+	if s != nil {
+		resp = SuggestCategoryResponse{CategoryID: &s.CategoryID, CategoryName: s.CategoryName, Reason: s.Reason}
+	}
+	c.JSON(http.StatusOK, resp)
+}
+
 // CreateTransferRequest represents the request payload for creating a transfer
 type CreateTransferRequest struct {
 	FromAccountID string `json:"from_account_id" binding:"required"`
@@ -111,6 +173,7 @@ type CreateTransferRequest struct {
 	ToAmount    *int64  `json:"to_amount" binding:"omitempty,gt=0"`
 	Description string  `json:"description" binding:"max=500"`
 	Date        *string `json:"date"`
+	Notes       string  `json:"notes" binding:"max=2000"`
 }
 
 // CreateTransfer handles the creation of a transfer between two accounts
@@ -157,6 +220,7 @@ func (h *TransactionHandler) CreateTransfer(c *gin.Context) {
 		req.ToAmount,
 		req.Description,
 		transferDate,
+		transactionMeta(c, req.Notes),
 	)
 	if err != nil {
 		respondWithError(c, err)
@@ -190,6 +254,9 @@ func (h *TransactionHandler) CreateTransfer(c *gin.Context) {
 // @Param       category_id query int    false "Filter by category ID"
 // @Param       min_amount  query int    false "Filter by minimum amount (cents)"
 // @Param       max_amount  query int    false "Filter by maximum amount (cents)"
+// @Param       q              query string false "Search description and notes (case-insensitive, max 100 chars); a numeric value such as 64.73 also matches the amount"
+// @Param       shared         query bool   false "true keeps only transactions with receivables, false only those without"
+// @Param       has_attachment query bool   false "true keeps only transactions with receipts, false only those without"
 // @Success     200 {object} pagination.PageResponse[models.Transaction] "Paginated transactions"
 // @Failure     400 {object} ErrorResponse "Invalid input"
 // @Failure     401 {object} ErrorResponse "Unauthorized"
@@ -246,6 +313,9 @@ func (h *TransactionHandler) GetAccountTransactions(c *gin.Context) {
 // @Param       category_id query int    false "Filter by category ID"
 // @Param       min_amount  query int    false "Filter by minimum amount (cents)"
 // @Param       max_amount  query int    false "Filter by maximum amount (cents)"
+// @Param       q              query string false "Search description and notes (case-insensitive, max 100 chars); a numeric value such as 64.73 also matches the amount"
+// @Param       shared         query bool   false "true keeps only transactions with receivables, false only those without"
+// @Param       has_attachment query bool   false "true keeps only transactions with receipts, false only those without"
 // @Success     200 {object} pagination.PageResponse[models.Transaction] "Paginated transactions"
 // @Failure     400 {object} ErrorResponse "Invalid input"
 // @Failure     401 {object} ErrorResponse "Unauthorized"
@@ -281,6 +351,21 @@ func (h *TransactionHandler) GetUserTransactions(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, result)
+}
+
+// parseBoolQuery reads an optional true/false query parameter into dst (left
+// nil when the parameter is absent).
+func parseBoolQuery(c *gin.Context, name string, dst **bool) error {
+	v := c.Query(name)
+	if v == "" {
+		return nil
+	}
+	b, err := strconv.ParseBool(v)
+	if err != nil {
+		return apperrors.WithMessage(apperrors.ErrInvalidInput, "invalid "+name+", must be true or false")
+	}
+	*dst = &b
+	return nil
 }
 
 func parseTransactionFilter(c *gin.Context) (services.TransactionFilter, error) {
@@ -334,6 +419,20 @@ func parseTransactionFilter(c *gin.Context) (services.TransactionFilter, error) 
 		filter.MaxAmount = &amt
 	}
 
+	if v := strings.TrimSpace(c.Query("q")); v != "" {
+		if r := []rune(v); len(r) > services.MaxSearchLen {
+			v = string(r[:services.MaxSearchLen])
+		}
+		filter.Search = &v
+	}
+
+	if err := parseBoolQuery(c, "shared", &filter.Shared); err != nil {
+		return filter, err
+	}
+	if err := parseBoolQuery(c, "has_attachment", &filter.HasAttachment); err != nil {
+		return filter, err
+	}
+
 	return filter, nil
 }
 
@@ -381,6 +480,7 @@ type UpdateTransactionRequest struct {
 	Amount      *int64                  `json:"amount" binding:"omitempty,gt=0"`
 	Description *string                 `json:"description" binding:"omitempty,max=500"`
 	Date        *string                 `json:"date"`
+	Notes       *string                 `json:"notes" binding:"omitempty,max=2000"`
 }
 
 // UpdateTransaction handles updating an existing transaction
@@ -422,6 +522,7 @@ func (h *TransactionHandler) UpdateTransaction(c *gin.Context) {
 		Type:        req.Type,
 		Amount:      req.Amount,
 		Description: req.Description,
+		Notes:       req.Notes,
 	}
 
 	// Handle CategoryID: nil in JSON = don't change; empty string = clear; non-empty = set
@@ -444,15 +545,53 @@ func (h *TransactionHandler) UpdateTransaction(c *gin.Context) {
 		updateFields.Date = &parsedDate
 	}
 
+	before, err := h.transactionService.GetTransactionByID(userID, txID)
+	if err != nil {
+		respondWithError(c, err)
+		return
+	}
+
 	transaction, err := h.transactionService.UpdateTransaction(userID, txID, updateFields)
 	if err != nil {
 		respondWithError(c, err)
 		return
 	}
 
-	h.auditService.Log(userID, "UPDATE_TRANSACTION", "transaction", txID, c.ClientIP(), nil)
+	h.auditService.Log(userID, "UPDATE_TRANSACTION", "transaction", txID, c.ClientIP(),
+		transactionChanges(before, transaction))
 
 	c.JSON(http.StatusOK, gin.H{"transaction": transaction})
+}
+
+// transactionChanges describes what an update changed as {field: {from, to}}
+// for the audit row (the same shape the MCP tools record). Notes are free text,
+// so only the fact that they changed is recorded. Returns nil when nothing
+// differs.
+func transactionChanges(before, after *models.Transaction) map[string]interface{} {
+	if before == nil || after == nil {
+		return nil
+	}
+	changes := map[string]interface{}{}
+	diff := func(field string, from, to interface{}, changed bool) {
+		if changed {
+			changes[field] = map[string]interface{}{"from": from, "to": to}
+		}
+	}
+	diff("account_id", before.AccountID, after.AccountID, before.AccountID != after.AccountID)
+	diff("type", before.Type, after.Type, before.Type != after.Type)
+	diff("amount", before.Amount, after.Amount, before.Amount != after.Amount)
+	diff("description", before.Description, after.Description, before.Description != after.Description)
+	diff("date", before.Date, after.Date, !before.Date.Equal(after.Date))
+	categoryChanged := (before.CategoryID == nil) != (after.CategoryID == nil) ||
+		(before.CategoryID != nil && after.CategoryID != nil && *before.CategoryID != *after.CategoryID)
+	diff("category_id", before.CategoryID, after.CategoryID, categoryChanged)
+	if before.Notes != after.Notes {
+		changes["notes"] = map[string]interface{}{"changed": true}
+	}
+	if len(changes) == 0 {
+		return nil
+	}
+	return changes
 }
 
 // DeleteTransaction handles the deletion of a transaction
@@ -839,4 +978,64 @@ func (h *TransactionHandler) GetTopExpenses(c *gin.Context) {
 // MessageResponse represents a simple message response
 type MessageResponse struct {
 	Message string `json:"message"`
+}
+
+// BulkTransactionSet is the "set" part of a bulk request.
+type BulkTransactionSet struct {
+	CategoryID  *string `json:"category_id"`
+	NotesAppend *string `json:"notes_append" binding:"omitempty,max=2000"`
+	// Shared may only be false: it removes the receivables of the selected expenses.
+	Shared *bool `json:"shared"`
+}
+
+// BulkTransactionsRequest is the payload of POST /transactions/bulk.
+type BulkTransactionsRequest struct {
+	IDs    []string           `json:"ids" binding:"required,min=1,max=200"`
+	Set    BulkTransactionSet `json:"set"`
+	Delete bool               `json:"delete"`
+}
+
+// BulkTransactions edits or deletes up to 200 transactions atomically.
+// @Summary     Bulk edit or delete transactions
+// @Description Apply one change set (category, notes_append, shared=false) to, or delete, up to 200 transactions in a single database transaction. Every id must belong to the user (otherwise 404 TRANSACTION_NOT_FOUND and nothing changes); a category must match each transaction's type (400 CATEGORY_TYPE_MISMATCH); opening balances are rejected (400 TRANSACTION_NOT_EDITABLE). One audit row is written per changed transaction.
+// @Tags        transactions
+// @Accept      json
+// @Produce     json
+// @Security    BearerAuth
+// @Param       request body BulkTransactionsRequest true "Ids and the changes to apply"
+// @Success     200 {object} services.BulkTransactionResult "Counts of updated and deleted transactions"
+// @Failure     400 {object} ErrorResponse "Invalid input, category type mismatch or non-editable transaction"
+// @Failure     401 {object} ErrorResponse "Unauthorized"
+// @Failure     404 {object} ErrorResponse "Transaction or category not found"
+// @Failure     500 {object} ErrorResponse "Server error"
+// @Router      /transactions/bulk [post]
+func (h *TransactionHandler) BulkTransactions(c *gin.Context) {
+	userID, err := getUserID(c)
+	if err != nil {
+		respondWithError(c, err)
+		return
+	}
+
+	var req BulkTransactionsRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		respondWithError(c, apperrors.WithMessage(apperrors.ErrInvalidInput, err.Error()))
+		return
+	}
+
+	result, err := h.transactionService.BulkUpdateTransactions(userID, services.BulkTransactionInput{
+		IDs: req.IDs,
+		Set: services.BulkTransactionSet{
+			CategoryID:  req.Set.CategoryID,
+			NotesAppend: req.Set.NotesAppend,
+			Shared:      req.Set.Shared,
+		},
+		Delete:    req.Delete,
+		IPAddress: c.ClientIP(),
+	})
+	if err != nil {
+		respondWithError(c, err)
+		return
+	}
+
+	c.JSON(http.StatusOK, result)
 }

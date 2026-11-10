@@ -21,6 +21,8 @@ services:
       - JWT_SECRET=${JWT_SECRET:-fallback-secret-key-for-dev-only}
       - PIPELINE_API_KEY=${PIPELINE_API_KEY}
       - BOT_INTERNAL_SECRET=${BOT_INTERNAL_SECRET}
+      # Palette for users who have not picked one (unset = catppuccin).
+      - DEFAULT_PALETTE=${DEFAULT_PALETTE:-}
       # Receipt attachments (plan 017): the api reaches MinIO over the private
       # Docker network. These match the bucket + scoped service account that
       # minio-init provisions below.
@@ -32,6 +34,10 @@ services:
       # MCP write access (plan 022): must match the mcp service, since the api
       # registers and grants the write:* scopes the mcp server enforces.
       - MCP_WRITE_ENABLED=${MCP_WRITE_ENABLED:-false}
+      # The write limits the Connected apps screen shows; same values as mcp.
+      - MCP_MAX_WRITE_AMOUNT=${MCP_MAX_WRITE_AMOUNT:-1000000}
+      - MCP_WRITE_RATE_PER_MINUTE=${MCP_WRITE_RATE_PER_MINUTE:-30}
+      - MCP_WRITE_RATE_PER_DAY=${MCP_WRITE_RATE_PER_DAY:-500}
     depends_on:
       postgres:
         condition: service_healthy

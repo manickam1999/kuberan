@@ -50,7 +50,7 @@ func TestOpeningBalance_ExcludedFromIncomeFigures(t *testing.T) {
 	testutil.AssertNoError(t, err)
 	// A real income that happens to share the old opening-balance description
 	// must still count: the summaries no longer filter on description.
-	_, err = txSvc.CreateTransaction(user.ID, acct.ID, nil, models.TransactionTypeIncome, 5000, "Initial balance", time.Now())
+	_, err = txSvc.CreateTransaction(user.ID, acct.ID, nil, models.TransactionTypeIncome, 5000, "Initial balance", time.Now(), TransactionMeta{})
 	testutil.AssertNoError(t, err)
 
 	from := time.Now().AddDate(0, 0, -1)
@@ -130,7 +130,7 @@ func TestOpeningBalance_Restrictions(t *testing.T) {
 	ob := openingBalanceOf(t, txSvc, user.ID, acct.ID)
 
 	t.Run("cannot be created directly", func(t *testing.T) {
-		_, err := txSvc.CreateTransaction(user.ID, acct.ID, nil, models.TransactionTypeOpeningBalance, 100, "", time.Now())
+		_, err := txSvc.CreateTransaction(user.ID, acct.ID, nil, models.TransactionTypeOpeningBalance, 100, "", time.Now(), TransactionMeta{})
 		testutil.AssertAppError(t, err, apperrors.ErrInvalidTransactionType.Code)
 	})
 
@@ -141,7 +141,7 @@ func TestOpeningBalance_Restrictions(t *testing.T) {
 	})
 
 	t.Run("an income cannot become one", func(t *testing.T) {
-		tx, err := txSvc.CreateTransaction(user.ID, acct.ID, nil, models.TransactionTypeIncome, 100, "Pay", time.Now())
+		tx, err := txSvc.CreateTransaction(user.ID, acct.ID, nil, models.TransactionTypeIncome, 100, "Pay", time.Now(), TransactionMeta{})
 		testutil.AssertNoError(t, err)
 		opening := models.TransactionTypeOpeningBalance
 		_, err = txSvc.UpdateTransaction(user.ID, tx.ID, TransactionUpdateFields{Type: &opening})

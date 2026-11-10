@@ -7,6 +7,7 @@ import {
   useCreateCashAccount,
   useCreateInvestmentAccount,
   useCreateCreditCardAccount,
+  useCreateDebtAccount,
   useCreateFixedDepositAccount,
   useAccounts,
 } from "@/hooks/use-accounts";
@@ -16,6 +17,7 @@ import { Label } from "@/components/ui/label";
 import { useBaseCurrency } from "@/hooks/use-profile";
 import { REPORTING_CURRENCIES } from "@/lib/currencies";
 import { CurrencyInput } from "@/components/ui/currency-input";
+import { DueDaySelect } from "@/components/accounts/reminder-control";
 import {
   Dialog,
   DialogContent,
@@ -24,7 +26,16 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tile, type TileTone } from "@/components/ui/tile";
+import {
+  ArrowLeft,
+  Banknote,
+  Building2,
+  CreditCard,
+  Landmark,
+  Vault,
+  type LucideIcon,
+} from "lucide-react";
 import {
   Select,
   SelectContent,
@@ -33,6 +44,57 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import type { PayoutType, PayoutFrequency, Compounding } from "@/types/models";
+
+type AccountKind =
+  | "cash"
+  | "credit-card"
+  | "investment"
+  | "fixed-deposit"
+  | "loan";
+
+const KIND_OPTIONS: {
+  kind: AccountKind;
+  title: string;
+  hint: string;
+  icon: LucideIcon;
+  tone: TileTone;
+}[] = [
+  {
+    kind: "cash",
+    title: "Cash",
+    hint: "Current or savings account",
+    icon: Banknote,
+    tone: "accent",
+  },
+  {
+    kind: "credit-card",
+    title: "Credit card",
+    hint: "Balance is what you owe",
+    icon: CreditCard,
+    tone: "warn",
+  },
+  {
+    kind: "investment",
+    title: "Investment",
+    hint: "Brokerage with holdings",
+    icon: Landmark,
+    tone: "investment",
+  },
+  {
+    kind: "fixed-deposit",
+    title: "Fixed deposit",
+    hint: "Locked until maturity",
+    icon: Vault,
+    tone: "info",
+  },
+  {
+    kind: "loan",
+    title: "Loan",
+    hint: "Mortgage, car or personal loan",
+    icon: Building2,
+    tone: "neutral",
+  },
+];
 
 function getErrorMessage(error: unknown): string {
   if (error instanceof ApiClientError) {
@@ -50,7 +112,7 @@ export function CreateAccountDialog({
   open,
   onOpenChange,
 }: CreateAccountDialogProps) {
-  const [tab, setTab] = useState<string>("cash");
+  const [kind, setKind] = useState<AccountKind | null>(null);
 
   // Cash account fields
   const [cashName, setCashName] = useState("");
@@ -73,8 +135,20 @@ export function CreateAccountDialog({
   // null = follow the reporting currency until the user picks one.
   const [ccCurrencyPick, setCcCurrency] = useState<string | null>(null);
   const [ccCreditLimit, setCcCreditLimit] = useState(0);
+  const [ccCurrentBalance, setCcCurrentBalance] = useState(0);
   const [ccInterestRate, setCcInterestRate] = useState("");
-  const [ccDueDate, setCcDueDate] = useState("");
+  // 0 = no due day (no reminder).
+  const [ccDueDay, setCcDueDay] = useState(0);
+
+  // Loan fields
+  const [loanName, setLoanName] = useState("");
+  const [loanDescription, setLoanDescription] = useState("");
+  // null = follow the reporting currency until the user picks one.
+  const [loanCurrencyPick, setLoanCurrency] = useState<string | null>(null);
+  const [loanOwed, setLoanOwed] = useState(0);
+  const [loanInterestRate, setLoanInterestRate] = useState("");
+  const [loanPayment, setLoanPayment] = useState(0);
+  const [loanDueDay, setLoanDueDay] = useState(0);
 
   // Fixed deposit account fields
   const [fdName, setFdName] = useState("");
@@ -85,7 +159,8 @@ export function CreateAccountDialog({
   const [fdStartDate, setFdStartDate] = useState("");
   const [fdMaturityDate, setFdMaturityDate] = useState("");
   const [fdPayoutType, setFdPayoutType] = useState<PayoutType>("cumulative");
-  const [fdPayoutFrequency, setFdPayoutFrequency] = useState<PayoutFrequency>("monthly");
+  const [fdPayoutFrequency, setFdPayoutFrequency] =
+    useState<PayoutFrequency>("monthly");
   const [fdCompounding, setFdCompounding] = useState<Compounding>("annual");
   const [fdLinkedAccountId, setFdLinkedAccountId] = useState("");
 
@@ -94,30 +169,35 @@ export function CreateAccountDialog({
   const createCash = useCreateCashAccount();
   const createInvestment = useCreateInvestmentAccount();
   const createCreditCard = useCreateCreditCardAccount();
+  const createLoan = useCreateDebtAccount();
   const createFD = useCreateFixedDepositAccount();
 
   const baseCurrency = useBaseCurrency();
   const cashCurrency = cashCurrencyPick ?? baseCurrency;
   const investCurrency = investCurrencyPick ?? baseCurrency;
   const ccCurrency = ccCurrencyPick ?? baseCurrency;
+  const loanCurrency = loanCurrencyPick ?? baseCurrency;
   const currencyOptions = (selected: string) =>
     Array.from(
       new Set([
         baseCurrency,
         ...REPORTING_CURRENCIES.map((c) => c.code),
         selected,
-      ])
+      ]),
     );
+
+  const selected = KIND_OPTIONS.find((o) => o.kind === kind);
 
   const { data: accountsData } = useAccounts({ page_size: 100 });
   const cashAccounts = (accountsData?.data ?? []).filter(
-    (a) => a.type === "cash" && a.is_active
+    (a) => a.type === "cash" && a.is_active,
   );
 
   const isSubmitting =
     createCash.isPending ||
     createInvestment.isPending ||
     createCreditCard.isPending ||
+    createLoan.isPending ||
     createFD.isPending;
 
   function resetForm() {
@@ -134,8 +214,16 @@ export function CreateAccountDialog({
     setCcDescription("");
     setCcCurrency(null);
     setCcCreditLimit(0);
+    setCcCurrentBalance(0);
     setCcInterestRate("");
-    setCcDueDate("");
+    setCcDueDay(0);
+    setLoanName("");
+    setLoanDescription("");
+    setLoanCurrency(null);
+    setLoanOwed(0);
+    setLoanInterestRate("");
+    setLoanPayment(0);
+    setLoanDueDay(0);
     setFdName("");
     setFdDescription("");
     setFdSourceAccountId("");
@@ -148,7 +236,7 @@ export function CreateAccountDialog({
     setFdCompounding("annual");
     setFdLinkedAccountId("");
     setError("");
-    setTab("cash");
+    setKind(null);
   }
 
   function handleOpenChange(nextOpen: boolean) {
@@ -189,7 +277,7 @@ export function CreateAccountDialog({
           handleOpenChange(false);
         },
         onError: (err) => setError(getErrorMessage(err)),
-      }
+      },
     );
   }
 
@@ -233,7 +321,7 @@ export function CreateAccountDialog({
           handleOpenChange(false);
         },
         onError: (err) => setError(getErrorMessage(err)),
-      }
+      },
     );
   }
 
@@ -267,8 +355,9 @@ export function CreateAccountDialog({
         description: ccDescription.trim() || undefined,
         currency: ccCurrency,
         credit_limit: ccCreditLimit > 0 ? ccCreditLimit : undefined,
+        current_balance: ccCurrentBalance > 0 ? ccCurrentBalance : undefined,
         interest_rate: interestRate > 0 ? interestRate : undefined,
-        due_date: ccDueDate || undefined,
+        due_day: ccDueDay > 0 ? ccDueDay : undefined,
       },
       {
         onSuccess: (account) => {
@@ -276,7 +365,50 @@ export function CreateAccountDialog({
           handleOpenChange(false);
         },
         onError: (err) => setError(getErrorMessage(err)),
-      }
+      },
+    );
+  }
+
+  async function handleSubmitLoan(e: React.FormEvent) {
+    e.preventDefault();
+    setError("");
+
+    const name = loanName.trim();
+    if (!name) {
+      setError("Name is required");
+      return;
+    }
+    if (name.length > 100) {
+      setError("Name must be 100 characters or less");
+      return;
+    }
+    if (loanDescription.length > 500) {
+      setError("Description must be 500 characters or less");
+      return;
+    }
+    const interestRate = loanInterestRate ? parseFloat(loanInterestRate) : 0;
+    if (isNaN(interestRate) || interestRate < 0 || interestRate > 100) {
+      setError("Interest rate must be between 0 and 100");
+      return;
+    }
+
+    createLoan.mutate(
+      {
+        name,
+        description: loanDescription.trim() || undefined,
+        currency: loanCurrency,
+        amount_owed: loanOwed > 0 ? loanOwed : undefined,
+        interest_rate: interestRate > 0 ? interestRate : undefined,
+        monthly_payment: loanPayment > 0 ? loanPayment : undefined,
+        due_day: loanDueDay > 0 ? loanDueDay : undefined,
+      },
+      {
+        onSuccess: (account) => {
+          toast.success(`Loan "${account.name}" created`);
+          handleOpenChange(false);
+        },
+        onError: (err) => setError(getErrorMessage(err)),
+      },
     );
   }
 
@@ -328,7 +460,8 @@ export function CreateAccountDialog({
     }
 
     const currency =
-      cashAccounts.find((a) => a.id === fdSourceAccountId)?.currency ?? baseCurrency;
+      cashAccounts.find((a) => a.id === fdSourceAccountId)?.currency ??
+      baseCurrency;
 
     createFD.mutate(
       {
@@ -352,7 +485,7 @@ export function CreateAccountDialog({
           handleOpenChange(false);
         },
         onError: (err) => setError(getErrorMessage(err)),
-      }
+      },
     );
   }
 
@@ -360,35 +493,78 @@ export function CreateAccountDialog({
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Create Account</DialogTitle>
+          <DialogTitle>
+            {selected
+              ? `New ${selected.title.toLowerCase()} account`
+              : "New account"}
+          </DialogTitle>
           <DialogDescription>
-            Add a new cash, investment, credit card, or fixed deposit account.
+            {selected
+              ? selected.hint
+              : "What kind of account is it? You can add more later."}
           </DialogDescription>
         </DialogHeader>
 
         {error && (
-          <div className="bg-destructive/10 text-destructive rounded-md p-3 text-sm">
+          <div
+            role="alert"
+            className="bg-destructive/10 text-destructive rounded-md p-3 text-sm"
+          >
             {error}
           </div>
         )}
 
-        <Tabs value={tab} onValueChange={setTab}>
-          <TabsList className="w-full">
-            <TabsTrigger value="cash" className="flex-1">
-              Cash
-            </TabsTrigger>
-            <TabsTrigger value="investment" className="flex-1">
-              Investment
-            </TabsTrigger>
-            <TabsTrigger value="credit-card" className="flex-1">
-              Credit Card
-            </TabsTrigger>
-            <TabsTrigger value="fixed-deposit" className="flex-1">
-              Fixed Deposit
-            </TabsTrigger>
-          </TabsList>
+        {!selected && (
+          <div
+            role="group"
+            aria-label="Account type"
+            className="grid gap-2 sm:grid-cols-2"
+          >
+            {KIND_OPTIONS.map((o) => {
+              const Icon = o.icon;
+              return (
+                <button
+                  key={o.kind}
+                  type="button"
+                  onClick={() => {
+                    setError("");
+                    setKind(o.kind);
+                  }}
+                  className="hover:border-primary/50 hover:bg-muted/50 focus-visible:ring-ring/50 flex items-center gap-3 rounded-card border p-3 text-left outline-none transition-colors focus-visible:ring-[3px]"
+                >
+                  <Tile tone={o.tone} size="lg">
+                    <Icon />
+                  </Tile>
+                  <span className="grid gap-0.5">
+                    <span className="text-sm font-medium">{o.title}</span>
+                    <span className="text-muted-foreground text-xs">
+                      {o.hint}
+                    </span>
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        )}
 
-          <TabsContent value="cash">
+        {selected && (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="-mt-2 w-fit"
+            onClick={() => {
+              setError("");
+              setKind(null);
+            }}
+          >
+            <ArrowLeft className="size-4" />
+            Account type
+          </Button>
+        )}
+
+        <>
+          {kind === "cash" && (
             <form onSubmit={handleSubmitCash} className="flex flex-col gap-5">
               <div className="flex flex-col gap-2">
                 <Label htmlFor="cash-name">Name</Label>
@@ -432,7 +608,12 @@ export function CreateAccountDialog({
                 </Select>
               </div>
               <div className="flex flex-col gap-2">
-                <Label htmlFor="cash-balance">Initial Balance</Label>
+                <Label htmlFor="cash-balance">
+                  Opening balance
+                  <span className="ml-2 text-xs font-normal text-muted-foreground">
+                    (not counted as income)
+                  </span>
+                </Label>
                 <CurrencyInput
                   id="cash-balance"
                   value={cashBalance}
@@ -448,9 +629,9 @@ export function CreateAccountDialog({
                 </Button>
               </DialogFooter>
             </form>
-          </TabsContent>
+          )}
 
-          <TabsContent value="investment">
+          {kind === "investment" && (
             <form
               onSubmit={handleSubmitInvestment}
               className="flex flex-col gap-5"
@@ -524,9 +705,9 @@ export function CreateAccountDialog({
                 </Button>
               </DialogFooter>
             </form>
-          </TabsContent>
+          )}
 
-          <TabsContent value="credit-card">
+          {kind === "credit-card" && (
             <form
               onSubmit={handleSubmitCreditCard}
               className="flex flex-col gap-5"
@@ -584,6 +765,22 @@ export function CreateAccountDialog({
                 />
               </div>
               <div className="flex flex-col gap-2">
+                <Label htmlFor="cc-current-balance">
+                  Current balance owed
+                  <span className="ml-2 text-xs font-normal text-muted-foreground">
+                    (optional)
+                  </span>
+                </Label>
+                <CurrencyInput
+                  id="cc-current-balance"
+                  value={ccCurrentBalance}
+                  onChange={setCcCurrentBalance}
+                  currency={ccCurrency}
+                  placeholder="0.00"
+                  disabled={isSubmitting}
+                />
+              </div>
+              <div className="flex flex-col gap-2">
                 <Label htmlFor="cc-interest-rate">Interest Rate (%)</Label>
                 <Input
                   id="cc-interest-rate"
@@ -598,13 +795,18 @@ export function CreateAccountDialog({
                 />
               </div>
               <div className="flex flex-col gap-2">
-                <Label htmlFor="cc-due-date">Due Date</Label>
-                <Input
-                  id="cc-due-date"
-                  type="date"
-                  value={ccDueDate}
-                  onChange={(e) => setCcDueDate(e.target.value)}
+                <Label htmlFor="cc-due-day">
+                  Payment due day
+                  <span className="ml-2 text-xs font-normal text-muted-foreground">
+                    (we&apos;ll remind you on Telegram)
+                  </span>
+                </Label>
+                <DueDaySelect
+                  id="cc-due-day"
+                  value={ccDueDay}
+                  onChange={setCcDueDay}
                   disabled={isSubmitting}
+                  allowNone
                 />
               </div>
               <DialogFooter>
@@ -613,9 +815,116 @@ export function CreateAccountDialog({
                 </Button>
               </DialogFooter>
             </form>
-          </TabsContent>
+          )}
 
-          <TabsContent value="fixed-deposit">
+          {kind === "loan" && (
+            <form onSubmit={handleSubmitLoan} className="flex flex-col gap-5">
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="loan-name">Name</Label>
+                <Input
+                  id="loan-name"
+                  placeholder="e.g. Car loan"
+                  value={loanName}
+                  onChange={(e) => setLoanName(e.target.value)}
+                  disabled={isSubmitting}
+                  maxLength={100}
+                />
+              </div>
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="loan-description">Description</Label>
+                <Input
+                  id="loan-description"
+                  placeholder="Optional description"
+                  value={loanDescription}
+                  onChange={(e) => setLoanDescription(e.target.value)}
+                  disabled={isSubmitting}
+                  maxLength={500}
+                />
+              </div>
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="loan-currency">Currency</Label>
+                <Select
+                  value={loanCurrency}
+                  onValueChange={setLoanCurrency}
+                  disabled={isSubmitting}
+                >
+                  <SelectTrigger id="loan-currency" className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {currencyOptions(loanCurrency).map((c) => (
+                      <SelectItem key={c} value={c}>
+                        {c}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="loan-owed">
+                  Amount owed
+                  <span className="ml-2 text-xs font-normal text-muted-foreground">
+                    (what&apos;s left to pay)
+                  </span>
+                </Label>
+                <CurrencyInput
+                  id="loan-owed"
+                  value={loanOwed}
+                  onChange={setLoanOwed}
+                  currency={loanCurrency}
+                  placeholder="0.00"
+                  disabled={isSubmitting}
+                />
+              </div>
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="loan-interest-rate">Interest rate (% a year)</Label>
+                <Input
+                  id="loan-interest-rate"
+                  type="number"
+                  placeholder="e.g. 3.5"
+                  value={loanInterestRate}
+                  onChange={(e) => setLoanInterestRate(e.target.value)}
+                  disabled={isSubmitting}
+                  min={0}
+                  max={100}
+                  step={0.01}
+                />
+              </div>
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="loan-payment">Monthly payment</Label>
+                <CurrencyInput
+                  id="loan-payment"
+                  value={loanPayment}
+                  onChange={setLoanPayment}
+                  currency={loanCurrency}
+                  placeholder="0.00"
+                  disabled={isSubmitting}
+                />
+              </div>
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="loan-due-day">
+                  Payment due day
+                  <span className="ml-2 text-xs font-normal text-muted-foreground">
+                    (we&apos;ll remind you on Telegram)
+                  </span>
+                </Label>
+                <DueDaySelect
+                  id="loan-due-day"
+                  value={loanDueDay}
+                  onChange={setLoanDueDay}
+                  disabled={isSubmitting}
+                  allowNone
+                />
+              </div>
+              <DialogFooter>
+                <Button type="submit" disabled={isSubmitting}>
+                  {isSubmitting ? "Creating..." : "Create Loan"}
+                </Button>
+              </DialogFooter>
+            </form>
+          )}
+
+          {kind === "fixed-deposit" && (
             <form
               onSubmit={handleSubmitFixedDeposit}
               className="flex flex-col gap-5"
@@ -673,7 +982,10 @@ export function CreateAccountDialog({
                   id="fd-principal"
                   value={fdPrincipal}
                   onChange={setFdPrincipal}
-                  currency={cashAccounts.find((a) => a.id === fdSourceAccountId)?.currency ?? baseCurrency}
+                  currency={
+                    cashAccounts.find((a) => a.id === fdSourceAccountId)
+                      ?.currency ?? baseCurrency
+                  }
                   placeholder="0.00"
                   disabled={isSubmitting}
                 />
@@ -807,8 +1119,8 @@ export function CreateAccountDialog({
                 </Button>
               </DialogFooter>
             </form>
-          </TabsContent>
-        </Tabs>
+          )}
+        </>
       </DialogContent>
     </Dialog>
   );

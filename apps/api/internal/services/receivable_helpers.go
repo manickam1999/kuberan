@@ -262,18 +262,38 @@ func normalizeSearchKey(raw string) (string, error) {
 
 // resolveRuleCategory returns the category a new transaction should get: the
 // explicit categoryID when set, otherwise the first matching auto-categorization
-// rule (plan 018) for categorizable types. It runs outside the write
-// transaction so rule reads don't extend the account-row lock, and a rule error
-// never blocks creation (the category is simply left unset).
-func resolveRuleCategory(rules RuleServicer, userID string, categoryID *string, in RuleInput) *string {
+// rule (plan 018) for categorizable types, together with the matched rule's ID
+// (nil when the category was explicit or no rule matched). The rule read runs
+// before the write transaction so it doesn't extend the account-row lock, and a
+// rule error never blocks creation (the category is simply left unset). The
+// caller records the match with recordRuleMatch inside its transaction.
+func resolveRuleCategory(rules RuleServicer, userID string, categoryID *string, in RuleInput) (category, ruleID *string) {
 	if categoryID != nil || rules == nil || !isCategorizableType(in.Type) {
-		return categoryID
+		return categoryID, nil
 	}
 	res, err := rules.ResolveForUser(userID, in)
 	if err != nil {
+		return nil, nil
+	}
+	return res.CategoryID, res.MatchedRuleID
+}
+
+// recordRuleMatch adds n to a rule's match counter and stamps last_matched_at,
+// inside the caller's transaction. A nil ruleID or n <= 0 is a no-op. The
+// update is user-scoped and relative, so concurrent writers never lose counts.
+func recordRuleMatch(tx *gorm.DB, userID string, ruleID *string, n int) error {
+	if ruleID == nil || n <= 0 {
 		return nil
 	}
-	return res.CategoryID
+	if err := tx.Model(&models.TransactionRule{}).
+		Where("id = ? AND user_id = ?", *ruleID, userID).
+		Updates(map[string]any{
+			"match_count":     gorm.Expr("match_count + ?", n),
+			"last_matched_at": time.Now(),
+		}).Error; err != nil {
+		return apperrors.Wrap(apperrors.ErrInternalServer, err)
+	}
+	return nil
 }
 
 // insertTransaction creates a user transaction row and applies its balance
@@ -289,15 +309,19 @@ func insertTransaction(
 	amount int64,
 	description string,
 	date time.Time,
+	meta TransactionMeta,
 ) (*models.Transaction, error) {
 	txn := &models.Transaction{
-		UserID:      userID,
-		AccountID:   account.ID,
-		CategoryID:  categoryID,
-		Type:        txnType,
-		Amount:      amount,
-		Description: description,
-		Date:        date,
+		UserID:         userID,
+		AccountID:      account.ID,
+		CategoryID:     categoryID,
+		Type:           txnType,
+		Amount:         amount,
+		Description:    description,
+		Date:           date,
+		Notes:          meta.Notes,
+		Source:         meta.Source,
+		SourceClientID: sourceClientPtr(meta.SourceClientID),
 	}
 	if err := tx.Create(txn).Error; err != nil {
 		return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)
@@ -334,4 +358,16 @@ func truncateRunes(s string, limit int) string {
 		return s
 	}
 	return string(r[:limit])
+}
+
+// ensureSpendingAccount rejects accounts that don't take day-to-day activity.
+// An investment account's balance is derived from its holdings and a fixed
+// deposit's principal is locked, so a plain income, expense or transfer row
+// there would be a phantom. Trades, deposits, payouts and imports write their
+// rows through their own services and never reach this check.
+func ensureSpendingAccount(a *models.Account) error {
+	if a == nil || !a.Type.IsSpending() {
+		return apperrors.ErrAccountTypeNotAllowed
+	}
+	return nil
 }

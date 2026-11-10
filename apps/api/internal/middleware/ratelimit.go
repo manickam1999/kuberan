@@ -123,6 +123,17 @@ func ClientIPKey(c *gin.Context) string {
 	return "ip:" + c.ClientIP()
 }
 
+// UserIDKey keys requests by the authenticated user (set by AuthMiddleware), so
+// it must run after it. Requests without a user get no key.
+func UserIDKey(c *gin.Context) string {
+	if id, ok := c.Get("userID"); ok {
+		if s, ok := id.(string); ok && s != "" {
+			return "user:" + s
+		}
+	}
+	return ""
+}
+
 // maxRateLimitBodyPeek bounds how much of a request body EmailBodyKey reads.
 const maxRateLimitBodyPeek = 64 << 10
 

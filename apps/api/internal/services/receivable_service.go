@@ -145,6 +145,10 @@ func (s *receivableService) CreateSharedExpense(userID string, in CreateSharedEx
 	if err != nil {
 		return nil, err
 	}
+	meta, err := normalizeMeta(in.Meta)
+	if err != nil {
+		return nil, err
+	}
 
 	date := in.Date
 	if date.IsZero() {
@@ -158,8 +162,9 @@ func (s *receivableService) CreateSharedExpense(userID string, in CreateSharedEx
 
 	// Auto-categorize via rules exactly like CreateTransaction, except in full
 	// mode (a loan/claim/deposit is not spending, so no category is guessed).
+	var matchedRuleID *string
 	if in.Mode != ShareModeFull {
-		categoryID = resolveRuleCategory(s.ruleService, userID, categoryID, RuleInput{
+		categoryID, matchedRuleID = resolveRuleCategory(s.ruleService, userID, categoryID, RuleInput{
 			Description: in.Description,
 			Amount:      in.Amount,
 			AccountID:   in.AccountID,
@@ -173,9 +178,15 @@ func (s *receivableService) CreateSharedExpense(userID string, in CreateSharedEx
 		if txErr != nil {
 			return txErr
 		}
+		if txErr := ensureSpendingAccount(accounts[in.AccountID]); txErr != nil {
+			return txErr
+		}
 		expense, txErr := insertTransaction(tx, s.accountService, userID, accounts[in.AccountID],
-			categoryID, models.TransactionTypeExpense, in.Amount, in.Description, date)
+			categoryID, models.TransactionTypeExpense, in.Amount, in.Description, date, meta)
 		if txErr != nil {
+			return txErr
+		}
+		if txErr := recordRuleMatch(tx, userID, matchedRuleID, 1); txErr != nil {
 			return txErr
 		}
 
@@ -455,6 +466,7 @@ func (s *receivableService) Settle(userID, receivableID string, in SettleInput) 
 			Amount:      credit,
 			Description: description,
 			Date:        date,
+			Source:      models.TransactionSourceSystem,
 		}
 		if txErr := tx.Create(reimbursement).Error; txErr != nil {
 			return apperrors.Wrap(apperrors.ErrInternalServer, txErr)

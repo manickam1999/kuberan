@@ -1,10 +1,21 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiClient } from "@/lib/api-client";
-import type { ConnectedAppsResponse } from "@/types/api";
+import type {
+  AllAppActivityItem,
+  AppActivityItem,
+  ConnectedAppsResponse,
+  PageResponse,
+  PaginationParams,
+} from "@/types/api";
 
 export const oauthClientKeys = {
   all: ["oauth-clients"] as const,
   list: () => [...oauthClientKeys.all, "list"] as const,
+  activity: () => [...oauthClientKeys.all, "activity"] as const,
+  appActivity: (clientId: string, params: PaginationParams = {}) =>
+    [...oauthClientKeys.activity(), "app", clientId, params] as const,
+  allActivity: (params: PaginationParams = {}) =>
+    [...oauthClientKeys.activity(), "all", params] as const,
 };
 
 export function useConnectedApps() {
@@ -16,6 +27,34 @@ export function useConnectedApps() {
       );
       return res.clients;
     },
+  });
+}
+
+/** Changes one connected app made, newest first. Pass null to disable. */
+export function useAppActivity(
+  clientId: string | null,
+  params: PaginationParams = {}
+) {
+  return useQuery({
+    queryKey: oauthClientKeys.appActivity(clientId ?? "", params),
+    queryFn: () =>
+      apiClient.get<PageResponse<AppActivityItem>>(
+        `/api/v1/oauth/clients/${encodeURIComponent(clientId ?? "")}/activity`,
+        { ...params }
+      ),
+    enabled: clientId !== null && clientId !== "",
+  });
+}
+
+/** Changes made by all of the user's connected apps, newest first. */
+export function useAllAppActivity(params: PaginationParams = {}) {
+  return useQuery({
+    queryKey: oauthClientKeys.allActivity(params),
+    queryFn: () =>
+      apiClient.get<PageResponse<AllAppActivityItem>>(
+        "/api/v1/oauth/clients/activity",
+        { ...params }
+      ),
   });
 }
 

@@ -3,10 +3,90 @@ import { MONEY_LOCALE } from "@/lib/currencies";
 /** Placeholder shown in place of an amount when balance visibility is hidden. */
 export const MASKED_AMOUNT = "****";
 
+/** The true minus sign (U+2212) used for negative money, after the currency. */
+export const MINUS_SIGN = "\u2212";
+
+/** A formatted amount split into the pieces `<Money>` styles separately. */
+export interface MoneyParts {
+  /** Currency symbol plus its spacing, e.g. `"RM "`, `"US$"` (may be empty). */
+  prefix: string;
+  /** `"\u2212"` for a negative amount, otherwise `""`. */
+  minus: string;
+  /** Integer digits with grouping, e.g. `"1,234"`. */
+  integer: string;
+  /** Decimal separator and fraction digits, e.g. `".50"` (empty when none). */
+  fraction: string;
+  /** Anything that follows the number (a trailing currency symbol), usually `""`. */
+  suffix: string;
+}
+
+function moneyFormatter(
+  currency: string,
+  compact: boolean,
+  major = 0
+): Intl.NumberFormat {
+  // Compact notation only abbreviates from 1,000 up ("RM 1.2K"); below that
+  // it would print one decimal ("RM 281.9"), so show whole units instead.
+  const compactOpts =
+    Math.abs(major) >= 1000
+      ? { notation: "compact" as const, maximumFractionDigits: 1 }
+      : { minimumFractionDigits: 0, maximumFractionDigits: 0 };
+  return new Intl.NumberFormat(MONEY_LOCALE, {
+    style: "currency",
+    currency,
+    ...(compact
+      ? compactOpts
+      : { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+  });
+}
+
+/**
+ * Split the formatted absolute amount into prefix / minus / integer /
+ * fraction / suffix. A negative amount gets a true minus (U+2212) placed
+ * after the currency symbol (`RM \u221264.73`, `US$\u22125.00`), which `Intl`
+ * itself cannot do (it prefixes the sign: `-RM 64.73`).
+ * @param cents - Amount in minor units
+ * @param currency - ISO 4217 currency code
+ * @param compact - Use compact notation (`RM 1.2K`) instead of two decimals
+ */
+export function formatMoneyParts(
+  cents: number,
+  currency: string,
+  compact = false
+): MoneyParts {
+  const major = Math.abs(cents) / 100;
+  const parts = moneyFormatter(currency, compact, major).formatToParts(major);
+  const out: MoneyParts = {
+    prefix: "",
+    minus: cents < 0 ? MINUS_SIGN : "",
+    integer: "",
+    fraction: "",
+    suffix: "",
+  };
+  let seenNumber = false;
+  for (const part of parts) {
+    if (part.type === "integer" || part.type === "group") {
+      seenNumber = true;
+      out.integer += part.value;
+    } else if (part.type === "decimal" || part.type === "fraction") {
+      seenNumber = true;
+      out.fraction += part.value;
+    } else if (part.type === "compact") {
+      out.fraction += part.value;
+    } else if (!seenNumber) {
+      out.prefix += part.value;
+    } else {
+      out.suffix += part.value;
+    }
+  }
+  return out;
+}
+
 /**
  * Format cents in an explicit currency, using `Intl` (en-MY): `RM 1,234.00`,
- * `US$1,234.00`, `£1,234.00`. The currency is required so a call site can
- * never silently fall back to the wrong one.
+ * `US$1,234.00`, `\u00a31,234.00`. Negative amounts put a true minus (U+2212)
+ * after the symbol: `RM \u221264.73`. The currency is required so a call site
+ * can never silently fall back to the wrong one.
  * @param cents - Amount in minor units (e.g., 1050 = 10.50)
  * @param currency - ISO 4217 currency code
  * @param masked - If true, returns {@link MASKED_AMOUNT} instead of the formatted value
@@ -17,12 +97,8 @@ export function formatMoney(
   masked = false
 ): string {
   if (masked) return MASKED_AMOUNT;
-  return new Intl.NumberFormat(MONEY_LOCALE, {
-    style: "currency",
-    currency,
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(cents / 100);
+  const p = formatMoneyParts(cents, currency);
+  return `${p.prefix}${p.minus}${p.integer}${p.fraction}${p.suffix}`;
 }
 
 /**

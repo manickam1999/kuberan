@@ -17,6 +17,7 @@ import (
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 
+	"kuberan/internal/config"
 	"kuberan/internal/handlers"
 	"kuberan/internal/hydra"
 	"kuberan/internal/logger"
@@ -68,6 +69,7 @@ func setupIsolatedDB(t *testing.T) *gorm.DB {
 		&models.SecurityPrice{},
 		&models.FXRate{},
 		&models.PortfolioSnapshot{},
+		&models.AccountBalanceSnapshot{},
 		&models.Investment{},
 		&models.InvestmentTransaction{},
 		&models.AuditLog{},
@@ -79,6 +81,10 @@ func setupIsolatedDB(t *testing.T) *gorm.DB {
 		&models.FixedDepositDetails{},
 		&models.Receivable{},
 		&models.ReceivableSettlement{},
+		&models.BackupRun{},
+		&models.Reminder{},
+		&models.TelegramLink{},
+		&models.DemoRow{},
 	}
 	if err := db.AutoMigrate(allModels...); err != nil {
 		t.Fatalf("failed to migrate test database: %v", err)
@@ -104,6 +110,8 @@ func setupApp(t *testing.T) *testApp {
 	budgetService := services.NewBudgetService(db, services.WithBudgetFXService(fxService))
 	investmentService := services.NewInvestmentService(db, accountService, fxService)
 	importService := services.NewImportService(db, accountService, fxService)
+	csvImportService := services.NewCSVImportService(db)
+	demoService := services.NewDemoService(db, services.WithDemoFXService(fxService))
 	securityService := services.NewSecurityService(db)
 	snapshotService := services.NewPortfolioSnapshotService(db, fxService)
 	auditService := services.NewAuditService(db)
@@ -131,12 +139,14 @@ func setupApp(t *testing.T) *testApp {
 	router.Use(middleware.SecurityHeaders(false))
 	router.Use(middleware.CORS([]string{"http://localhost:3000"}))
 	router.Use(middleware.Gzip())
-	router.Use(middleware.BodySizeLimit(middleware.DefaultMaxBodyBytes, "POST "+handlers.AttachmentUploadRoute, "POST "+handlers.ImportIBKRRoute))
+	router.Use(middleware.BodySizeLimit(middleware.DefaultMaxBodyBytes, "POST "+handlers.AttachmentUploadRoute, "POST "+handlers.ImportIBKRRoute, "POST "+handlers.ImportCSVRoute))
 	router.Use(middleware.ErrorHandler())
 
 	handlers.RegisterRoutes(router, handlers.Routes{
-		Auth:                 handlers.NewAuthHandler(userService, auditService),
-		OAuth:                handlers.NewOAuthHandler(hydraAdmin, userService, oauthGrantService, auditService, oauthScopes, "http://localhost:8081"),
+		Auth: handlers.NewAuthHandler(userService, auditService),
+		OAuth: handlers.NewOAuthHandler(hydraAdmin, userService, oauthGrantService, auditService, oauthScopes, "http://localhost:8081",
+			handlers.WithAppActivity(services.NewAppActivityService(db)),
+			handlers.WithWriteLimits(handlers.WriteLimitsConfig{MaxAmount: 1_000_000, PerMinute: 30, PerDay: 500})),
 		Registration:         handlers.NewRegistrationHandler(hydraAdmin, auditService, oauthScopes),
 		Account:              handlers.NewAccountHandler(accountService, auditService),
 		Category:             handlers.NewCategoryHandler(categoryService, auditService),
@@ -150,8 +160,15 @@ func setupApp(t *testing.T) *testApp {
 		Snapshot:             handlers.NewPortfolioSnapshotHandler(snapshotService, auditService),
 		FixedDepositPipeline: handlers.NewFixedDepositPipelineHandler(fdService, auditService),
 		Telegram:             handlers.NewTelegramHandler(telegramService, auditService),
+		Reminder:             handlers.NewReminderHandler(services.NewReminderService(db), auditService),
 		FX:                   handlers.NewFXHandler(fxService, auditService),
 		Import:               handlers.NewImportHandler(importService, auditService, testMaxUploadBytes),
+		AccountHistory:       handlers.NewAccountHistoryHandler(services.NewAccountBalanceHistoryService(db)),
+		Analytics:            handlers.NewAnalyticsHandler(services.NewTypicalService(db, fxService)),
+		CSVImport:            handlers.NewCSVImportHandler(csvImportService, auditService, testMaxUploadBytes),
+		Demo:                 handlers.NewDemoHandler(demoService, auditService, true),
+		Export:               handlers.NewExportHandler(services.NewExportService(db), services.NewSystemStatusService(db, services.WithDemoEnabled(true)), auditService),
+		Limits:               handlers.NewRouteLimits(config.RateLimits{}), // auth limits off; export keeps its fixed 1/min
 	}, handlers.RouteSecrets{
 		BotInternalSecret: "test-bot-secret",
 		PipelineAPIKey:    "test-pipeline-key",

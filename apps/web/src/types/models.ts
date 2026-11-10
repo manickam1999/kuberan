@@ -2,6 +2,8 @@
 // All monetary values are int64 cents (e.g., $10.50 = 1050).
 // All IDs are UUIDv7 strings.
 
+import type { PaletteId } from "@/lib/palettes";
+
 // Base fields present on all entities
 export interface BaseModel {
   id: string; // UUIDv7
@@ -22,6 +24,25 @@ export interface User {
   default_account_id: string | null; // account preselected for new transactions
   /** ISO 4217 reporting currency aggregates are converted to. */
   base_currency: string;
+  /** UI preferences; a missing key means "default". */
+  appearance?: Appearance;
+  /** The palette to render: the user's choice, else the server default. */
+  resolved_palette?: string;
+}
+
+/** Palette preference: a palette id, or "default" to follow the server. */
+export type AppearancePaletteChoice = "default" | PaletteId;
+export type AppearanceMode = "system" | "light" | "dark";
+export type AppearanceChartStyle = "clean" | "dither";
+export type AppearanceDensity = "comfortable" | "compact";
+
+/** users.appearance (plan 023 item 1.8). */
+export interface Appearance {
+  palette?: AppearancePaletteChoice;
+  mode?: AppearanceMode;
+  chart_style?: AppearanceChartStyle;
+  density?: AppearanceDensity;
+  show_cents?: boolean;
 }
 
 // Account types
@@ -67,6 +88,8 @@ export interface Account extends BaseModel {
   interest_rate?: number; // debt/credit_card/fixed_deposit accounts (float, annual %)
   due_date?: string; // debt/credit_card accounts, ISO 8601
   credit_limit?: number; // credit_card accounts (cents)
+  monthly_payment?: number; // debt accounts: loan instalment (cents)
+  due_day?: number; // credit_card/debt accounts: day of the month (1-31) a payment falls due
   fixed_deposit?: FixedDepositDetails; // fixed_deposit accounts only
   /** Balance converted to the user's base currency now; absent when no rate exists (see fx_missing). */
   balance_base?: number; // cents, base currency
@@ -89,6 +112,14 @@ export type TransactionType =
   | "reimbursement"
   | "opening_balance";
 
+/** Where a transaction row came from. */
+export type TransactionSource =
+  | "web"
+  | "telegram"
+  | "mcp"
+  | "import"
+  | "system";
+
 export interface Transaction extends BaseModel {
   user_id: string; // UUIDv7
   account_id: string; // UUIDv7
@@ -96,6 +127,14 @@ export interface Transaction extends BaseModel {
   type: TransactionType;
   amount: number; // cents, always positive
   description: string;
+  /** Free text, max 2,000 characters; empty string when unset. */
+  notes: string;
+  /** Where the row came from. */
+  source: TransactionSource;
+  /** OAuth client id that wrote the row when source is "mcp". */
+  source_client_id?: string | null;
+  /** The app's name from the user's grant ("an app" once the grant is gone). */
+  source_client_name?: string;
   date: string; // ISO 8601
   to_account_id?: string | null; // UUIDv7, for transfers
   account?: Account; // preloaded relation
@@ -238,6 +277,8 @@ export interface TransactionRule extends BaseModel {
   name: string;
   priority: number; // lower = evaluated first
   is_active: boolean;
+  match_count: number; // transactions this rule has categorised
+  last_matched_at: string | null; // ISO 8601; null if it never matched
   conditions: RuleCondition[];
   actions: RuleAction[];
 }
@@ -279,6 +320,8 @@ export interface Security extends BaseModel {
   asset_type: AssetType;
   currency: string; // ISO 4217
   exchange?: string;
+  /** Symbol at the price provider (e.g. "VWRA.L"); absent when the same as `symbol`. */
+  provider_symbol?: string;
   maturity_date?: string | null; // bonds, ISO 8601
   yield_to_maturity?: number; // bonds, float
   coupon_rate?: number; // bonds, float
@@ -393,4 +436,22 @@ export interface PortfolioSummary {
   fx_stale: boolean;
   /** Holdings that could not be valued (no rate); excluded from the totals. May be null/absent when none. */
   unconverted?: UnconvertedValue[] | null;
+}
+
+// Reminders (card due dates, loan instalments, deposit maturities)
+export type ReminderKind = "card_due" | "loan_due" | "fd_maturity";
+
+/** One upcoming occurrence of a due date; the Telegram bot sends it. */
+export interface Reminder extends BaseModel {
+  user_id: string;
+  kind: ReminderKind;
+  /** The account the reminder is about. */
+  ref_id: string;
+  /** The date it falls due, ISO 8601 (UTC midnight). */
+  due_on: string;
+  /** When it becomes sendable. */
+  remind_at: string;
+  sent_at?: string;
+  /** Switched on for this account. */
+  enabled: boolean;
 }

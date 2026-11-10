@@ -1,327 +1,190 @@
 "use client";
 
-import { YourShareText } from "@/components/receivables/shared-expense-indicators";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
-import { Wallet, Plus, ArrowRight } from "lucide-react";
+import { Wallet, Plus } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
-import { useReceivablesSummary } from "@/hooks/use-receivables";
 import { useAccounts } from "@/hooks/use-accounts";
+import { useBudgets } from "@/hooks/use-budgets";
+import { useConnectedApps } from "@/hooks/use-oauth-clients";
 import { useTransactions } from "@/hooks/use-transactions";
 import { useBaseCurrency } from "@/hooks/use-profile";
-import { formatMoney, formatDate } from "@/lib/format";
-import { accountVisual, transactionVisual } from "@/lib/domain-visuals";
-import {
-  Card,
-  CardAction,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Money } from "@/components/ui/money";
-import { FxNotice } from "@/components/ui/fx-notice";
+import { CreateAccountDialog } from "@/components/accounts/create-account-dialog";
 import { CreateTransactionDialog } from "@/components/transactions/create-transaction-dialog";
 import { EditTransactionDialog } from "@/components/transactions/edit-transaction-dialog";
 import { NetWorthChart } from "@/components/dashboard/net-worth-chart";
-import { CompositionCard } from "@/components/dashboard/composition-card";
-import { SpendingCard } from "@/components/dashboard/spending-card";
-import { CashflowCard } from "@/components/dashboard/cashflow-card";
+import { HomeSpendCard } from "@/components/dashboard/home-spend-card";
+import { HomeCashflowCard } from "@/components/dashboard/home-cashflow-card";
 import { BudgetsCard } from "@/components/dashboard/budgets-card";
-import type { Account, Transaction } from "@/types/models";
+import { HomeRecent } from "@/components/dashboard/home-recent";
+import { HomeAccounts } from "@/components/dashboard/home-accounts";
+import { Eyebrow } from "@/components/dashboard/home-bits";
+import { Welcome } from "@/components/dashboard/welcome";
+import { needsOnboarding, onboardingSteps } from "@/lib/home";
+import type { Transaction } from "@/types/models";
 
-function DashboardSkeleton() {
+function HomeSkeleton() {
   return (
-    <div className="grid gap-4 lg:grid-cols-3">
-      <div className="space-y-4 lg:col-span-2">
-        <Skeleton className="h-[340px] w-full" />
+    <div className="space-y-4">
+      <Skeleton className="h-[400px] w-full md:h-[340px]" />
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         <Skeleton className="h-[260px] w-full" />
-        <Skeleton className="h-[220px] w-full" />
+        <Skeleton className="h-[260px] w-full" />
+        <Skeleton className="h-[260px] w-full md:col-span-2 xl:col-span-1" />
       </div>
-      <div className="space-y-4">
-        <Skeleton className="h-[240px] w-full" />
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
         <Skeleton className="h-[380px] w-full" />
+        <Skeleton className="h-[300px] w-full" />
       </div>
     </div>
   );
 }
 
-function SectionCardHeader({
-  title,
-  href,
-}: {
-  title: string;
-  href: string;
-}) {
-  return (
-    <CardHeader className="items-center">
-      <CardTitle className="text-base">{title}</CardTitle>
-      <CardAction className="self-center">
-        <Button
-          asChild
-          variant="link"
-          size="sm"
-          className="h-auto p-0 text-muted-foreground"
-        >
-          <Link href={href}>
-            View all <ArrowRight className="ml-1 size-3.5" />
-          </Link>
-        </Button>
-      </CardAction>
-    </CardHeader>
-  );
-}
-
-function AccountsPanel({ accounts }: { accounts: Account[] }) {
-  const baseCurrency = useBaseCurrency();
-  // Rank by the base-currency balance; accounts with no rate sort last.
-  const baseOf = (a: Account): number | undefined =>
-    a.balance_base ?? (a.currency === baseCurrency ? a.balance : undefined);
-  const pinned = accounts.filter((a) => a.is_pinned);
-  const shown = (pinned.length > 0 ? pinned : [...accounts])
-    .sort((a, b) => Math.abs(baseOf(b) ?? 0) - Math.abs(baseOf(a) ?? 0))
-    .slice(0, 5);
-
-  return (
-    <Card>
-      <SectionCardHeader
-        title={pinned.length > 0 ? "Pinned accounts" : "Top accounts"}
-        href="/accounts"
-      />
-      <CardContent className="space-y-0.5">
-        {shown.map((account) => {
-          const v = accountVisual(account.type);
-          const Icon = v.icon;
-          return (
-            <Link
-              key={account.id}
-              href={`/accounts/${account.id}`}
-              className="-mx-2 flex items-center gap-3 rounded-lg px-2 py-2 transition-colors hover:bg-accent/50"
-            >
-              <span
-                className={`flex size-8 shrink-0 items-center justify-center rounded-lg ${v.chip}`}
-              >
-                <Icon className="size-4" />
-              </span>
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-medium">{account.name}</p>
-                <p className="text-xs text-muted-foreground">{v.label}</p>
-              </div>
-              <span className="shrink-0 text-right">
-                <Money
-                  amount={account.balance}
-                  currency={account.currency}
-                  baseAmount={account.balance_base}
-                  baseCurrency={baseCurrency}
-                  fxRate={account.fx_rate}
-                  fxStale={account.fx_stale}
-                  fxMissing={account.fx_missing}
-                  layout="stacked"
-                  className="text-sm font-medium"
-                />
-              </span>
-            </Link>
-          );
-        })}
-      </CardContent>
-    </Card>
-  );
-}
-
-function TransactionRow({
-  transaction,
-  accountName,
-  currency,
-  onClick,
-}: {
-  transaction: Transaction;
-  accountName?: string;
-  /** Currency of the transaction's account, which `amount` is in. */
-  currency: string;
-  onClick?: () => void;
-}) {
-  const { hideBalances } = useAuth();
-  const v = transactionVisual(transaction.type);
-  const Icon = v.icon;
-
-  return (
-    <button
-      type="button"
-      className="-mx-2 flex w-full items-center justify-between gap-3 rounded-lg px-2 py-2 text-left transition-colors hover:bg-accent/50"
-      onClick={onClick}
-    >
-      <div className="flex min-w-0 items-center gap-3">
-        <span
-          className={`flex size-8 shrink-0 items-center justify-center rounded-lg ${v.chip}`}
-        >
-          <Icon className="size-4" />
-        </span>
-        <div className="min-w-0">
-          <p className="truncate text-sm font-medium">
-            {transaction.description || v.label}
-          </p>
-          <p className="truncate text-xs text-muted-foreground">
-            {formatDate(transaction.date)}
-            {accountName && ` · ${accountName}`}
-          </p>
-        </div>
-      </div>
-      <span className="shrink-0 text-right">
-        <span className={`money block text-sm font-semibold ${v.text}`}>
-          {v.sign}
-          {formatMoney(transaction.amount, currency, hideBalances)}
-        </span>
-        <YourShareText transaction={transaction} />
-      </span>
-    </button>
-  );
+function greeting(now: Date): string {
+  const h = now.getHours();
+  if (h < 5) return "Good evening";
+  if (h < 12) return "Good morning";
+  if (h < 18) return "Good afternoon";
+  return "Good evening";
 }
 
 export default function DashboardPage() {
-  const { user, hideBalances } = useAuth();
+  const { user } = useAuth();
+  const baseCurrency = useBaseCurrency();
+  const [accountDialogOpen, setAccountDialogOpen] = useState(false);
   const [txDialogOpen, setTxDialogOpen] = useState(false);
   const [editTxOpen, setEditTxOpen] = useState(false);
   const [selectedTransaction, setSelectedTransaction] =
     useState<Transaction | null>(null);
-  const { data: accountsData, isLoading: accountsLoading } = useAccounts();
-  // Informational only: receivables are NOT part of net worth (plan 021, D4).
-  const { data: receivablesSummary } = useReceivablesSummary();
-  const owedToYou = receivablesSummary?.total_outstanding ?? 0;
-  const baseCurrency = useBaseCurrency();
-  const owedCurrency = receivablesSummary?.currency ?? baseCurrency;
 
-  const accounts = accountsData?.data ?? [];
+  const accountsQuery = useAccounts({ page_size: 100 });
+  const accounts = useMemo(
+    () => accountsQuery.data?.data ?? [],
+    [accountsQuery.data]
+  );
+  // One list serves Recent (the newest few) and the onboarding check, which
+  // needs to see past opening balances to any real transaction.
+  const transactionsQuery = useTransactions({ page_size: 25 });
+  const transactions = useMemo(
+    () => transactionsQuery.data?.data ?? [],
+    [transactionsQuery.data]
+  );
+  const budgetsQuery = useBudgets({ page_size: 1 });
+  const appsQuery = useConnectedApps();
 
-  const { data: transactionsData, isLoading: transactionsLoading } =
-    useTransactions({ page_size: 5 });
-  const transactions = transactionsData?.data ?? [];
+  const steps = useMemo(
+    () =>
+      onboardingSteps({
+        accounts,
+        transactions,
+        budgetCount: budgetsQuery.data?.total_items ?? 0,
+        connectedAppCount: appsQuery.data?.length ?? 0,
+      }),
+    [accounts, transactions, budgetsQuery.data, appsQuery.data]
+  );
 
-  const accountNameMap = new Map(accounts.map((a) => [a.id, a.name]));
-  const accountCurrencyMap = new Map(accounts.map((a) => [a.id, a.currency]));
-
-  const today = new Date().toLocaleDateString("en-US", {
+  const now = new Date();
+  const today = now.toLocaleDateString("en-GB", {
     weekday: "long",
-    month: "long",
     day: "numeric",
-    year: "numeric",
+    month: "long",
   });
 
+  const loading = accountsQuery.isLoading || transactionsQuery.isLoading;
+  const showWelcome =
+    !loading &&
+    !accountsQuery.error &&
+    !transactionsQuery.error &&
+    needsOnboarding(steps);
+
   return (
-    <div className="space-y-5">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">
-            {user?.first_name ? `Welcome back, ${user.first_name}` : "Dashboard"}
-          </h1>
-          <p className="text-sm text-muted-foreground">{today}</p>
-        </div>
-        <div className="flex gap-2">
-          <Button asChild variant="outline" size="sm">
-            <Link href="/accounts">
-              <Wallet className="size-4" />
-              <span className="hidden sm:inline">Add account</span>
-            </Link>
-          </Button>
-          <Button size="sm" onClick={() => setTxDialogOpen(true)}>
-            <Plus className="size-4" />
-            <span className="hidden sm:inline">Add transaction</span>
-          </Button>
-        </div>
-      </div>
-
-      {accountsLoading ? (
-        <DashboardSkeleton />
-      ) : accounts.length === 0 ? (
-        <Card className="surface-glow">
-          <CardHeader>
-            <CardTitle>Get started</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <p className="text-sm text-muted-foreground">
-              Create your first account to start tracking your finances.
-            </p>
-            <Button asChild>
-              <Link href="/accounts">
-                <Plus className="size-4" />
-                Create account
-              </Link>
-            </Button>
-          </CardContent>
-        </Card>
+    <>
+      {showWelcome ? (
+        <Welcome
+          firstName={user?.first_name}
+          steps={steps}
+          accounts={accounts}
+          onAddAccount={() => setAccountDialogOpen(true)}
+          onAddTransaction={() => setTxDialogOpen(true)}
+        />
       ) : (
-        <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-3">
-          {/* Main column */}
-          <div className="min-w-0 space-y-4 lg:col-span-2">
-            <NetWorthChart />
-            {owedToYou > 0 && (
-              <>
-                <Link
-                  href="/receivables"
-                  className="flex items-center justify-between rounded-xl border bg-card px-4 py-2.5 text-sm shadow-sm transition-colors hover:border-primary/40 hover:bg-accent/40"
-                >
-                  <span className="text-muted-foreground">
-                    Owed to you (not included in net worth)
-                  </span>
-                  <span className="money font-semibold">
-                    {formatMoney(owedToYou, owedCurrency, hideBalances)}
-                  </span>
+        <div className="space-y-4">
+          <div className="flex flex-wrap items-end justify-between gap-3">
+            <div>
+              <Eyebrow>{today}</Eyebrow>
+              <h1 className="font-display text-3xl leading-tight max-md:hidden">
+                {user?.first_name
+                  ? `${greeting(now)}, ${user.first_name}`
+                  : "Home"}
+              </h1>
+            </div>
+            <div className="hidden gap-2 md:flex">
+              <Button asChild variant="outline" size="sm">
+                <Link href="/accounts">
+                  <Wallet className="size-4" />
+                  Add account
                 </Link>
-                <FxNotice
-                  fxMissing={receivablesSummary?.fx_missing}
-                  variant="inline"
+              </Button>
+              <Button size="sm" onClick={() => setTxDialogOpen(true)}>
+                <Plus className="size-4" />
+                Add transaction
+              </Button>
+            </div>
+          </div>
+
+          {loading ? (
+            <HomeSkeleton />
+          ) : accountsQuery.error ? (
+            <div className="rounded-card border p-10 text-center">
+              <p className="text-sm text-destructive">
+                Could not load your accounts.
+              </p>
+              <Button
+                variant="outline"
+                size="sm"
+                className="mt-3"
+                onClick={() => accountsQuery.refetch()}
+              >
+                Try again
+              </Button>
+            </div>
+          ) : (
+            <>
+              <NetWorthChart />
+
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+                <HomeSpendCard />
+                <BudgetsCard />
+                <div className="h-full md:col-span-2 xl:col-span-1">
+                  <HomeCashflowCard />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
+                <HomeRecent
+                  transactions={transactions.slice(0, 6)}
+                  accounts={accounts}
+                  baseCurrency={baseCurrency}
+                  isLoading={false}
+                  error={transactionsQuery.error}
+                  onSelect={(tx) => {
+                    setSelectedTransaction(tx);
+                    setEditTxOpen(true);
+                  }}
                 />
-              </>
-            )}
-            <SpendingCard />
-            <CashflowCard />
-            <BudgetsCard />
-          </div>
-
-          {/* Rail */}
-          <div className="min-w-0 space-y-4">
-            <CompositionCard />
-
-            <Card>
-              <SectionCardHeader
-                title="Recent activity"
-                href="/transactions"
-              />
-              <CardContent>
-                {transactionsLoading ? (
-                  <div className="space-y-2">
-                    {Array.from({ length: 5 }).map((_, i) => (
-                      <Skeleton key={i} className="h-11 w-full" />
-                    ))}
-                  </div>
-                ) : transactions.length === 0 ? (
-                  <p className="py-6 text-center text-sm text-muted-foreground">
-                    No transactions yet.
-                  </p>
-                ) : (
-                  <div className="divide-y divide-border/60">
-                    {transactions.map((tx) => (
-                      <TransactionRow
-                        key={tx.id}
-                        transaction={tx}
-                        accountName={accountNameMap.get(tx.account_id)}
-                        currency={accountCurrencyMap.get(tx.account_id) ?? baseCurrency}
-                        onClick={() => {
-                          setSelectedTransaction(tx);
-                          setEditTxOpen(true);
-                        }}
-                      />
-                    ))}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-
-            <AccountsPanel accounts={accounts} />
-          </div>
+                <HomeAccounts accounts={accounts} />
+              </div>
+            </>
+          )}
         </div>
       )}
 
+      <CreateAccountDialog
+        open={accountDialogOpen}
+        onOpenChange={setAccountDialogOpen}
+      />
       <CreateTransactionDialog
         open={txDialogOpen}
         onOpenChange={setTxDialogOpen}
@@ -331,6 +194,6 @@ export default function DashboardPage() {
         onOpenChange={setEditTxOpen}
         transaction={selectedTransaction}
       />
-    </div>
+    </>
   );
 }

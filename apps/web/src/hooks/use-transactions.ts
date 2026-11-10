@@ -1,3 +1,4 @@
+import { toUpdateBody } from "@/lib/transaction-update";
 import {
   keepPreviousData,
   useQuery,
@@ -27,6 +28,8 @@ import type {
   CreateTransactionRequest,
   CreateTransferRequest,
   UpdateTransactionRequest,
+  BulkTransactionsRequest,
+  BulkTransactionsResponse,
   SpendingByCategory,
   Cashflow,
   MonthlySummaryItem,
@@ -87,8 +90,12 @@ export function useAccountTransactions(
   });
 }
 
-export function useTransactions(filters?: UserTransactionFilters) {
+export function useTransactions(
+  filters?: UserTransactionFilters,
+  options?: { enabled?: boolean }
+) {
   return useQuery({
+    enabled: options?.enabled ?? true,
     queryKey: transactionKeys.userList(filters),
     queryFn: () =>
       apiClient.get<PageResponse<Transaction>>("/api/v1/transactions", {
@@ -156,6 +163,9 @@ function belongsOnFirstPage(
   if (filters.category_id && filters.category_id !== tx.category_id) return false;
   if (filters.min_amount !== undefined && tx.amount < filters.min_amount) return false;
   if (filters.max_amount !== undefined && tx.amount > filters.max_amount) return false;
+  // Text search and shared / receipt filters are decided by the server.
+  if (filters.q?.trim() || filters.shared !== undefined) return false;
+  if (filters.has_attachment !== undefined) return false;
   return true;
 }
 
@@ -206,6 +216,7 @@ function applyTransactionUpdate(
   if (data.type !== undefined) next.type = data.type;
   if (data.amount !== undefined) next.amount = data.amount;
   if (data.description !== undefined) next.description = data.description;
+  if (data.notes !== undefined) next.notes = data.notes;
   if (data.date !== undefined) next.date = data.date;
   if (data.account_id !== undefined && data.account_id !== tx.account_id) {
     next.account_id = data.account_id;
@@ -260,6 +271,8 @@ export function useCreateTransaction() {
         type: data.type,
         amount: data.amount,
         description: data.description ?? "",
+        notes: data.notes ?? "",
+        source: "web",
         date: data.date ?? now,
         account: cachedAccount(queryClient, data.account_id),
         category: data.category_id
@@ -315,7 +328,7 @@ export function useUpdateTransaction(id: string) {
     mutationFn: async (data) => {
       const res = await apiClient.put<TransactionResponse>(
         `/api/v1/transactions/${id}`,
-        data
+        toUpdateBody(data)
       );
       return res.transaction;
     },
@@ -369,6 +382,36 @@ export function useDeleteTransaction() {
       if (!err) queryClient.removeQueries({ queryKey: transactionKeys.detail(id) });
       invalidateAfterTransactionChange(queryClient);
       // Deleting a shared expense cascades to its receivables.
+      queryClient.invalidateQueries({ queryKey: receivableKeys.all });
+    },
+  });
+}
+
+/**
+ * Bulk edit (category, notes append, unshare) or delete of up to 200
+ * transactions. All-or-nothing on the server, so there is no optimistic
+ * update: every list, balance, budget and receivable view is refetched.
+ */
+export function useBulkUpdateTransactions() {
+  const queryClient = useQueryClient();
+  return useMutation<BulkTransactionsResponse, Error, BulkTransactionsRequest>({
+    mutationFn: (data) =>
+      apiClient.post<BulkTransactionsResponse>(
+        "/api/v1/transactions/bulk",
+        data
+      ),
+    onSuccess: (_res, variables) => {
+      // Deleted rows must not be refetched individually.
+      if (variables.delete) {
+        for (const id of variables.ids) {
+          queryClient.removeQueries({ queryKey: transactionKeys.detail(id) });
+        }
+      }
+    },
+    onSettled: () => {
+      invalidateAfterTransactionChange(queryClient);
+      // Category changes affect spending breakdowns (already under
+      // transactionKeys.all); unsharing or deleting removes receivables.
       queryClient.invalidateQueries({ queryKey: receivableKeys.all });
     },
   });

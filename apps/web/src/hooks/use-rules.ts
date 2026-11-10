@@ -11,6 +11,7 @@ import type {
   RuleMatchPreview,
   RulePreviewRequest,
   RuleResponse,
+  RuleSuggestionsResponse,
   RulesResponse,
   UpdateRuleRequest,
 } from "@/types/api";
@@ -21,6 +22,7 @@ export const ruleKeys = {
   list: () => [...ruleKeys.lists()] as const,
   details: () => [...ruleKeys.all, "detail"] as const,
   detail: (id: string) => [...ruleKeys.details(), id] as const,
+  suggestions: () => [...ruleKeys.all, "suggestions"] as const,
 };
 
 export function useRules() {
@@ -29,6 +31,19 @@ export function useRules() {
     queryFn: async () => {
       const res = await apiClient.get<RulesResponse>("/api/v1/rules");
       return res.rules;
+    },
+  });
+}
+
+// Rules the app suggests from repeated categorisations no rule covers yet.
+export function useRuleSuggestions() {
+  return useQuery({
+    queryKey: ruleKeys.suggestions(),
+    queryFn: async () => {
+      const res = await apiClient.get<RuleSuggestionsResponse>(
+        "/api/v1/rules/suggestions"
+      );
+      return res.suggestions;
     },
   });
 }
@@ -53,6 +68,7 @@ export function useCreateRule() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ruleKeys.lists() });
+      queryClient.invalidateQueries({ queryKey: ruleKeys.suggestions() });
     },
   });
 }
@@ -128,6 +144,8 @@ export function useApplyRule() {
       // A committed backfill changes transaction categories.
       if (variables.dry_run === false) {
         queryClient.invalidateQueries({ queryKey: transactionKeys.all });
+        queryClient.invalidateQueries({ queryKey: ruleKeys.lists() }); // match counts
+        queryClient.invalidateQueries({ queryKey: ruleKeys.suggestions() });
       }
     },
   });

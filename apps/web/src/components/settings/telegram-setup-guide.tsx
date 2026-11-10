@@ -34,10 +34,14 @@ export function TelegramSetupGuide() {
                 </p>
                 <ul className="list-disc list-inside space-y-1 ml-2">
                   <li>Check account balances with /balance</li>
+                  <li>Add an expense by just typing it, like &ldquo;coffee 18.40&rdquo;</li>
                   <li>Record expenses with /expense</li>
                   <li>Track income with /income</li>
                   <li>View budget status with /budgets</li>
                   <li>Get monthly summaries with /summary</li>
+                  <li>See this month&apos;s spending by category with /spent</li>
+                  <li>Undo your last entry with /undo, or send a photo to attach a receipt</li>
+                  <li>See who owes you with /owed</li>
                 </ul>
               </div>
             </AccordionContent>
@@ -93,12 +97,18 @@ export function TelegramSetupGuide() {
                 <ul className="list-none space-y-2 ml-2">
                   <li><code className="bg-muted px-1 py-0.5 rounded">/help</code> - See all available commands</li>
                   <li><code className="bg-muted px-1 py-0.5 rounded">/balance</code> - View your account balances</li>
+                  <li><code className="bg-muted px-1 py-0.5 rounded">coffee 18.40</code> - Quick add an expense (the amount can come first or last); tap Add to confirm</li>
+                  <li><code className="bg-muted px-1 py-0.5 rounded">/undo</code> - Remove the entry you just added (within 10 minutes)</li>
+                  <li><code className="bg-muted px-1 py-0.5 rounded">Photo or PDF</code> - Attach a receipt to your latest entry</li>
                   <li><code className="bg-muted px-1 py-0.5 rounded">/expense 50 Coffee</code> - Record an RM50 expense</li>
                   <li><code className="bg-muted px-1 py-0.5 rounded">/income 3000 Salary</code> - Record RM3000 income</li>
                   <li><code className="bg-muted px-1 py-0.5 rounded">/budgets</code> - Check your budget status</li>
                   <li><code className="bg-muted px-1 py-0.5 rounded">/summary</code> - Get monthly summary</li>
+                  <li><code className="bg-muted px-1 py-0.5 rounded">/spent</code> - This month&apos;s spending by category</li>
                   <li><code className="bg-muted px-1 py-0.5 rounded">/categories</code> - View your categories</li>
-                  <li><code className="bg-muted px-1 py-0.5 rounded">/clear</code> - Clear the chat</li>
+                  <li><code className="bg-muted px-1 py-0.5 rounded">/accounts</code> - List your accounts</li>
+                  <li><code className="bg-muted px-1 py-0.5 rounded">/owed</code> - See who owes you</li>
+                  <li><code className="bg-muted px-1 py-0.5 rounded">/cancel</code> - Stop what you are adding</li>
                 </ul>
               </div>
             </AccordionContent>

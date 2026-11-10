@@ -1,17 +1,16 @@
-import re
 import logging
-from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
-from typing import Optional, Tuple
+from typing import Optional, Sequence, Tuple
 import httpx
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.constants import ParseMode
 from telegram.ext import (
-    ContextTypes, ConversationHandler, CommandHandler,
+    BaseHandler, ContextTypes, ConversationHandler, CommandHandler,
     MessageHandler, CallbackQueryHandler, filters
 )
 from api_client import KuberanAPIClient, UserAPIClient
 from handlers.common import NOT_LINKED_MESSAGE, SERVICE_UNAVAILABLE_MESSAGE, describe_error
 from utils.formatting import display_icon, esc, format_currency, is_emoji_icon
+from utils.parsing import amount_to_cents, parse_quick_entry  # noqa: F401 (amount_to_cents is re-exported)
 
 logger = logging.getLogger(__name__)
 
@@ -28,35 +27,17 @@ PRIVATE_TEXT = filters.ChatType.PRIVATE & filters.TEXT & ~filters.COMMAND
 SPENDING_ACCOUNT_TYPES = ('cash', 'credit_card', 'debt')
 
 
-def amount_to_cents(amount: str) -> Optional[int]:
-    """Convert a decimal amount string (at most 2 decimals) to int cents.
-
-    Uses Decimal, never float: float('19.99') * 100 is 1998.999..., which
-    int() truncates to 1998.
-    """
-    try:
-        value = Decimal(amount)
-    except InvalidOperation:
-        return None
-    if not value.is_finite() or value < 0:
-        return None
-    return int((value * 100).quantize(Decimal(1), rounding=ROUND_HALF_UP))
-
-
 def _parse_amount_description(text: str) -> Tuple[Optional[int], str]:
-    """Parse '50 Coffee' into (amount in cents, description).
+    """Parse '50 Coffee' or 'Coffee 50' into (amount in cents, description).
 
-    Returns (None, "") when the text does not start with a valid amount.
-    A zero amount comes back as 0, which callers treat as invalid.
+    Returns (None, "") when the text has no valid amount. A zero amount comes
+    back as 0, which callers treat as invalid. The currency a user may type
+    ('RM50', '$5') is ignored here: amounts are in the account's currency.
     """
-    if not text:
+    entry = parse_quick_entry(text)
+    if entry is None:
         return None, ""
-    # The lookahead rejects '19.999' and '1.2.3' instead of silently splitting
-    # them into an amount plus a numeric description.
-    match = re.match(r'(\d+(?:\.\d{1,2})?)(?![\d.])\s*(.*)', text.strip(), re.DOTALL)
-    if not match:
-        return None, ""
-    return amount_to_cents(match.group(1)), match.group(2).strip()
+    return entry.amount, entry.description
 
 
 def _extract_account_and_category(text: str, accounts: list, categories: list):
@@ -294,6 +275,14 @@ async def _resolve_user_and_setup(api_client: KuberanAPIClient, telegram_user_id
         preferred_id = None
 
     default_account = _get_default_account(accounts, preferred_id)
+    # Quick add records straight to the account only when the choice is not a
+    # guess: the saved default, or the one and only spending account.
+    active_spending = [a for a in accounts
+                       if a.get('type') in SPENDING_ACCOUNT_TYPES and a.get('is_active', True)]
+    default_confident = bool(default_account) and (
+        len(active_spending) == 1
+        or (preferred_id is not None and default_account.get('id') == preferred_id)
+    )
     if not default_account:
         return None, "No active accounts found. Please create an account in the web app first."
 
@@ -314,13 +303,21 @@ async def _resolve_user_and_setup(api_client: KuberanAPIClient, telegram_user_id
         # The account decides the currency; default_currency only seeds new accounts.
         'currency': default_account.get('currency') or user_data.get('default_currency', 'MYR'),
         'user_client': user_client,
+        'default_confident': default_confident,
     }
 
     return user_client, None
 
 
-def create_transaction_conversation(api_client: KuberanAPIClient, txn_type: str) -> ConversationHandler:
-    """Factory that returns a ConversationHandler for expense or income."""
+def create_transaction_conversation(api_client: KuberanAPIClient, txn_type: str,
+                                    extra_entry_points: Sequence[BaseHandler] = ()
+                                    ) -> ConversationHandler:
+    """Factory that returns a ConversationHandler for expense or income.
+
+    ``extra_entry_points`` are added after the command entry (the one-line
+    quick add for plain text lives here so it can never run while a
+    conversation is waiting for input).
+    """
 
     async def entry_point(update: Update, context: ContextTypes.DEFAULT_TYPE):
         telegram_user_id = update.message.from_user.id
@@ -727,7 +724,8 @@ def create_transaction_conversation(api_client: KuberanAPIClient, txn_type: str)
         context.user_data.pop(TXN_KEY, None)
 
     return ConversationHandler(
-        entry_points=[CommandHandler(txn_type, entry_point, filters=filters.ChatType.PRIVATE)],
+        entry_points=[CommandHandler(txn_type, entry_point, filters=filters.ChatType.PRIVATE),
+                      *extra_entry_points],
         states={
             AMOUNT: [MessageHandler(PRIVATE_TEXT, receive_amount)],
             CATEGORY: [CallbackQueryHandler(handle_category_callback, pattern=r'^cat:')],

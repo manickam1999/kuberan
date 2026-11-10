@@ -23,6 +23,10 @@ export const securityKeys = {
   detail: (id: string) => [...securityKeys.details(), id] as const,
   prices: (id: string, from: string, to: string) =>
     [...securityKeys.all, "prices", id, from, to] as const,
+  series: (id: string, from: string, to: string) =>
+    [...securityKeys.all, "series", id, from, to] as const,
+  everything: (search: string) =>
+    [...securityKeys.all, "everything", search] as const,
 };
 
 export function useSecurities(params?: SecurityFilters) {
@@ -94,5 +98,62 @@ export function useSecurityPriceHistory(
         { from_date: from, to_date: to, ...params }
       ),
     enabled: !!id && from.length > 0 && to.length > 0,
+  });
+}
+
+const PRICE_PAGE_SIZE = 100; // the API maximum
+const MAX_PRICE_PAGES = 10;
+
+/**
+ * Every price of a security between `from` and `to`, newest first: pages
+ * through the price history endpoint (100 a page, at most 1,000 prices).
+ */
+export function useSecurityPriceSeries(id: string, from: string, to: string) {
+  return useQuery({
+    queryKey: securityKeys.series(id, from, to),
+    queryFn: async () => {
+      const all: SecurityPrice[] = [];
+      for (let page = 1; page <= MAX_PRICE_PAGES; page++) {
+        const res = await apiClient.get<PageResponse<SecurityPrice>>(
+          `/api/v1/securities/${id}/prices`,
+          { from_date: from, to_date: to, page, page_size: PRICE_PAGE_SIZE }
+        );
+        all.push(...(res.data ?? []));
+        if (page >= res.total_pages) break;
+      }
+      return all;
+    },
+    enabled: !!id && from.length > 0 && to.length > 0,
+  });
+}
+
+const SECURITY_PAGE_SIZE = 100; // the API maximum
+const MAX_SECURITY_PAGES = 10;
+
+/**
+ * Every security matching `search` (empty: all), symbol order. The list is
+ * reference data, so it is fetched whole (at most 1,000) and filtered by type
+ * on the client.
+ */
+export function useAllSecurities(search: string) {
+  return useQuery({
+    queryKey: securityKeys.everything(search),
+    queryFn: async () => {
+      const all: Security[] = [];
+      for (let page = 1; page <= MAX_SECURITY_PAGES; page++) {
+        const res = await apiClient.get<PageResponse<Security>>(
+          "/api/v1/securities",
+          {
+            search: search || undefined,
+            page,
+            page_size: SECURITY_PAGE_SIZE,
+          }
+        );
+        all.push(...(res.data ?? []));
+        if (page >= res.total_pages) break;
+      }
+      return all;
+    },
+    placeholderData: keepPreviousData,
   });
 }

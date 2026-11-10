@@ -13,6 +13,12 @@ interface TransactionAmountProps {
    * only what it received, in its currency.
    */
   viewAccountId?: string;
+  /**
+   * Which way the money moved for this row (`transactionVisual().sign`). The
+   * sign is drawn after the currency symbol (`US$\u221242.15`, `RM +7,800.00`);
+   * transfers ignore it.
+   */
+  direction?: "+" | "-" | "";
   className?: string;
 }
 
@@ -23,6 +29,7 @@ interface TransactionAmountProps {
 export function TransactionAmount({
   transaction,
   viewAccountId,
+  direction = "",
   className,
 }: TransactionAmountProps) {
   const { hideBalances } = useAuth();
@@ -60,8 +67,9 @@ export function TransactionAmount({
 
   return (
     <Money
-      amount={transaction.amount}
+      amount={direction === "-" ? -transaction.amount : transaction.amount}
       currency={currency}
+      sign={direction === "+" ? "always" : "auto"}
       className={className}
     />
   );

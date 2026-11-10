@@ -1,5 +1,7 @@
+import type { PaletteId } from "@/lib/palettes";
 import type {
   Account,
+  Appearance,
   Attachment,
   Budget,
   BudgetPeriod,
@@ -62,6 +64,8 @@ export interface RegisterRequest {
   password: string;
   first_name?: string;
   last_name?: string;
+  /** ISO 4217 reporting currency chosen at sign-up; defaults to MYR. */
+  base_currency?: string;
 }
 
 // The refresh token travels in the HttpOnly `kuberan_refresh` cookie. The body
@@ -95,6 +99,46 @@ export interface UpdateProfileSettingsRequest {
   default_account_id?: string | null; // null clears the default
   /** ISO 4217 reporting currency; 400 UNSUPPORTED_CURRENCY if it can't be converted. */
   base_currency?: string;
+  first_name?: string;
+  last_name?: string;
+  /** Changing the email requires `current_password`; 409 DUPLICATE_EMAIL if taken. */
+  email?: string;
+  /** Confirms an email change; 400 INVALID_CURRENT_PASSWORD if wrong (counts toward lockout). */
+  current_password?: string;
+  /** Partial update merged server-side; unknown keys and values are a 400. */
+  appearance?: Appearance;
+}
+
+// GET /appearance (public): the server-wide default palette.
+export interface AppearanceDefaultResponse {
+  default_palette: PaletteId;
+}
+
+// POST /auth/password. Wrong current password: 400 INVALID_CURRENT_PASSWORD;
+// 423 ACCOUNT_LOCKED after too many; 429 RATE_LIMITED.
+export interface ChangePasswordRequest {
+  current_password: string;
+  new_password: string; // 8-72 bytes
+}
+
+// Response of POST /auth/password and POST /auth/sessions/revoke-others
+export interface RevokedSessionsResponse {
+  revoked_sessions: number;
+}
+
+// One signed-in device (GET /auth/sessions)
+export interface AuthSession {
+  id: string;
+  created_at: string; // ISO 8601
+  last_seen_at: string; // ISO 8601
+  user_agent: string; // parse into a device label on the client
+  ip_address: string;
+  /** True for the session making the request; it cannot be revoked here. */
+  current: boolean;
+}
+
+export interface SessionsResponse {
+  sessions: AuthSession[];
 }
 
 // Single-item response wrappers (backend wraps single items in a key)
@@ -145,8 +189,24 @@ export interface CreateCreditCardAccountRequest {
   description?: string;
   currency?: string;
   credit_limit?: number;
+  /** Amount currently owed on the card, in cents (>= 0). */
+  current_balance?: number;
   interest_rate?: number;
   due_date?: string;
+  /** Day of the month (1-31) the statement falls due; drives the Telegram reminder. */
+  due_day?: number;
+}
+
+/** POST /api/v1/accounts/debt (a loan) */
+export interface CreateDebtAccountRequest {
+  name: string;
+  description?: string;
+  currency?: string; // defaults to the user's base currency
+  /** Amount owed, in cents; recorded as an opening balance. */
+  amount_owed?: number;
+  interest_rate?: number; // annual %
+  monthly_payment?: number; // cents
+  due_day?: number; // 1-31
 }
 
 /** POST /api/v1/accounts/fixed-deposit */
@@ -182,6 +242,10 @@ export interface UpdateAccountRequest {
   interest_rate?: number;
   due_date?: string;
   credit_limit?: number;
+  /** Day of the month (1-31) for credit cards and loans; 0 clears it. */
+  due_day?: number;
+  /** Loan instalment in cents; 0 clears it. */
+  monthly_payment?: number;
   // Fixed deposit mutable fields
   maturity_date?: string; // "YYYY-MM-DD"
   payout_type?: PayoutType;
@@ -198,6 +262,7 @@ export interface CreateTransactionRequest {
   amount: number; // cents, > 0
   description?: string;
   date?: string; // ISO 8601
+  notes?: string; // max 2000 characters
 }
 
 export interface CreateTransferRequest {
@@ -208,6 +273,7 @@ export interface CreateTransferRequest {
   date?: string; // ISO 8601
   /** Cents credited to the destination, in its currency. Required when the accounts' currencies differ (else 400 FX_AMOUNT_REQUIRED), omit otherwise. */
   to_amount?: number;
+  notes?: string; // max 2000 characters
 }
 
 export interface UpdateTransactionRequest {
@@ -217,6 +283,7 @@ export interface UpdateTransactionRequest {
   amount?: number; // cents, > 0
   description?: string;
   date?: string; // ISO 8601
+  notes?: string; // replaces the notes; max 2000 characters
 }
 
 export interface TransactionFilters extends PaginationParams {
@@ -226,10 +293,37 @@ export interface TransactionFilters extends PaginationParams {
   category_id?: string; // UUIDv7
   min_amount?: number;
   max_amount?: number;
+  /** Search description and notes (case-insensitive, max 100 chars); a number such as 64.73 also matches the amount. */
+  q?: string;
+  /** true: only transactions with receivables; false: only those without. */
+  shared?: boolean;
+  /** true: only transactions with receipts; false: only those without. */
+  has_attachment?: boolean;
 }
 
 export interface UserTransactionFilters extends TransactionFilters {
   account_id?: string; // UUIDv7
+}
+
+// POST /transactions/bulk
+export interface BulkTransactionsRequest {
+  ids: string[]; // 1..200, all owned by the user (404 otherwise)
+  /** Changes to apply to every id; omit when deleting. */
+  set?: {
+    /** Must match each transaction's type (400 CATEGORY_TYPE_MISMATCH). */
+    category_id?: string;
+    /** Appended to each row's notes on a new line. */
+    notes_append?: string;
+    /** Only false: removes the receivables of the selected expenses. */
+    shared?: false;
+  };
+  /** Delete the selected transactions (cannot be combined with set). */
+  delete?: boolean;
+}
+
+export interface BulkTransactionsResponse {
+  updated: number;
+  deleted: number;
 }
 
 // Category requests
@@ -257,6 +351,18 @@ export interface RuleResponse {
 
 export interface RulesResponse {
   rules: TransactionRule[];
+}
+
+// A rule the app proposes from repeated categorisations (GET /rules/suggestions)
+export interface RuleSuggestion {
+  description_pattern: string; // normalised: lowercase, whitespace collapsed
+  category_id: string;
+  type: "income" | "expense";
+  count: number;
+}
+
+export interface RuleSuggestionsResponse {
+  suggestions: RuleSuggestion[];
 }
 
 // Rule request building blocks (mirror the backend service inputs)
@@ -598,12 +704,46 @@ export interface OAuthConsentAcceptRequest {
 export interface ConnectedApp {
   client_id: string;
   client_name: string;
+  /** Where the app connects from ("claude.ai"); "" until its next consent. */
+  client_host: string;
   scopes: string[];
   auto_accept: boolean;
   legacy?: boolean;
+  /** Present when the grant has any write:* scope. */
+  write_limits?: AppWriteLimits;
   created_at?: string;
-  // Updated only when the app makes a change (an MCP write), not on reads.
+  /** Updated by any authenticated request from the app, reads included
+   * (throttled to once a minute). */
   last_used_at?: string;
+}
+
+/** What a write-enabled app may change. */
+export interface AppWriteLimits {
+  /** Per-change ceiling, cents of `currency` (the user's reporting currency). */
+  max_amount: number;
+  currency: string;
+  /** Writes allowed per minute / per day for this app; 0 means no limit. */
+  per_minute: number;
+  per_day: number;
+}
+
+/**
+ * One change a connected app made. `summary` is plain text built by the
+ * server: render it as text, never as HTML.
+ */
+export interface AppActivityItem {
+  id: string;
+  created_at: string;
+  action: string;
+  resource_type: string;
+  resource_id?: string;
+  summary: string;
+}
+
+/** An AppActivityItem from the all-apps feed, tagged with the app. */
+export interface AllAppActivityItem extends AppActivityItem {
+  client_id: string;
+  client_name: string;
 }
 
 export interface ConnectedAppsResponse {
@@ -625,6 +765,7 @@ export interface CreateSharedExpenseRequest {
   amount: number; // cents, > 0
   description?: string; // max 500
   date?: string; // ISO 8601
+  notes?: string; // max 2000 characters
   kind: ReceivableKind;
   mode: ShareMode;
   counterparties: ShareCounterpartyInput[]; // 1..20
@@ -722,4 +863,226 @@ export interface RenameCounterpartyRequest {
 
 export interface RenameCounterpartyResponse {
   updated: number;
+}
+
+/**
+ * GET /api/v1/system/status. Each field is an RFC 3339 time, or null when it
+ * has never happened (or is not available). `latest_snapshot_at` is the
+ * caller's own latest portfolio snapshot.
+ */
+export interface SystemStatus {
+  latest_price_at: string | null;
+  latest_fx_rate_at: string | null;
+  latest_snapshot_at: string | null;
+  last_backup_at: string | null;
+  /** The server offers the sample household (DEMO_ENABLED). */
+  demo_enabled: boolean;
+  /** The caller currently has sample rows. */
+  demo_loaded: boolean;
+}
+
+// ---- Sample household (POST /demo/load, DELETE /demo; plan 023 5.7) ----
+
+export interface DemoResult {
+  /** Rows created or removed, by table. */
+  rows: Record<string, number>;
+  total: number;
+}
+
+// ---- Bank-statement CSV import (POST /imports/csv; docs/csv-import.md) ----
+
+export type CsvAmountSign = "negative_is_expense" | "positive_is_expense";
+
+export interface CsvMapping {
+  date_column: string;
+  description_column: string;
+  amount_column?: string;
+  debit_column?: string;
+  credit_column?: string;
+  category_column?: string;
+  notes_column?: string;
+  /** e.g. "DD/MM/YYYY"; one of the report's `date_formats`. */
+  date_format: string;
+  /** "." or ",". */
+  decimal_separator: string;
+  amount_sign?: CsvAmountSign;
+}
+
+export type CsvRowStatus =
+  | "create"
+  | "skip_duplicate"
+  | "skip_manual"
+  | "invalid";
+
+export interface CsvImportRow {
+  line: number;
+  status: CsvRowStatus;
+  date?: string;
+  description?: string;
+  type?: "income" | "expense";
+  /** Cents, positive; the type gives the direction. */
+  amount?: number;
+  category?: string;
+  category_source?: "column" | "rule";
+  reason?: string;
+}
+
+export interface CsvImportIssue {
+  line: number;
+  code: string;
+  detail: string;
+}
+
+export interface CsvImportSummary {
+  rows: number;
+  would_create: number;
+  skip_duplicate: number;
+  skip_manual: number;
+  invalid: number;
+  categorized: number;
+  categorized_by_rule: number;
+  unknown_category: number;
+  income_total: number;
+  expense_total: number;
+  first_date?: string;
+  last_date?: string;
+}
+
+export interface CsvImportReport {
+  applied: boolean;
+  account: { id: string; name: string; currency: string };
+  delimiter: string;
+  columns: string[];
+  sample: string[][] | null;
+  suggested_mapping: CsvMapping;
+  /** The mapping used; absent on the first look at a file. */
+  mapping?: CsvMapping;
+  summary?: CsvImportSummary;
+  rows?: CsvImportRow[];
+  rows_truncated?: boolean;
+  issues?: CsvImportIssue[];
+  created: number;
+  date_formats: string[];
+}
+
+// ---- IBKR Activity Statement import (POST /imports/ibkr; docs/ibkr-import.md) ----
+
+export interface IbkrImportIssue {
+  code: string;
+  detail: string;
+}
+
+export interface IbkrImportCheckpoint {
+  date: string;
+  ibkr_quantity: number;
+  quantity: number;
+  quantity_ok: boolean;
+  ibkr_cost_basis: number;
+  cost_basis: number;
+  cost_basis_diff: number;
+}
+
+export interface IbkrImportSecurity {
+  symbol: string;
+  security_id: string;
+  investment_id: string | null;
+  existing_transactions: number;
+  new_transactions: number;
+  checkpoints: IbkrImportCheckpoint[] | null;
+}
+
+export interface IbkrImportCashCheckpoint {
+  date: string;
+  ibkr: number;
+  ledger: number;
+  diff: number;
+}
+
+export interface IbkrImportUnmatched {
+  date: string;
+  kind: string;
+  amount: number;
+  detail: string;
+}
+
+/** Report of a dry run or an applied import. Lists may be null when empty. */
+export interface IbkrImportReport {
+  applied: boolean;
+  account: string;
+  base_currency: string;
+  periods: { start: string; end: string }[] | null;
+  ignored_sections: string[] | null;
+  securities: IbkrImportSecurity[] | null;
+  cash: {
+    opening_balance: number;
+    legs: number;
+    dividends: number;
+    fees: number;
+    deposits_matched: { date: string; amount: number }[] | null;
+    unmatched_deposits: IbkrImportUnmatched[] | null;
+    checkpoints: IbkrImportCashCheckpoint[] | null;
+  };
+  errors: IbkrImportIssue[] | null;
+  warnings: string[] | null;
+}
+
+// Per-account balance history (plan 023, 5.1)
+
+/** One recorded day of an account's balance, in the account's own currency. */
+export interface BalancePoint {
+  day: string; // "2026-02-01" (UTC day)
+  balance: number; // cents, account currency
+}
+
+/** GET /accounts/:id/balance-history (inside `data`). */
+export interface AccountBalanceHistory {
+  account_id: string;
+  currency: string;
+  from: string; // "2026-02-01"
+  to: string; // "2026-02-01"
+  points: BalancePoint[];
+}
+
+/** One element of GET /accounts/sparklines (inside `data`). */
+export interface AccountSparkline {
+  account_id: string;
+  currency: string;
+  points: BalancePoint[];
+}
+
+// Insights summary (plan 023, 5.4)
+
+/** GET /analytics/typical (inside `data`): a typical month, in the base currency. */
+export interface TypicalMonth {
+  /** Months asked for. */
+  months: number;
+  /** Months the averages cover; 0 means there is no history yet. */
+  months_used: number;
+  currency: string;
+  avg_income: number; // cents per month
+  avg_spending: number; // cents per month
+  /** (income - spending) / income over the window, percent with one decimal. */
+  saved_percent: number;
+  /** Average cumulative spending after day 1..31 of a month (31 points, cents). */
+  daily_cumulative: number[];
+  /** Average spending per month by category, largest first. */
+  by_category: SpendingByCategoryItem[];
+  fx_missing: boolean;
+  unconverted: UnconvertedAmount[];
+}
+
+// Reminders
+export interface RemindersResponse {
+  reminders: import("./models").Reminder[];
+}
+
+export interface ReminderResponse {
+  reminder: import("./models").Reminder;
+}
+
+/** PUT /api/v1/telegram/reminder-settings; omitted fields keep their value. */
+export interface UpdateReminderSettingsRequest {
+  card_due?: boolean;
+  loan_due?: boolean;
+  fd_maturity?: boolean;
 }

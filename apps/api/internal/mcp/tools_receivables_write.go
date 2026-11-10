@@ -123,7 +123,7 @@ func (s *Server) prepareRecordRepayment(c caller, args map[string]interface{}) (
 		}
 
 		var sb strings.Builder
-		fmt.Fprintf(&sb, "Recorded repayment of %s on %s\n", formatMoney(settlement.Amount, rec.Currency), settlement.Date.Format("2006-01-02"))
+		fmt.Fprintf(&sb, "Recorded repayment of %s on %s\n", formatMoney(settlement.Amount, rec.Currency), settlement.Date.UTC().Format("2006-01-02"))
 		if settlement.AccountAmount != nil {
 			fmt.Fprintf(&sb, "  Credited to the account: %s\n", formatMoney(*settlement.AccountAmount, account.Currency))
 		}
@@ -131,7 +131,7 @@ func (s *Server) prepareRecordRepayment(c caller, args map[string]interface{}) (
 		fmt.Fprintf(&sb, "  Repayment transaction ID: %s\n", settlement.TransactionID)
 		sb.WriteString(s.balanceLine(c.UserID, accountID))
 		changes := map[string]interface{}{
-			"amount": amount, "account_id": accountID,
+			"amount": amount, "account_id": accountID, "currency": currencyCode(rec.Currency),
 			"settlement_id": settlement.ID, "transaction_id": settlement.TransactionID,
 		}
 		if accountAmountArg != nil {
@@ -182,6 +182,7 @@ func (s *Server) prepareWriteOffReceivable(c caller, args map[string]interface{}
 			Action: "MCP_WRITE_OFF_RECEIVABLE", ResourceType: "receivable", ResourceID: rec.ID,
 			Changes: map[string]interface{}{
 				"amount":             amount,
+				"currency":           currencyCode(rec.Currency),
 				"written_off_amount": change(before.WrittenOffAmount, rec.WrittenOffAmount),
 				"status":             change(before.Status, rec.Status),
 			},

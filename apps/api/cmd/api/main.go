@@ -93,11 +93,14 @@ func run() error {
 	budgetService := services.NewBudgetService(db, services.WithBudgetFXService(fxService))
 	investmentService := services.NewInvestmentService(db, accountService, fxService)
 	importService := services.NewImportService(db, accountService, fxService)
+	csvImportService := services.NewCSVImportService(db)
+	demoService := services.NewDemoService(db, services.WithDemoFXService(fxService))
 	securityService := services.NewSecurityService(db)
 	snapshotService := services.NewPortfolioSnapshotService(db, fxService)
 	fdService := services.NewFixedDepositService(db, categoryService)
 	auditService := services.NewAuditService(db)
 	telegramService := services.NewTelegramService(db)
+	reminderService := services.NewReminderService(db)
 	oauthGrantService := services.NewOAuthGrantService(db)
 
 	// Receipt attachments (plan 017): blob store + service. The store is only
@@ -141,9 +144,16 @@ func run() error {
 	}()
 
 	// Initialize handlers
-	authHandler := handlers.NewAuthHandler(userService, auditService, handlers.WithSecureCookie(appConfig.CookieSecure))
+	authHandler := handlers.NewAuthHandler(userService, auditService, handlers.WithSecureCookie(appConfig.CookieSecure),
+		handlers.WithDefaultPalette(appConfig.DefaultPalette))
 	oauthHandler := handlers.NewOAuthHandler(hydraAdmin, userService, oauthGrantService, auditService, appConfig.OAuthScopes, appConfig.MCPResourceURL,
-		handlers.WithPinnedClientID(appConfig.HydraPinnedClientID))
+		handlers.WithPinnedClientID(appConfig.HydraPinnedClientID),
+		handlers.WithAppActivity(services.NewAppActivityService(db)),
+		handlers.WithWriteLimits(handlers.WriteLimitsConfig{
+			MaxAmount: appConfig.MCPMaxWriteAmount,
+			PerMinute: appConfig.MCPWriteRatePerMinute,
+			PerDay:    appConfig.MCPWriteRatePerDay,
+		}))
 	registrationHandler := handlers.NewRegistrationHandler(hydraAdmin, auditService, appConfig.OAuthScopes,
 		handlers.WithResourceAudience(appConfig.MCPResourceURL))
 	accountHandler := handlers.NewAccountHandler(accountService, auditService)
@@ -160,6 +170,11 @@ func run() error {
 	telegramHandler := handlers.NewTelegramHandler(telegramService, auditService)
 	fxHandler := handlers.NewFXHandler(fxService, auditService)
 	importHandler := handlers.NewImportHandler(importService, auditService, appConfig.MaxUploadBytes)
+	accountHistoryHandler := handlers.NewAccountHistoryHandler(services.NewAccountBalanceHistoryService(db))
+	analyticsHandler := handlers.NewAnalyticsHandler(services.NewTypicalService(db, fxService))
+	csvImportHandler := handlers.NewCSVImportHandler(csvImportService, auditService, appConfig.MaxUploadBytes)
+	demoHandler := handlers.NewDemoHandler(demoService, auditService, appConfig.DemoEnabled)
+	exportHandler := handlers.NewExportHandler(services.NewExportService(db), services.NewSystemStatusService(db, services.WithDemoEnabled(appConfig.DemoEnabled)), auditService)
 
 	// Register custom validators before routes
 	validator.Register()
@@ -182,7 +197,7 @@ func run() error {
 	router.Use(middleware.CORS(appConfig.CORSOrigins))
 	router.Use(middleware.Gzip())
 	// The attachment upload enforces its own (larger) MAX_UPLOAD_BYTES cap.
-	router.Use(middleware.BodySizeLimit(appConfig.MaxBodyBytes, "POST "+handlers.AttachmentUploadRoute, "POST "+handlers.ImportIBKRRoute))
+	router.Use(middleware.BodySizeLimit(appConfig.MaxBodyBytes, "POST "+handlers.AttachmentUploadRoute, "POST "+handlers.ImportIBKRRoute, "POST "+handlers.ImportCSVRoute))
 	router.Use(middleware.ErrorHandler())
 
 	// Swagger documentation (not served in production).
@@ -217,8 +232,14 @@ func run() error {
 		Snapshot:             snapshotHandler,
 		FixedDepositPipeline: fdPipelineHandler,
 		Telegram:             telegramHandler,
+		Reminder:             handlers.NewReminderHandler(reminderService, auditService),
 		FX:                   fxHandler,
 		Import:               importHandler,
+		CSVImport:            csvImportHandler,
+		Demo:                 demoHandler,
+		Export:               exportHandler,
+		AccountHistory:       accountHistoryHandler,
+		Analytics:            analyticsHandler,
 		Limits:               handlers.NewRouteLimits(appConfig.RateLimits),
 	}, handlers.RouteSecrets{
 		BotInternalSecret: appConfig.BotInternalSecret,
@@ -227,7 +248,8 @@ func run() error {
 
 	// Create HTTP server
 	// Timeouts bound slow-client (slowloris) and stuck-connection resource use;
-	// WriteTimeout leaves room for attachment uploads/downloads.
+	// WriteTimeout leaves room for attachment uploads/downloads;
+	// the data export extends its own write deadline (see handlers.ExportHandler).
 	srv := &http.Server{
 		Addr:              ":" + appConfig.Port,
 		Handler:           router,

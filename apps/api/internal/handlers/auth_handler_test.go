@@ -32,7 +32,7 @@ type mockUserService struct {
 	updateProfileSettingsFn func(userID string, update services.ProfileSettingsUpdate) error
 }
 
-func (m *mockUserService) CreateUser(email, password, firstName, lastName string) (*models.User, error) {
+func (m *mockUserService) CreateUser(email, password, firstName, lastName string, _ ...services.CreateUserOption) (*models.User, error) {
 	if m.createUserFn != nil {
 		return m.createUserFn(email, password, firstName, lastName)
 	}
@@ -95,9 +95,26 @@ func (m *mockUserService) UpdateProfileSettings(userID string, update services.P
 	return nil
 }
 
+func (m *mockUserService) FindRefreshSessionID(string, string) (string, error) {
+	return "", apperrors.ErrSessionNotFound
+}
+
+func (m *mockUserService) ListRefreshSessions(string) ([]models.RefreshSession, error) {
+	return nil, nil
+}
+
+func (m *mockUserService) RevokeRefreshSessionByID(string, string, string) error { return nil }
+
+func (m *mockUserService) RevokeOtherRefreshSessions(string, string) (int64, error) { return 0, nil }
+
+func (m *mockUserService) ChangePassword(string, string, string, string) (int64, error) {
+	return 0, nil
+}
+
 type mockAuditService struct{}
 
-func (m *mockAuditService) Log(_, _, _, _, _ string, _ map[string]interface{}) {}
+func (m *mockAuditService) Log(_, _, _, _, _ string, _ map[string]interface{}, _ ...services.LogOpts) {
+}
 
 // --- test helpers ---
 
@@ -229,6 +246,30 @@ func TestAuthHandler_Register(t *testing.T) {
 		user := result["user"].(map[string]interface{})
 		if user["email"] != "test@example.com" {
 			t.Errorf("expected email test@example.com, got %v", user["email"])
+		}
+	})
+
+	t.Run("accepts an optional base_currency", func(t *testing.T) {
+		handler := NewAuthHandler(&mockUserService{}, &mockAuditService{})
+		r := setupAuthRouter(handler)
+
+		rec := doRequest(r, "POST", "/auth/register",
+			`{"email":"test@example.com","password":"password123","base_currency":"EUR"}`)
+
+		if rec.Code != http.StatusCreated {
+			t.Fatalf("expected 201, got %d: %s", rec.Code, rec.Body.String())
+		}
+	})
+
+	t.Run("returns 400 on a malformed base_currency", func(t *testing.T) {
+		handler := NewAuthHandler(&mockUserService{}, &mockAuditService{})
+		r := setupAuthRouter(handler)
+
+		rec := doRequest(r, "POST", "/auth/register",
+			`{"email":"test@example.com","password":"password123","base_currency":"ZZZ"}`)
+
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("expected 400, got %d", rec.Code)
 		}
 	})
 

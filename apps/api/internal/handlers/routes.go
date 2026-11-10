@@ -30,6 +30,12 @@ type Routes struct {
 	Telegram             *TelegramHandler
 	FX                   *FXHandler
 	Import               *ImportHandler
+	Export               *ExportHandler
+	AccountHistory       *AccountHistoryHandler
+	Analytics            *AnalyticsHandler
+	Reminder             *ReminderHandler
+	CSVImport            *CSVImportHandler
+	Demo                 *DemoHandler
 
 	// Limits rate-limits the public auth endpoints. The zero value applies no
 	// limits (used by tests that don't exercise them).
@@ -40,6 +46,9 @@ type Routes struct {
 // enforces its own upload-size cap instead of the global body limit.
 const AttachmentUploadRoute = "/api/v1/transactions/:id/attachments"
 
+// exportPerMinute is the fixed budget of GET /export per user (plan 023 1.7).
+const exportPerMinute = 1
+
 // RouteLimits holds the rate-limit middleware chains for public endpoints.
 // Nil entries are skipped.
 type RouteLimits struct {
@@ -47,6 +56,8 @@ type RouteLimits struct {
 	Register     []gin.HandlerFunc // /auth/register
 	Refresh      []gin.HandlerFunc // /auth/refresh
 	Registration []gin.HandlerFunc // OAuth DCR (/oauth2/register and its alias)
+	Export       []gin.HandlerFunc // GET /export (runs after AuthMiddleware)
+	Password     []gin.HandlerFunc // POST /auth/password (runs after AuthMiddleware)
 }
 
 // NewRouteLimits builds the rate limiters from configuration. Logins are
@@ -66,6 +77,12 @@ func NewRouteLimits(cfg config.RateLimits) RouteLimits {
 		},
 		Registration: []gin.HandlerFunc{
 			middleware.RateLimit(middleware.NewRateLimiter(cfg.RegistrationPerHour, time.Hour), middleware.ClientIPKey),
+		},
+		Export: []gin.HandlerFunc{
+			middleware.RateLimit(middleware.NewRateLimiter(exportPerMinute, time.Minute), middleware.UserIDKey),
+		},
+		Password: []gin.HandlerFunc{
+			middleware.RateLimit(middleware.NewRateLimiter(cfg.PasswordPerHour, time.Hour), middleware.UserIDKey),
 		},
 	}
 }
@@ -94,11 +111,19 @@ func RegisterRoutes(router *gin.Engine, h Routes, secrets RouteSecrets) {
 	v1 := router.Group("/api/v1")
 
 	// Public routes
+	v1.GET("/appearance", h.Auth.GetAppearance)
 	auth := v1.Group("/auth")
 	auth.POST("/register", with(h.Limits.Register, h.Auth.Register)...)
 	auth.POST("/login", with(h.Limits.Login, h.Auth.Login)...)
 	auth.POST("/refresh", with(h.Limits.Refresh, h.Auth.RefreshToken)...)
 	auth.POST("/logout", h.Auth.Logout)
+
+	// Authenticated account-security routes. They live under /auth so the
+	// browser sends the refresh cookie, but need a Bearer access token.
+	auth.POST("/password", with(append([]gin.HandlerFunc{middleware.AuthMiddleware()}, h.Limits.Password...), h.Auth.ChangePassword)...)
+	auth.GET("/sessions", middleware.AuthMiddleware(), h.Auth.ListSessions)
+	auth.POST("/sessions/revoke-others", middleware.AuthMiddleware(), h.Auth.RevokeOtherSessions)
+	auth.DELETE("/sessions/:id", middleware.AuthMiddleware(), h.Auth.RevokeSession)
 
 	// OAuth login/consent bridge (public: driven by the apps/web pages during the
 	// Hydra authorization flow, before a Kuberan session exists). See plan 15.
@@ -136,6 +161,9 @@ func RegisterRoutes(router *gin.Engine, h Routes, secrets RouteSecrets) {
 	registerSecurityRoutes(protected, h)
 	registerCategoryRoutes(protected, h)
 
+	// Insights summary (plan 023, 5.4).
+	protected.GET("/analytics/typical", h.Analytics.GetTypical)
+
 	// Exchange rates (plan 024). Static /latest is registered beside the list route.
 	protected.GET("/fx-rates", h.FX.ListRates)
 	protected.GET("/fx-rates/latest", h.FX.LatestRate)
@@ -143,16 +171,34 @@ func RegisterRoutes(router *gin.Engine, h Routes, secrets RouteSecrets) {
 	// Statement imports (plan 024, phase 3b). The upload enforces its own size cap
 	// (see ImportIBKRRoute).
 	protected.POST("/imports/ibkr", h.Import.ImportIBKR)
+	// Bank-statement CSV import (plan 023 5.8); also enforces its own size cap
+	// (see ImportCSVRoute).
+	protected.POST("/imports/csv", h.CSVImport.ImportCSV)
+
+	// Sample household (plan 023 5.7): 404 unless DEMO_ENABLED.
+	protected.POST("/demo/load", h.Demo.LoadDemo)
+	protected.DELETE("/demo", h.Demo.RemoveDemo)
+
+	// Data export (plan 023 1.7): streamed zip of CSVs, 1 per minute per user.
+	protected.GET("/export", with(h.Limits.Export, h.Export.Export)...)
+	protected.GET("/system/status", h.Export.GetSystemStatus)
 
 	// Telegram routes
 	// Connected apps: the user's OAuth client grants (plan 022).
 	protected.GET("/oauth/clients", h.OAuth.ListConnectedApps)
+	protected.GET("/oauth/clients/activity", h.OAuth.GetAllAppActivity)
+	protected.GET("/oauth/clients/:client_id/activity", h.OAuth.GetAppActivity)
 	protected.DELETE("/oauth/clients/:client_id", h.OAuth.DisconnectApp)
 
 	telegram := protected.Group("/telegram")
 	telegram.GET("/link", h.Telegram.GetLink)
 	telegram.POST("/generate-code", h.Telegram.GenerateCode)
 	telegram.DELETE("/unlink", h.Telegram.Unlink)
+	telegram.PUT("/reminder-settings", h.Telegram.UpdateReminderSettings)
+
+	// Reminders (plan 023, 5.6): card due, loan due and deposit maturity.
+	protected.GET("/reminders", h.Reminder.List)
+	protected.PATCH("/reminders/:id", h.Reminder.SetEnabled)
 
 	// Internal routes (for bot service communication)
 	internal := v1.Group("/internal")
@@ -160,6 +206,8 @@ func RegisterRoutes(router *gin.Engine, h Routes, secrets RouteSecrets) {
 	internal.POST("/telegram/complete-link", h.Telegram.CompleteLink)
 	internal.GET("/telegram/resolve/:telegram_user_id", h.Telegram.ResolveUser)
 	internal.POST("/telegram/activity/:telegram_user_id", h.Telegram.RecordActivity)
+	internal.GET("/telegram/reminders/due", h.Reminder.Due)
+	internal.POST("/telegram/reminders/:id/sent", h.Reminder.MarkSent)
 
 	// Pipeline routes (API key auth, no JWT)
 	pipeline := v1.Group("/pipeline")
@@ -183,10 +231,13 @@ func registerAccountRoutes(protected *gin.RouterGroup, h Routes) {
 	accounts.POST("/cash", h.Account.CreateCashAccount)
 	accounts.POST("/investment", h.Account.CreateInvestmentAccount)
 	accounts.POST("/credit-card", h.Account.CreateCreditCardAccount)
+	accounts.POST("/debt", h.Account.CreateDebtAccount)
 	accounts.POST("/fixed-deposit", h.Account.CreateFixedDepositAccount)
 	accounts.GET("", h.Account.GetUserAccounts)
+	accounts.GET("/sparklines", h.AccountHistory.GetSparklines)
 	accounts.GET("/:id", h.Account.GetAccountByID)
 	accounts.PUT("/:id", h.Account.UpdateAccount)
+	accounts.GET("/:id/balance-history", h.AccountHistory.GetBalanceHistory)
 	accounts.GET("/:id/transactions", h.Transaction.GetAccountTransactions)
 	accounts.GET("/:id/investments", h.Investment.GetAccountInvestments)
 	accounts.POST("/:id/fixed-deposit/close", h.Account.CloseFixedDeposit)
@@ -200,6 +251,8 @@ func registerTransactionRoutes(protected *gin.RouterGroup, h Routes) {
 	transactions.POST("", h.Transaction.CreateTransaction)
 	transactions.POST("/transfer", h.Transaction.CreateTransfer)
 	transactions.POST("/shared", h.Receivable.CreateSharedExpense)
+	transactions.POST("/bulk", h.Transaction.BulkTransactions)
+	transactions.POST("/suggest-category", h.Transaction.SuggestCategory)
 	transactions.GET("/spending-by-category", h.Transaction.GetSpendingByCategory)
 	transactions.GET("/cashflow", h.Transaction.GetCashflow)
 	transactions.GET("/monthly-summary", h.Transaction.GetMonthlySummary)
@@ -253,6 +306,7 @@ func registerRuleRoutes(protected *gin.RouterGroup, h Routes) {
 	rules.GET("", h.Rule.GetRules)
 	rules.POST("/reorder", h.Rule.ReorderRules)
 	rules.POST("/preview", h.Rule.PreviewRule)
+	rules.GET("/suggestions", h.Rule.GetSuggestions)
 	rules.GET("/:id", h.Rule.GetRule)
 	rules.PUT("/:id", h.Rule.UpdateRule)
 	rules.DELETE("/:id", h.Rule.DeleteRule)

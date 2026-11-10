@@ -19,12 +19,30 @@ import (
 type mockAccountService struct {
 	createCashAccountFn         func(userID string, name, description, currency string, initialBalance int64) (*models.Account, error)
 	createInvestmentAccountFn   func(userID string, name, description, currency, broker, accountNumber string) (*models.Account, error)
-	createCreditCardAccountFn   func(userID string, name, description, currency string, creditLimit int64, interestRate float64, dueDate *time.Time) (*models.Account, error)
+	createCreditCardAccountFn   func(userID string, name, description, currency string, creditLimit int64, interestRate float64, dueDate *time.Time, currentBalance int64) (*models.Account, error)
 	createFixedDepositAccountFn func(userID string, params services.CreateFixedDepositParams) (*models.Account, error)
 	closeFixedDepositFn         func(userID, accountID string, params services.CloseFixedDepositParams) (*models.Account, error)
 	getUserAccountsFn           func(userID string, page pagination.PageRequest) (*pagination.PageResponse[models.Account], error)
 	getAccountByIDFn            func(userID, accountID string) (*models.Account, error)
 	updateAccountFn             func(userID, accountID string, updates services.AccountUpdateFields) (*models.Account, error)
+	createCreditCardParamsFn    func(userID string, params services.CreateCreditCardParams) (*models.Account, error)
+	createDebtAccountFn         func(userID string, params services.CreateDebtParams) (*models.Account, error)
+}
+
+// CreateCreditCardAccountWithParams records the params when a params hook is
+// set, otherwise it falls back to the positional hook.
+func (m *mockAccountService) CreateCreditCardAccountWithParams(userID string, p services.CreateCreditCardParams) (*models.Account, error) {
+	if m.createCreditCardParamsFn != nil {
+		return m.createCreditCardParamsFn(userID, p)
+	}
+	return m.CreateCreditCardAccount(userID, p.Name, p.Description, p.Currency, p.CreditLimit, p.InterestRate, p.DueDate, p.CurrentBalance)
+}
+
+func (m *mockAccountService) CreateDebtAccount(userID string, p services.CreateDebtParams) (*models.Account, error) {
+	if m.createDebtAccountFn != nil {
+		return m.createDebtAccountFn(userID, p)
+	}
+	return &models.Account{}, nil
 }
 
 func (m *mockAccountService) CreateCashAccount(userID, name, description, currency string, initialBalance int64) (*models.Account, error) {
@@ -41,14 +59,14 @@ func (m *mockAccountService) CreateInvestmentAccount(userID, name, description, 
 	return &models.Account{}, nil
 }
 
-func (m *mockAccountService) CreateCreditCardAccount(userID, name, description, currency string, creditLimit int64, interestRate float64, dueDate *time.Time) (*models.Account, error) {
+func (m *mockAccountService) CreateCreditCardAccount(userID, name, description, currency string, creditLimit int64, interestRate float64, dueDate *time.Time, currentBalance int64) (*models.Account, error) {
 	if m.createCreditCardAccountFn != nil {
-		return m.createCreditCardAccountFn(userID, name, description, currency, creditLimit, interestRate, dueDate)
+		return m.createCreditCardAccountFn(userID, name, description, currency, creditLimit, interestRate, dueDate, currentBalance)
 	}
 	return &models.Account{}, nil
 }
 
-func (m *mockAccountService) GetUserAccounts(userID string, page pagination.PageRequest) (*pagination.PageResponse[models.Account], error) {
+func (m *mockAccountService) GetUserAccounts(userID string, page pagination.PageRequest, _ ...services.AccountListOptions) (*pagination.PageResponse[models.Account], error) {
 	if m.getUserAccountsFn != nil {
 		return m.getUserAccountsFn(userID, page)
 	}
@@ -61,6 +79,10 @@ func (m *mockAccountService) GetAccountByID(userID, accountID string) (*models.A
 		return m.getAccountByIDFn(userID, accountID)
 	}
 	return &models.Account{}, nil
+}
+
+func (m *mockAccountService) GetAccountByIDIncludingInactive(userID, accountID string) (*models.Account, error) {
+	return m.GetAccountByID(userID, accountID)
 }
 
 func (m *mockAccountService) UpdateAccount(userID, accountID string, updates services.AccountUpdateFields) (*models.Account, error) {
@@ -425,7 +447,7 @@ func TestAccountHandler_UpdateAccount(t *testing.T) {
 func TestAccountHandler_CreateCreditCardAccount(t *testing.T) {
 	t.Run("returns 201 with valid request", func(t *testing.T) {
 		acctSvc := &mockAccountService{
-			createCreditCardAccountFn: func(userID string, name, desc, currency string, creditLimit int64, interestRate float64, dueDate *time.Time) (*models.Account, error) {
+			createCreditCardAccountFn: func(userID string, name, desc, currency string, creditLimit int64, interestRate float64, dueDate *time.Time, currentBalance int64) (*models.Account, error) {
 				return &models.Account{
 					Base:         models.Base{ID: "test-id-3"},
 					UserID:       userID,
@@ -452,6 +474,37 @@ func TestAccountHandler_CreateCreditCardAccount(t *testing.T) {
 		if acct["name"] != "Visa" {
 			t.Errorf("expected Visa, got %v", acct["name"])
 		}
+	})
+
+	t.Run("passes current_balance to the service", func(t *testing.T) {
+		var got int64
+		acctSvc := &mockAccountService{
+			createCreditCardAccountFn: func(_ string, _, _, _ string, _ int64, _ float64, _ *time.Time, currentBalance int64) (*models.Account, error) {
+				got = currentBalance
+				return &models.Account{Base: models.Base{ID: "cc"}}, nil
+			},
+		}
+		r := setupAccountRouter(NewAccountHandler(acctSvc, &mockAuditService{}))
+
+		rec := doRequest(r, "POST", "/accounts/credit-card", `{"name":"Visa","current_balance":50000}`)
+
+		if rec.Code != http.StatusCreated {
+			t.Fatalf("expected 201, got %d: %s", rec.Code, rec.Body.String())
+		}
+		if got != 50000 {
+			t.Errorf("expected current_balance 50000 to reach the service, got %d", got)
+		}
+	})
+
+	t.Run("returns 400 for negative current_balance", func(t *testing.T) {
+		r := setupAccountRouter(NewAccountHandler(&mockAccountService{}, &mockAuditService{}))
+
+		rec := doRequest(r, "POST", "/accounts/credit-card", `{"name":"Visa","current_balance":-1}`)
+
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("expected 400, got %d", rec.Code)
+		}
+		assertErrorCode(t, parseJSON(t, rec), "INVALID_INPUT")
 	})
 
 	t.Run("returns 400 for missing name", func(t *testing.T) {

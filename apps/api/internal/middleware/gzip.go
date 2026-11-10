@@ -86,6 +86,10 @@ func (w *gzipResponseWriter) Flush() {
 	w.ResponseWriter.Flush()
 }
 
+// Unwrap exposes the underlying writer so http.ResponseController can reach it
+// (e.g. to extend the write deadline for a long streamed response).
+func (w *gzipResponseWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
+
 func (w *gzipResponseWriter) close() {
 	if w.gz == nil {
 		return

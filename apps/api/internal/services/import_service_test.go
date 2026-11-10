@@ -111,9 +111,9 @@ func newImportEnv(t *testing.T, ratesFrom string) *importEnv {
 	testutil.AssertNoError(t, err)
 
 	// An older, out-of-window top-up and the transfer the 2026-06-04 deposit must match.
-	_, err = txSvc.CreateTransfer(e.userID, e.bank.ID, e.legacy.ID, 1000000, nil, "old top-up", time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC))
+	_, err = txSvc.CreateTransfer(e.userID, e.bank.ID, e.legacy.ID, 1000000, nil, "old top-up", time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC), TransactionMeta{})
 	testutil.AssertNoError(t, err)
-	e.transf, err = txSvc.CreateTransfer(e.userID, e.bank.ID, e.legacy.ID, 3300000, nil, "IBKR top-up", time.Date(2026, 6, 3, 0, 0, 0, 0, time.UTC))
+	e.transf, err = txSvc.CreateTransfer(e.userID, e.bank.ID, e.legacy.ID, 3300000, nil, "IBKR top-up", time.Date(2026, 6, 3, 0, 0, 0, 0, time.UTC), TransactionMeta{})
 	testutil.AssertNoError(t, err)
 	return e
 }
@@ -652,7 +652,7 @@ func (e *importEnv) resetTransfers(t *testing.T, market string, specs map[time.T
 	testutil.AssertNoError(t, err)
 	ids := map[time.Time]string{}
 	for d, amount := range specs {
-		tr, err := e.txSvc.CreateTransfer(e.userID, e.bank.ID, e.legacy.ID, amount, nil, "top-up", d)
+		tr, err := e.txSvc.CreateTransfer(e.userID, e.bank.ID, e.legacy.ID, amount, nil, "top-up", d, TransactionMeta{})
 		testutil.AssertNoError(t, err)
 		ids[d] = tr.ID
 	}

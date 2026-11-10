@@ -40,14 +40,14 @@ func (s *Server) handleListCategories(ctx context.Context, req mcp.CallToolReque
 	if catType == "income" || catType == "expense" {
 		result, err := s.services.Categories.GetUserCategoriesByType(userID, models.CategoryType(catType), page)
 		if err != nil {
-			return mcp.NewToolResultError("failed to list categories"), nil
+			return readError("list categories", err), nil
 		}
 		data = result.Data
 		total = result.TotalItems
 	} else {
 		result, err := s.services.Categories.GetUserCategories(userID, page)
 		if err != nil {
-			return mcp.NewToolResultError("failed to list categories"), nil
+			return readError("list categories", err), nil
 		}
 		data = result.Data
 		total = result.TotalItems

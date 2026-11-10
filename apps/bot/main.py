@@ -11,9 +11,13 @@ from telegram.ext import (
 
 from config import config
 from api_client import KuberanAPIClient
-from handlers import balance, budgets, accounts, categories, summary, help_cmd, owed
+from handlers import (
+    balance, budgets, accounts, categories, summary, help_cmd, owed, quick_add, receipts,
+    spent, undo,
+)
 from handlers.common import describe_error
 from handlers.start import create_start_conversation
+from reminders import send_due_reminders
 from handlers.transaction_flow import create_transaction_conversation
 
 logging.basicConfig(
@@ -91,8 +95,19 @@ def build_application(api_client: KuberanAPIClient) -> Application:
     app.add_handler(create_start_conversation(api_client))
     app.add_handler(CommandHandler("help", help_cmd.handle(), filters=private))
     app.add_handler(CommandHandler("balance", balance.handle(api_client), filters=private))
-    app.add_handler(create_transaction_conversation(api_client, "expense"))
+    # Order matters: the income conversation must come first so that, while it
+    # waits for typed text, the expense conversation's plain-text quick add
+    # (which only starts when no conversation is active) never sees that text.
     app.add_handler(create_transaction_conversation(api_client, "income"))
+    app.add_handler(create_transaction_conversation(
+        api_client, "expense",
+        extra_entry_points=[quick_add.quick_add_entry_point(api_client)],
+    ))
+    app.add_handler(quick_add.quick_add_callbacks(api_client))
+    app.add_handler(CommandHandler("undo", undo.handle(api_client), filters=private))
+    app.add_handler(CommandHandler("spent", spent.handle(api_client), filters=private))
+    app.add_handler(receipts.handle(api_client))
+    app.add_handler(receipts.callbacks(api_client))
     app.add_handler(CommandHandler("budgets", budgets.handle(api_client), filters=private))
     app.add_handler(CommandHandler("accounts", accounts.handle(api_client), filters=private))
     app.add_handler(CommandHandler("categories", categories.handle(api_client), filters=private))
@@ -105,6 +120,11 @@ def build_application(api_client: KuberanAPIClient) -> Application:
         # Without the job-queue extra, conversation timeouts silently never fire.
         raise RuntimeError("JobQueue unavailable: install python-telegram-bot[job-queue]")
     app.job_queue.run_repeating(heartbeat, interval=HEARTBEAT_INTERVAL_SECONDS, first=0)
+    # Pull due reminders (card/loan due dates, deposit maturities) and send them.
+    app.job_queue.run_repeating(
+        send_due_reminders, interval=config.REMINDER_POLL_SECONDS, first=30,
+        data=api_client, name="reminders",
+    )
 
     return app
 

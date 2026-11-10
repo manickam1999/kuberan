@@ -3,7 +3,14 @@
 import { AlertTriangle } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { useBaseCurrency } from "@/hooks/use-profile";
-import { formatMoney } from "@/lib/format";
+import { formatMoney, MASKED_AMOUNT } from "@/lib/format";
+import {
+  MONEY_SIZE_CLASS,
+  hasRaisedCurrency,
+  moneyDisplay,
+  type MoneySign,
+  type MoneySize,
+} from "@/lib/money-display";
 import { cn } from "@/lib/utils";
 import {
   Tooltip,
@@ -36,7 +43,64 @@ export interface MoneyProps {
    * `stacked`: the base figure on a muted second line, for cards.
    */
   layout?: "inline" | "stacked";
+  /**
+   * `auto` (default): a true minus (U+2212) for negative amounts only.
+   * `always`: also `+` for positive amounts. `never`: the magnitude only.
+   */
+  sign?: MoneySign;
+  /**
+   * `hero | lg | md` set the figure in Source Serif 4 with a small raised
+   * currency symbol; `sm` is plain `text-sm`. Omitted: inherits the
+   * surrounding text (the previous behaviour).
+   */
+  size?: MoneySize;
+  /** Dim the decimals (`.50`) so the whole units carry the eye. */
+  dimCents?: boolean;
+  /** Compact notation (`RM 1.2K`) for tight spaces. */
+  compact?: boolean;
+  /**
+   * Opt-in: round to whole units and drop the decimals (the "Show cents" off
+   * setting). Default false, so existing callers are unchanged.
+   */
+  hideCents?: boolean;
   className?: string;
+}
+
+interface AmountProps {
+  amount: number;
+  currency: string;
+  sign: MoneySign;
+  size?: MoneySize;
+  dimCents: boolean;
+  compact: boolean;
+}
+
+/** The styled number: symbol, sign, whole units and (optionally dimmed) cents. */
+function Amount({ amount, currency, sign, size, dimCents, compact }: AmountProps) {
+  const d = moneyDisplay(amount, currency, sign, compact);
+  const raised = hasRaisedCurrency(size);
+  const prefix = raised ? d.prefix.trim() : d.prefix;
+  // One span, so a flex parent's gap (between the amount and its base-currency
+  // twin) never separates the symbol from the number.
+  return (
+    <span className="whitespace-nowrap">
+      {prefix && (
+        <span
+          className={cn(
+            raised &&
+              "mr-[0.3em] align-[0.85em] font-sans text-[0.4em] font-normal tracking-normal"
+          )}
+        >
+          {prefix}
+        </span>
+      )}
+      {d.sign}
+      {d.integer}
+      {d.fraction &&
+        (dimCents ? <span className="opacity-55">{d.fraction}</span> : d.fraction)}
+      {d.suffix}
+    </span>
+  );
 }
 
 function tooltipText(
@@ -78,6 +142,11 @@ export function Money({
   fxMissing,
   masked,
   layout = "inline",
+  sign = "auto",
+  size,
+  dimCents = false,
+  compact = false,
+  hideCents = false,
   className,
 }: MoneyProps) {
   const { hideBalances } = useAuth();
@@ -90,23 +159,41 @@ export function Money({
     foreign && !fxMissing && baseAmount !== undefined && baseAmount !== null;
   const warn = foreign && (fxMissing || fxStale);
 
-  const native = formatMoney(amount, currency, isMasked);
+  const sizeClass = size ? MONEY_SIZE_CLASS[size] : undefined;
+  const native = (
+    <Amount
+      amount={hideCents ? Math.round(amount / 100) * 100 : amount}
+      currency={currency}
+      sign={sign}
+      size={size}
+      dimCents={dimCents}
+      compact={compact}
+    />
+  );
 
   if (isMasked) {
-    return <span className={cn("tabular-nums", className)}>{native}</span>;
+    return (
+      <span className={cn("tabular-nums", sizeClass, className)}>
+        {MASKED_AMOUNT}
+      </span>
+    );
   }
   if (!foreign) {
-    return <span className={cn("tabular-nums", className)}>{native}</span>;
+    return (
+      <span className={cn("tabular-nums", sizeClass, className)}>{native}</span>
+    );
   }
 
-  const baseText = showBase
-    ? `≈ ${formatMoney(baseAmount, baseCurrency)}`
-    : null;
+  const baseText =
+    showBase && baseAmount !== undefined && baseAmount !== null
+      ? `≈ ${formatMoney(baseAmount, baseCurrency)}`
+      : null;
 
   const content = (
     <span
       className={cn(
         "tabular-nums",
+        sizeClass,
         layout === "stacked"
           ? "inline-flex flex-col items-start"
           : "inline-flex flex-wrap items-baseline gap-x-1.5",

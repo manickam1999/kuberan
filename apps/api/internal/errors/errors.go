@@ -96,6 +96,16 @@ var (
 var (
 	ErrUserNotFound   = &AppError{Code: "USER_NOT_FOUND", Message: "User not found", StatusCode: http.StatusNotFound}
 	ErrDuplicateEmail = &AppError{Code: "DUPLICATE_EMAIL", Message: "A user with this email already exists", StatusCode: http.StatusConflict}
+	// ErrInvalidCurrentPassword is a wrong current_password on an authenticated
+	// route. It is a 400, not a 401, so clients do not mistake it for an
+	// expired access token.
+	ErrInvalidCurrentPassword = &AppError{Code: "INVALID_CURRENT_PASSWORD", Message: "Current password is incorrect", StatusCode: http.StatusBadRequest}
+	// ErrSessionNotFound is a device session that does not exist, is not the
+	// caller's, or has already ended.
+	ErrSessionNotFound = &AppError{Code: "SESSION_NOT_FOUND", Message: "Session not found", StatusCode: http.StatusNotFound}
+	// ErrCurrentSession is returned when the current device's own session is
+	// targeted by an endpoint that only revokes other devices.
+	ErrCurrentSession = &AppError{Code: "CURRENT_SESSION", Message: "This is your current session; log out to end it", StatusCode: http.StatusBadRequest}
 )
 
 // Account errors.
@@ -118,6 +128,7 @@ var (
 	ErrInsufficientBalance    = &AppError{Code: "INSUFFICIENT_BALANCE", Message: "Insufficient account balance", StatusCode: http.StatusBadRequest}
 	ErrSameAccountTransfer    = &AppError{Code: "SAME_ACCOUNT_TRANSFER", Message: "Cannot transfer to the same account", StatusCode: http.StatusBadRequest}
 	ErrTransactionNotEditable = &AppError{Code: "TRANSACTION_NOT_EDITABLE", Message: "This transaction type cannot be edited", StatusCode: http.StatusBadRequest}
+	ErrCategoryTypeMismatch   = &AppError{Code: "CATEGORY_TYPE_MISMATCH", Message: "Category type does not match the transaction type", StatusCode: http.StatusBadRequest}
 	ErrInvalidTypeChange      = &AppError{Code: "INVALID_TYPE_CHANGE", Message: "Cannot change transaction type to or from transfer/investment", StatusCode: http.StatusBadRequest}
 )
 
@@ -168,6 +179,7 @@ var (
 	ErrAttachmentNotFound   = &AppError{Code: "ATTACHMENT_NOT_FOUND", Message: "Attachment not found", StatusCode: http.StatusNotFound}
 	ErrUnsupportedMediaType = &AppError{Code: "UNSUPPORTED_MEDIA_TYPE", Message: "Unsupported file type", StatusCode: http.StatusUnsupportedMediaType}
 	ErrPayloadTooLarge      = &AppError{Code: "PAYLOAD_TOO_LARGE", Message: "File exceeds the maximum allowed size", StatusCode: http.StatusRequestEntityTooLarge}
+	ErrReceiptsDisabled     = &AppError{Code: "RECEIPTS_DISABLED", Message: "Receipt storage isn't set up on this server", StatusCode: http.StatusServiceUnavailable}
 	ErrAttachmentLimit      = &AppError{Code: "ATTACHMENT_LIMIT", Message: "Maximum number of attachments reached for this transaction", StatusCode: http.StatusConflict}
 )
 
@@ -245,6 +257,9 @@ var (
 	// ErrAccountCurrencyMismatch is returned when an operation would reinterpret cents in another currency.
 	ErrAccountCurrencyMismatch = &AppError{Code: "ACCOUNT_CURRENCY_MISMATCH", Message: "A transaction can't move to an account in a different currency", StatusCode: http.StatusBadRequest}
 
+	// ErrAccountTypeNotAllowed is returned when a plain income, expense or transfer targets an account whose balance is derived (investment) or locked (fixed deposit).
+	ErrAccountTypeNotAllowed = &AppError{Code: "ACCOUNT_TYPE_NOT_ALLOWED", Message: "Income, expenses and transfers can't be recorded on investment or fixed deposit accounts", StatusCode: http.StatusBadRequest}
+
 	// ErrImportedTransactionLocked is returned when an imported row's type, amount or account is edited.
 	ErrImportedTransactionLocked = &AppError{Code: "IMPORTED_TRANSACTION_LOCKED", Message: "Imported transactions can't be changed; re-run the import instead", StatusCode: http.StatusConflict}
 )
@@ -262,3 +277,27 @@ var (
 // ErrBaseCurrencyLocked is returned when the user tries to change the reporting
 // currency while having investment history (plan 024).
 var ErrBaseCurrencyLocked = &AppError{Code: "BASE_CURRENCY_LOCKED", Message: "Reporting currency can't change while you have investment history, because cost basis is recorded in your current reporting currency", StatusCode: http.StatusConflict}
+
+// Demo data errors (plan 023 5.7).
+var (
+	// ErrDemoAlreadyLoaded is returned when the sample household is already present.
+	ErrDemoAlreadyLoaded = &AppError{Code: "DEMO_ALREADY_LOADED", Message: "The sample household is already loaded", StatusCode: http.StatusConflict}
+
+	// ErrDemoHasData is returned when the user already has transactions of their own.
+	ErrDemoHasData = &AppError{Code: "DEMO_HAS_DATA", Message: "Sample data can only be loaded before you add your own transactions", StatusCode: http.StatusConflict}
+
+	// ErrDemoInUse is returned when real data refers to the sample household, so removing it would damage that data.
+	ErrDemoInUse = &AppError{Code: "DEMO_IN_USE", Message: "Some of your own entries use the sample accounts; move or delete them before removing the sample data", StatusCode: http.StatusConflict}
+
+	// ErrDemoBusy is returned when a load or removal of the sample data is already running.
+	ErrDemoBusy = &AppError{Code: "DEMO_BUSY", Message: "The sample data is being changed; try again in a moment", StatusCode: http.StatusConflict}
+
+	// ErrDemoTransferBlocked is returned for a transfer between a sample account and a real one.
+	ErrDemoTransferBlocked = &AppError{Code: "DEMO_TRANSFER_BLOCKED", Message: "Transfers between sample and real accounts are not allowed", StatusCode: http.StatusConflict}
+)
+
+// CSV import errors (plan 023 5.8).
+var (
+	// ErrCSVTooManyRows is returned when a CSV file has more data rows than one import accepts.
+	ErrCSVTooManyRows = &AppError{Code: "CSV_TOO_MANY_ROWS", Message: "The file has too many rows; split it into files of at most 5,000 rows", StatusCode: http.StatusBadRequest}
+)

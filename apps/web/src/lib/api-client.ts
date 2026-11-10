@@ -161,14 +161,23 @@ function buildQueryString(
 // than a Bearer token. They never trigger a token refresh and never wait for
 // the session bootstrap: a 401 from them means "wrong password", not "session
 // expired" (the OAuth login page must show the error, not bounce to /login).
-const PUBLIC_PATH_PREFIXES = [
-  "/api/v1/auth/",
-  "/api/v1/oauth/login",
-  "/api/v1/oauth/consent",
+// Only the credential endpoints under /auth are listed: /auth/password and
+// /auth/sessions* are authenticated and use the normal Bearer + refresh path.
+const PUBLIC_PATHS = [
+  "/api/v1/auth/login",
+  "/api/v1/auth/register",
+  "/api/v1/auth/refresh",
+  "/api/v1/auth/logout",
+  // The server's default palette: read by the sign-in pages before any session.
+  "/api/v1/appearance",
 ];
+const PUBLIC_PATH_PREFIXES = ["/api/v1/oauth/login", "/api/v1/oauth/consent"];
 
 function isPublicPath(path: string): boolean {
-  return PUBLIC_PATH_PREFIXES.some((prefix) => path.startsWith(prefix));
+  return (
+    PUBLIC_PATHS.includes(path) ||
+    PUBLIC_PATH_PREFIXES.some((prefix) => path.startsWith(prefix))
+  );
 }
 
 // The refresh cookie is scoped to /api/v1/auth, so only those calls need to
@@ -422,6 +431,11 @@ async function request<T>(
       details = errorBody.error.details;
     } catch {
       // Response body is not valid JSON; keep defaults
+    }
+    // Surface a rate limit's Retry-After (seconds) as `details.retry_after`.
+    const retryAfter = Number(res.headers.get("Retry-After"));
+    if (res.status === 429 && Number.isFinite(retryAfter) && retryAfter > 0) {
+      details = { ...details, retry_after: retryAfter };
     }
     throw new ApiClientError(code, message, res.status, details);
   }

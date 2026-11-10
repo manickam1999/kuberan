@@ -15,9 +15,12 @@ import type {
   CreateCashAccountRequest,
   CreateInvestmentAccountRequest,
   CreateCreditCardAccountRequest,
+  CreateDebtAccountRequest,
   CreateFixedDepositAccountRequest,
   CloseFixedDepositRequest,
   UpdateAccountRequest,
+  AccountSparkline,
+  AccountBalanceHistory,
 } from "@/types/api";
 
 export const accountKeys = {
@@ -29,7 +32,10 @@ export const accountKeys = {
   detail: (id: string) => [...accountKeys.details(), id] as const,
 };
 
-export function useAccounts(params?: PaginationParams) {
+/** List params; `include_inactive` also returns deactivated accounts. */
+export type AccountListParams = PaginationParams & { include_inactive?: boolean };
+
+export function useAccounts(params?: AccountListParams) {
   return useQuery({
     queryKey: accountKeys.list(params),
     queryFn: () =>
@@ -49,11 +55,14 @@ export function useAccountCurrencies(): (
   accountId: string | null | undefined,
   preloaded?: Pick<Account, "currency"> | null
 ) => string {
-  const { data } = useAccounts({ page_size: 100 });
+  // Inactive too: their past transactions still need a currency.
+  const { data } = useAccounts({ page_size: 100, include_inactive: true });
   const base = useBaseCurrency();
+  // `||`, not `??`: an embedded account the API didn't preload arrives as a
+  // zero value with currency "", which must fall through too.
   return (accountId, preloaded) =>
-    data?.data.find((a) => a.id === accountId)?.currency ??
-    preloaded?.currency ??
+    data?.data.find((a) => a.id === accountId)?.currency ||
+    preloaded?.currency ||
     base;
 }
 
@@ -138,6 +147,23 @@ export function useCreateCreditCardAccount() {
   });
 }
 
+/** Create a loan (a `debt` account). */
+export function useCreateDebtAccount() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (data: CreateDebtAccountRequest) => {
+      const res = await apiClient.post<AccountResponse>(
+        "/api/v1/accounts/debt",
+        data
+      );
+      return res.account;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: accountKeys.lists() });
+    },
+  });
+}
+
 export function useUpdateAccount(id: string) {
   const queryClient = useQueryClient();
   return useMutation({
@@ -151,6 +177,8 @@ export function useUpdateAccount(id: string) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: accountKeys.lists() });
       queryClient.invalidateQueries({ queryKey: accountKeys.detail(id) });
+      // A due day or a deactivation changes the account's reminders.
+      queryClient.invalidateQueries({ queryKey: ["reminders"] });
     },
   });
 }
@@ -185,5 +213,52 @@ export function useCloseFixedDeposit(id: string) {
       queryClient.invalidateQueries({ queryKey: accountKeys.lists() });
       queryClient.invalidateQueries({ queryKey: accountKeys.detail(id) });
     },
+  });
+}
+
+/** Sparkline and balance-history query keys (plan 023, 5.1). */
+export const accountHistoryKeys = {
+  sparklines: (days: number) =>
+    [...accountKeys.all, "sparklines", days] as const,
+  history: (id: string, from?: string, to?: string) =>
+    [...accountKeys.all, "balance-history", id, from, to] as const,
+};
+
+/**
+ * Recent daily balances of every active account, keyed by account id (each in
+ * the account's own currency). Accounts with no recorded history are absent.
+ */
+export function useAccountSparklines(days = 30) {
+  return useQuery({
+    queryKey: accountHistoryKeys.sparklines(days),
+    queryFn: () =>
+      apiClient.get<{ data: AccountSparkline[] }>(
+        "/api/v1/accounts/sparklines",
+        { days }
+      ),
+    select: (res) =>
+      new Map(
+        res.data
+          .filter((s) => s.points.length > 0)
+          .map((s) => [s.account_id, s.points.map((p) => p.balance)])
+      ),
+    staleTime: 5 * 60_000,
+  });
+}
+
+/** One account's recorded daily balances; `from`/`to` are YYYY-MM-DD. */
+export function useAccountBalanceHistory(
+  id: string,
+  range: { from?: string; to?: string } = {}
+) {
+  return useQuery({
+    queryKey: accountHistoryKeys.history(id, range.from, range.to),
+    queryFn: () =>
+      apiClient.get<{ data: AccountBalanceHistory }>(
+        `/api/v1/accounts/${id}/balance-history`,
+        { ...range }
+      ),
+    select: (res) => res.data,
+    staleTime: 5 * 60_000,
   });
 }

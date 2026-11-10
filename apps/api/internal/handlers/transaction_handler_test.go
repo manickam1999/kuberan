@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -31,16 +32,30 @@ type mockTransactionService struct {
 	applyRuleFn              func(userID, ruleID string, opts services.ApplyRuleOptions) (*services.ApplyRuleResult, error)
 	getDailySummaryFn        func(userID string, from, to time.Time) ([]services.DailySummaryItem, error)
 	getTopExpensesFn         func(userID string, from, to time.Time, limit int, categoryID *string) (*services.TopExpenses, error)
+	bulkUpdateFn             func(userID string, in services.BulkTransactionInput) (*services.BulkTransactionResult, error)
+	suggestCategoryFn        func(userID string, in services.CategorySuggestionInput) (*services.CategorySuggestion, error)
+
+	// lastMeta records the provenance passed to the latest create call.
+	lastMeta services.TransactionMeta
 }
 
-func (m *mockTransactionService) CreateTransaction(userID, accountID string, categoryID *string, transactionType models.TransactionType, amount int64, description string, date time.Time) (*models.Transaction, error) {
+func (m *mockTransactionService) BulkUpdateTransactions(userID string, in services.BulkTransactionInput) (*services.BulkTransactionResult, error) {
+	if m.bulkUpdateFn != nil {
+		return m.bulkUpdateFn(userID, in)
+	}
+	return &services.BulkTransactionResult{}, nil
+}
+
+func (m *mockTransactionService) CreateTransaction(userID, accountID string, categoryID *string, transactionType models.TransactionType, amount int64, description string, date time.Time, meta services.TransactionMeta) (*models.Transaction, error) {
+	m.lastMeta = meta
 	if m.createTransactionFn != nil {
 		return m.createTransactionFn(userID, accountID, categoryID, transactionType, amount, description, date)
 	}
 	return &models.Transaction{}, nil
 }
 
-func (m *mockTransactionService) CreateTransfer(userID, fromAccountID, toAccountID string, amount int64, toAmount *int64, description string, date time.Time) (*models.Transaction, error) {
+func (m *mockTransactionService) CreateTransfer(userID, fromAccountID, toAccountID string, amount int64, toAmount *int64, description string, date time.Time, meta services.TransactionMeta) (*models.Transaction, error) {
+	m.lastMeta = meta
 	if m.createTransferFn != nil {
 		return m.createTransferFn(userID, fromAccountID, toAccountID, amount, toAmount, description, date)
 	}
@@ -143,6 +158,13 @@ func (m *mockTransactionService) GetTopExpenses(userID string, from, to time.Tim
 	return &services.TopExpenses{Items: []services.TopExpenseItem{}}, nil
 }
 
+func (m *mockTransactionService) SuggestCategory(userID string, in services.CategorySuggestionInput) (*services.CategorySuggestion, error) {
+	if m.suggestCategoryFn != nil {
+		return m.suggestCategoryFn(userID, in)
+	}
+	return nil, nil
+}
+
 var _ services.TransactionServicer = (*mockTransactionService)(nil)
 
 func setupTransactionRouter(handler *TransactionHandler) *gin.Engine {
@@ -151,6 +173,8 @@ func setupTransactionRouter(handler *TransactionHandler) *gin.Engine {
 	auth.GET("/transactions", handler.GetUserTransactions)
 	auth.POST("/transactions", handler.CreateTransaction)
 	auth.POST("/transactions/transfer", handler.CreateTransfer)
+	auth.POST("/transactions/bulk", handler.BulkTransactions)
+	auth.POST("/transactions/suggest-category", handler.SuggestCategory)
 	auth.GET("/transactions/spending-by-category", handler.GetSpendingByCategory)
 	auth.GET("/transactions/monthly-summary", handler.GetMonthlySummary)
 	auth.GET("/transactions/daily-spending", handler.GetDailySpending)
@@ -1231,6 +1255,47 @@ func TestTransactionHandler_GetTopExpenses(t *testing.T) {
 		}
 		if !called || capturedCategoryID != nil {
 			t.Errorf("expected nil category_id when omitted, got %v", capturedCategoryID)
+		}
+	})
+}
+
+func TestTransactionHandler_SuggestCategory(t *testing.T) {
+	t.Run("returns the suggestion", func(t *testing.T) {
+		var got services.CategorySuggestionInput
+		txSvc := &mockTransactionService{suggestCategoryFn: func(_ string, in services.CategorySuggestionInput) (*services.CategorySuggestion, error) {
+			got = in
+			return &services.CategorySuggestion{CategoryID: "c1", CategoryName: "Dining", Reason: "history"}, nil
+		}}
+		r := setupTransactionRouter(NewTransactionHandler(txSvc, &mockAuditService{}))
+		rec := doRequest(r, "POST", "/transactions/suggest-category", `{"description":"coffee","type":"expense"}`)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+		}
+		if !strings.Contains(rec.Body.String(), `"category_id":"c1"`) || !strings.Contains(rec.Body.String(), `"reason":"history"`) {
+			t.Errorf("unexpected body: %s", rec.Body.String())
+		}
+		if got.Description != "coffee" || got.Type != models.TransactionTypeExpense {
+			t.Errorf("unexpected input: %+v", got)
+		}
+	})
+	t.Run("null category when nothing applies", func(t *testing.T) {
+		r := setupTransactionRouter(NewTransactionHandler(&mockTransactionService{}, &mockAuditService{}))
+		rec := doRequest(r, "POST", "/transactions/suggest-category", `{"description":"coffee","type":"income"}`)
+		if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"category_id":null`) {
+			t.Fatalf("expected 200 with null category, got %d: %s", rec.Code, rec.Body.String())
+		}
+	})
+	t.Run("rejects other types and missing fields", func(t *testing.T) {
+		r := setupTransactionRouter(NewTransactionHandler(&mockTransactionService{}, &mockAuditService{}))
+		for _, body := range []string{
+			`{"description":"x","type":"transfer"}`,
+			`{"description":"x","type":"bogus"}`,
+			`{"type":"expense"}`,
+			`{"description":"x"}`,
+		} {
+			if rec := doRequest(r, "POST", "/transactions/suggest-category", body); rec.Code != http.StatusBadRequest {
+				t.Errorf("%s: expected 400, got %d", body, rec.Code)
+			}
 		}
 	})
 }

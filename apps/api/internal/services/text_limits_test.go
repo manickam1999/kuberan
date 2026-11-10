@@ -20,12 +20,12 @@ func TestServicesEnforceTextLimits(t *testing.T) {
 		max  int
 	}{
 		{"transaction description", func(_ *testing.T, e textEnv, n int) error {
-			_, err := e.tx.CreateTransaction(e.user.ID, e.account.ID, nil, models.TransactionTypeExpense, 100, long(n), time.Now())
+			_, err := e.tx.CreateTransaction(e.user.ID, e.account.ID, nil, models.TransactionTypeExpense, 100, long(n), time.Now(), TransactionMeta{})
 			return err
 		}, MaxDescriptionLen},
 		{"transfer description", func(t *testing.T, e textEnv, n int) error {
 			to := testutil.CreateTestCashAccount(t, e.db, e.user.ID)
-			_, err := e.tx.CreateTransfer(e.user.ID, e.account.ID, to.ID, 100, nil, long(n), time.Now())
+			_, err := e.tx.CreateTransfer(e.user.ID, e.account.ID, to.ID, 100, nil, long(n), time.Now(), TransactionMeta{})
 			return err
 		}, MaxDescriptionLen},
 		{"category name", func(_ *testing.T, e textEnv, n int) error {

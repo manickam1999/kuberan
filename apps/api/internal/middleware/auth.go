@@ -25,6 +25,13 @@ const (
 // new one, so a device stays signed in as long as it is used at least this often.
 const RefreshTokenExpiry = 7 * 24 * time.Hour
 
+// TokenTypeBot is the token_type claim of tokens minted for the Telegram bot.
+const TokenTypeBot = "bot"
+
+// ContextKeyTokenType is the gin context key under which AuthMiddleware exposes
+// the token's token_type claim ("access" or "bot").
+const ContextKeyTokenType = "token_type"
+
 // getJWTKey returns the JWT key from configuration
 func getJWTKey() []byte {
 	return []byte(config.Get().JWTSecret)
@@ -84,7 +91,7 @@ func GenerateBotToken(user *models.User) (string, error) {
 	claims := &JWTClaims{
 		UserID:    user.ID,
 		Email:     user.Email,
-		TokenType: "bot",
+		TokenType: TokenTypeBot,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(botTokenExpiry)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
@@ -179,6 +186,7 @@ func AuthMiddleware() gin.HandlerFunc {
 		// Set user ID and email in the context
 		c.Set("userID", claims.UserID)
 		c.Set("email", claims.Email)
+		c.Set(ContextKeyTokenType, claims.TokenType)
 		c.Next()
 	}
 }

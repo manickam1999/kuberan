@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { takesPlainActivity } from "@/lib/default-account";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
-import { ArrowDownRight, ArrowUpRight, Wand2 } from "lucide-react";
+import { Filter } from "lucide-react";
 import { ApiClientError } from "@/lib/api-client";
 import { RuleDialog } from "@/components/rules/rule-dialog";
 import { suggestConditionValue } from "@/lib/rule-format";
@@ -24,6 +25,12 @@ import { useCategories } from "@/hooks/use-categories";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Segmented } from "@/components/ui/segmented";
+import { Textarea } from "@/components/ui/textarea";
+import { Tile } from "@/components/ui/tile";
+import { Money } from "@/components/ui/money";
+import { transactionVisual } from "@/lib/domain-visuals";
+import { CategoryTile } from "@/components/transactions/category-picker";
 import { CurrencyInput } from "@/components/ui/currency-input";
 import {
   Dialog,
@@ -89,8 +96,10 @@ export function EditTransactionDialog({
   const [amount, setAmount] = useState(0);
   const [categoryId, setCategoryId] = useState<string>("");
   const [description, setDescription] = useState("");
+  const [notes, setNotes] = useState("");
   const [date, setDate] = useState("");
   const [error, setError] = useState("");
+  const shownId = useRef<string | null>(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [ruleOpen, setRuleOpen] = useState(false);
   const [ruleSeed, setRuleSeed] = useState<{
@@ -148,6 +157,13 @@ export function EditTransactionDialog({
     baseCurrency;
   const inputCurrency =
     accounts.find((a) => a.id === accountId)?.currency ?? txCurrency;
+  const via =
+    live?.source === "mcp" ? live.source_client_name || "an app" : null;
+  const headerVisual = transactionVisual(live?.type ?? "expense");
+  const headerCategory =
+    categories.find((c) => c.id === (categoryId === "none" ? "" : categoryId)) ??
+    live?.category ??
+    null;
   const receivables = live?.receivables ?? [];
   const isShared = live?.type === "expense" && receivables.length > 0;
   // Remount the editor when the saved receivables change.
@@ -168,6 +184,7 @@ export function EditTransactionDialog({
         live.amount,
         live.category_id ?? "",
         live.description ?? "",
+        live.notes ?? "",
         live.date ?? "",
       ].join("|")
     : "";
@@ -178,11 +195,24 @@ export function EditTransactionDialog({
       setAmount(live.amount);
       setCategoryId(live.category_id ?? "none");
       setDescription(live.description ?? "");
+      setNotes(live.notes ?? "");
       setDate(live.date ? live.date.split("T")[0] : "");
-      setError("");
+      // Keep a failed save's message: the optimistic update rolling back
+      // changes the signature too, and clearing here made errors vanish.
+      // A different transaction starts clean.
+      if (shownId.current !== live.id) setError("");
+      shownId.current = live.id;
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- syncSignature captures every field read from `live`
   }, [syncSignature]);
+
+  // A closed dialog forgets its last error and the transaction it showed.
+  useEffect(() => {
+    if (!open) {
+      setError("");
+      shownId.current = null;
+    }
+  }, [open]);
 
   function handleTypeChange(newType: TransactionType) {
     setType(newType);
@@ -230,6 +260,8 @@ export function EditTransactionDialog({
     const trimmedDesc = description.trim();
     if (trimmedDesc !== (live.description ?? ""))
       payload.description = trimmedDesc;
+
+    if (notes.trim() !== (live.notes ?? "")) payload.notes = notes.trim();
 
     const origDate = live.date ? live.date.split("T")[0] : "";
     if (date !== origDate) payload.date = date ? toRFC3339(date) : undefined;
@@ -281,251 +313,360 @@ export function EditTransactionDialog({
     });
   }
 
+  const title =
+    live?.description ||
+    (isReimbursement
+      ? "Repayment"
+      : isOpeningBalance
+        ? "Opening balance"
+        : headerVisual.label);
+  const canSuggestRule =
+    isEditable &&
+    !isOpeningBalance &&
+    !!description.trim() &&
+    !!categoryId &&
+    categoryId !== "none" &&
+    categoryId === (live?.category_id ?? "");
+  const suggestedCategory = categories.find((c) => c.id === categoryId);
+
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>
-              {isReimbursement
-                ? "Repayment"
-                : isOpeningBalance
-                  ? "Opening balance"
-                  : isEditable
-                    ? "Edit Transaction"
-                    : "Transaction Details"}
-            </DialogTitle>
-            <DialogDescription>
+        <DialogContent
+          className="sm:max-w-lg"
+          onOpenAutoFocus={(e) => {
+            // On touch devices don't pop the keyboard up over the sheet.
+            if (window.matchMedia("(pointer: coarse)").matches) e.preventDefault();
+          }}
+          onKeyDown={(e) => {
+            // Cmd/Ctrl+Enter saves, like the add dialog.
+            if (
+              isEditable &&
+              e.key === "Enter" &&
+              (e.metaKey || e.ctrlKey) &&
+              !isSaving
+            ) {
+              e.preventDefault();
+              document
+                .getElementById("edit-tx-form")
+                ?.dispatchEvent(
+                  new Event("submit", { bubbles: true, cancelable: true })
+                );
+            }
+          }}
+        >
+          <DialogHeader className="gap-3">
+            <div className="flex items-start gap-3 pr-6 text-left">
+              {headerCategory ? (
+                <CategoryTile category={headerCategory} size="md" />
+              ) : (
+                <Tile size="md" className={headerVisual.chip}>
+                  <headerVisual.icon />
+                </Tile>
+              )}
+              <div className="min-w-0 flex-1">
+                <span className="text-muted-foreground block text-xs">
+                  {live ? formatDate(live.date) : ""} · {accountName}
+                  {via && (
+                    <>
+                      {" "}
+                      ·{" "}
+                      <span className="text-foreground/80">via {via}</span>
+                    </>
+                  )}
+                </span>
+                <DialogTitle className="mt-1 line-clamp-2 text-xl leading-tight break-words">
+                  {title}
+                </DialogTitle>
+                {live && (
+                  <span
+                    className={cn(
+                      "font-figures mt-1.5 block text-2xl leading-none sm:hidden",
+                      headerVisual.text
+                    )}
+                  >
+                    <TransactionAmount
+                      transaction={live}
+                      direction={headerVisual.sign}
+                    />
+                  </span>
+                )}
+              </div>
+              {live && (
+                <span
+                  className={cn(
+                    "font-figures hidden shrink-0 text-2xl leading-none sm:block",
+                    headerVisual.text
+                  )}
+                >
+                  <TransactionAmount
+                    transaction={live}
+                    direction={headerVisual.sign}
+                  />
+                </span>
+              )}
+            </div>
+            <DialogDescription className="sr-only">
               {isReimbursement
                 ? "A repayment received against money owed to you."
                 : isOpeningBalance
-                ? "What the account held when you added it. It sets the starting balance and isn't counted as income."
-                : isEditable
-                ? "Update transaction details."
-                : "Transfer and investment transactions cannot be edited. Delete and recreate if needed."}
+                  ? "What the account held when you added it. It sets the starting balance and isn't counted as income."
+                  : isEditable
+                    ? "Update transaction details."
+                    : "Transfer and investment transactions cannot be edited. Delete and recreate if needed."}
             </DialogDescription>
+            {isOpeningBalance && (
+              <p className="text-muted-foreground text-sm">
+                What the account held when you added it. It sets the starting
+                balance and isn&apos;t counted as income.
+              </p>
+            )}
           </DialogHeader>
 
           {error && (
-            <div className="bg-destructive/10 text-destructive rounded-md p-3 text-sm">
+            <div
+              role="alert"
+              className="bg-destructive/10 text-destructive rounded-md p-3 text-sm"
+            >
               {error}
             </div>
           )}
 
           {isEditable ? (
             <>
-            <form
-              id="edit-tx-form"
-              onSubmit={handleSubmit}
-              className="flex flex-col gap-4"
-            >
-              {!isOpeningBalance && (
-                <>
-                  {/* Type segmented control */}
-                  <div className="grid grid-cols-2 gap-1 rounded-xl bg-muted p-1">
-                    {[
-                      {
-                        value: "expense" as const,
-                        label: "Expense",
-                        icon: ArrowDownRight,
-                        activeText: "text-negative",
-                      },
-                      {
-                        value: "income" as const,
-                        label: "Income",
-                        icon: ArrowUpRight,
-                        activeText: "text-positive",
-                      },
-                    ].map((opt) => {
-                      const active = type === opt.value;
-                      const Icon = opt.icon;
-                      return (
-                        <button
-                          key={opt.value}
-                          type="button"
-                          onClick={() => handleTypeChange(opt.value)}
-                          disabled={isSaving || (isShared && opt.value !== "expense")}
-                          title={
-                            isShared && opt.value !== "expense"
-                              ? "Remove the money owed back to change the type"
-                              : undefined
-                          }
-                          className={cn(
-                            "flex items-center justify-center gap-1.5 rounded-lg px-2 py-2 text-sm font-medium transition-all disabled:opacity-50",
-                            active
-                              ? cn("bg-background shadow-sm", opt.activeText)
-                              : "text-muted-foreground hover:text-foreground"
-                          )}
-                        >
-                          <Icon className="size-4" />
-                          {opt.label}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </>
-              )}
-
-              {/* Amount */}
-              <div className="flex flex-col gap-1.5">
-                <Label
-                  htmlFor="edit-tx-amount"
-                  className="text-xs font-medium uppercase tracking-wide text-muted-foreground"
-                >
-                  Amount
-                </Label>
-                <CurrencyInput
-                  id="edit-tx-amount"
-                  value={amount}
-                  onChange={setAmount}
-                  currency={inputCurrency}
-                  placeholder="0.00"
-                  disabled={isSaving}
-                  className="money h-14 pl-20 text-2xl font-semibold md:text-2xl"
-                />
-              </div>
-
-              {!isOpeningBalance && (
-                <>
-                  {/* Account */}
-                  <div className="flex flex-col gap-1.5">
-                    <Label htmlFor="edit-tx-account">Account</Label>
-                    <Select
-                      value={accountId}
-                      onValueChange={setAccountId}
-                      disabled={isSaving}
-                    >
-                      <SelectTrigger id="edit-tx-account" className="w-full">
-                        <SelectValue placeholder="Select account" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {accounts.map((a) => (
-                          <SelectItem key={a.id} value={a.id}>
-                            {a.name} ({a.currency})
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </>
-              )}
-
-              {!isOpeningBalance && (
-                <>
-                  {/* Category */}
-                  <div className="flex flex-col gap-1.5">
-                    <Label htmlFor="edit-tx-category">Category</Label>
-                    <Select
-                      value={categoryId}
-                      onValueChange={setCategoryId}
-                      disabled={isSaving}
-                    >
-                      <SelectTrigger id="edit-tx-category" className="w-full">
-                        <SelectValue placeholder="Select category (optional)" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="none">No category</SelectItem>
-                        {categories.map((cat) => (
-                          <SelectItem key={cat.id} value={cat.id}>
-                            {cat.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      className="h-auto self-start px-0 text-xs text-muted-foreground hover:bg-transparent hover:text-foreground"
-                      onClick={handleCreateRule}
-                      disabled={isSaving}
-                    >
-                      <Wand2 className="size-3.5" />
-                      Create a rule to auto-categorize similar
-                    </Button>
-                  </div>
-                </>
-              )}
-
-              {/* Date */}
-              <div className="flex flex-col gap-1.5">
-                <Label htmlFor="edit-tx-date">Date</Label>
-                <Input
-                  id="edit-tx-date"
-                  type="date"
-                  value={date}
-                  onChange={(e) => setDate(e.target.value)}
-                  disabled={isSaving}
-                />
-              </div>
-
-              {/* Note */}
-              <div className="flex flex-col gap-1.5">
-                <Label htmlFor="edit-tx-description">Note</Label>
-                <Input
-                  id="edit-tx-description"
-                  placeholder="Optional description"
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                  disabled={isSaving}
-                  maxLength={500}
-                />
-              </div>
-
-              {/* Receipts */}
-              {transaction && <ExistingAttachments txId={transaction.id} />}
-            </form>
-
-            {/* Money owed back (expenses only). Lives outside the form so
-                Enter in its inputs never submits the main form. */}
-            {live?.type === "expense" && (
-              <section
-                aria-label="Money owed back"
-                className="flex flex-col gap-3"
+              <form
+                id="edit-tx-form"
+                onSubmit={handleSubmit}
+                className="grid gap-4 sm:grid-cols-2"
               >
-                {isShared && (
-                  <>
-                    <div className="flex flex-col gap-0.5 rounded-md bg-muted/50 px-3 py-2 text-sm sm:flex-row sm:items-center sm:justify-between sm:gap-2">
-                      <span className="whitespace-nowrap text-muted-foreground">
-                        Shared expense
-                      </span>
-                      <span className="money font-medium">
-                        Your share {formatMoney(sharedPersonal, txCurrency)} of{" "}
-                        {formatMoney(live.amount, txCurrency)}
-                      </span>
-                    </div>
-                    <ReceivableList
-                      receivables={receivables}
-                      expense={toReceivableExpense(live)}
-                      showExpense={false}
+                {!isOpeningBalance && (
+                  <div className="sm:col-span-2">
+                    <Segmented
+                      full
+                      aria-label="Transaction type"
+                      value={type === "income" ? "income" : "expense"}
+                      onValueChange={(v) => handleTypeChange(v)}
+                      options={[
+                        {
+                          value: "expense" as const,
+                          label: "Expense",
+                          disabled: isSaving,
+                        },
+                        {
+                          value: "income" as const,
+                          label: "Income",
+                          disabled: isSaving || isShared,
+                        },
+                      ]}
                     />
+                    {isShared && (
+                      <p className="text-muted-foreground mt-1.5 text-xs">
+                        Remove the money owed back to change the type.
+                      </p>
+                    )}
+                  </div>
+                )}
+
+                <div className="flex flex-col gap-1.5 sm:col-span-2">
+                  <Label htmlFor="edit-tx-amount">Amount</Label>
+                  <CurrencyInput
+                    id="edit-tx-amount"
+                    value={amount}
+                    onChange={setAmount}
+                    currency={inputCurrency}
+                    placeholder="0.00"
+                    disabled={isSaving}
+                    className="font-figures h-14 pl-16 text-3xl font-medium md:text-3xl"
+                  />
+                </div>
+
+                {!isOpeningBalance && (
+                  <>
+                    <div className="flex flex-col gap-1.5">
+                      <Label htmlFor="edit-tx-category">Category</Label>
+                      <Select
+                        value={categoryId}
+                        onValueChange={setCategoryId}
+                        disabled={isSaving}
+                      >
+                        <SelectTrigger id="edit-tx-category" className="w-full">
+                          <SelectValue placeholder="Select category (optional)" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none">No category</SelectItem>
+                          {categories.map((cat) => (
+                            <SelectItem key={cat.id} value={cat.id}>
+                              {cat.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="flex flex-col gap-1.5">
+                      <Label htmlFor="edit-tx-account">Account</Label>
+                      <Select
+                        value={accountId}
+                        onValueChange={setAccountId}
+                        disabled={isSaving}
+                      >
+                        <SelectTrigger id="edit-tx-account" className="w-full">
+                          <SelectValue placeholder="Select account" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {accounts
+                            .filter(
+                              (a) =>
+                                takesPlainActivity(a) ||
+                                a.id === transaction?.account_id
+                            )
+                            .map((a) => (
+                            <SelectItem key={a.id} value={a.id}>
+                              {a.name} ({a.currency})
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
                   </>
                 )}
-                <ReceivablesEditor
-                  key={editorKey}
-                  transaction={live}
-                />
-              </section>
-            )}
 
-            <DialogFooter className="mt-1 flex-row justify-between gap-2">
-              <Button
-                type="button"
-                variant="ghost"
-                className="text-muted-foreground hover:text-destructive"
-                onClick={() => setDeleteOpen(true)}
-                disabled={isSaving || isDeleting}
-              >
-                Delete
-              </Button>
-              <Button
-                type="submit"
-                form="edit-tx-form"
-                disabled={isSaving || isDeleting}
-              >
-                {isSaving ? "Saving…" : "Save changes"}
-              </Button>
-            </DialogFooter>
+                <div className="flex flex-col gap-1.5">
+                  <Label htmlFor="edit-tx-date">Date</Label>
+                  <Input
+                    id="edit-tx-date"
+                    type="date"
+                    value={date}
+                    onChange={(e) => setDate(e.target.value)}
+                    disabled={isSaving}
+                  />
+                </div>
+
+                <div className="flex flex-col gap-1.5">
+                  <Label htmlFor="edit-tx-description">Description</Label>
+                  <Input
+                    id="edit-tx-description"
+                    placeholder="What was it for?"
+                    value={description}
+                    onChange={(e) => setDescription(e.target.value)}
+                    disabled={isSaving}
+                    maxLength={500}
+                  />
+                </div>
+
+                <div className="flex flex-col gap-1.5 sm:col-span-2">
+                  <Label htmlFor="edit-tx-notes">Note</Label>
+                  <Textarea
+                    id="edit-tx-notes"
+                    value={notes}
+                    onChange={(e) => setNotes(e.target.value)}
+                    maxLength={2000}
+                    disabled={isSaving}
+                    placeholder="Anything worth remembering"
+                    className="min-h-[64px]"
+                  />
+                  {notes.length > 1800 && (
+                    <span className="text-muted-foreground self-end text-xs">
+                      {notes.length}/2000
+                    </span>
+                  )}
+                </div>
+
+                {/* Receipts */}
+                {transaction && (
+                  <div className="sm:col-span-2">
+                    <ExistingAttachments txId={transaction.id} />
+                  </div>
+                )}
+              </form>
+
+              {/* Money owed back (expenses only). Lives outside the form so
+                  Enter in its inputs never submits the main form. */}
+              {live?.type === "expense" && (
+                <section
+                  aria-label="Money owed back"
+                  className="flex flex-col gap-3 rounded-card border p-3"
+                >
+                  {isShared && (
+                    <>
+                      <div className="flex flex-col gap-0.5 text-sm sm:flex-row sm:items-center sm:justify-between sm:gap-2">
+                        <span className="font-medium">Shared expense</span>
+                        <span className="text-muted-foreground">
+                          Your share{" "}
+                          <Money
+                            amount={sharedPersonal}
+                            currency={txCurrency}
+                            className="text-foreground font-medium"
+                          />{" "}
+                          of{" "}
+                          <Money
+                            amount={live.amount}
+                            currency={txCurrency}
+                            className="text-foreground font-medium"
+                          />
+                          . Budgets count your share only.
+                        </span>
+                      </div>
+                      <ReceivableList
+                        receivables={receivables}
+                        expense={toReceivableExpense(live)}
+                        showExpense={false}
+                      />
+                    </>
+                  )}
+                  <ReceivablesEditor key={editorKey} transaction={live} />
+                </section>
+              )}
+
+              {/* Rule suggestion */}
+              {canSuggestRule && (
+                <div className="bg-muted/50 flex items-center gap-2.5 rounded-card px-3 py-2.5 text-sm">
+                  <Filter
+                    className="text-muted-foreground size-4 shrink-0"
+                    aria-hidden
+                  />
+                  <span className="min-w-0 flex-1">
+                    Always put &ldquo;{description.trim()}&rdquo; in{" "}
+                    {suggestedCategory?.name ?? "this category"}?{" "}
+                    <button
+                      type="button"
+                      onClick={handleCreateRule}
+                      disabled={isSaving}
+                      className="text-primary font-medium underline-offset-4 hover:underline"
+                    >
+                      Create rule
+                    </button>
+                  </span>
+                </div>
+              )}
+
+              <DialogFooter className="mt-1 flex-row items-center gap-2 sm:justify-between">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="text-muted-foreground hover:text-destructive"
+                  onClick={() => setDeleteOpen(true)}
+                  disabled={isSaving || isDeleting}
+                >
+                  Delete
+                </Button>
+                <span className="ml-auto flex items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    onClick={() => onOpenChange(false)}
+                    disabled={isSaving}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    type="submit"
+                    form="edit-tx-form"
+                    disabled={isSaving || isDeleting}
+                  >
+                    {isSaving ? "Saving…" : "Save"}
+                  </Button>
+                </span>
+              </DialogFooter>
             </>
           ) : isReimbursement && transaction ? (
             <ReimbursementView
@@ -562,9 +703,7 @@ export function EditTransactionDialog({
               {transaction?.to_account && (
                 <div className="flex items-center justify-between">
                   <Label>To Account</Label>
-                  <span className="text-sm">
-                    {transaction.to_account.name}
-                  </span>
+                  <span className="text-sm">{transaction.to_account.name}</span>
                 </div>
               )}
               <div className="flex items-center justify-between">
@@ -579,6 +718,12 @@ export function EditTransactionDialog({
                   {transaction ? formatDate(transaction.date) : ""}
                 </span>
               </div>
+              {live?.notes && (
+                <div className="flex flex-col gap-1">
+                  <Label>Note</Label>
+                  <p className="text-sm whitespace-pre-wrap">{live.notes}</p>
+                </div>
+              )}
 
               {/* Receipts */}
               {transaction && <ExistingAttachments txId={transaction.id} />}

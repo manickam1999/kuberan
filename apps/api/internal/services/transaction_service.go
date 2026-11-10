@@ -2,7 +2,9 @@ package services
 
 import (
 	"fmt"
+	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -65,8 +67,13 @@ func (s *transactionService) CreateTransaction(
 	amount int64,
 	description string,
 	date time.Time,
+	meta TransactionMeta,
 ) (*models.Transaction, error) {
 	if err := validateTransactionInput(accountID, amount, description); err != nil {
+		return nil, err
+	}
+	meta, err := normalizeMeta(meta)
+	if err != nil {
 		return nil, err
 	}
 	// Opening balances are written only by account creation.
@@ -86,7 +93,7 @@ func (s *transactionService) CreateTransaction(
 	// Auto-categorize via rules when the caller didn't specify a category and the
 	// transaction is a categorizable income/expense (plan 018). Rule actions are
 	// validated against the user's categories when the rule is saved.
-	categoryID = resolveRuleCategory(s.ruleService, userID, categoryID, RuleInput{
+	categoryID, matchedRuleID := resolveRuleCategory(s.ruleService, userID, categoryID, RuleInput{
 		Description: description,
 		Amount:      amount,
 		AccountID:   accountID,
@@ -94,14 +101,20 @@ func (s *transactionService) CreateTransaction(
 	})
 
 	var result *models.Transaction
-	err := s.db.Transaction(func(tx *gorm.DB) error {
+	err = s.db.Transaction(func(tx *gorm.DB) error {
 		accounts, txErr := lockAccounts(tx, userID, []string{accountID}, true)
 		if txErr != nil {
 			return txErr
 		}
+		if txErr := ensureSpendingAccount(accounts[accountID]); txErr != nil {
+			return txErr
+		}
 		result, txErr = insertTransaction(tx, s.accountService, userID, accounts[accountID],
-			categoryID, transactionType, amount, description, date)
-		return txErr
+			categoryID, transactionType, amount, description, date, meta)
+		if txErr != nil {
+			return txErr
+		}
+		return recordRuleMatch(tx, userID, matchedRuleID, 1)
 	})
 	if err != nil {
 		return nil, err
@@ -123,6 +136,7 @@ func (s *transactionService) CreateTransfer(
 	toAmount *int64,
 	description string,
 	date time.Time,
+	meta TransactionMeta,
 ) (*models.Transaction, error) {
 	if fromAccountID == toAccountID {
 		return nil, apperrors.ErrSameAccountTransfer
@@ -134,18 +148,31 @@ func (s *transactionService) CreateTransfer(
 	if err := validateDescription(description); err != nil {
 		return nil, err
 	}
+	meta, err := normalizeMeta(meta)
+	if err != nil {
+		return nil, err
+	}
 
 	if date.IsZero() {
 		date = time.Now()
 	}
 
 	var result *models.Transaction
-	err := s.db.Transaction(func(tx *gorm.DB) error {
+	err = s.db.Transaction(func(tx *gorm.DB) error {
 		accounts, txErr := lockAccounts(tx, userID, []string{fromAccountID, toAccountID}, true)
 		if txErr != nil {
 			return txErr
 		}
 		fromAccount, toAccount := accounts[fromAccountID], accounts[toAccountID]
+		if txErr := ensureSpendingAccount(fromAccount); txErr != nil {
+			return txErr
+		}
+		if txErr := ensureSpendingAccount(toAccount); txErr != nil {
+			return txErr
+		}
+		if txErr := guardDemoTransfer(tx, userID, fromAccountID, toAccountID); txErr != nil {
+			return txErr
+		}
 
 		stored, txErr := s.resolveToAmount(fromAccount, toAccount, amount, toAmount, date)
 		if txErr != nil {
@@ -165,6 +192,10 @@ func (s *transactionService) CreateTransfer(
 			ToAmount:    stored,
 			Description: description,
 			Date:        date,
+
+			Notes:          meta.Notes,
+			Source:         meta.Source,
+			SourceClientID: sourceClientPtr(meta.SourceClientID),
 		}
 		if txErr := tx.Create(transaction).Error; txErr != nil {
 			return apperrors.Wrap(apperrors.ErrInternalServer, txErr)
@@ -385,7 +416,7 @@ func (s *transactionService) ApplyRule(userID, ruleID string, opts ApplyRuleOpti
 				}
 			}
 		}
-		return nil
+		return recordRuleMatch(tx, userID, &ruleID, eligible)
 	})
 	if err != nil {
 		return nil, err
@@ -442,6 +473,11 @@ func (s *transactionService) UpdateTransaction(userID, transactionID string, upd
 			return nil, err
 		}
 	}
+	if updates.Notes != nil {
+		if err := validateNotes(*updates.Notes); err != nil {
+			return nil, err
+		}
+	}
 
 	err := s.db.Transaction(func(tx *gorm.DB) error {
 		transaction, err := lockTransaction(tx, userID, transactionID)
@@ -470,9 +506,11 @@ func (s *transactionService) UpdateTransaction(userID, transactionID string, upd
 			}
 		}
 
-		// Imported rows are derived from the statement: only description,
-		// category, date and notes may change (a re-import reverses them by type).
-		if transaction.ImportRef != nil &&
+		// IBKR-imported rows are derived from the statement: only description,
+		// category, date and notes may change (a re-import reverses them by
+		// type). CSV-imported rows ("csv:" refs) are plain entries and stay
+		// fully editable.
+		if transaction.ImportRef != nil && strings.HasPrefix(*transaction.ImportRef, "ibkr:") &&
 			((updates.Type != nil && *updates.Type != transaction.Type) ||
 				(updates.Amount != nil && *updates.Amount != transaction.Amount) ||
 				(updates.AccountID != nil && *updates.AccountID != transaction.AccountID)) {
@@ -540,6 +578,13 @@ func (s *transactionService) UpdateTransaction(userID, transactionID string, upd
 			return err
 		}
 		oldAccount, targetAccount := accounts[oldAccountID], accounts[newAccountID]
+		// Moving a row onto an investment or fixed deposit account is refused;
+		// rows already there (opening balances, imports) stay editable in place.
+		if oldAccountID != newAccountID {
+			if err := ensureSpendingAccount(targetAccount); err != nil {
+				return err
+			}
+		}
 		if oldAccountID != newAccountID && !strings.EqualFold(oldAccount.Currency, targetAccount.Currency) {
 			return apperrors.ErrAccountCurrencyMismatch
 		}
@@ -565,11 +610,23 @@ func (s *transactionService) UpdateTransaction(userID, transactionID string, upd
 		if updates.Date != nil {
 			transaction.Date = *updates.Date
 		}
+		if updates.Notes != nil {
+			transaction.Notes = *updates.Notes
+		}
 		if updates.CategoryID != nil {
 			if err := ensureCategoryOwned(tx, userID, *updates.CategoryID); err != nil {
 				return err
 			}
+			if err := ensureCategoryMatchesType(tx, userID, *updates.CategoryID, newType); err != nil {
+				return err
+			}
 			transaction.CategoryID = *updates.CategoryID
+		} else if newType != oldType && transaction.CategoryID != nil {
+			// A type change keeps the existing category, which must still fit.
+			// Unscoped: a soft-deleted category is still a valid reference.
+			if err := ensureCategoryMatchesType(tx.Unscoped(), userID, transaction.CategoryID, newType); err != nil {
+				return err
+			}
 		}
 
 		// personal_amount must change in the same UPDATE as amount: the
@@ -604,8 +661,8 @@ func (s *transactionService) UpdateTransaction(userID, transactionID string, upd
 
 // GetAccountTransactions retrieves a paginated, filtered list of transactions for a specific account.
 func (s *transactionService) GetAccountTransactions(userID, accountID string, page pagination.PageRequest, filter TransactionFilter) (*pagination.PageResponse[models.Transaction], error) {
-	// First verify the account belongs to the user
-	_, err := s.accountService.GetAccountByID(userID, accountID)
+	// First verify the account belongs to the user (deactivated accounts keep their history)
+	_, err := s.accountService.GetAccountByIDIncludingInactive(userID, accountID)
 	if err != nil {
 		return nil, err
 	}
@@ -631,6 +688,9 @@ func (s *transactionService) GetAccountTransactions(userID, accountID string, pa
 		return nil, err
 	}
 	if err := attachReceivables(s.db, userID, transactions); err != nil {
+		return nil, err
+	}
+	if err := attachSourceClientNames(s.db, userID, transactions); err != nil {
 		return nil, err
 	}
 
@@ -660,7 +720,76 @@ func applyTransactionFilters(q *gorm.DB, f TransactionFilter) *gorm.DB {
 	if f.AccountID != nil {
 		q = q.Where("account_id = ?", *f.AccountID)
 	}
+	if f.Search != nil {
+		q = applyTransactionSearch(q, *f.Search)
+	}
+	if f.Shared != nil {
+		q = q.Where(existsClause(*f.Shared,
+			"SELECT 1 FROM receivables r WHERE r.transaction_id = transactions.id AND r.deleted_at IS NULL"))
+	}
+	if f.HasAttachment != nil {
+		q = q.Where(existsClause(*f.HasAttachment,
+			"SELECT 1 FROM transaction_attachments a WHERE a.transaction_id = transactions.id AND a.deleted_at IS NULL"))
+	}
 	return q
+}
+
+// existsClause returns EXISTS (sub) or NOT EXISTS (sub).
+func existsClause(want bool, sub string) string {
+	if want {
+		return "EXISTS (" + sub + ")"
+	}
+	return "NOT EXISTS (" + sub + ")"
+}
+
+// amountSearchPattern matches a plain amount such as "64", "64.7" or "64.73".
+var amountSearchPattern = regexp.MustCompile(`^\d{1,12}(\.\d{1,2})?$`)
+
+// searchAmountCents parses a search term like "64.73" into cents.
+func searchAmountCents(term string) (int64, bool) {
+	if !amountSearchPattern.MatchString(term) {
+		return 0, false
+	}
+	whole, frac, _ := strings.Cut(term, ".")
+	for len(frac) < 2 {
+		frac += "0"
+	}
+	w, err := strconv.ParseInt(whole, 10, 64)
+	if err != nil {
+		return 0, false
+	}
+	f, err := strconv.ParseInt(frac, 10, 64)
+	if err != nil {
+		return 0, false
+	}
+	return w*100 + f, true
+}
+
+// applyTransactionSearch matches the trimmed, length-capped term against the
+// description and notes (case-insensitive substring) and, for a numeric term,
+// the amount, transfer to_amount or personal_amount in cents.
+func applyTransactionSearch(q *gorm.DB, raw string) *gorm.DB {
+	term := strings.TrimSpace(raw)
+	if r := []rune(term); len(r) > MaxSearchLen {
+		term = string(r[:MaxSearchLen])
+	}
+	if term == "" {
+		return q
+	}
+	pattern := "%" + likeEscaper.Replace(term) + "%"
+	// ILIKE lets Postgres use the trigram indexes; SQLite (tests) lacks it.
+	var cond string
+	if q.Name() == "postgres" {
+		cond = `(description ILIKE ? ESCAPE '\' OR notes ILIKE ? ESCAPE '\'`
+	} else {
+		cond = `(LOWER(description) LIKE LOWER(?) ESCAPE '\' OR LOWER(notes) LIKE LOWER(?) ESCAPE '\'`
+	}
+	args := []any{pattern, pattern}
+	if cents, ok := searchAmountCents(term); ok {
+		cond += " OR amount = ? OR to_amount = ? OR personal_amount = ?"
+		args = append(args, cents, cents, cents)
+	}
+	return q.Where(cond+")", args...)
 }
 
 // GetUserTransactions retrieves a paginated, filtered list of all transactions for a user across all accounts.
@@ -689,6 +818,9 @@ func (s *transactionService) GetUserTransactions(userID string, page pagination.
 		return nil, err
 	}
 	if err := attachReceivables(s.db, userID, transactions); err != nil {
+		return nil, err
+	}
+	if err := attachSourceClientNames(s.db, userID, transactions); err != nil {
 		return nil, err
 	}
 
@@ -736,7 +868,16 @@ func (s *transactionService) populateAttachmentCounts(transactions []models.Tran
 // GetTransactionByID retrieves a transaction by ID for a specific user. For an
 // expense with receivables they are included (without settlements).
 func (s *transactionService) GetTransactionByID(userID, transactionID string) (*models.Transaction, error) {
-	return loadExpenseWithReceivables(s.db, userID, transactionID)
+	txn, err := loadExpenseWithReceivables(s.db, userID, transactionID)
+	if err != nil {
+		return nil, err
+	}
+	one := []models.Transaction{*txn}
+	if err := attachSourceClientNames(s.db, userID, one); err != nil {
+		return nil, err
+	}
+	txn.SourceClientName = one[0].SourceClientName
+	return txn, nil
 }
 
 // DeleteTransaction deletes a transaction and reverses its effect on the account
@@ -746,6 +887,14 @@ func (s *transactionService) GetTransactionByID(userID, transactionID string) (*
 // the same DB transaction.
 func (s *transactionService) DeleteTransaction(userID, transactionID string) error {
 	return s.db.Transaction(func(tx *gorm.DB) error {
+		return s.deleteTransactionTx(tx, userID, transactionID)
+	})
+}
+
+// deleteTransactionTx is DeleteTransaction inside an open DB transaction (also
+// used by the bulk delete).
+func (s *transactionService) deleteTransactionTx(tx *gorm.DB, userID, transactionID string) error {
+	{
 		transaction, err := lockTransaction(tx, userID, transactionID)
 		if err != nil {
 			return err
@@ -798,7 +947,7 @@ func (s *transactionService) DeleteTransaction(userID, transactionID string) err
 			return err
 		}
 		return s.accountService.ApplyBalanceDelta(tx, account.ID, account.Type, reversal, transaction.Amount)
-	})
+	}
 }
 
 // deleteReceivablesOfExpense implements D8 inside an open DB transaction whose

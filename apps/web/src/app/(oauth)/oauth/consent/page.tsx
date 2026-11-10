@@ -10,17 +10,14 @@ import type {
 } from "@/types/api";
 import { isProtocolScope, isWriteScope, scopeLabel } from "@/lib/oauth-scopes";
 import { describeRedirect, followHydraRedirect } from "../redirect";
+import { RingMark } from "@/components/brand/ring-mark";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Switch } from "@/components/ui/switch";
+import { Tile } from "@/components/ui/tile";
 
 // Consent details as the API returns them. redirect_scheme/redirect_host
 // describe where this authorization sends its code (taken from the request
@@ -32,6 +29,15 @@ type ConsentDetails = OAuthConsentDetails & {
   redirect_host?: string;
   client_verified?: boolean;
 };
+
+/** Centred single-column frame: the consent step is one card on a phone screen. */
+function ConsentFrame({ children }: { children: React.ReactNode }) {
+  return (
+    <main className="mx-auto grid min-h-dvh w-full max-w-[460px] content-center gap-3 px-5 py-5 sm:gap-3.5 sm:py-8">
+      {children}
+    </main>
+  );
+}
 
 function errorMessage(err: unknown): string {
   if (err instanceof ApiClientError) return err.message;
@@ -199,31 +205,40 @@ function OAuthConsent() {
 
   if (isLoading) {
     return (
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-2xl">Authorize access</CardTitle>
-          <CardDescription>Loading request details...</CardDescription>
-        </CardHeader>
-      </Card>
+      <ConsentFrame>
+        <div aria-busy="true" aria-label="Loading request details" className="grid gap-3.5">
+          <div className="flex items-center gap-2.5">
+            <Skeleton className="size-[42px] rounded-xl" />
+            <Skeleton className="h-1 w-8" />
+            <Skeleton className="size-[42px] rounded-full" />
+          </div>
+          <Skeleton className="h-9 w-4/5" />
+          <Skeleton className="h-16 w-full rounded-xl" />
+          <Skeleton className="h-36 w-full rounded-xl" />
+          <Skeleton className="h-16 w-full rounded-xl" />
+        </div>
+      </ConsentFrame>
     );
   }
 
   if (error && !details) {
     return (
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-2xl">Authorize access</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="bg-destructive/10 text-destructive rounded-md p-3 text-sm">
-            {error}
-          </div>
-        </CardContent>
-      </Card>
+      <ConsentFrame>
+        <h1 className="font-display text-4xl leading-[1.05]">
+          Authorize access
+        </h1>
+        <div
+          role="alert"
+          className="bg-destructive/10 text-destructive rounded-md p-3 text-sm"
+        >
+          {error}
+        </div>
+      </ConsentFrame>
     );
   }
 
-  const clientName = details?.client?.client_name || details?.client?.client_id || "An application";
+  const clientName =
+    details?.client?.client_name || details?.client?.client_id || "An application";
   const verified = details?.client_verified === true;
   const redirect = describeRedirect(details?.redirect_scheme, details?.redirect_host);
   const scopes = details?.requested_scopes ?? [];
@@ -237,47 +252,96 @@ function OAuthConsent() {
     readScopes.length + writeScopes.length > 0 && selected.size === 0;
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="text-2xl">Authorize access</CardTitle>
-        <CardDescription>
-          An application calling itself{" "}
-          <span className="text-foreground font-medium">{clientName}</span>
-          {verified ? " (verified)" : ""} wants to connect to your Kuberan
-          account.
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="flex flex-col gap-4">
-        {error && (
-          <div className="bg-destructive/10 text-destructive rounded-md p-3 text-sm">
-            {error}
-          </div>
+    <ConsentFrame>
+      <div className="flex items-center gap-2.5" aria-hidden>
+        <Tile size="xl" tone="accent" className="font-display text-xl">
+          {clientName.charAt(0).toUpperCase()}
+        </Tile>
+        <span className="bg-border h-px w-8" />
+        <RingMark className="size-[42px]" />
+      </div>
+      <div>
+        <h1 className="font-display text-3xl sm:text-4xl leading-[1.05]">
+          {clientName} wants access to your Kuberan
+        </h1>
+      </div>
+
+      {error && (
+        <div
+          role="alert"
+          className="bg-destructive/10 text-destructive rounded-md p-3 text-sm"
+        >
+          {error}
+        </div>
+      )}
+
+      <div className="bg-card flex flex-col gap-1 rounded-xl border p-3.5 text-sm">
+        <p className="flex flex-wrap items-center gap-x-2 gap-y-1">
+          <b className="font-medium">{clientName}</b>
+          {verified ? (
+            <Badge tone="pos">Verified</Badge>
+          ) : (
+            <Badge tone="warn">Unverified</Badge>
+          )}
+        </p>
+        <p className="text-muted-foreground">
+          Sends you back to{" "}
+          <span className="text-foreground font-mono break-all">
+            {redirect?.label ?? "an unknown address"}
+          </span>
+        </p>
+        {redirect?.note && (
+          <p className="text-muted-foreground text-xs">{redirect.note}</p>
         )}
         {!verified && (
           <p className="text-muted-foreground text-xs">
-            Unverified: this app registered itself, so its name is not checked.
-            Judge it by where it sends you back to.
+            This app registered itself, so its name is not checked. Judge it by
+            where it sends you back to.
           </p>
         )}
-        <div className="flex flex-col gap-1">
-          <p className="text-muted-foreground text-sm">
-            Sends you back to{" "}
-            <span className="text-foreground font-mono break-all">
-              {redirect?.label ?? "an unknown address"}
-            </span>
+        {!redirect && (
+          <p className="text-muted-foreground text-xs">
+            Deny unless you are sure you started this connection.
           </p>
-          {redirect?.note && (
-            <p className="text-muted-foreground text-xs">{redirect.note}</p>
-          )}
-          {!redirect && (
-            <p className="text-muted-foreground text-xs">
-              Deny unless you are sure you started this connection.
-            </p>
-          )}
-        </div>
-        <div className="flex flex-col gap-2">
-          <p className="text-sm font-medium">This will allow it to:</p>
-          {readScopes.map((scope) => (
+        )}
+      </div>
+
+      <fieldset className="bg-background flex flex-col gap-1 rounded-xl border p-3.5">
+        <legend className="sr-only">Read access</legend>
+        <span className="text-muted-foreground mb-1 text-xs font-medium tracking-wide uppercase">
+          Read
+        </span>
+        {readScopes.map((scope) => (
+          <ScopeCheckbox
+            key={scope}
+            scope={scope}
+            checked={selected.has(scope)}
+            disabled={isSubmitting}
+            onChange={toggleScope}
+          />
+        ))}
+        {protocolScopes.length > 0 && (
+          <ul className="mt-1 flex flex-col gap-1">
+            {Array.from(new Set(protocolScopes.map(scopeLabel))).map((label) => (
+              <li key={label} className="text-muted-foreground text-sm">
+                • {label}
+              </li>
+            ))}
+          </ul>
+        )}
+      </fieldset>
+
+      {writeScopes.length > 0 && (
+        <fieldset className="border-warning/40 bg-warning-muted/40 flex flex-col gap-1 rounded-xl border p-3.5">
+          <legend className="sr-only">Changes</legend>
+          <span className="text-sm font-medium">Also allow changes</span>
+          <p className="text-muted-foreground mb-1 text-xs">
+            Off unless you tick them. {clientName} will be able to change your
+            financial records. Each change is capped in size, rate-limited and
+            logged in Settings → Connected apps. You can disconnect it there at
+            any time.
+          </p>
+          {writeScopes.map((scope) => (
             <ScopeCheckbox
               key={scope}
               scope={scope}
@@ -286,71 +350,56 @@ function OAuthConsent() {
               onChange={toggleScope}
             />
           ))}
-          {protocolScopes.length > 0 && (
-            <ul className="flex flex-col gap-1">
-              {Array.from(new Set(protocolScopes.map(scopeLabel))).map((label) => (
-                <li key={label} className="text-muted-foreground text-sm">
-                  • {label}
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-        {writeScopes.length > 0 && (
-          <div className="border-warning/40 flex flex-col gap-2 rounded-md border p-3">
-            <p className="text-sm font-medium">Allow changes</p>
-            <p className="text-muted-foreground text-xs">
-              Off unless you tick them. {clientName} will be able to change your
-              financial records. You can disconnect it in Settings at any time.
-            </p>
-            {writeScopes.map((scope) => (
-              <ScopeCheckbox
-                key={scope}
-                scope={scope}
-                checked={selected.has(scope)}
-                disabled={isSubmitting}
-                onChange={toggleScope}
-              />
-            ))}
-          </div>
-        )}
-        <LabeledCheckbox
+        </fieldset>
+      )}
+
+      <div className="flex items-start gap-3">
+        <Switch
           id="remember-client"
-          label="Remember this application (skip this screen next time)"
           checked={rememberClient}
+          onCheckedChange={setRememberClient}
           disabled={isSubmitting}
-          onChange={setRememberClient}
+          className="mt-0.5"
         />
-        {nothingSelected && (
-          <p className="text-muted-foreground text-xs">
-            Tick at least one permission, or choose Deny.
-          </p>
-        )}
-      </CardContent>
-      <CardFooter className="flex flex-col gap-2 pt-2">
+        <Label
+          htmlFor="remember-client"
+          className="flex-col items-start gap-0.5 font-normal"
+        >
+          <span className="text-sm">Remember this app</span>
+          <span className="text-muted-foreground text-xs">
+            Skip this screen next time. You can disconnect any time.
+          </span>
+        </Label>
+      </div>
+
+      {nothingSelected && (
+        <p className="text-muted-foreground text-xs">
+          Tick at least one permission, or choose Deny.
+        </p>
+      )}
+
+      <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
         <Button
           type="button"
-          className="w-full"
+          variant="ghost"
+          onClick={handleDeny}
+          disabled={isSubmitting}
+        >
+          Deny
+        </Button>
+        <Button
+          type="button"
           onClick={handleAccept}
           disabled={isSubmitting || nothingSelected}
         >
           {isSubmitting
             ? "Authorizing..."
             : grantsWrite
-              ? "Authorize, including changes"
-              : "Authorize"}
+              ? "Allow read access and changes"
+              : "Allow read access"}
         </Button>
-        <Button
-          type="button"
-          variant="outline"
-          className="w-full"
-          onClick={handleDeny}
-          disabled={isSubmitting}
-        >
-          Deny
-        </Button>
-      </CardFooter>
-    </Card>
+      </div>
+    </ConsentFrame>
   );
 }
 

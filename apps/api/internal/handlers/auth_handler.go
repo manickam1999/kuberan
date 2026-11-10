@@ -10,10 +10,12 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"kuberan/internal/appearance"
 	apperrors "kuberan/internal/errors"
 	"kuberan/internal/middleware"
 	"kuberan/internal/models"
 	"kuberan/internal/services"
+	"kuberan/internal/uuid"
 )
 
 // RefreshCookieName is the HttpOnly cookie that carries the refresh token.
@@ -31,6 +33,8 @@ type AuthHandler struct {
 	userService  services.UserServicer
 	auditService services.AuditServicer
 	secureCookie bool
+	// defaultPalette is the validated DEFAULT_PALETTE (WithDefaultPalette).
+	defaultPalette string
 }
 
 // AuthHandlerOption configures an AuthHandler.
@@ -42,9 +46,20 @@ func WithSecureCookie(secure bool) AuthHandlerOption {
 	return func(h *AuthHandler) { h.secureCookie = secure }
 }
 
+// WithDefaultPalette sets the server-wide default palette (DEFAULT_PALETTE).
+// An unknown id is ignored and the built-in default stays.
+func WithDefaultPalette(id string) AuthHandlerOption {
+	return func(h *AuthHandler) {
+		if appearance.IsPalette(id) {
+			h.defaultPalette = id
+		}
+	}
+}
+
 // NewAuthHandler creates a new AuthHandler.
 func NewAuthHandler(userService services.UserServicer, auditService services.AuditServicer, opts ...AuthHandlerOption) *AuthHandler {
-	h := &AuthHandler{userService: userService, auditService: auditService, secureCookie: true}
+	h := &AuthHandler{userService: userService, auditService: auditService, secureCookie: true,
+		defaultPalette: appearance.DefaultPalette}
 	for _, opt := range opts {
 		opt(h)
 	}
@@ -58,6 +73,9 @@ type RegisterRequest struct {
 	Password  string `json:"password" binding:"required,min=8,max=72"`
 	FirstName string `json:"first_name" binding:"max=100"`
 	LastName  string `json:"last_name" binding:"max=100"`
+	// BaseCurrency is the optional reporting currency (ISO 4217, 2-decimal,
+	// same rule as PATCH /profile). Omitted keeps the default (MYR).
+	BaseCurrency string `json:"base_currency" binding:"omitempty,iso4217" example:"EUR"`
 }
 
 // LoginRequest represents the login request payload
@@ -81,6 +99,11 @@ type UserResponse struct {
 	LastName  string `json:"last_name"`
 	// BaseCurrency is the ISO 4217 currency the user's aggregates are reported in.
 	BaseCurrency string `json:"base_currency"`
+	// Appearance holds the user's UI preferences; a missing key means default.
+	Appearance models.Appearance `json:"appearance"`
+	// ResolvedPalette is the palette to render: the user's choice, else the
+	// server's DEFAULT_PALETTE, else catppuccin.
+	ResolvedPalette string `json:"resolved_palette" example:"catppuccin"`
 }
 
 // AuthResponse represents the authentication response. The refresh token is
@@ -98,7 +121,7 @@ type AuthResponse struct {
 // @Produce     json
 // @Param       request body RegisterRequest true "User registration data"
 // @Success     201 {object} AuthResponse "User registered and tokens generated"
-// @Failure     400 {object} ErrorResponse "Invalid input"
+// @Failure     400 {object} ErrorResponse "Invalid input (UNSUPPORTED_CURRENCY for a bad base_currency)"
 // @Failure     500 {object} ErrorResponse "Server error"
 // @Router      /auth/register [post]
 func (h *AuthHandler) Register(c *gin.Context) {
@@ -108,7 +131,8 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		return
 	}
 
-	user, err := h.userService.CreateUser(req.Email, req.Password, req.FirstName, req.LastName)
+	user, err := h.userService.CreateUser(req.Email, req.Password, req.FirstName, req.LastName,
+		services.WithBaseCurrency(req.BaseCurrency))
 	if err != nil {
 		respondWithError(c, err)
 		return
@@ -125,7 +149,7 @@ func (h *AuthHandler) Register(c *gin.Context) {
 	h.setRefreshCookie(c, refreshToken)
 	c.JSON(http.StatusCreated, gin.H{
 		"access_token": accessToken,
-		"user":         userPayload(user),
+		"user":         h.userPayload(user),
 	})
 }
 
@@ -167,7 +191,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	h.setRefreshCookie(c, refreshToken)
 	c.JSON(http.StatusOK, gin.H{
 		"access_token": accessToken,
-		"user":         userPayload(user),
+		"user":         h.userPayload(user),
 	})
 }
 
@@ -268,7 +292,7 @@ func (h *AuthHandler) RefreshToken(c *gin.Context) {
 	h.setRefreshCookie(c, refreshToken)
 	c.JSON(http.StatusOK, gin.H{
 		"access_token": accessToken,
-		"user":         userPayload(user),
+		"user":         h.userPayload(user),
 	})
 }
 
@@ -346,6 +370,25 @@ func (h *AuthHandler) clearRefreshCookie(c *gin.Context) {
 	})
 }
 
+// AppearanceDefaultResponse is the public, unauthenticated appearance payload.
+type AppearanceDefaultResponse struct {
+	// DefaultPalette is the server-wide palette id (DEFAULT_PALETTE).
+	DefaultPalette string `json:"default_palette" example:"catppuccin"`
+}
+
+// GetAppearance returns the server's default palette. It is public because the
+// sign-in, register and OAuth consent pages render before anyone is signed in,
+// and exposes nothing else.
+// @Summary     Get the server's default palette
+// @Description Public. Returns only the palette used by users who have not picked one.
+// @Tags        appearance
+// @Produce     json
+// @Success     200 {object} AppearanceDefaultResponse "Server default palette"
+// @Router      /appearance [get]
+func (h *AuthHandler) GetAppearance(c *gin.Context) {
+	c.JSON(http.StatusOK, AppearanceDefaultResponse{DefaultPalette: h.defaultPalette})
+}
+
 // GetProfile returns the user's profile
 // @Summary     Get user profile
 // @Description Get the authenticated user's profile information
@@ -371,12 +414,12 @@ func (h *AuthHandler) GetProfile(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"user": userPayload(user),
+		"user": h.userPayload(user),
 	})
 }
 
 // userPayload is the user object embedded in auth and profile responses.
-func userPayload(user *models.User) gin.H {
+func (h *AuthHandler) userPayload(user *models.User) gin.H {
 	return gin.H{
 		"id":                 user.ID,
 		"email":              user.Email,
@@ -385,6 +428,9 @@ func userPayload(user *models.User) gin.H {
 		"hide_balances":      user.HideBalances,
 		"default_account_id": user.DefaultAccountID,
 		"base_currency":      user.BaseCurrency,
+		"appearance":         user.Appearance,
+		"resolved_palette":   appearance.Resolve(user.Appearance.Palette, h.defaultPalette),
+		"last_login_at":      user.LastLoginAt,
 	}
 }
 
@@ -398,6 +444,20 @@ type UpdateProfileSettingsRequest struct {
 	// BaseCurrency sets the currency aggregates are reported in (ISO 4217,
 	// upper-case). It must be a supported currency with an exchange rate to USD.
 	BaseCurrency *string `json:"base_currency" binding:"omitempty,iso4217"`
+	// FirstName and LastName replace the user's names (empty clears).
+	FirstName *string `json:"first_name" binding:"omitempty,max=100"`
+	LastName  *string `json:"last_name" binding:"omitempty,max=100"`
+	// Email replaces the login email (trimmed and lower-cased). Changing it
+	// requires CurrentPassword; an email held by another user is 409
+	// DUPLICATE_EMAIL.
+	Email *string `json:"email" binding:"omitempty,email,max=254"`
+	// CurrentPassword confirms an email change. A wrong value is 400
+	// INVALID_CURRENT_PASSWORD and counts toward the login lockout.
+	CurrentPassword string `json:"current_password" binding:"max=1024"`
+	// Appearance is a partial update of the UI preferences (palette, mode,
+	// chart_style, density, show_cents). Only the keys sent change; unknown
+	// keys and values are rejected.
+	Appearance *services.AppearancePatch `json:"appearance"`
 }
 
 // optionalString distinguishes an absent JSON field (Set=false) from an
@@ -415,15 +475,17 @@ func (o *optionalString) UnmarshalJSON(data []byte) error {
 
 // UpdateProfileSettings updates the authenticated user's profile settings.
 // @Summary     Update profile settings
-// @Description Update the authenticated user's profile settings (dashboard balance visibility, default transaction account, base currency)
+// @Description Update the authenticated user's profile: name, email (needs current_password), dashboard balance visibility, default transaction account, base currency, appearance preferences (partial merge)
 // @Tags        user
 // @Accept      json
 // @Produce     json
 // @Security    BearerAuth
 // @Param       request body UpdateProfileSettingsRequest true "Profile settings to update"
 // @Success     200 {object} UserResponse "Updated user profile"
-// @Failure     400 {object} ErrorResponse "Invalid input"
+// @Failure     400 {object} ErrorResponse "Invalid input, or INVALID_CURRENT_PASSWORD"
 // @Failure     401 {object} ErrorResponse "Unauthorized"
+// @Failure     409 {object} ErrorResponse "DUPLICATE_EMAIL or BASE_CURRENCY_LOCKED"
+// @Failure     423 {object} ErrorResponse "ACCOUNT_LOCKED after too many wrong current passwords"
 // @Failure     500 {object} ErrorResponse "Server error"
 // @Router      /profile [patch]
 func (h *AuthHandler) UpdateProfileSettings(c *gin.Context) {
@@ -439,9 +501,10 @@ func (h *AuthHandler) UpdateProfileSettings(c *gin.Context) {
 		return
 	}
 
-	if req.HideBalances == nil && !req.DefaultAccountID.Set && req.BaseCurrency == nil {
+	if req.HideBalances == nil && !req.DefaultAccountID.Set && req.BaseCurrency == nil &&
+		req.FirstName == nil && req.LastName == nil && req.Email == nil && req.Appearance.IsEmpty() {
 		respondWithError(c, apperrors.WithMessage(apperrors.ErrInvalidInput,
-			"at least one of hide_balances, default_account_id or base_currency is required"))
+			"at least one of hide_balances, default_account_id, base_currency, first_name, last_name, email or appearance is required"))
 		return
 	}
 
@@ -449,6 +512,11 @@ func (h *AuthHandler) UpdateProfileSettings(c *gin.Context) {
 		HideBalances:      req.HideBalances,
 		SetDefaultAccount: req.DefaultAccountID.Set,
 		BaseCurrency:      req.BaseCurrency,
+		FirstName:         req.FirstName,
+		LastName:          req.LastName,
+		Email:             req.Email,
+		CurrentPassword:   req.CurrentPassword,
+		Appearance:        req.Appearance,
 	}
 	if req.DefaultAccountID.Set {
 		update.DefaultAccountID, err = optionalUUID(req.DefaultAccountID.Value, "default_account_id")
@@ -458,18 +526,18 @@ func (h *AuthHandler) UpdateProfileSettings(c *gin.Context) {
 		}
 	}
 
-	// The previous base currency goes into the audit entry.
-	oldBaseCurrency := ""
-	if update.BaseCurrency != nil {
-		before, err := h.userService.GetUserByID(userID)
-		if err != nil {
-			respondWithError(c, err)
-			return
-		}
-		oldBaseCurrency = before.BaseCurrency
+	// The previous values go into the audit entries.
+	before, err := h.userService.GetUserByID(userID)
+	if err != nil {
+		respondWithError(c, err)
+		return
 	}
 
 	if err := h.userService.UpdateProfileSettings(userID, update); err != nil {
+		if update.Email != nil && errors.Is(err, apperrors.ErrAccountLocked) {
+			h.auditService.Log(userID, "ACCOUNT_LOCKED", "user", userID, c.ClientIP(),
+				map[string]interface{}{"reason": "email_change_password"})
+		}
 		respondWithError(c, err)
 		return
 	}
@@ -481,12 +549,27 @@ func (h *AuthHandler) UpdateProfileSettings(c *gin.Context) {
 	if update.SetDefaultAccount {
 		changes["default_account_id"] = update.DefaultAccountID
 	}
+	if update.FirstName != nil {
+		changes["first_name"] = strings.TrimSpace(*update.FirstName)
+	}
+	if update.LastName != nil {
+		changes["last_name"] = strings.TrimSpace(*update.LastName)
+	}
+	if !req.Appearance.IsEmpty() {
+		changes["appearance"] = req.Appearance
+	}
 	if len(changes) > 0 {
 		h.auditService.Log(userID, "UPDATE_PROFILE", "user", userID, c.ClientIP(), changes)
 	}
 	if update.BaseCurrency != nil {
 		h.auditService.Log(userID, "UPDATE_BASE_CURRENCY", "user", userID, c.ClientIP(),
-			map[string]interface{}{"old": oldBaseCurrency, "new": strings.ToUpper(strings.TrimSpace(*update.BaseCurrency))})
+			map[string]interface{}{"old": before.BaseCurrency, "new": strings.ToUpper(strings.TrimSpace(*update.BaseCurrency))})
+	}
+	if update.Email != nil {
+		if newEmail := services.NormalizeEmail(*update.Email); newEmail != before.Email {
+			h.auditService.Log(userID, "UPDATE_EMAIL", "user", userID, c.ClientIP(),
+				map[string]interface{}{"old": before.Email, "new": newEmail})
+		}
 	}
 
 	user, err := h.userService.GetUserByID(userID)
@@ -496,7 +579,7 @@ func (h *AuthHandler) UpdateProfileSettings(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"user": userPayload(user),
+		"user": h.userPayload(user),
 	})
 }
 
@@ -541,4 +624,199 @@ type ErrorDetail struct {
 // ErrorResponse represents an error response.
 type ErrorResponse struct {
 	Error ErrorDetail `json:"error"`
+}
+
+// ChangePasswordRequest is the POST /auth/password payload. NewPassword
+// follows the registration rules (8 to 72 bytes).
+type ChangePasswordRequest struct {
+	CurrentPassword string `json:"current_password" binding:"required,max=1024"`
+	NewPassword     string `json:"new_password" binding:"required,min=8,max=72"`
+}
+
+// RevokedSessionsResponse reports how many other device sessions were ended.
+type RevokedSessionsResponse struct {
+	RevokedSessions int64 `json:"revoked_sessions"`
+}
+
+// SessionResponse is one signed-in device in GET /auth/sessions.
+type SessionResponse struct {
+	ID        string    `json:"id"`
+	CreatedAt time.Time `json:"created_at"`
+	// LastSeenAt is the last token rotation, or CreatedAt before the first.
+	LastSeenAt time.Time `json:"last_seen_at"`
+	UserAgent  string    `json:"user_agent"`
+	IPAddress  string    `json:"ip_address"`
+	// Current is true for the session the request's access token belongs to.
+	Current bool `json:"current"`
+}
+
+// ChangePassword changes the authenticated user's password.
+// @Summary     Change password
+// @Description Verify the current password, set a new one and end every other device session (the current one stays signed in). Wrong current passwords count toward the login lockout.
+// @Tags        auth
+// @Accept      json
+// @Produce     json
+// @Security    BearerAuth
+// @Param       request body ChangePasswordRequest true "Current and new password"
+// @Success     200 {object} RevokedSessionsResponse "Password changed"
+// @Failure     400 {object} ErrorResponse "Invalid input, or INVALID_CURRENT_PASSWORD"
+// @Failure     401 {object} ErrorResponse "Unauthorized"
+// @Failure     423 {object} ErrorResponse "ACCOUNT_LOCKED"
+// @Failure     429 {object} ErrorResponse "Too many attempts"
+// @Failure     500 {object} ErrorResponse "Server error"
+// @Router      /auth/password [post]
+func (h *AuthHandler) ChangePassword(c *gin.Context) {
+	userID, err := getUserID(c)
+	if err != nil {
+		respondWithError(c, err)
+		return
+	}
+
+	var req ChangePasswordRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		respondWithError(c, apperrors.WithMessage(apperrors.ErrInvalidInput, err.Error()))
+		return
+	}
+
+	revoked, err := h.userService.ChangePassword(userID, req.CurrentPassword, req.NewPassword, h.currentSessionID(c, userID))
+	if err != nil {
+		if errors.Is(err, apperrors.ErrInvalidCurrentPassword) || errors.Is(err, apperrors.ErrAccountLocked) {
+			reason := "invalid_current_password"
+			if errors.Is(err, apperrors.ErrAccountLocked) {
+				reason = "account_locked"
+			}
+			h.auditService.Log(userID, "CHANGE_PASSWORD_FAILED", "user", userID, c.ClientIP(),
+				map[string]interface{}{"reason": reason})
+		}
+		respondWithError(c, err)
+		return
+	}
+
+	h.auditService.Log(userID, "CHANGE_PASSWORD", "user", userID, c.ClientIP(),
+		map[string]interface{}{"revoked_sessions": revoked})
+	c.JSON(http.StatusOK, RevokedSessionsResponse{RevokedSessions: revoked})
+}
+
+// ListSessions lists the user's signed-in devices.
+// @Summary     List device sessions
+// @Description List the authenticated user's live refresh sessions; current marks the one whose refresh cookie the request carries
+// @Tags        auth
+// @Produce     json
+// @Security    BearerAuth
+// @Success     200 {object} map[string][]SessionResponse "sessions"
+// @Failure     401 {object} ErrorResponse "Unauthorized"
+// @Failure     500 {object} ErrorResponse "Server error"
+// @Router      /auth/sessions [get]
+func (h *AuthHandler) ListSessions(c *gin.Context) {
+	userID, err := getUserID(c)
+	if err != nil {
+		respondWithError(c, err)
+		return
+	}
+
+	sessions, err := h.userService.ListRefreshSessions(userID)
+	if err != nil {
+		respondWithError(c, err)
+		return
+	}
+
+	currentID := h.currentSessionID(c, userID)
+	out := make([]SessionResponse, 0, len(sessions))
+	for i := range sessions {
+		session := &sessions[i]
+		lastSeen := session.CreatedAt
+		if session.RotatedAt != nil {
+			lastSeen = *session.RotatedAt
+		}
+		out = append(out, SessionResponse{
+			ID:         session.ID,
+			CreatedAt:  session.CreatedAt,
+			LastSeenAt: lastSeen,
+			UserAgent:  session.UserAgent,
+			IPAddress:  session.IPAddress,
+			Current:    currentID != "" && session.ID == currentID,
+		})
+	}
+	c.JSON(http.StatusOK, gin.H{"sessions": out})
+}
+
+// RevokeSession ends one other device's session.
+// @Summary     Revoke a device session
+// @Description End another device's refresh session. The current session cannot be revoked here; use logout.
+// @Tags        auth
+// @Produce     json
+// @Security    BearerAuth
+// @Param       id path string true "Session ID"
+// @Success     204 "Session revoked"
+// @Failure     400 {object} ErrorResponse "CURRENT_SESSION or invalid ID"
+// @Failure     401 {object} ErrorResponse "Unauthorized"
+// @Failure     404 {object} ErrorResponse "SESSION_NOT_FOUND"
+// @Failure     500 {object} ErrorResponse "Server error"
+// @Router      /auth/sessions/{id} [delete]
+func (h *AuthHandler) RevokeSession(c *gin.Context) {
+	userID, err := getUserID(c)
+	if err != nil {
+		respondWithError(c, err)
+		return
+	}
+
+	sessionID := c.Param("id")
+	if !uuid.IsValid(sessionID) {
+		respondWithError(c, apperrors.WithMessage(apperrors.ErrInvalidInput, "Invalid session ID format"))
+		return
+	}
+
+	if err := h.userService.RevokeRefreshSessionByID(userID, sessionID, h.currentSessionID(c, userID)); err != nil {
+		respondWithError(c, err)
+		return
+	}
+
+	h.auditService.Log(userID, "REVOKE_SESSION", "refresh_session", sessionID, c.ClientIP(), nil)
+	c.Status(http.StatusNoContent)
+}
+
+// RevokeOtherSessions ends every device session except the current one.
+// @Summary     Revoke all other device sessions
+// @Description End every refresh session of the user except the one making the request
+// @Tags        auth
+// @Produce     json
+// @Security    BearerAuth
+// @Success     200 {object} RevokedSessionsResponse "Other sessions revoked"
+// @Failure     400 {object} ErrorResponse "Current session unknown (no refresh cookie sent)"
+// @Failure     401 {object} ErrorResponse "Unauthorized"
+// @Failure     500 {object} ErrorResponse "Server error"
+// @Router      /auth/sessions/revoke-others [post]
+func (h *AuthHandler) RevokeOtherSessions(c *gin.Context) {
+	userID, err := getUserID(c)
+	if err != nil {
+		respondWithError(c, err)
+		return
+	}
+
+	revoked, err := h.userService.RevokeOtherRefreshSessions(userID, h.currentSessionID(c, userID))
+	if err != nil {
+		respondWithError(c, err)
+		return
+	}
+
+	h.auditService.Log(userID, "REVOKE_OTHER_SESSIONS", "user", userID, c.ClientIP(),
+		map[string]interface{}{"revoked_sessions": revoked})
+	c.JSON(http.StatusOK, RevokedSessionsResponse{RevokedSessions: revoked})
+}
+
+// currentSessionID resolves the caller's device session from the
+// kuberan_refresh cookie (the browser sends it to every /auth route): the
+// session whose current or just-rotated-out token hash matches. It returns ""
+// when there is no cookie or no live session matches, e.g. for bot tokens and
+// non-browser clients.
+func (h *AuthHandler) currentSessionID(c *gin.Context, userID string) string {
+	token, err := c.Cookie(RefreshCookieName)
+	if err != nil || token == "" {
+		return ""
+	}
+	id, err := h.userService.FindRefreshSessionID(userID, middleware.HashToken(token))
+	if err != nil {
+		return ""
+	}
+	return id
 }

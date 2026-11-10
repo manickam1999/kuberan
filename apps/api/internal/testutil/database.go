@@ -24,6 +24,7 @@ var allModels = []interface{}{
 	&models.SecurityPrice{},
 	&models.FXRate{},
 	&models.PortfolioSnapshot{},
+	&models.AccountBalanceSnapshot{},
 	&models.AuditLog{},
 	&models.TelegramLink{},
 	&models.OAuthClientGrant{},
@@ -35,6 +36,9 @@ var allModels = []interface{}{
 	&models.FixedDepositDetails{},
 	&models.Receivable{},
 	&models.ReceivableSettlement{},
+	&models.BackupRun{},
+	&models.Reminder{},
+	&models.DemoRow{},
 }
 
 // SetupTestDB creates an in-memory SQLite database with all models migrated.

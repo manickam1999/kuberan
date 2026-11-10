@@ -35,23 +35,53 @@ const badgeVariants = cva(
   }
 )
 
+/**
+ * Chip look (prototype `.chip`): 22px pill with a soft tinted fill.
+ * Tones: pos | neg | warn | accent | neutral.
+ */
+const chipVariants = cva(
+  "inline-flex h-[22px] w-fit shrink-0 items-center gap-1 rounded-full px-2 text-[11.5px] font-medium whitespace-nowrap [&>svg]:pointer-events-none [&>svg]:size-3",
+  {
+    variants: {
+      tone: {
+        neutral: "bg-muted text-muted-foreground",
+        pos: "bg-positive-muted text-positive-text",
+        neg: "bg-negative-muted text-negative",
+        warn: "bg-warning-muted text-warning-text",
+        accent: "bg-accent text-primary",
+      },
+    },
+    defaultVariants: { tone: "neutral" },
+  }
+)
+
+type ChipTone = NonNullable<VariantProps<typeof chipVariants>["tone"]>
+
 function Badge({
   className,
   variant = "default",
+  tone,
   asChild = false,
   ...props
 }: React.ComponentProps<"span"> &
-  VariantProps<typeof badgeVariants> & { asChild?: boolean }) {
+  VariantProps<typeof badgeVariants> & {
+    asChild?: boolean
+    /** Render as a chip with this tone; takes precedence over `variant`. */
+    tone?: ChipTone
+  }) {
   const Comp = asChild ? Slot.Root : "span"
 
   return (
     <Comp
       data-slot="badge"
-      data-variant={variant}
-      className={cn(badgeVariants({ variant }), className)}
+      data-variant={tone ? `chip-${tone}` : variant}
+      className={cn(
+        tone ? chipVariants({ tone }) : badgeVariants({ variant }),
+        className
+      )}
       {...props}
     />
   )
 }
 
-export { Badge, badgeVariants }
+export { Badge, badgeVariants, chipVariants, type ChipTone }

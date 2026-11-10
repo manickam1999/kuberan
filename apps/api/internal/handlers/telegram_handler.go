@@ -36,12 +36,11 @@ type CompleteLinkRequest struct {
 
 // GetLink retrieves the user's Telegram link status
 // @Summary     Get Telegram link status
-// @Description Get the current Telegram link for the authenticated user
+// @Description Get the current Telegram link for the authenticated user; "link" is null when none exists
 // @Tags        telegram
 // @Accept      json
 // @Produce     json
 // @Success     200 {object} object "Link information"
-// @Failure     404 {object} ErrorResponse "Not found"
 // @Failure     401 {object} ErrorResponse "Unauthorized"
 // @Router      /telegram/link [get]
 // @Security    BearerAuth
@@ -54,6 +53,12 @@ func (h *TelegramHandler) GetLink(c *gin.Context) {
 
 	link, err := h.telegramService.GetLinkByUserID(userID)
 	if err != nil {
+		// Not linked is a normal state, not an error: answering 404 made every
+		// page that shows reminder status log a failed request in the browser.
+		if errors.Is(err, apperrors.ErrNotFound) {
+			c.JSON(http.StatusOK, gin.H{"link": nil})
+			return
+		}
 		respondWithError(c, err)
 		return
 	}
@@ -224,4 +229,48 @@ func (h *TelegramHandler) RecordActivity(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"message": "Activity recorded",
 	})
+}
+
+// UpdateReminderSettingsRequest switches reminder kinds on or off; omitted
+// fields keep their value.
+type UpdateReminderSettingsRequest struct {
+	CardDue    *bool `json:"card_due"`
+	LoanDue    *bool `json:"loan_due"`
+	FDMaturity *bool `json:"fd_maturity"`
+}
+
+// UpdateReminderSettings switches Telegram reminder kinds on or off.
+// @Summary     Update reminder settings
+// @Description Switch the card due, loan due and fixed-deposit maturity reminders on or off for the linked Telegram account
+// @Tags        telegram
+// @Accept      json
+// @Produce     json
+// @Param       request body UpdateReminderSettingsRequest true "Reminder switches"
+// @Success     200 {object} object "Updated link"
+// @Failure     400 {object} ErrorResponse "Invalid input"
+// @Failure     404 {object} ErrorResponse "No Telegram link"
+// @Failure     401 {object} ErrorResponse "Unauthorized"
+// @Router      /telegram/reminder-settings [put]
+// @Security    BearerAuth
+func (h *TelegramHandler) UpdateReminderSettings(c *gin.Context) {
+	userID, err := getUserID(c)
+	if err != nil {
+		respondWithError(c, err)
+		return
+	}
+	var req UpdateReminderSettingsRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		respondWithError(c, apperrors.WithMessage(apperrors.ErrInvalidInput, err.Error()))
+		return
+	}
+	link, err := h.telegramService.UpdateReminderSettings(userID, services.ReminderSettings{
+		CardDue: req.CardDue, LoanDue: req.LoanDue, FDMaturity: req.FDMaturity,
+	})
+	if err != nil {
+		respondWithError(c, err)
+		return
+	}
+	h.auditService.Log(userID, "UPDATE_REMINDER_SETTINGS", "telegram_link", link.ID, c.ClientIP(),
+		map[string]interface{}{"card_due": req.CardDue, "loan_due": req.LoanDue, "fd_maturity": req.FDMaturity})
+	c.JSON(http.StatusOK, gin.H{"link": link})
 }

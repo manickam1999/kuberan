@@ -48,6 +48,28 @@ type CreateCreditCardAccountRequest struct {
 	CreditLimit  int64   `json:"credit_limit" binding:"gte=0"`
 	InterestRate float64 `json:"interest_rate" binding:"gte=0,lte=100"`
 	DueDate      *string `json:"due_date"`
+	// DueDay (1-31) is the day of the month the statement falls due; it drives
+	// the Telegram reminder.
+	DueDay int `json:"due_day" binding:"gte=0,lte=31"`
+	// CurrentBalance is the amount already owed, in cents. When > 0 it is
+	// recorded as an opening_balance transaction. Currency defaults to the
+	// user's base currency when omitted.
+	CurrentBalance int64 `json:"current_balance" binding:"gte=0"`
+}
+
+// CreateDebtAccountRequest represents the request payload for creating a loan
+// (debt) account.
+type CreateDebtAccountRequest struct {
+	Name        string `json:"name" binding:"required,min=1,max=100"`
+	Description string `json:"description" binding:"max=500"`
+	// Currency defaults to the user's base currency.
+	Currency string `json:"currency" binding:"omitempty,iso4217"`
+	// AmountOwed (cents) is recorded as an opening_balance row, never inverted.
+	AmountOwed     int64   `json:"amount_owed" binding:"gte=0"`
+	InterestRate   float64 `json:"interest_rate" binding:"gte=0,lte=100"`
+	MonthlyPayment int64   `json:"monthly_payment" binding:"gte=0"`
+	// DueDay (1-31) is the day of the month the instalment falls due.
+	DueDay int `json:"due_day" binding:"gte=0,lte=31"`
 }
 
 // UpdateAccountRequest represents the request payload for updating an account.
@@ -62,6 +84,10 @@ type UpdateAccountRequest struct {
 	InterestRate  *float64 `json:"interest_rate" binding:"omitempty,gte=0,lte=100"`
 	DueDate       *string  `json:"due_date"`
 	CreditLimit   *int64   `json:"credit_limit" binding:"omitempty,gte=0"`
+	// DueDay (1-31) for credit cards and loans; 0 clears it.
+	DueDay *int `json:"due_day" binding:"omitempty,gte=0,lte=31"`
+	// MonthlyPayment (cents) for loans; 0 clears it.
+	MonthlyPayment *int64 `json:"monthly_payment" binding:"omitempty,gte=0"`
 
 	// Fixed deposit mutable fields (plan 020). Principal and start_date are
 	// immutable after creation and are intentionally absent here.
@@ -237,15 +263,16 @@ func (h *AccountHandler) CreateCreditCardAccount(c *gin.Context) {
 		dueDate = &parsed
 	}
 
-	account, err := h.accountService.CreateCreditCardAccount(
-		userID,
-		req.Name,
-		req.Description,
-		req.Currency,
-		req.CreditLimit,
-		req.InterestRate,
-		dueDate,
-	)
+	account, err := h.accountService.CreateCreditCardAccountWithParams(userID, services.CreateCreditCardParams{
+		Name:           req.Name,
+		Description:    req.Description,
+		Currency:       req.Currency,
+		CreditLimit:    req.CreditLimit,
+		InterestRate:   req.InterestRate,
+		DueDate:        dueDate,
+		DueDay:         req.DueDay,
+		CurrentBalance: req.CurrentBalance,
+	})
 	if err != nil {
 		respondWithError(c, err)
 		return
@@ -253,6 +280,52 @@ func (h *AccountHandler) CreateCreditCardAccount(c *gin.Context) {
 
 	h.auditService.Log(userID, "CREATE_ACCOUNT", "account", account.ID, c.ClientIP(),
 		map[string]interface{}{"name": req.Name, "type": "credit_card", "credit_limit": req.CreditLimit})
+
+	c.JSON(http.StatusCreated, gin.H{"account": account})
+}
+
+// CreateDebtAccount handles the creation of a new loan (debt) account.
+// @Summary     Create a loan account
+// @Description Create a loan (debt) account. The amount owed is recorded as an opening balance in one transaction.
+// @Tags        accounts
+// @Accept      json
+// @Produce     json
+// @Security    BearerAuth
+// @Param       request body CreateDebtAccountRequest true "Loan details"
+// @Success     201 {object} AccountResponse "Account created"
+// @Failure     400 {object} ErrorResponse "Invalid input"
+// @Failure     401 {object} ErrorResponse "Unauthorized"
+// @Failure     500 {object} ErrorResponse "Server error"
+// @Router      /accounts/debt [post]
+func (h *AccountHandler) CreateDebtAccount(c *gin.Context) {
+	userID, err := getUserID(c)
+	if err != nil {
+		respondWithError(c, err)
+		return
+	}
+
+	var req CreateDebtAccountRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		respondWithError(c, apperrors.WithMessage(apperrors.ErrInvalidInput, err.Error()))
+		return
+	}
+
+	account, err := h.accountService.CreateDebtAccount(userID, services.CreateDebtParams{
+		Name:           req.Name,
+		Description:    req.Description,
+		Currency:       req.Currency,
+		AmountOwed:     req.AmountOwed,
+		InterestRate:   req.InterestRate,
+		MonthlyPayment: req.MonthlyPayment,
+		DueDay:         req.DueDay,
+	})
+	if err != nil {
+		respondWithError(c, err)
+		return
+	}
+
+	h.auditService.Log(userID, "CREATE_ACCOUNT", "account", account.ID, c.ClientIP(),
+		map[string]interface{}{"name": req.Name, "type": "debt", "amount_owed": req.AmountOwed})
 
 	c.JSON(http.StatusCreated, gin.H{"account": account})
 }
@@ -266,6 +339,7 @@ func (h *AccountHandler) CreateCreditCardAccount(c *gin.Context) {
 // @Security    BearerAuth
 // @Param       page      query int false "Page number (default 1)"
 // @Param       page_size query int false "Items per page (default 20, max 100)"
+// @Param       include_inactive query bool false "Also list deactivated accounts"
 // @Success     200 {object} pagination.PageResponse[models.Account] "Paginated accounts"
 // @Failure     401 {object} ErrorResponse "Unauthorized"
 // @Failure     500 {object} ErrorResponse "Server error"
@@ -283,7 +357,17 @@ func (h *AccountHandler) GetUserAccounts(c *gin.Context) {
 		return
 	}
 
-	result, err := h.accountService.GetUserAccounts(userID, page)
+	var opts services.AccountListOptions
+	switch c.Query("include_inactive") {
+	case "", "false":
+	case "true":
+		opts.IncludeInactive = true
+	default:
+		respondWithError(c, apperrors.WithMessage(apperrors.ErrInvalidInput, "include_inactive must be true or false"))
+		return
+	}
+
+	result, err := h.accountService.GetUserAccounts(userID, page, opts)
 	if err != nil {
 		respondWithError(c, err)
 		return
@@ -319,7 +403,8 @@ func (h *AccountHandler) GetAccountByID(c *gin.Context) {
 		return
 	}
 
-	account, err := h.accountService.GetAccountByID(userID, accountID)
+	// Deactivated accounts stay reachable: the accounts list links to them.
+	account, err := h.accountService.GetAccountByIDIncludingInactive(userID, accountID)
 	if err != nil {
 		respondWithError(c, err)
 		return
@@ -376,6 +461,8 @@ func (h *AccountHandler) UpdateAccount(c *gin.Context) {
 		InterestRate:    req.InterestRate,
 		CreditLimit:     req.CreditLimit,
 		LinkedAccountID: req.LinkedAccountID,
+		DueDay:          req.DueDay,
+		MonthlyPayment:  req.MonthlyPayment,
 	}
 
 	if req.DueDate != nil && *req.DueDate != "" {

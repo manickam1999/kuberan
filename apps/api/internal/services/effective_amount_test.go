@@ -36,10 +36,10 @@ func newSharedFixture(t *testing.T, when time.Time) *sharedFixture {
 	account := testutil.CreateTestCashAccountWithBalance(t, db, user.ID, 1000000)
 	cat := testutil.CreateTestCategory(t, db, user.ID, models.CategoryTypeExpense)
 
-	shared, err := txSvc.CreateTransaction(user.ID, account.ID, &cat.ID, models.TransactionTypeExpense, 6000, "shared dinner", when)
+	shared, err := txSvc.CreateTransaction(user.ID, account.ID, &cat.ID, models.TransactionTypeExpense, 6000, "shared dinner", when, TransactionMeta{})
 	testutil.AssertNoError(t, err)
 	setPersonalAmount(t, db, shared.ID, 2000)
-	_, err = txSvc.CreateTransaction(user.ID, account.ID, &cat.ID, models.TransactionTypeExpense, 1000, "coffee", when.Add(time.Minute))
+	_, err = txSvc.CreateTransaction(user.ID, account.ID, &cat.ID, models.TransactionTypeExpense, 1000, "coffee", when.Add(time.Minute), TransactionMeta{})
 	testutil.AssertNoError(t, err)
 
 	return &sharedFixture{db: db, txSvc: txSvc, userID: user.ID, catID: cat.ID, sharedID: shared.ID, when: when}
@@ -138,9 +138,9 @@ func TestEffectiveAmount_TopExpenses(t *testing.T) {
 		// effective 2000): ordering by effective amount gives 2500, shared, 1500, 1000,
 		// whereas ordering by raw amount would put the shared expense first.
 		acct := testutil.CreateTestCashAccountWithBalance(t, f.db, f.userID, 100000)
-		big, err := f.txSvc.CreateTransaction(f.userID, acct.ID, &f.catID, models.TransactionTypeExpense, 2500, "big", from.Add(2*time.Hour))
+		big, err := f.txSvc.CreateTransaction(f.userID, acct.ID, &f.catID, models.TransactionTypeExpense, 2500, "big", from.Add(2*time.Hour), TransactionMeta{})
 		testutil.AssertNoError(t, err)
-		mid, err := f.txSvc.CreateTransaction(f.userID, acct.ID, &f.catID, models.TransactionTypeExpense, 1500, "mid", from.Add(3*time.Hour))
+		mid, err := f.txSvc.CreateTransaction(f.userID, acct.ID, &f.catID, models.TransactionTypeExpense, 1500, "mid", from.Add(3*time.Hour), TransactionMeta{})
 		testutil.AssertNoError(t, err)
 
 		res, err := f.txSvc.GetTopExpenses(f.userID, from, to, 10, nil)
@@ -201,7 +201,7 @@ func TestEffectiveAmount_BudgetProgress(t *testing.T) {
 	now := time.Now()
 	when := time.Date(now.Year(), now.Month(), 1, 12, 0, 0, 0, now.Location())
 
-	shared, err := txSvc.CreateTransaction(user.ID, account.ID, &cat.ID, models.TransactionTypeExpense, 6000, "dinner", when)
+	shared, err := txSvc.CreateTransaction(user.ID, account.ID, &cat.ID, models.TransactionTypeExpense, 6000, "dinner", when, TransactionMeta{})
 	testutil.AssertNoError(t, err)
 	setPersonalAmount(t, db, shared.ID, 2000)
 

@@ -53,6 +53,43 @@ export function useSetDefaultAccount() {
   });
 }
 
+/**
+ * Saves the user's name and/or email (`PATCH /profile`). Changing the email
+ * needs `current_password`; errors surface as `ApiClientError` codes
+ * `INVALID_CURRENT_PASSWORD` (400), `DUPLICATE_EMAIL` (409) or `ACCOUNT_LOCKED`
+ * (423).
+ */
+export function useUpdateProfile() {
+  const queryClient = useQueryClient();
+  const { patchUser } = useAuth();
+
+  return useMutation({
+    mutationFn: async (
+      body: Pick<
+        UpdateProfileSettingsRequest,
+        "first_name" | "last_name" | "email" | "current_password"
+      >
+    ) => {
+      const res = await apiClient.patch<ProfileResponse>(
+        "/api/v1/profile",
+        body
+      );
+      return res.user;
+    },
+    onSuccess: (user) => {
+      const fields = {
+        first_name: user.first_name,
+        last_name: user.last_name,
+        email: user.email,
+      };
+      patchUser(fields);
+      queryClient.setQueryData<User>(profileKeys.all, (prev) =>
+        prev ? { ...prev, ...fields } : user
+      );
+    },
+  });
+}
+
 /** Fallback reporting currency while the profile loads. */
 export const DEFAULT_BASE_CURRENCY = "MYR";
 

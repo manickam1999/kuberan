@@ -133,3 +133,31 @@ func TestEmailBodyKey_PreservesBody(t *testing.T) {
 		t.Errorf("unparseable body gets no key, got %d", code)
 	}
 }
+
+func TestUserIDKey(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	if got := UserIDKey(c); got != "" {
+		t.Errorf("no user should give no key, got %q", got)
+	}
+	c.Set("userID", "u-1")
+	if got := UserIDKey(c); got != "user:u-1" {
+		t.Errorf("UserIDKey = %q", got)
+	}
+
+	// One request per minute per user: a second is limited, another user is not.
+	r := gin.New()
+	r.Use(func(c *gin.Context) { c.Set("userID", c.GetHeader("X-User")) })
+	r.Use(RateLimit(NewRateLimiter(1, time.Minute), UserIDKey))
+	r.GET("/", func(c *gin.Context) { c.Status(http.StatusOK) })
+	do := func(user string) int {
+		req := httptest.NewRequest("GET", "/", http.NoBody)
+		req.Header.Set("X-User", user)
+		rec := httptest.NewRecorder()
+		r.ServeHTTP(rec, req)
+		return rec.Code
+	}
+	if do("a") != http.StatusOK || do("a") != http.StatusTooManyRequests || do("b") != http.StatusOK {
+		t.Error("UserIDKey limiter should be independent per user")
+	}
+}

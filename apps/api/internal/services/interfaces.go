@@ -13,7 +13,7 @@ import (
 
 // UserServicer defines the contract for user-related business logic.
 type UserServicer interface {
-	CreateUser(email, password, firstName, lastName string) (*models.User, error)
+	CreateUser(email, password, firstName, lastName string, opts ...CreateUserOption) (*models.User, error)
 	GetUserByEmail(email string) (*models.User, error)
 	GetUserByID(id string) (*models.User, error)
 	VerifyPassword(user *models.User, password string) bool
@@ -21,6 +21,11 @@ type UserServicer interface {
 	CreateRefreshSession(userID, tokenHash, userAgent, ipAddress string, expiresAt time.Time) error
 	RotateRefreshSession(userID, oldHash, newHash string, expiresAt time.Time) error
 	RevokeRefreshSession(userID, tokenHash string) error
+	FindRefreshSessionID(userID, tokenHash string) (string, error)
+	ListRefreshSessions(userID string) ([]models.RefreshSession, error)
+	RevokeRefreshSessionByID(userID, sessionID, currentSessionID string) error
+	RevokeOtherRefreshSessions(userID, currentSessionID string) (int64, error)
+	ChangePassword(userID, currentPassword, newPassword, keepSessionID string) (revoked int64, err error)
 	UpdateProfileSettings(userID string, update ProfileSettingsUpdate) error
 }
 
@@ -42,6 +47,17 @@ type TelegramServicer interface {
 	RecordActivity(telegramUserID int64) error
 	IsLinked(userID string) (bool, error)
 	GetUserWithAuthToken(telegramUserID int64) (*TelegramUserAuth, error)
+	// UpdateReminderSettings switches the reminder kinds on or off for the
+	// user's link; nil fields are left unchanged (plan 023, 5.6).
+	UpdateReminderSettings(userID string, settings ReminderSettings) (*models.TelegramLink, error)
+}
+
+// ReminderSettings holds the optional per-kind reminder switches of a Telegram
+// link. A nil field means "don't change".
+type ReminderSettings struct {
+	CardDue    *bool
+	LoanDue    *bool
+	FDMaturity *bool
 }
 
 // RecordConsentInput holds the outcome of one consent decision (plan 022).
@@ -55,6 +71,9 @@ type RecordConsentInput struct {
 	Reviewed []string
 	// AutoAccept is the "remember this application" choice.
 	AutoAccept bool
+	// ClientHost is the host the authorization code is sent to ("" if unknown;
+	// an empty value keeps the host already recorded).
+	ClientHost string
 }
 
 // OAuthGrantServicer manages per-user, per-scope OAuth consent grants
@@ -79,6 +98,16 @@ type OAuthGrantServicer interface {
 	// RevokeAll marks every active grant of the user revoked (used when the
 	// user is deactivated) and returns how many were revoked.
 	RevokeAll(userID string) (int64, error)
+	// IsActive reports whether the user holds a non-revoked grant for clientID.
+	// A missing grant is not active. The MCP server uses it to refuse reads
+	// from disconnected (or never-granted) clients.
+	IsActive(userID, clientID string) (bool, error)
+	// Touch records that clientID was just used by the user (reads included).
+	// It is throttled to one UPDATE per lastUsedInterval, in process and in SQL.
+	Touch(userID, clientID string) error
+	// SetClientHost records the host the client's authorization code goes to.
+	// An empty host or a missing grant is a no-op.
+	SetClientHost(userID, clientID, host string) error
 }
 
 // AccountUpdateFields holds optional fields for updating an account.
@@ -94,6 +123,12 @@ type AccountUpdateFields struct {
 	DueDate       *time.Time // credit_card only
 	CreditLimit   *int64     // credit_card only
 
+	// DueDay (1-31) is the day of the month a credit card or loan falls due;
+	// 0 clears it. MonthlyPayment (cents) is the loan instalment; debt only,
+	// 0 clears it (plan 023, 5.3).
+	DueDay         *int
+	MonthlyPayment *int64
+
 	// Fixed deposit mutable fields (plan 020, B4). Principal and StartDate are
 	// immutable after creation and are intentionally absent here.
 	MaturityDate    *time.Time              // fixed_deposit only
@@ -101,6 +136,34 @@ type AccountUpdateFields struct {
 	PayoutFrequency *models.PayoutFrequency // fixed_deposit only; required when PayoutType=periodic
 	LinkedAccountID *string                 // fixed_deposit only; pointer-to-nil clears the field
 	Compounding     *models.Compounding     // fixed_deposit only
+}
+
+// CreateCreditCardParams holds the parameters for opening a credit card account.
+type CreateCreditCardParams struct {
+	Name         string
+	Description  string
+	Currency     string // defaults to the user's base currency
+	CreditLimit  int64
+	InterestRate float64
+	DueDate      *time.Time
+	// DueDay (1-31), 0 for none: the day of the month the statement falls due.
+	DueDay int
+	// CurrentBalance is the amount already owed, in cents (>= 0).
+	CurrentBalance int64
+}
+
+// CreateDebtParams holds the parameters for creating a loan (debt) account.
+type CreateDebtParams struct {
+	Name        string
+	Description string
+	Currency    string // defaults to the user's base currency
+	// AmountOwed (cents, >= 0) is recorded as an opening_balance row.
+	AmountOwed   int64
+	InterestRate float64
+	// MonthlyPayment (cents, >= 0), 0 for none.
+	MonthlyPayment int64
+	// DueDay (1-31), 0 for none.
+	DueDay int
 }
 
 // CreateFixedDepositParams holds the parameters for opening a new fixed deposit account.
@@ -150,15 +213,23 @@ type CloseFixedDepositParams struct {
 type AccountServicer interface {
 	CreateCashAccount(userID, name, description, currency string, initialBalance int64) (*models.Account, error)
 	CreateInvestmentAccount(userID, name, description, currency, broker, accountNumber string) (*models.Account, error)
-	CreateCreditCardAccount(userID, name, description, currency string, creditLimit int64, interestRate float64, dueDate *time.Time) (*models.Account, error)
+	CreateCreditCardAccount(userID, name, description, currency string, creditLimit int64, interestRate float64, dueDate *time.Time, currentBalance int64) (*models.Account, error)
+	// CreateCreditCardAccountWithParams is CreateCreditCardAccount with the
+	// recurring due day (plan 023, 5.3 / 5.6).
+	CreateCreditCardAccountWithParams(userID string, params CreateCreditCardParams) (*models.Account, error)
+	// CreateDebtAccount creates a loan: the amount owed is an opening_balance
+	// row (never inverted), in one database transaction (plan 023, 5.3).
+	CreateDebtAccount(userID string, params CreateDebtParams) (*models.Account, error)
 	// CreateFixedDepositAccount opens a new fixed deposit, transferring principal from a
 	// source cash account atomically (plan 020, B4).
 	CreateFixedDepositAccount(userID string, params CreateFixedDepositParams) (*models.Account, error)
 	// CloseFixedDeposit realizes a fixed deposit — returning principal and posting net
 	// interest as income — and marks the deposit closed (plan 020, B4).
 	CloseFixedDeposit(userID, accountID string, params CloseFixedDepositParams) (*models.Account, error)
-	GetUserAccounts(userID string, page pagination.PageRequest) (*pagination.PageResponse[models.Account], error)
+	GetUserAccounts(userID string, page pagination.PageRequest, opts ...AccountListOptions) (*pagination.PageResponse[models.Account], error)
 	GetAccountByID(userID, accountID string) (*models.Account, error)
+	// GetAccountByIDIncludingInactive also returns deactivated accounts (reads and reactivation).
+	GetAccountByIDIncludingInactive(userID, accountID string) (*models.Account, error)
 	UpdateAccount(userID, accountID string, updates AccountUpdateFields) (*models.Account, error)
 	// ApplyBalanceDelta applies a transaction's balance effect with a relative
 	// update (balance = balance + delta) on accountID, whose type the caller
@@ -191,6 +262,16 @@ type TransactionUpdateFields struct {
 	Amount      *int64
 	Description *string
 	Date        *time.Time
+	Notes       *string
+}
+
+// TransactionMeta carries the provenance of a new transaction: free-text notes
+// and where the row came from. An empty Source is stored as "web".
+// SourceClientID is the OAuth client id for source "mcp".
+type TransactionMeta struct {
+	Notes          string
+	Source         models.TransactionSource
+	SourceClientID string
 }
 
 // TransactionFilter holds optional filter parameters for listing transactions.
@@ -202,6 +283,13 @@ type TransactionFilter struct {
 	MinAmount  *int64
 	MaxAmount  *int64
 	AccountID  *string
+	// Search matches description or notes (case-insensitive substring) and, when
+	// it parses as an amount such as "64.73", the amount in cents.
+	Search *string
+	// Shared keeps only rows that have (true) or lack (false) receivables.
+	Shared *bool
+	// HasAttachment keeps only rows that have (true) or lack (false) receipts.
+	HasAttachment *bool
 }
 
 // SpendingByCategoryItem represents spending total for a single category.
@@ -320,13 +408,17 @@ type TopExpenses struct {
 
 // TransactionServicer defines the contract for transaction-related business logic.
 type TransactionServicer interface {
-	CreateTransaction(userID, accountID string, categoryID *string, transactionType models.TransactionType, amount int64, description string, date time.Time) (*models.Transaction, error)
-	CreateTransfer(userID, fromAccountID, toAccountID string, amount int64, toAmount *int64, description string, date time.Time) (*models.Transaction, error)
+	CreateTransaction(userID, accountID string, categoryID *string, transactionType models.TransactionType, amount int64, description string, date time.Time, meta TransactionMeta) (*models.Transaction, error)
+	CreateTransfer(userID, fromAccountID, toAccountID string, amount int64, toAmount *int64, description string, date time.Time, meta TransactionMeta) (*models.Transaction, error)
 	GetAccountTransactions(userID, accountID string, page pagination.PageRequest, filter TransactionFilter) (*pagination.PageResponse[models.Transaction], error)
 	GetUserTransactions(userID string, page pagination.PageRequest, filter TransactionFilter) (*pagination.PageResponse[models.Transaction], error)
 	GetTransactionByID(userID, transactionID string) (*models.Transaction, error)
 	UpdateTransaction(userID, transactionID string, updates TransactionUpdateFields) (*models.Transaction, error)
 	DeleteTransaction(userID, transactionID string) error
+	BulkUpdateTransactions(userID string, in BulkTransactionInput) (*BulkTransactionResult, error)
+	// SuggestCategory proposes a category for a new income/expense from the user's
+	// rules, then from their history; nil when nothing applies.
+	SuggestCategory(userID string, in CategorySuggestionInput) (*CategorySuggestion, error)
 	GetSpendingByCategory(userID string, from, to time.Time) (*SpendingByCategory, error)
 	GetCashflow(userID string, from, to time.Time) (*Cashflow, error)
 	GetMonthlySummary(userID string, months int) ([]MonthlySummaryItem, error)
@@ -416,6 +508,8 @@ type RuleServicer interface {
 	// ResolveForUser loads the user's active rules and returns the category the
 	// input transaction should receive (if any). Used by transaction creation.
 	ResolveForUser(userID string, in RuleInput) (RuleResult, error)
+	// SuggestRules proposes rules from repeated categorizations no rule covers.
+	SuggestRules(userID string) ([]RuleSuggestion, error)
 }
 
 // BudgetProgress contains spending vs budget data for a budget's current period.
@@ -589,6 +683,9 @@ const (
 	FXPathInverse = "inverse"
 	// FXPathPivotUSD is the product of two legs through USD.
 	FXPathPivotUSD = "pivot:USD"
+	// FXPathPivotPrefix starts the path of a quote crossed through a user's base
+	// currency, e.g. "pivot:MYR" for USD→SGD from USD→MYR and SGD→MYR.
+	FXPathPivotPrefix = "pivot:"
 )
 
 // FXQuote is an exchange rate resolved for a point in time.
@@ -716,9 +813,40 @@ type ImportServicer interface {
 	ImportIBKR(userID string, p IBKRImportParams, files []io.Reader) (*IBKRImportReport, error)
 }
 
+// CSVImportServicer defines the contract for bank-statement CSV imports (plan 023 5.8).
+type CSVImportServicer interface {
+	// ImportCSV inspects a CSV upload and, given a mapping, plans the import of
+	// its rows into one account. A dry run (p.Apply false) writes nothing; apply
+	// writes the new rows in one DB transaction. The file is only read in memory.
+	ImportCSV(userID string, p CSVImportParams, file io.Reader) (*CSVImportReport, error)
+}
+
+// DemoServicer defines the contract for the sample household (plan 023 5.7).
+type DemoServicer interface {
+	// Load creates the sample household and lists every row in demo_rows. It
+	// fails with DEMO_ALREADY_LOADED when it is present and DEMO_HAS_DATA when
+	// the user has transactions of their own.
+	Load(userID string) (*DemoResult, error)
+	// Remove hard-deletes exactly the listed sample rows in one transaction. It
+	// fails with DEMO_IN_USE when the user's own rows refer to sample accounts.
+	Remove(userID string) (*DemoResult, error)
+	// IsLoaded reports whether the user has sample rows.
+	IsLoaded(userID string) (bool, error)
+}
+
 // AuditServicer defines the contract for audit logging.
 type AuditServicer interface {
-	Log(userID, action, resourceType, resourceID, ipAddress string, changes map[string]interface{})
+	// Log records an event. Without opts the row's source is "web".
+	Log(userID, action, resourceType, resourceID, ipAddress string, changes map[string]interface{}, opts ...LogOpts)
+}
+
+// LogOpts carries optional provenance for an audit row. The zero value (and
+// omitting it) records a "web" event with no client.
+type LogOpts struct {
+	// Source is where the event came from: "web" (default) or "mcp".
+	Source string
+	// ClientID is the OAuth client behind an "mcp" event.
+	ClientID string
 }
 
 // AttachmentLimits holds the per-request caps enforced by the attachment
@@ -779,6 +907,7 @@ type CreateSharedExpenseInput struct {
 	Kind           models.ReceivableKind
 	Mode           ShareMode
 	Counterparties []SharedCounterpartyInput
+	Meta           TransactionMeta
 }
 
 // ReceivableShareInput is one entry of the D7 receivables diff. A non-nil ID

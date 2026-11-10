@@ -33,7 +33,7 @@ type recordingAudit struct {
 	entries []auditEntry
 }
 
-func (a *recordingAudit) Log(userID, action, resourceType, resourceID, _ string, changes map[string]interface{}) {
+func (a *recordingAudit) Log(userID, action, resourceType, resourceID, _ string, changes map[string]interface{}, _ ...services.LogOpts) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.entries = append(a.entries, auditEntry{userID, action, resourceType, resourceID, changes})

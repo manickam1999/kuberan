@@ -114,11 +114,11 @@ func TestListTransactionsCrossCurrencyTransfer(t *testing.T) {
 	from := e.account(t, "Checking", "MYR", 1_000_000)
 	to := e.account(t, "Brokerage cash", "USD", 0)
 	toAmount := int64(110_000)
-	if _, err := e.s.services.Transactions.CreateTransfer(e.user.ID, from.ID, to.ID, 446_000, &toAmount, "Fund", time.Now()); err != nil {
+	if _, err := e.s.services.Transactions.CreateTransfer(e.user.ID, from.ID, to.ID, 446_000, &toAmount, "Fund", time.Now(), services.TransactionMeta{}); err != nil {
 		t.Fatal(err)
 	}
 	groceries := e.account(t, "Wallet", "MYR", 0)
-	if _, err := e.s.services.Transactions.CreateTransaction(e.user.ID, groceries.ID, nil, models.TransactionTypeExpense, 1_250, "Groceries", time.Now().Add(-time.Hour)); err != nil {
+	if _, err := e.s.services.Transactions.CreateTransaction(e.user.ID, groceries.ID, nil, models.TransactionTypeExpense, 1_250, "Groceries", time.Now().Add(-time.Hour), services.TransactionMeta{}); err != nil {
 		t.Fatal(err)
 	}
 

@@ -15,5 +15,9 @@ type TelegramLink struct {
 	IsActive          bool       `gorm:"default:false" json:"is_active"`
 	LastMessageAt     *time.Time `json:"last_message_at,omitempty"`
 	MessageCount      int64      `gorm:"default:0" json:"message_count"`
-	User              User       `gorm:"foreignKey:UserID" json:"user,omitempty"`
+	// Per-kind reminder switches (plan 023, 5.6), editable in Settings -> Telegram.
+	RemindCardDue    bool `gorm:"not null;default:true" json:"remind_card_due"`
+	RemindLoanDue    bool `gorm:"not null;default:true" json:"remind_loan_due"`
+	RemindFDMaturity bool `gorm:"column:remind_fd_maturity;not null;default:true" json:"remind_fd_maturity"`
+	User             User `gorm:"foreignKey:UserID" json:"user,omitempty"`
 }

@@ -304,3 +304,24 @@ func TestCategoryDeleteDeactivatesRules(t *testing.T) {
 		t.Error("expected rule targeting a deleted category to be deactivated")
 	}
 }
+
+func TestRuleService_CreatePaused(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	defer testutil.TeardownTestDB(t, db)
+	catSvc := NewCategoryService(db)
+	ruleSvc := NewRuleService(db, catSvc)
+	user := testutil.CreateTestUser(t, db)
+	cat := testutil.CreateTestCategory(t, db, user.ID, models.CategoryTypeExpense)
+
+	paused := false
+	rule, err := ruleSvc.CreateRule(user.ID, CreateRuleInput{
+		Name:       "Paused",
+		IsActive:   &paused,
+		Conditions: []RuleConditionInput{descContains("grab")},
+		Actions:    []RuleActionInput{setCat(cat.ID)},
+	})
+	testutil.AssertNoError(t, err)
+	if rule.IsActive {
+		t.Error("a rule created with is_active=false must be stored paused")
+	}
+}

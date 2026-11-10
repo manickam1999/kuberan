@@ -87,8 +87,37 @@ func dummyPasswordHash() []byte {
 	return dummyHash
 }
 
+// CreateUserOption configures optional settings of CreateUser.
+type CreateUserOption func(*createUserOptions)
+
+type createUserOptions struct {
+	baseCurrency string
+}
+
+// WithBaseCurrency sets the new user's reporting currency. It is checked like
+// a PATCH /profile base_currency change (ErrUnsupportedCurrency when it is not
+// usable). An empty code keeps the column default.
+func WithBaseCurrency(code string) CreateUserOption {
+	return func(o *createUserOptions) { o.baseCurrency = code }
+}
+
+// checkBaseCurrencySupported reports ErrUnsupportedCurrency unless code (already
+// normalised) is a currency that can be a base currency. Shared by sign-up and
+// PATCH /profile so both use one rule.
+func (s *userService) checkBaseCurrencySupported(code string) error {
+	if !isCurrencyCode(code) || !s.fx.IsSupportedCurrency(code, time.Now()) {
+		return apperrors.ErrUnsupportedCurrency
+	}
+	return nil
+}
+
 // CreateUser registers a new user
-func (s *userService) CreateUser(email, password, firstName, lastName string) (*models.User, error) {
+func (s *userService) CreateUser(email, password, firstName, lastName string, opts ...CreateUserOption) (*models.User, error) {
+	var o createUserOptions
+	for _, opt := range opts {
+		opt(&o)
+	}
+	baseCurrency := normalizeCode(o.baseCurrency)
 	email = NormalizeEmail(email)
 	// Validate input
 	if email == "" || password == "" {
@@ -96,6 +125,11 @@ func (s *userService) CreateUser(email, password, firstName, lastName string) (*
 	}
 	if err := ValidatePassword(password); err != nil {
 		return nil, err
+	}
+	if baseCurrency != "" {
+		if err := s.checkBaseCurrencySupported(baseCurrency); err != nil {
+			return nil, err
+		}
 	}
 
 	// Check if user with email exists. Unscoped: the unique index on email
@@ -121,6 +155,9 @@ func (s *userService) CreateUser(email, password, firstName, lastName string) (*
 		FirstName: firstName,
 		LastName:  lastName,
 		IsActive:  true,
+	}
+	if baseCurrency != "" {
+		user.BaseCurrency = baseCurrency
 	}
 
 	if err := s.db.Create(user).Error; err != nil {
@@ -259,9 +296,9 @@ func (s *userService) recordFailedLogin(userID string, now time.Time) (lockoutTr
 }
 
 // CreateRefreshSession starts a new per-device refresh session holding the
-// hash of its first refresh token. Expired sessions for the user are pruned,
-// and the oldest are dropped beyond maxRefreshSessionsPerUser, so the table
-// stays bounded even if clients never log out.
+// hash of its first refresh token. Expired sessions for the user are pruned, and the oldest are dropped
+// beyond maxRefreshSessionsPerUser, so the table stays bounded even if clients
+// never log out.
 func (s *userService) CreateRefreshSession(userID, tokenHash, userAgent, ipAddress string, expiresAt time.Time) error {
 	err := s.db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Unscoped().Where("user_id = ? AND expires_at <= ?", userID, time.Now()).
@@ -297,12 +334,11 @@ func (s *userService) CreateRefreshSession(userID, tokenHash, userAgent, ipAddre
 }
 
 // RotateRefreshSession swaps oldHash for newHash in the user's session that
-// holds it and extends the session to expiresAt. oldHash is accepted if it is
-// the session's current token, or the token rotated out less than
-// refreshRotationGrace ago (two tabs refreshing at once, or a lost response).
-// Each branch is a single conditional UPDATE, so concurrent rotations of the
-// same token cannot both win the current-token branch. Returns ErrUnauthorized
-// when no live session matches.
+// holds it and extends the session to expiresAt. oldHash is accepted if it is the session's current token, or the token
+// rotated out less than refreshRotationGrace ago (two tabs refreshing at once,
+// or a lost response). Each branch is a single conditional UPDATE, so
+// concurrent rotations of the same token cannot both win the current-token
+// branch. Returns ErrUnauthorized when no live session matches.
 func (s *userService) RotateRefreshSession(userID, oldHash, newHash string, expiresAt time.Time) error {
 	now := time.Now()
 
@@ -317,26 +353,158 @@ func (s *userService) RotateRefreshSession(userID, oldHash, newHash string, expi
 	if res.Error != nil {
 		return apperrors.Wrap(apperrors.ErrInternalServer, res.Error)
 	}
-	if res.RowsAffected == 1 {
-		return nil
+	if res.RowsAffected == 0 {
+		// Grace path: keep previous_token_hash as is so the window is measured
+		// from the first rotation and cannot be extended by replaying the token.
+		res = s.db.Model(&models.RefreshSession{}).
+			Where("user_id = ? AND previous_token_hash = ? AND rotated_at > ? AND expires_at > ?",
+				userID, oldHash, now.Add(-refreshRotationGrace), now).
+			Updates(map[string]interface{}{
+				"token_hash": newHash,
+				"expires_at": expiresAt,
+			})
+		if res.Error != nil {
+			return apperrors.Wrap(apperrors.ErrInternalServer, res.Error)
+		}
+	}
+	if res.RowsAffected != 1 {
+		return apperrors.ErrUnauthorized
 	}
 
-	// Grace path: keep previous_token_hash as is so the window is measured
-	// from the first rotation and cannot be extended by replaying the token.
-	res = s.db.Model(&models.RefreshSession{}).
-		Where("user_id = ? AND previous_token_hash = ? AND rotated_at > ? AND expires_at > ?",
-			userID, oldHash, now.Add(-refreshRotationGrace), now).
-		Updates(map[string]interface{}{
-			"token_hash": newHash,
-			"expires_at": expiresAt,
-		})
+	return nil
+}
+
+// FindRefreshSessionID returns the ID of the user's live session whose current
+// or just-rotated-out (grace window) token hash is tokenHash, or "" with
+// ErrSessionNotFound when none matches.
+func (s *userService) FindRefreshSessionID(userID, tokenHash string) (string, error) {
+	var session models.RefreshSession
+	err := s.db.Select("id").
+		Where("user_id = ? AND expires_at > ? AND (token_hash = ? OR (previous_token_hash = ? AND rotated_at > ?))",
+			userID, time.Now(), tokenHash, tokenHash, time.Now().Add(-refreshRotationGrace)).
+		First(&session).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return "", apperrors.ErrSessionNotFound
+	}
+	if err != nil {
+		return "", apperrors.Wrap(apperrors.ErrInternalServer, err)
+	}
+	return session.ID, nil
+}
+
+// ListRefreshSessions returns the user's live device sessions (not revoked, not
+// expired), most recently active first.
+func (s *userService) ListRefreshSessions(userID string) ([]models.RefreshSession, error) {
+	var sessions []models.RefreshSession
+	if err := s.db.Where("user_id = ? AND expires_at > ?", userID, time.Now()).
+		Order("COALESCE(rotated_at, created_at) DESC").Find(&sessions).Error; err != nil {
+		return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)
+	}
+	return sessions, nil
+}
+
+// RevokeRefreshSessionByID ends one of the user's other device sessions. The
+// current session cannot be revoked here (ErrCurrentSession; use logout), and
+// an unknown, foreign or already-ended session is ErrSessionNotFound.
+func (s *userService) RevokeRefreshSessionByID(userID, sessionID, currentSessionID string) error {
+	if sessionID == currentSessionID && currentSessionID != "" {
+		return apperrors.ErrCurrentSession
+	}
+	res := s.db.Unscoped().Where("id = ? AND user_id = ? AND expires_at > ?", sessionID, userID, time.Now()).
+		Delete(&models.RefreshSession{})
 	if res.Error != nil {
 		return apperrors.Wrap(apperrors.ErrInternalServer, res.Error)
 	}
-	if res.RowsAffected == 1 {
+	if res.RowsAffected == 0 {
+		return apperrors.ErrSessionNotFound
+	}
+	return nil
+}
+
+// RevokeOtherRefreshSessions ends every session of the user except
+// currentSessionID and returns how many ended. currentSessionID must be
+// non-empty: without it there is no way to tell which session to keep.
+func (s *userService) RevokeOtherRefreshSessions(userID, currentSessionID string) (int64, error) {
+	if currentSessionID == "" {
+		return 0, apperrors.WithMessage(apperrors.ErrInvalidInput,
+			"current session is unknown; the refresh cookie is required")
+	}
+	return s.revokeSessionsExcept(s.db, userID, currentSessionID)
+}
+
+// revokeSessionsExcept hard-deletes the user's sessions other than keepID
+// (every session when keepID is empty).
+func (s *userService) revokeSessionsExcept(db *gorm.DB, userID, keepID string) (int64, error) {
+	q := db.Unscoped().Where("user_id = ?", userID)
+	if keepID != "" {
+		q = q.Where("id <> ?", keepID)
+	}
+	res := q.Delete(&models.RefreshSession{})
+	if res.Error != nil {
+		return 0, apperrors.Wrap(apperrors.ErrInternalServer, res.Error)
+	}
+	return res.RowsAffected, nil
+}
+
+// checkCurrentPassword verifies a password re-entered for a sensitive change.
+// A wrong password counts toward the same lockout as login failures; while the
+// account is locked every attempt is refused with ACCOUNT_LOCKED.
+func (s *userService) checkCurrentPassword(user *models.User, password string) error {
+	now := time.Now()
+	if user.LockedUntil != nil && user.LockedUntil.After(now) {
+		return apperrors.ErrAccountLocked
+	}
+	if len(password) <= MaxPasswordBytes && s.VerifyPassword(user, password) {
 		return nil
 	}
-	return apperrors.ErrUnauthorized
+	triggered, err := s.recordFailedLogin(user.ID, now)
+	if err != nil {
+		return err
+	}
+	if triggered {
+		return apperrors.ErrAccountLocked
+	}
+	return apperrors.ErrInvalidCurrentPassword
+}
+
+// ChangePassword sets a new password after verifying the current one (wrong
+// attempts count toward the login lockout), then revokes every refresh session
+// except keepSessionID in the same transaction. It returns the number of
+// sessions revoked. With an empty keepSessionID all sessions end.
+func (s *userService) ChangePassword(userID, currentPassword, newPassword, keepSessionID string) (int64, error) {
+	if err := ValidatePassword(newPassword); err != nil {
+		return 0, err
+	}
+	user, err := s.GetUserByID(userID)
+	if err != nil {
+		return 0, err
+	}
+	if err := s.checkCurrentPassword(user, currentPassword); err != nil {
+		return 0, err
+	}
+
+	hashed, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
+	if err != nil {
+		return 0, apperrors.Wrap(apperrors.ErrInternalServer, err)
+	}
+
+	var revoked int64
+	err = s.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&models.User{}).Where("id = ?", userID).Updates(map[string]interface{}{
+			"password":              string(hashed),
+			"failed_login_attempts": 0,
+			"locked_until":          nil,
+		}).Error; err != nil {
+			return apperrors.Wrap(apperrors.ErrInternalServer, err)
+		}
+		n, err := s.revokeSessionsExcept(tx, userID, keepSessionID)
+		revoked = n
+		return err
+	})
+	if err != nil {
+		return 0, err
+	}
+	return revoked, nil
 }
 
 // RevokeRefreshSession ends the session holding tokenHash (logout). Revoking a
@@ -354,11 +522,22 @@ func (s *userService) RevokeRefreshSession(userID, tokenHash string) error {
 // HideBalances leaves it as is; DefaultAccountID is only applied when
 // SetDefaultAccount is true, and a nil DefaultAccountID then clears it. A nil
 // BaseCurrency leaves the base currency as is.
+//
+// FirstName and LastName replace the names when non-nil. A non-nil Email
+// replaces the address (trimmed and lower-cased like registration) and needs
+// CurrentPassword, unless it equals the current address, in which case it is
+// ignored.
 type ProfileSettingsUpdate struct {
 	HideBalances      *bool
 	SetDefaultAccount bool
 	DefaultAccountID  *string
 	BaseCurrency      *string
+	FirstName         *string
+	LastName          *string
+	Email             *string
+	CurrentPassword   string
+	// Appearance is a partial update merged into users.appearance.
+	Appearance *AppearancePatch
 }
 
 // UpdateProfileSettings applies the given settings in a single update, so a
@@ -377,6 +556,9 @@ func (s *userService) UpdateProfileSettings(userID string, update ProfileSetting
 	if update.HideBalances != nil {
 		changes["hide_balances"] = *update.HideBalances
 	}
+	if err := update.Appearance.validate(); err != nil {
+		return err
+	}
 	if update.SetDefaultAccount {
 		if update.DefaultAccountID != nil {
 			if err := s.validateDefaultAccount(userID, *update.DefaultAccountID); err != nil {
@@ -392,14 +574,61 @@ func (s *userService) UpdateProfileSettings(userID string, update ProfileSetting
 		}
 		changes["base_currency"] = code
 	}
-	if len(changes) == 0 {
+	if update.FirstName != nil {
+		changes["first_name"] = strings.TrimSpace(*update.FirstName)
+	}
+	if update.LastName != nil {
+		changes["last_name"] = strings.TrimSpace(*update.LastName)
+	}
+	if update.Email != nil {
+		email, changed, err := s.validateEmailChange(userID, *update.Email, update.CurrentPassword)
+		if err != nil {
+			return err
+		}
+		if changed {
+			changes["email"] = email
+		}
+	}
+	if len(changes) == 0 && update.Appearance.IsEmpty() {
+		if update.Email != nil {
+			return nil // the address is unchanged: nothing to write
+		}
 		return apperrors.WithMessage(apperrors.ErrInvalidInput, "no profile settings to update")
 	}
 
-	if err := s.db.Model(&models.User{}).Where("id = ?", userID).Updates(changes).Error; err != nil {
-		return apperrors.Wrap(apperrors.ErrInternalServer, err)
+	return s.applyProfileChanges(userID, changes, update.Appearance)
+}
+
+// validateEmailChange normalises newEmail and, when it differs from the user's
+// current address, checks the current password and that no other user (even a
+// soft-deleted one: the unique index covers them) holds it.
+func (s *userService) validateEmailChange(userID, newEmail, currentPassword string) (email string, changed bool, err error) {
+	email = NormalizeEmail(newEmail)
+	if email == "" {
+		return "", false, apperrors.WithMessage(apperrors.ErrInvalidInput, "email must not be empty")
 	}
-	return nil
+	user, err := s.GetUserByID(userID)
+	if err != nil {
+		return "", false, err
+	}
+	if email == user.Email {
+		return email, false, nil
+	}
+	if currentPassword == "" {
+		return "", false, apperrors.WithMessage(apperrors.ErrInvalidInput, "current_password is required to change email")
+	}
+	if err := s.checkCurrentPassword(user, currentPassword); err != nil {
+		return "", false, err
+	}
+	var count int64
+	if err := s.db.Unscoped().Model(&models.User{}).Where("email = ? AND id <> ?", email, userID).
+		Count(&count).Error; err != nil {
+		return "", false, apperrors.Wrap(apperrors.ErrInternalServer, err)
+	}
+	if count > 0 {
+		return "", false, apperrors.ErrDuplicateEmail
+	}
+	return email, true, nil
 }
 
 // validateBaseCurrency normalises code and checks that it may become the
@@ -419,8 +648,8 @@ func (s *userService) validateBaseCurrency(userID, code string) (string, error) 
 	if code == user.BaseCurrency {
 		return code, nil
 	}
-	if !s.fx.IsSupportedCurrency(code, time.Now()) {
-		return "", apperrors.ErrUnsupportedCurrency
+	if err := s.checkBaseCurrencySupported(code); err != nil {
+		return "", err
 	}
 	// Investment cost basis and realized gains are frozen in the base currency
 	// at trade time, so they cannot be re-labelled by changing it.

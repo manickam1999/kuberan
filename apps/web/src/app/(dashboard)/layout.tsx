@@ -5,6 +5,10 @@ import { useEffect, useRef } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { AppSidebar } from "@/components/layout/app-sidebar";
 import { AppHeader } from "@/components/layout/app-header";
+import { MobileTabBar } from "@/components/layout/mobile-tab-bar";
+// Side-effect import: captures `beforeinstallprompt` before the More page mounts.
+import "@/hooks/use-install-prompt";
+import { useShellShortcuts } from "@/hooks/use-shell-shortcuts";
 import {
   CommandPalette,
   type CommandPaletteRef,
@@ -20,6 +24,11 @@ export default function DashboardLayout({
   const { status } = useAuth();
   const router = useRouter();
   const commandPaletteRef = useRef<CommandPaletteRef>(null);
+  const openPalette = () => commandPaletteRef.current?.open();
+  const openNewTransaction = () =>
+    commandPaletteRef.current?.openAction("transaction");
+
+  useShellShortcuts({ onNew: openNewTransaction, onSearch: openPalette });
 
   useEffect(() => {
     if (status === "unauthenticated") {
@@ -33,7 +42,7 @@ export default function DashboardLayout({
 
   if (status === "error") {
     return (
-      <div className="flex h-screen items-center justify-center p-4">
+      <div className="flex h-dvh items-center justify-center p-4">
         <div className="flex max-w-sm flex-col items-center gap-3 text-center">
           <h1 className="text-lg font-semibold">Could not reach the server</h1>
           <p className="text-sm text-muted-foreground">
@@ -51,17 +60,21 @@ export default function DashboardLayout({
   // page's queries start in parallel with it rather than after it.
   return (
     <SidebarProvider>
-      <AppSidebar />
+      <AppSidebar
+        onOpenCommandPalette={() => commandPaletteRef.current?.open()}
+      />
       <SidebarInset>
         <AppHeader
           onOpenCommandPalette={() => commandPaletteRef.current?.toggle()}
+          onNew={openNewTransaction}
         />
         <main className="flex-1 overflow-auto scrollbar-slim">
-          <div className="mx-auto w-full max-w-[1600px] px-4 py-5 sm:px-6 sm:py-7 lg:px-8">
+          <div className="mx-auto w-full max-w-[1600px] px-4 py-5 max-md:pb-[calc(var(--tabbar-h)+1.25rem)] sm:px-6 sm:py-7 lg:px-8">
             {children}
           </div>
         </main>
       </SidebarInset>
+      <MobileTabBar onNew={openNewTransaction} />
       <CommandPalette ref={commandPaletteRef} />
     </SidebarProvider>
   );

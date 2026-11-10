@@ -1,0 +1,166 @@
+# Public demo instance (plan 023, 7.2): postgres + api + web + a nightly reset
+# job. A standalone stack, not an override of docker-compose.prod.yml, so none
+# of the production-only services exist at all: no MCP server, no Hydra (the
+# "Connect an AI assistant" flow is simply not there), no MinIO (receipt
+# uploads are disabled), no bot, no backups.
+#
+# Writes are allowed; deploy/demo/reset.sh drops the database every night at
+# 03:00 UTC and reloads the sample household. Setup: docs/public-demo.md.
+#
+#   cp .env.demo.example .env.demo     # then edit
+#   docker compose -f docker-compose.demo.yml --env-file .env.demo up -d --build
+
+name: kuberan-demo
+
+x-base: &base
+  security_opt:
+    - no-new-privileges:true
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "3"
+
+services:
+  postgres:
+    <<: *base
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: kuberan
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
+      POSTGRES_DB: kuberan
+    volumes:
+      - demo_postgres:/var/lib/postgresql/data
+    networks: [backend]
+    mem_limit: 512m
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kuberan -d postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api:
+    <<: *base
+    build:
+      context: ./apps/api
+      dockerfile: Dockerfile
+    image: kuberan-api:${IMAGE_TAG:-demo}
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    cap_drop: [ALL]
+    environment:
+      ENV: production
+      PORT: "8080"
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_USER: kuberan
+      DB_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
+      DB_NAME: kuberan
+      DB_SSLMODE: disable
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      CORS_ORIGIN: ${CORS_ORIGIN:?CORS_ORIGIN is required (the demo web origin)}
+      API_TRUSTED_PROXY_CIDRS: ${API_TRUSTED_PROXY_CIDRS:-}
+      DEFAULT_PALETTE: ${DEFAULT_PALETTE:-}
+      # The point of this stack: POST /demo/load and DELETE /demo exist.
+      DEMO_ENABLED: "true"
+      # Lets demo-reset record a snapshot so the dashboard has a net-worth chart.
+      PIPELINE_API_KEY: ${PIPELINE_API_KEY:?PIPELINE_API_KEY is required}
+      # MCP is off: no mcp or hydra service runs, and no write scopes are offered.
+      MCP_WRITE_ENABLED: "false"
+      # Open registration stays on (visitors can make their own throwaway
+      # account; the nightly reset deletes it), but is rate limited.
+      RATE_LIMIT_REGISTER_PER_HOUR: ${RATE_LIMIT_REGISTER_PER_HOUR:-10}
+    networks: [backend]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    mem_limit: 384m
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:8080/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    ports:
+      - "${PUBLISH_ADDRESS:-127.0.0.1}:${DEMO_API_PORT:-8080}:8080"
+
+  web:
+    <<: *base
+    build:
+      context: ./apps/web
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:?NEXT_PUBLIC_API_URL is required}
+        NEXT_PUBLIC_BOT_USERNAME: ${NEXT_PUBLIC_BOT_USERNAME:-KuberanFinBot}
+        # Left empty: Settings > Connected apps links to the docs instead.
+        NEXT_PUBLIC_MCP_URL: ""
+    image: kuberan-web:${IMAGE_TAG:-demo}
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+    networks: [backend]
+    mem_limit: 512m
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3000/login').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    ports:
+      - "${PUBLISH_ADDRESS:-127.0.0.1}:${DEMO_WEB_PORT:-3000}:3000"
+
+  # Drops the database, migrates, registers the demo login and loads the sample
+  # household: once at start, then nightly (supercronic, deploy/demo/crontab).
+  demo-reset:
+    <<: *base
+    build:
+      context: ./deploy/demo
+      dockerfile: Dockerfile
+      additional_contexts:
+        api: ./apps/api
+    image: kuberan-demo-reset:${IMAGE_TAG:-demo}
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    cap_drop: [ALL]
+    environment:
+      DEMO_RESET_CONFIRM: drop-database
+      ENV: production
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_USER: kuberan
+      DB_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
+      DB_NAME: kuberan
+      DB_SSLMODE: disable
+      # config.Load() (used by /migrate) validates these in production.
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      CORS_ORIGIN: ${CORS_ORIGIN:?CORS_ORIGIN is required (the demo web origin)}
+      API_URL: http://api:8080
+      PIPELINE_API_KEY: ${PIPELINE_API_KEY:?PIPELINE_API_KEY is required}
+      DEMO_EMAIL: ${DEMO_EMAIL:-demo@kuberan.example.com}
+      DEMO_PASSWORD: ${DEMO_PASSWORD:?DEMO_PASSWORD is required (it is public)}
+      DEMO_FIRST_NAME: ${DEMO_FIRST_NAME:-Demo}
+      DEMO_BASE_CURRENCY: ${DEMO_BASE_CURRENCY:-}
+    networks: [backend]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+    mem_limit: 128m
+
+networks:
+  backend: {}
+
+volumes:
+  demo_postgres:

@@ -36,11 +36,12 @@ def test_amount_to_cents_rejects_garbage():
     ("  8.20   Lunch  ", (820, "Lunch")),
     ("50Coffee", (5000, "Coffee")),
     ("0 nothing", (0, "nothing")),
+    ("Coffee 5", (500, "Coffee")),
 ])
 def test_parse_amount_description(text, expected):
     assert _parse_amount_description(text) == expected
 
 
-@pytest.mark.parametrize("text", ["", "Coffee 5", "19.999", "1.2.3", ".5", "50."])
+@pytest.mark.parametrize("text", ["", "Coffee", "19.999", "1.2.3", ".5", "50."])
 def test_parse_amount_description_rejects(text):
     assert _parse_amount_description(text) == (None, "")

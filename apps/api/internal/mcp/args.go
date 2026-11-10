@@ -67,8 +67,17 @@ func optionalArgDate(args map[string]interface{}, name string) (*time.Time, *mcp
 	return &t, nil
 }
 
+// endOfDay returns the last instant of the UTC day t falls on. A to_date names
+// a whole day, but the services compare timestamps: a transaction recorded
+// with a time of day (one created without a date, such as a quick add) would
+// fall after a to_date of midnight and be missing from "up to today".
+func endOfDay(t time.Time) time.Time {
+	return t.Truncate(24 * time.Hour).Add(24*time.Hour - time.Nanosecond)
+}
+
 // dateRangeArgs reads the required from_date and to_date arguments. The range
-// must be ordered and span at most maxDays days (inclusive).
+// must be ordered and span at most maxDays days (inclusive). The returned to is
+// the end of the to_date day.
 func dateRangeArgs(args map[string]interface{}, maxDays int) (from, to time.Time, res *mcp.CallToolResult) {
 	fromStr, _ := args["from_date"].(string)
 	toStr, _ := args["to_date"].(string)
@@ -81,7 +90,7 @@ func dateRangeArgs(args map[string]interface{}, maxDays int) (from, to time.Time
 	if res = checkRange(from, to, maxDays); res != nil {
 		return
 	}
-	return from, to, nil
+	return from, endOfDay(to), nil
 }
 
 // checkRange rejects a range whose end precedes its start or that spans more

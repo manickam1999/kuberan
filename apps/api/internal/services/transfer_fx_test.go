@@ -53,14 +53,14 @@ func TestCreateTransfer_SameCurrencyToAmount(t *testing.T) {
 	e, balance, svc := newTransferFXEnv(t)
 
 	t.Run("omitted stores nothing", func(t *testing.T) {
-		tx, err := svc.CreateTransfer(e.userID, e.usd.ID, e.eur.ID, 1000, nil, "same", time.Now())
+		tx, err := svc.CreateTransfer(e.userID, e.usd.ID, e.eur.ID, 1000, nil, "same", time.Now(), TransactionMeta{})
 		testutil.AssertNoError(t, err)
 		if tx.ToAmount != nil || tx.ImpliedRate != "" {
 			t.Errorf("same-currency transfer stored to_amount=%v implied=%q", tx.ToAmount, tx.ImpliedRate)
 		}
 	})
 	t.Run("equal is accepted and not stored", func(t *testing.T) {
-		tx, err := svc.CreateTransfer(e.userID, e.usd.ID, e.eur.ID, 1000, ptr64(1000), "same", time.Now())
+		tx, err := svc.CreateTransfer(e.userID, e.usd.ID, e.eur.ID, 1000, ptr64(1000), "same", time.Now(), TransactionMeta{})
 		testutil.AssertNoError(t, err)
 		if tx.ToAmount != nil {
 			t.Errorf("to_amount = %d, want NULL", *tx.ToAmount)
@@ -68,7 +68,7 @@ func TestCreateTransfer_SameCurrencyToAmount(t *testing.T) {
 	})
 	t.Run("unequal is rejected", func(t *testing.T) {
 		before := balance(e.usd.ID)
-		_, err := svc.CreateTransfer(e.userID, e.usd.ID, e.eur.ID, 1000, ptr64(999), "bad", time.Now())
+		_, err := svc.CreateTransfer(e.userID, e.usd.ID, e.eur.ID, 1000, ptr64(999), "bad", time.Now(), TransactionMeta{})
 		testutil.AssertAppError(t, err, apperrors.ErrInvalidInput.Code)
 		if balance(e.usd.ID) != before {
 			t.Error("a rejected transfer moved money")
@@ -83,7 +83,7 @@ func TestCreateTransfer_CrossCurrency(t *testing.T) {
 	e, balance, svc := newTransferFXEnv(t)
 
 	t.Run("missing to_amount returns the suggestion", func(t *testing.T) {
-		_, err := svc.CreateTransfer(e.userID, e.myr.ID, e.usd.ID, 894240, nil, "fund", time.Now())
+		_, err := svc.CreateTransfer(e.userID, e.myr.ID, e.usd.ID, 894240, nil, "fund", time.Now(), TransactionMeta{})
 		testutil.AssertAppError(t, err, apperrors.ErrFXAmountRequired.Code)
 		var ae *apperrors.AppError
 		if !errors.As(err, &ae) {
@@ -101,7 +101,7 @@ func TestCreateTransfer_CrossCurrency(t *testing.T) {
 	})
 
 	t.Run("given to_amount moves both balances", func(t *testing.T) {
-		tx, err := svc.CreateTransfer(e.userID, e.myr.ID, e.usd.ID, 894240, ptr64(200000), "fund", time.Now())
+		tx, err := svc.CreateTransfer(e.userID, e.myr.ID, e.usd.ID, 894240, ptr64(200000), "fund", time.Now(), TransactionMeta{})
 		testutil.AssertNoError(t, err)
 		if tx.ToAmount == nil || *tx.ToAmount != 200000 || tx.ImpliedRate != "0.2236536053" {
 			t.Errorf("transfer = to_amount %v implied %q", tx.ToAmount, tx.ImpliedRate)
@@ -124,12 +124,12 @@ func TestCreateTransfer_CrossCurrency(t *testing.T) {
 	})
 
 	t.Run("non-positive to_amount is rejected", func(t *testing.T) {
-		_, err := svc.CreateTransfer(e.userID, e.myr.ID, e.usd.ID, 100, ptr64(0), "x", time.Now())
+		_, err := svc.CreateTransfer(e.userID, e.myr.ID, e.usd.ID, 100, ptr64(0), "x", time.Now(), TransactionMeta{})
 		testutil.AssertAppError(t, err, apperrors.ErrInvalidInput.Code)
 	})
 
 	t.Run("a transfer cannot be edited, so to_amount cannot drift", func(t *testing.T) {
-		tx, err := svc.CreateTransfer(e.userID, e.myr.ID, e.usd.ID, 894240, ptr64(200000), "fund", time.Now())
+		tx, err := svc.CreateTransfer(e.userID, e.myr.ID, e.usd.ID, 894240, ptr64(200000), "fund", time.Now(), TransactionMeta{})
 		testutil.AssertNoError(t, err)
 		amount := int64(1)
 		_, err = svc.UpdateTransaction(e.userID, tx.ID, TransactionUpdateFields{Amount: &amount})

@@ -11,7 +11,8 @@ import (
 
 // categoryIconNames is the curated set of named category icons (Lucide icon
 // names). A category icon is either one of these or a single emoji. Keep in
-// sync with CATEGORY_ICONS in apps/web/src/lib/category-icons.ts.
+// sync with CATEGORY_ICONS in apps/web/src/lib/category-icons.ts (checked by
+// TestCategoryIconNamesMatchWebList).
 var categoryIconNames = map[string]struct{}{
 	"baby": {}, "banknote": {}, "bike": {}, "book": {}, "briefcase": {},
 	"building-2": {}, "bus": {}, "car": {}, "coffee": {}, "coins": {},

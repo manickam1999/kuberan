@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { BudgetAverageHint } from "./budget-average-hint";
 import { CategoryIcon } from "@/components/categories/category-icon";
 import { toast } from "sonner";
 import { ApiClientError } from "@/lib/api-client";
@@ -223,6 +224,16 @@ export function CreateBudgetDialog({
               onChange={setAmount}
               disabled={isSubmitting}
             />
+            {categoryId && (
+              <BudgetAverageHint
+                categoryId={categoryId}
+                categoryName={
+                  categoryOptions.find((c) => c.id === categoryId)?.name ??
+                  "this category"
+                }
+                currency={selectedCurrency}
+              />
+            )}
           </div>
 
           <div className="flex flex-col gap-2">

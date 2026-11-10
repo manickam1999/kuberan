@@ -29,6 +29,12 @@ const securityHeaders = [
 const nextConfig: NextConfig = {
   output: "standalone",
   poweredByHeader: false,
+  async redirects() {
+    // D5: Analytics is labelled Insights but keeps its /analytics route.
+    return [
+      { source: "/insights", destination: "/analytics", permanent: false },
+    ];
+  },
   async headers() {
     return [
       {

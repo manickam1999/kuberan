@@ -177,7 +177,7 @@ func TestUpdateReceivables_Diff(t *testing.T) {
 
 	t.Run("receivables can be added to a plain expense", func(t *testing.T) {
 		e := newRecEnv(t)
-		plain, err := e.txn.CreateTransaction(e.user.ID, e.cash.ID, &e.cat.ID, models.TransactionTypeExpense, 4000, "plain", time.Now())
+		plain, err := e.txn.CreateTransaction(e.user.ID, e.cash.ID, &e.cat.ID, models.TransactionTypeExpense, 4000, "plain", time.Now(), TransactionMeta{})
 		testutil.AssertNoError(t, err)
 		res, err := e.update(plain.ID, UpdateReceivablesInput{Kind: kindPtr(models.ReceivableKindLoan), Receivables: []ReceivableShareInput{shareIn(nil, "Alex", 4000)}})
 		testutil.AssertNoError(t, err)
@@ -228,7 +228,7 @@ func TestUpdateReceivables_Diff(t *testing.T) {
 
 	t.Run("not an expense", func(t *testing.T) {
 		e := newRecEnv(t)
-		income, err := e.txn.CreateTransaction(e.user.ID, e.cash.ID, nil, models.TransactionTypeIncome, 4000, "pay", time.Now())
+		income, err := e.txn.CreateTransaction(e.user.ID, e.cash.ID, nil, models.TransactionTypeIncome, 4000, "pay", time.Now(), TransactionMeta{})
 		testutil.AssertNoError(t, err)
 		_, err = e.update(income.ID, UpdateReceivablesInput{Receivables: []ReceivableShareInput{shareIn(nil, "Alex", 100)}})
 		assertAppCode(t, err, "INVALID_SHARES", http.StatusBadRequest)
@@ -279,7 +279,7 @@ func TestUpdateTransaction_SharedExpense(t *testing.T) {
 	})
 	t.Run("a plain expense can still change type", func(t *testing.T) {
 		e := newRecEnv(t)
-		plain, err := e.txn.CreateTransaction(e.user.ID, e.cash.ID, nil, models.TransactionTypeExpense, 1000, "x", time.Now())
+		plain, err := e.txn.CreateTransaction(e.user.ID, e.cash.ID, nil, models.TransactionTypeExpense, 1000, "x", time.Now(), TransactionMeta{})
 		testutil.AssertNoError(t, err)
 		income := models.TransactionTypeIncome
 		_, err = e.updateTxn(plain.ID, TransactionUpdateFields{Type: &income})
@@ -385,7 +385,7 @@ func TestDeleteTransaction_SharedExpense(t *testing.T) {
 	})
 	t.Run("a plain expense is unaffected", func(t *testing.T) {
 		e := newRecEnv(t)
-		plain, err := e.txn.CreateTransaction(e.user.ID, e.cash.ID, nil, models.TransactionTypeExpense, 1234, "p", time.Now())
+		plain, err := e.txn.CreateTransaction(e.user.ID, e.cash.ID, nil, models.TransactionTypeExpense, 1234, "p", time.Now(), TransactionMeta{})
 		testutil.AssertNoError(t, err)
 		testutil.AssertNoError(t, e.deleteTxn(plain.ID))
 		e.wantBalance(e.cash.ID, recCashStart)
@@ -485,7 +485,7 @@ func TestReceivables_PreloadedOnTransactionReads(t *testing.T) {
 	e := newRecEnv(t)
 	x := e.split(6000, "Alex", "Sam")
 	_, _ = e.mustSettle(x.Receivables[0].ID, 500)
-	plain, err := e.txn.CreateTransaction(e.user.ID, e.cash.ID, nil, models.TransactionTypeExpense, 700, "plain", time.Now())
+	plain, err := e.txn.CreateTransaction(e.user.ID, e.cash.ID, nil, models.TransactionTypeExpense, 700, "plain", time.Now(), TransactionMeta{})
 	testutil.AssertNoError(t, err)
 
 	check := func(t *testing.T, txns []models.Transaction) {

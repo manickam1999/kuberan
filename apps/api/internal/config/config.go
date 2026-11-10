@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"kuberan/internal/appearance"
 	"kuberan/internal/logger"
 	"kuberan/internal/storage"
 
@@ -49,6 +50,10 @@ type Config struct {
 	// FXMaxStaleness is how old an exchange rate may be before FX quotes are
 	// flagged stale (FX_MAX_STALENESS, a Go duration; default 168h).
 	FXMaxStaleness time.Duration
+
+	// DefaultPalette is the UI palette users without a personal choice get
+	// (DEFAULT_PALETTE; unset or unknown falls back to catppuccin).
+	DefaultPalette string
 
 	// CORSOrigins is the exact-match allowlist of browser origins allowed to
 	// make credentialed cross-origin requests (CORS_ORIGIN, comma-separated).
@@ -101,6 +106,10 @@ type Config struct {
 	StorageUsePathStyle bool  // true for MinIO
 	MaxUploadBytes      int64 // per-file cap, default 10 MiB
 	MaxAttachmentsPerTx int   // per-transaction cap, default 10
+
+	// DemoEnabled turns on POST /demo/load and DELETE /demo (DEMO_ENABLED,
+	// default off; on for the public demo instance). When off both return 404.
+	DemoEnabled bool
 }
 
 // DefaultOAuthScopes is the full granular read:* scope set the RS enforces.
@@ -120,6 +129,7 @@ type RateLimits struct {
 	RegisterPerHour     int // per client IP: /auth/register (RATE_LIMIT_REGISTER_PER_HOUR, 5)
 	RefreshPerMinute    int // per client IP: /auth/refresh (RATE_LIMIT_REFRESH_PER_MINUTE, 60)
 	RegistrationPerHour int // per client IP: OAuth DCR (RATE_LIMIT_DCR_PER_HOUR, 10)
+	PasswordPerHour     int // per user: POST /auth/password (RATE_LIMIT_PASSWORD_PER_HOUR, 10)
 }
 
 // DefaultFXMaxStaleness is the default for FX_MAX_STALENESS.
@@ -173,6 +183,7 @@ func Load() (*Config, error) {
 			RegisterPerHour:     int(getEnvInt64("RATE_LIMIT_REGISTER_PER_HOUR", 5)),
 			RefreshPerMinute:    int(getEnvInt64("RATE_LIMIT_REFRESH_PER_MINUTE", 60)),
 			RegistrationPerHour: int(getEnvInt64("RATE_LIMIT_DCR_PER_HOUR", 10)),
+			PasswordPerHour:     int(getEnvInt64("RATE_LIMIT_PASSWORD_PER_HOUR", 10)),
 		},
 
 		// Bot
@@ -200,6 +211,7 @@ func Load() (*Config, error) {
 		StorageUsePathStyle: getEnvBool("STORAGE_USE_PATH_STYLE", true),
 		MaxUploadBytes:      getEnvInt64("MAX_UPLOAD_BYTES", 10*1024*1024),
 		MaxAttachmentsPerTx: int(getEnvInt64("MAX_ATTACHMENTS_PER_TX", 10)),
+		DemoEnabled:         getEnvBool("DEMO_ENABLED", false),
 	}
 
 	config.OAuthScopes = withWriteScopes(config.OAuthScopes, config.MCPWriteEnabled)
@@ -214,6 +226,8 @@ func Load() (*Config, error) {
 	}
 	config.JWTExpirationDur = expDur
 
+	config.DefaultPalette = loadDefaultPalette(os.Getenv("DEFAULT_PALETTE"))
+
 	config.FXMaxStaleness = getEnvDuration("FX_MAX_STALENESS", DefaultFXMaxStaleness)
 
 	// Validate production configuration
@@ -225,6 +239,19 @@ func Load() (*Config, error) {
 
 	appConfig = config
 	return config, nil
+}
+
+// loadDefaultPalette validates a DEFAULT_PALETTE value against the shared
+// palette list. An unknown value logs a warning and falls back to the built-in
+// default, so a typo never stops the server.
+func loadDefaultPalette(raw string) string {
+	raw = strings.ToLower(strings.TrimSpace(raw))
+	id, ok := appearance.ResolveDefault(raw)
+	if !ok {
+		logger.Get().Warnf("Unknown DEFAULT_PALETTE '%s' (known: %s), falling back to %s",
+			raw, strings.Join(appearance.PaletteIDs(), ", "), id)
+	}
+	return id
 }
 
 // Get returns the application configuration

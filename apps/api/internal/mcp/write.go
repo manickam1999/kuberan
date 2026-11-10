@@ -14,6 +14,7 @@ import (
 	apperrors "kuberan/internal/errors"
 	"kuberan/internal/fx"
 	"kuberan/internal/logger"
+	"kuberan/internal/models"
 	"kuberan/internal/services"
 )
 
@@ -51,6 +52,12 @@ type caller struct {
 	UserID   string
 	ClientID string
 	IP       string
+}
+
+// mcpMeta is the provenance recorded on transactions an MCP tool creates: the
+// "mcp" source and the OAuth client that made the call.
+func mcpMeta(c caller) services.TransactionMeta {
+	return services.TransactionMeta{Source: models.TransactionSourceMCP, SourceClientID: c.ClientID}
 }
 
 // auditEntry is one audit_logs row produced by a write.
@@ -171,7 +178,8 @@ func (s *Server) audit(c caller, tool string, a auditEntry) {
 	changes["via"] = "mcp"
 	changes["client_id"] = c.ClientID
 	changes["tool"] = tool
-	s.services.Audit.Log(c.UserID, a.Action, a.ResourceType, a.ResourceID, c.IP, changes)
+	s.services.Audit.Log(c.UserID, a.Action, a.ResourceType, a.ResourceID, c.IP, changes,
+		services.LogOpts{Source: models.AuditSourceMCP, ClientID: c.ClientID})
 }
 
 // change records a field's before and after values in an audit entry.
@@ -586,4 +594,16 @@ func fxSuggestionText(e *apperrors.AppError) string {
 	rate, _ := e.Details["rate"].(string)
 	return fmt.Sprintf(" (pass %s in %s; the market rate suggests %s at rate %s)",
 		field, strings.ToUpper(currency), formatMoney(cents, currency), rate)
+}
+
+// readError turns a failed read into a tool error for action. An AppError below
+// 500 carries a client-safe reason (an unknown ID, a bad argument) that the model
+// can act on; anything else is logged and reported generically.
+func readError(action string, err error) *mcp.CallToolResult {
+	var appErr *apperrors.AppError
+	if errors.As(err, &appErr) && appErr.StatusCode < 500 {
+		return mcp.NewToolResultError("failed to " + action + ": " + appErr.Message)
+	}
+	logger.Get().Errorf("MCP %s failed: %v", action, err)
+	return mcp.NewToolResultError("failed to " + action)
 }

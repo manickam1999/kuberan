@@ -11,6 +11,8 @@ export type DitherColor =
 
 export type Seed = { fill: Rgb; line: Rgb; star: Rgb }
 
+// Fixed look by design (plan 023, 2.1): dither colours are RGB tuples scaled
+// per pixel on a canvas, so they ignore the active UI palette.
 // Each seed: the area-fill hue, the bright series line, and the star sparkle.
 export const PALETTE: Record<DitherColor, Seed> = {
   green: { fill: [40, 210, 110], line: [150, 255, 180], star: [200, 255, 220] },

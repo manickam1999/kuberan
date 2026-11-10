@@ -264,8 +264,8 @@ func (s *investmentService) AddInvestment(userID string, p AddInvestmentParams) 
 
 // GetAccountInvestments returns a paginated list of investments for an account.
 func (s *investmentService) GetAccountInvestments(userID, accountID string, page pagination.PageRequest) (*pagination.PageResponse[models.Investment], error) {
-	// Verify account exists and belongs to user
-	if _, err := s.accountService.GetAccountByID(userID, accountID); err != nil {
+	// Verify account exists and belongs to user (deactivated accounts stay readable)
+	if _, err := s.accountService.GetAccountByIDIncludingInactive(userID, accountID); err != nil {
 		return nil, err
 	}
 
@@ -578,6 +578,7 @@ func (s *investmentService) applyCashLeg(tx *gorm.DB, userID, accountID string, 
 		Amount:      amount,
 		Description: description,
 		Date:        date,
+		Source:      models.TransactionSourceSystem,
 	}
 	if err := tx.Create(&cashTx).Error; err != nil {
 		return apperrors.Wrap(apperrors.ErrInternalServer, err)

@@ -7,6 +7,7 @@ import {
   type SankeyLink as D3SankeyLink,
   type SankeyNode as D3SankeyNode,
 } from "d3-sankey";
+import { spreadLabels } from "@/lib/label-layout";
 import { DitherFill } from "@/components/charts/dither-fill";
 import { PALETTE, rgb, type DitherColor } from "@/components/dither-kit/palette";
 import { useChartTheme } from "@/providers/chart-theme-provider";
@@ -34,6 +35,8 @@ export type ThemedSankeyProps = {
   valueFormatter: (value: number) => string;
   /** Chart height in px. */
   height?: number;
+  /** Called when a node, or a ribbon (via its non-hub endpoint), is clicked. */
+  onNodeClick?: (node: SankeyNodeInput) => void;
   className?: string;
 };
 
@@ -44,6 +47,8 @@ const NODE_WIDTH = 14;
 const NODE_PADDING = 22;
 const TOP_PAD = 10;
 const BOTTOM_PAD = 10;
+/** Centre-to-centre spacing of the two-line node labels (name + amount). */
+const LABEL_GAP = 30;
 
 type Hover = { title: string; value: string; x: number; y: number } | null;
 
@@ -59,6 +64,7 @@ export function ThemedSankey({
   links,
   valueFormatter,
   height = 360,
+  onNodeClick,
   className,
 }: ThemedSankeyProps) {
   const { chartTheme } = useChartTheme();
@@ -104,6 +110,27 @@ export function ThemedSankey({
       return null;
     }
   }, [nodes, links, width, height, hasLeft, hasRight]);
+
+  // Label centres per node, spread so small neighbouring nodes don't stack
+  // their labels on top of each other (each side is laid out separately).
+  const labelY = useMemo(() => {
+    const out = new Map<string, number>();
+    if (!graph) return out;
+    for (const side of ["left", "right"] as const) {
+      const sideNodes = graph.nodes
+        .map((n) => n as LayoutNode)
+        .filter((n) => n.align === side);
+      const mids = sideNodes.map((n) => ((n.y0 ?? 0) + (n.y1 ?? 0)) / 2);
+      const placed = spreadLabels(
+        mids,
+        LABEL_GAP,
+        LABEL_GAP / 2,
+        height - LABEL_GAP / 2
+      );
+      sideNodes.forEach((n, i) => out.set(n.id, placed[i]));
+    }
+    return out;
+  }, [graph, height]);
 
   const linkPath = useMemo(() => sankeyLinkHorizontal<SankeyNodeInput, SankeyLinkInput>(), []);
 
@@ -158,7 +185,16 @@ export function ThemedSankey({
                   strokeOpacity={dimmed ? 0.12 : activeLink === key ? 0.72 : 0.42}
                   strokeWidth={Math.max(1, l.width ?? 1)}
                   className="transition-[stroke-opacity] duration-150"
-                  style={{ pointerEvents: "stroke" }}
+                  style={{
+                    pointerEvents: "stroke",
+                    cursor: onNodeClick ? "pointer" : undefined,
+                  }}
+                  onClick={() => {
+                    if (!onNodeClick) return;
+                    const src = l.source as LayoutNode;
+                    const tgt = l.target as LayoutNode;
+                    onNodeClick(src.align === "center" ? tgt : src);
+                  }}
                   onMouseEnter={() => setActiveLink(key)}
                   onMouseMove={(e) => {
                     const src = (l.source as LayoutNode).label;
@@ -182,7 +218,13 @@ export function ThemedSankey({
             return (
               <div
                 key={node.id}
-                className="absolute overflow-hidden rounded-[3px]"
+                className={cn(
+                  "absolute overflow-hidden rounded-[3px]",
+                  onNodeClick && node.align !== "center" && "cursor-pointer"
+                )}
+                onClick={() => {
+                  if (onNodeClick && node.align !== "center") onNodeClick(node);
+                }}
                 style={{
                   left: node.x0,
                   top: node.y0,
@@ -202,7 +244,10 @@ export function ThemedSankey({
           {graph.nodes.map((n) => {
             const node = n as LayoutNode;
             if (node.align === "center") return null;
-            const mid = ((node.y0 ?? 0) + (node.y1 ?? 0)) / 2;
+            const nodeMid = ((node.y0 ?? 0) + (node.y1 ?? 0)) / 2;
+            const mid = labelY.get(node.id) ?? nodeMid;
+            // A label pushed away from its node gets a dot in the node's colour.
+            const moved = Math.abs(mid - nodeMid) > 6;
             const isLeft = node.align === "left";
             const style: React.CSSProperties = isLeft
               ? {
@@ -225,8 +270,15 @@ export function ThemedSankey({
                 className="pointer-events-none absolute flex flex-col gap-0.5 leading-tight"
                 style={style}
               >
-                <span className="truncate text-[11px] font-medium text-foreground">
-                  {node.label}
+                <span className="flex items-center gap-1 truncate text-[11px] font-medium text-foreground">
+                  {moved && (
+                    <i
+                      aria-hidden
+                      className="inline-block size-1.5 shrink-0 rounded-full"
+                      style={{ backgroundColor: colorOf(node) }}
+                    />
+                  )}
+                  <span className="truncate">{node.label}</span>
                 </span>
                 <span className="money truncate text-[11px] text-muted-foreground">
                   {valueFormatter(node.value ?? 0)}

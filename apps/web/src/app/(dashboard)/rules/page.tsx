@@ -1,11 +1,14 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Reorder, useDragControls } from "motion/react";
 import {
   ArrowDown,
+  ArrowRight,
   ArrowUp,
   GripVertical,
+  Info,
   MoreHorizontal,
   Pencil,
   Plus,
@@ -14,12 +17,28 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { ApiClientError } from "@/lib/api-client";
-import { useRules, useReorderRules, useUpdateRule } from "@/hooks/use-rules";
+import {
+  useRules,
+  useReorderRules,
+  useRuleSuggestions,
+  useUpdateRule,
+} from "@/hooks/use-rules";
+import { useCategories } from "@/hooks/use-categories";
 import { useAccounts } from "@/hooks/use-accounts";
 import { useBaseCurrency } from "@/hooks/use-profile";
-import { summarizeCondition, summarizeRuleTarget } from "@/lib/rule-format";
+import { conditionParts } from "@/lib/rule-format";
+import { parseRulePrefill, type RulePrefill } from "@/lib/rule-prefill";
+import {
+  firstVisibleSuggestion,
+  loadDismissed,
+  matchSummary,
+  saveDismissed,
+  suggestionKey,
+  suggestionPrefill,
+} from "@/lib/rule-suggestions";
+import { formatDate } from "@/lib/format";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
+import { Pill } from "@/components/ui/pill";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import {
@@ -32,6 +51,7 @@ import {
 import { RuleDialog } from "@/components/rules/rule-dialog";
 import { DeleteRuleDialog } from "@/components/rules/delete-rule-dialog";
 import { ApplyRuleDialog } from "@/components/rules/apply-rule-dialog";
+import { cn } from "@/lib/utils";
 import type { TransactionRule } from "@/types/models";
 
 function getErrorMessage(error: unknown): string {
@@ -39,15 +59,58 @@ function getErrorMessage(error: unknown): string {
   return "An unexpected error occurred";
 }
 
-export default function RulesPage() {
+function RulesPageContent() {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+
   const [createOpen, setCreateOpen] = useState(false);
+  const [prefill, setPrefill] = useState<RulePrefill | null>(null);
   const [editRule, setEditRule] = useState<TransactionRule | null>(null);
   const [deleteRule, setDeleteRule] = useState<TransactionRule | null>(null);
   const [applyRule, setApplyRule] = useState<TransactionRule | null>(null);
 
-  const { data: rules, isLoading } = useRules();
+  const { data: rules, isLoading, isError, refetch } = useRules();
   const reorder = useReorderRules();
   const { data: accountData } = useAccounts({ page_size: 100 });
+  const { data: suggestions } = useRuleSuggestions();
+  const { data: categoryData } = useCategories({ page_size: 100 });
+
+  // Suggestions the user dismissed are remembered per browser. Read after
+  // mount so server and client render the same markup.
+  const [dismissed, setDismissed] = useState<ReadonlySet<string>>(new Set());
+  useEffect(() => {
+    setDismissed(loadDismissed());
+  }, []);
+  const suggestion = firstVisibleSuggestion(suggestions, dismissed);
+  const suggestionCategory = suggestion
+    ? categoryData?.data.find((c) => c.id === suggestion.category_id)
+    : undefined;
+
+  function dismissSuggestion() {
+    if (!suggestion) return;
+    const next = new Set(dismissed).add(suggestionKey(suggestion));
+    setDismissed(next);
+    saveDismissed(next);
+  }
+
+  function createFromSuggestion() {
+    if (!suggestion) return;
+    setPrefill(suggestionPrefill(suggestion));
+    setCreateOpen(true);
+  }
+
+  // Deep link from Transaction detail:
+  // /rules?new=1&description=<text>&category_id=<id>&type=<income|expense>
+  // Open the editor prefilled once, then drop the params so a refresh or the
+  // back button doesn't reopen it.
+  useEffect(() => {
+    const seed = parseRulePrefill(searchParams);
+    if (!seed) return;
+    setPrefill(seed);
+    setCreateOpen(true);
+    router.replace(pathname, { scroll: false });
+  }, [searchParams, router, pathname]);
 
   const accountName = useMemo(() => {
     const map = new Map((accountData?.data ?? []).map((a) => [a.id, a.name]));
@@ -87,54 +150,79 @@ export default function RulesPage() {
     persist(next);
   }
 
+  function openCreate() {
+    setPrefill(null);
+    setCreateOpen(true);
+  }
+
   return (
     <div className="space-y-5">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Rules</h1>
-          <p className="text-sm text-muted-foreground">
-            Auto-categorize new transactions. Rules run top to bottom; the first
-            match wins. Drag to reorder.
+          <h1 className="font-display hidden text-3xl leading-tight md:block">
+            Rules
+          </h1>
+          <p className="text-muted-foreground text-sm">
+            New transactions are categorised automatically. Rules run top to
+            bottom and the first match wins.
           </p>
         </div>
-        <Button size="sm" onClick={() => setCreateOpen(true)}>
+        <Button size="sm" onClick={openCreate}>
           <Plus className="size-4" />
           New rule
         </Button>
       </div>
 
       {isLoading ? (
-        <Card>
-          <CardContent className="space-y-3 py-4">
-            {Array.from({ length: 5 }).map((_, i) => (
-              <Skeleton key={i} className="h-12 w-full" />
-            ))}
-          </CardContent>
-        </Card>
+        <div className="bg-card divide-y overflow-hidden rounded-xl border">
+          {Array.from({ length: 5 }).map((_, i) => (
+            <div key={i} className="flex items-center gap-3 px-4 py-3.5">
+              <Skeleton className="hidden size-5 md:block" />
+              <Skeleton className="size-[22px] rounded-md" />
+              <div className="flex-1 space-y-2">
+                <Skeleton className="h-4 w-32" />
+                <Skeleton className="h-3 w-3/4" />
+              </div>
+              <Skeleton className="hidden h-6 w-24 sm:block" />
+              <Skeleton className="h-5 w-9 rounded-full" />
+            </div>
+          ))}
+        </div>
+      ) : isError ? (
+        <div
+          role="alert"
+          className="flex flex-col items-center gap-3 rounded-xl border border-dashed p-10 text-center"
+        >
+          <p className="text-sm">Couldn&apos;t load your rules.</p>
+          <Button size="sm" variant="outline" onClick={() => refetch()}>
+            Try again
+          </Button>
+        </div>
       ) : ordered.length === 0 ? (
         <div className="flex flex-col items-center justify-center rounded-xl border border-dashed p-12 text-center">
           <h3 className="text-lg font-semibold">No rules yet</h3>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Create a rule to categorize matching transactions automatically.
+          <p className="text-muted-foreground mt-1 text-sm">
+            Create a rule to categorise matching transactions automatically.
           </p>
-          <Button className="mt-4" size="sm" onClick={() => setCreateOpen(true)}>
+          <Button className="mt-4" size="sm" onClick={openCreate}>
             <Plus className="size-4" />
             Create rule
           </Button>
         </div>
       ) : (
-        <Card className="overflow-hidden py-0">
+        <div className="bg-card overflow-hidden rounded-xl border">
           <Reorder.Group
             as="div"
             axis="y"
             values={ordered}
             onReorder={setOrdered}
-            className="divide-y divide-border/50"
+            className="divide-y"
           >
             {ordered.map((rule, index) => (
               <RuleRow
                 key={rule.id}
                 rule={rule}
+                position={index + 1}
                 accountName={accountName}
                 isFirst={index === 0}
                 isLast={index === ordered.length - 1}
@@ -147,10 +235,38 @@ export default function RulesPage() {
               />
             ))}
           </Reorder.Group>
-        </Card>
+        </div>
       )}
 
-      <RuleDialog open={createOpen} onOpenChange={setCreateOpen} />
+      {suggestion && suggestionCategory && (
+        <div className="bg-card flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl border px-4 py-3 text-sm">
+          <Info
+            className="text-muted-foreground size-4 shrink-0"
+            aria-hidden
+          />
+          <p className="min-w-0 flex-1">
+            <b className="font-medium">Suggestion:</b> you&apos;ve put
+            &ldquo;
+            <span className="break-words">{suggestion.description_pattern}</span>
+            &rdquo; in {suggestionCategory.name} {suggestion.count} times.
+          </p>
+          <div className="flex shrink-0 items-center gap-2">
+            <Button size="sm" variant="outline" onClick={createFromSuggestion}>
+              Create rule
+            </Button>
+            <Button size="sm" variant="ghost" onClick={dismissSuggestion}>
+              Dismiss
+            </Button>
+          </div>
+        </div>
+      )}
+
+      <RuleDialog
+        open={createOpen}
+        onOpenChange={setCreateOpen}
+        initialConditions={prefill?.conditions}
+        initialCategoryId={prefill?.categoryId}
+      />
       <RuleDialog
         open={!!editRule}
         onOpenChange={(open) => {
@@ -176,8 +292,17 @@ export default function RulesPage() {
   );
 }
 
+export default function RulesPage() {
+  return (
+    <Suspense fallback={null}>
+      <RulesPageContent />
+    </Suspense>
+  );
+}
+
 interface RuleRowProps {
   rule: TransactionRule;
+  position: number;
   accountName: (id: string) => string;
   isFirst: boolean;
   isLast: boolean;
@@ -191,6 +316,7 @@ interface RuleRowProps {
 
 function RuleRow({
   rule,
+  position,
   accountName,
   isFirst,
   isLast,
@@ -205,9 +331,7 @@ function RuleRow({
   const dragControls = useDragControls();
   const baseCurrency = useBaseCurrency();
 
-  const summary = rule.conditions
-    .map((c) => summarizeCondition(c, accountName, baseCurrency))
-    .join(" and ");
+  const target = rule.actions?.[0]?.category;
 
   function toggleActive(next: boolean) {
     updateRule.mutate(
@@ -224,24 +348,71 @@ function RuleRow({
       dragControls={dragControls}
       onDragEnd={onDragEnd}
       whileDrag={{ scale: 1.01 }}
-      className="group relative flex items-center gap-2 bg-card px-4 py-3 transition-colors hover:bg-accent/40"
+      className="group bg-card hover:bg-accent/40 relative flex items-center gap-3 px-3 py-3.5 transition-colors md:px-4"
     >
       <button
         type="button"
         aria-label="Drag to reorder"
         onPointerDown={(e) => dragControls.start(e)}
-        className="flex size-7 shrink-0 cursor-grab touch-none items-center justify-center rounded-md text-muted-foreground/60 transition-colors hover:text-foreground active:cursor-grabbing"
+        className="text-muted-foreground/60 hover:text-foreground hidden size-6 shrink-0 cursor-grab touch-none items-center justify-center rounded-md transition-colors active:cursor-grabbing md:flex"
       >
         <GripVertical className="size-4" />
       </button>
 
-      <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-medium">{rule.name}</p>
-        <p className="truncate text-xs text-muted-foreground">
-          {summary}
-          <span className="text-foreground"> → {summarizeRuleTarget(rule)}</span>
-        </p>
-      </div>
+      <span
+        aria-hidden
+        className="bg-muted text-muted-foreground grid size-[22px] shrink-0 place-items-center rounded-md text-[11px] tabular-nums"
+      >
+        {position}
+      </span>
+
+      <button
+        type="button"
+        onClick={onEdit}
+        className={cn(
+          "focus-visible:ring-ring/50 min-w-0 flex-1 rounded text-left outline-none focus-visible:ring-[3px]",
+          !rule.is_active && "opacity-60"
+        )}
+      >
+        <span className="flex items-center gap-2">
+          <span className="truncate text-sm font-medium">{rule.name}</span>
+          {!rule.is_active && (
+            <span className="text-muted-foreground text-xs">Paused</span>
+          )}
+        </span>
+        <span className="text-muted-foreground mt-0.5 block text-[12.5px] leading-snug">
+          {rule.conditions.map((c, i) => {
+            const { lead, value } = conditionParts(c, accountName, baseCurrency);
+            return (
+              <Fragment key={c.id ?? i}>
+                {i > 0 && " and "}
+                {lead}{" "}
+                <b className="text-foreground font-mono text-[11.5px] font-medium break-words">
+                  {value}
+                </b>
+              </Fragment>
+            );
+          })}
+          {target && (
+            <span className="sm:hidden">
+              {" "}
+              <ArrowRight className="inline size-3" aria-hidden />
+              <span className="sr-only">sets category</span> {target.name}
+            </span>
+          )}
+        </span>
+        <span className="text-muted-foreground/80 mt-0.5 block text-xs">
+          {matchSummary(rule.match_count, rule.last_matched_at, formatDate)}
+        </span>
+      </button>
+
+      <span className="text-muted-foreground hidden shrink-0 items-center gap-1.5 sm:flex">
+        <ArrowRight className="size-3.5" aria-hidden />
+        <span className="sr-only">sets category</span>
+        <Pill color={target?.color || undefined}>
+          {target?.name ?? "a category"}
+        </Pill>
+      </span>
 
       <Switch
         checked={rule.is_active}
@@ -250,10 +421,15 @@ function RuleRow({
         aria-label={rule.is_active ? "Disable rule" : "Enable rule"}
       />
 
-      <div className="opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100 data-[state=open]:opacity-100">
+      <div className="transition-opacity focus-within:opacity-100 data-[state=open]:opacity-100 md:opacity-0 md:group-hover:opacity-100">
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon" className="size-8" aria-label="Rule actions">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="size-8"
+              aria-label="Rule actions"
+            >
               <MoreHorizontal className="size-4" />
             </Button>
           </DropdownMenuTrigger>

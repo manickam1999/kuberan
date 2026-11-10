@@ -7,7 +7,6 @@ import (
 
 	"github.com/mark3labs/mcp-go/mcp"
 
-	"kuberan/internal/logger"
 	"kuberan/internal/models"
 	"kuberan/internal/services"
 )
@@ -23,7 +22,7 @@ func (s *Server) registerReceivableTools() {
 		readTool("list_receivables",
 			mcp.WithDescription("List money owed to the user (shared expenses, loans, claims, deposits, refunds), newest expense first. "+
 				"Each entry shows counterparty, kind, amount, paid, written off, outstanding, status and the originating expense. "+
-				"Receivables are not counted in net worth until repaid."),
+				"Amounts are in the receivable's own currency (its expense account's). Receivables are not counted in net worth until repaid."),
 			mcp.WithString("status", mcp.Description("Filter by status: 'pending', 'partially_paid', 'settled', 'written_off', or 'open' (pending or partially_paid)")),
 			mcp.WithString("kind", mcp.Description("Filter by kind: 'split', 'on_behalf', 'claim', 'loan', 'deposit', or 'refund'")),
 			mcp.WithString("counterparty", mcp.Description("Filter by counterparty name (case-insensitive exact match)")),
@@ -89,8 +88,7 @@ func (s *Server) handleListReceivables(ctx context.Context, req mcp.CallToolRequ
 
 	result, err := s.services.Receivables.ListReceivables(userID, page, filter)
 	if err != nil {
-		logger.Get().Errorf("MCP list_receivables failed: %v", err)
-		return mcp.NewToolResultError("failed to list receivables"), nil
+		return readError("list receivables", err), nil
 	}
 
 	if len(result.Data) == 0 {
@@ -108,7 +106,7 @@ func (s *Server) handleListReceivables(ctx context.Context, req mcp.CallToolRequ
 			formatMoney(r.PaidAmount, r.Currency), formatMoney(r.WrittenOffAmount, r.Currency), formatMoney(r.OutstandingAmount(), r.Currency))
 		if r.Transaction != nil {
 			fmt.Fprintf(&sb, "    Expense: %s on %s (total %s)\n",
-				untrusted(r.Transaction.Description), r.Transaction.Date.Format("2006-01-02"), formatMoney(r.Transaction.Amount, r.Currency))
+				untrusted(r.Transaction.Description), r.Transaction.Date.UTC().Format("2006-01-02"), formatMoney(r.Transaction.Amount, r.Currency))
 		}
 		fmt.Fprintf(&sb, "    ID: %s\n", r.ID)
 	}
@@ -124,8 +122,7 @@ func (s *Server) handleGetReceivablesSummary(ctx context.Context, _ mcp.CallTool
 
 	summary, err := s.services.Receivables.Summary(userID)
 	if err != nil {
-		logger.Get().Errorf("MCP get_receivables_summary failed: %v", err)
-		return mcp.NewToolResultError("failed to get receivables summary"), nil
+		return readError("get receivables summary", err), nil
 	}
 
 	const note = "Note: receivables are NOT included in net worth; they only count once repaid.\n"
@@ -152,7 +149,7 @@ func (s *Server) handleGetReceivablesSummary(ctx context.Context, _ mcp.CallTool
 	fmt.Fprintf(&sb, "\nBy counterparty (in %s):\n", currencyCode(summary.Currency))
 	for _, c := range summary.ByCounterparty {
 		fmt.Fprintf(&sb, "  %-27s %12s  (%d open, oldest %s)\n",
-			untrusted(c.CounterpartyName), formatMoney(c.Outstanding, summary.Currency), c.OpenCount, c.OldestDate.Format("2006-01-02"))
+			untrusted(c.CounterpartyName), formatMoney(c.Outstanding, summary.Currency), c.OpenCount, c.OldestDate.UTC().Format("2006-01-02"))
 	}
 
 	fmt.Fprintf(&sb, "\nBy kind (in %s):\n", currencyCode(summary.Currency))

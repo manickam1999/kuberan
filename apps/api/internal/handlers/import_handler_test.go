@@ -239,7 +239,7 @@ type importAuditRecorder struct {
 	changes []map[string]interface{}
 }
 
-func (a *importAuditRecorder) Log(_, action, _, _, _ string, changes map[string]interface{}) {
+func (a *importAuditRecorder) Log(_, action, _, _, _ string, changes map[string]interface{}, _ ...services.LogOpts) {
 	a.actions = append(a.actions, action)
 	a.changes = append(a.changes, changes)
 }

@@ -51,7 +51,7 @@ export function StatCard({
   const inner = (
     <div
       className={cn(
-        "group relative flex h-full flex-col justify-between overflow-hidden rounded-xl border bg-card p-4 shadow-sm transition-colors sm:p-5",
+        "group relative flex h-full flex-col justify-between overflow-hidden rounded-card border bg-card p-4 transition-colors sm:p-5",
         href && "hover:border-primary/40 hover:bg-accent/40",
         className
       )}
@@ -72,7 +72,7 @@ export function StatCard({
       <div className="mt-3">
         <div
           className={cn(
-            "money text-2xl font-semibold leading-tight sm:text-[1.65rem]",
+            "money font-figures text-2xl font-normal leading-tight sm:text-[1.65rem]",
             toneValue[tone]
           )}
         >

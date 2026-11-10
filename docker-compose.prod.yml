@@ -107,11 +107,13 @@ services:
       API_TRUSTED_PROXY_CIDRS: ${API_TRUSTED_PROXY_CIDRS:-172.30.10.0/24}
       MAX_BODY_BYTES: ${MAX_BODY_BYTES:-}
       FX_MAX_STALENESS: ${FX_MAX_STALENESS:-}
+      DEFAULT_PALETTE: ${DEFAULT_PALETTE:-}
       RATE_LIMIT_LOGIN_PER_MINUTE: ${RATE_LIMIT_LOGIN_PER_MINUTE:-}
       RATE_LIMIT_LOGIN_EMAIL_PER_HOUR: ${RATE_LIMIT_LOGIN_EMAIL_PER_HOUR:-}
       RATE_LIMIT_REGISTER_PER_HOUR: ${RATE_LIMIT_REGISTER_PER_HOUR:-}
       RATE_LIMIT_REFRESH_PER_MINUTE: ${RATE_LIMIT_REFRESH_PER_MINUTE:-}
       RATE_LIMIT_DCR_PER_HOUR: ${RATE_LIMIT_DCR_PER_HOUR:-}
+      RATE_LIMIT_PASSWORD_PER_HOUR: ${RATE_LIMIT_PASSWORD_PER_HOUR:-}
       # OAuth login/consent bridge + DCR proxy (plan 015). The admin API is
       # reached ONLY via the hydra-admin network alias; the value is fixed here
       # (an old HYDRA_ADMIN_URL=http://hydra:4445 in .env.prod is ignored).
@@ -122,6 +124,11 @@ services:
       HYDRA_PINNED_CLIENT_ID: ${HYDRA_PINNED_CLIENT_ID:-}
       # MCP write access (plan 022): must match the mcp service.
       MCP_WRITE_ENABLED: ${MCP_WRITE_ENABLED:-false}
+      # The write limits the Connected apps screen shows (plan 023, 1.6); must
+      # match the mcp service, which enforces them.
+      MCP_MAX_WRITE_AMOUNT: ${MCP_MAX_WRITE_AMOUNT:-}
+      MCP_WRITE_RATE_PER_MINUTE: ${MCP_WRITE_RATE_PER_MINUTE:-}
+      MCP_WRITE_RATE_PER_DAY: ${MCP_WRITE_RATE_PER_DAY:-}
       # Receipt attachments (plan 017). The S3 API is reached over the private
       # storage network; MinIO is NEVER published to the tunnel. Keys are the
       # scoped service account minted by minio-init.
@@ -132,6 +139,7 @@ services:
       STORAGE_USE_PATH_STYLE: "true"
       MAX_UPLOAD_BYTES: ${MAX_UPLOAD_BYTES:-}
       MAX_ATTACHMENTS_PER_TX: ${MAX_ATTACHMENTS_PER_TX:-}
+      DEMO_ENABLED: ${DEMO_ENABLED:-}
     dns: *dns
     networks:
       edge: {}
@@ -298,6 +306,7 @@ services:
       args:
         NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:?NEXT_PUBLIC_API_URL is required}
         NEXT_PUBLIC_BOT_USERNAME: ${NEXT_PUBLIC_BOT_USERNAME:-KuberanFinBot}
+        NEXT_PUBLIC_MCP_URL: ${NEXT_PUBLIC_MCP_URL:-}
     image: kuberan-web:${IMAGE_TAG:-latest}
     restart: unless-stopped
     environment:

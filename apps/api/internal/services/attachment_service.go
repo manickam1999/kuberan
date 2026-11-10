@@ -83,6 +83,9 @@ func (s *attachmentService) Upload(userID, txID, fileName, declaredType string, 
 
 	ctx := context.Background()
 	if err := s.store.Put(ctx, key, bytes.NewReader(clean), contentType, int64(len(clean))); err != nil {
+		if errors.Is(err, storage.ErrDisabled) {
+			return nil, apperrors.ErrReceiptsDisabled
+		}
 		return nil, apperrors.Wrap(apperrors.ErrInternalServer, err)
 	}
 
@@ -123,6 +126,9 @@ func (s *attachmentService) Open(userID, txID, attachmentID string) (*models.Tra
 	if err != nil {
 		if errors.Is(err, storage.ErrNotFound) {
 			return nil, nil, apperrors.ErrAttachmentNotFound
+		}
+		if errors.Is(err, storage.ErrDisabled) {
+			return nil, nil, apperrors.ErrReceiptsDisabled
 		}
 		return nil, nil, apperrors.Wrap(apperrors.ErrInternalServer, err)
 	}

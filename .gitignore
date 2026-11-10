@@ -20,6 +20,7 @@ coverage
 .env
 .env.local
 .env.prod
+.env.demo
 .env.development.local
 .env.test.local
 .env.production.local
@@ -69,6 +70,8 @@ apps/api/mcp
 # Database dumps (may contain personal financial data)
 *.sql
 !apps/api/migrations/*.sql
+# The demo reset job ships a sample-history query, not a dump.
+!deploy/demo/*.sql
 
 .playwright-mcp/*
 current-*.png

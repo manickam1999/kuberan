@@ -29,6 +29,27 @@ const (
 	TransactionTypeOpeningBalance TransactionType = "opening_balance"
 )
 
+// TransactionSource says where a transaction row came from.
+type TransactionSource string
+
+const (
+	TransactionSourceWeb      TransactionSource = "web"
+	TransactionSourceTelegram TransactionSource = "telegram"
+	TransactionSourceMCP      TransactionSource = "mcp"
+	TransactionSourceImport   TransactionSource = "import"
+	TransactionSourceSystem   TransactionSource = "system"
+)
+
+// Valid reports whether s is one of the known sources.
+func (s TransactionSource) Valid() bool {
+	switch s {
+	case TransactionSourceWeb, TransactionSourceTelegram, TransactionSourceMCP,
+		TransactionSourceImport, TransactionSourceSystem:
+		return true
+	}
+	return false
+}
+
 // Transaction represents a financial transaction in the system
 type Transaction struct {
 	Base
@@ -39,6 +60,20 @@ type Transaction struct {
 	Amount      int64           `gorm:"type:bigint;not null" json:"amount"`
 	Description string          `json:"description"`
 	Date        time.Time       `gorm:"not null" json:"date"`
+
+	// Notes is free text the user attaches to the row (max 2000 characters).
+	Notes string `gorm:"type:text;not null;default:''" json:"notes"`
+
+	// Source is where the row came from, one of the TransactionSource values.
+	Source TransactionSource `gorm:"size:20;not null;default:web" json:"source"`
+
+	// SourceClientID is the OAuth client that wrote the row when Source is
+	// "mcp". NULL otherwise.
+	SourceClientID *string `gorm:"size:255" json:"source_client_id,omitempty"`
+
+	// SourceClientName is the response-only display name of SourceClientID's
+	// app, taken from the user's grant ("an app" once the grant is gone).
+	SourceClientName string `gorm:"-" json:"source_client_name,omitempty"`
 
 	// PersonalAmount is the user's own share of an expense, in cents. NULL means
 	// the whole Amount is theirs. It is server-maintained (plan 021, D6) and is

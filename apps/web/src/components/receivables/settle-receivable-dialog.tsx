@@ -16,6 +16,9 @@ import {
   writeOffImpactText,
 } from "@/lib/receivable-format";
 import { Button } from "@/components/ui/button";
+import { ChoiceChips } from "./choice-chips";
+import { PersonAvatar } from "./person-card";
+import { quickAmounts } from "@/lib/owed";
 import { Checkbox } from "@/components/ui/checkbox";
 import { CurrencyInput } from "@/components/ui/currency-input";
 import {
@@ -107,6 +110,9 @@ function SettleForm({
   const received = useCrossAmount(currency, accountCurrency, amount);
 
   const remainder = receivable.outstanding - amount;
+  const quick = quickAmounts(receivable.outstanding);
+  const quickValue =
+    amount === quick.full ? "full" : quick.half !== null && amount === quick.half ? "half" : "other";
   const impact = writeOffRest ? writeOffImpactText(receivable, remainder) : null;
   const amountValid = amount > 0 && amount <= receivable.outstanding;
 
@@ -160,16 +166,54 @@ function SettleForm({
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
       <DialogHeader>
-        <DialogTitle>Record repayment</DialogTitle>
-        <DialogDescription>
-          {receivable.counterparty_name} owes{" "}
-          {formatMoney(receivable.outstanding, currency)}
-          {receivable.transaction?.description
-            ? ` for ${receivable.transaction.description}`
-            : ""}
-          .
+        <DialogTitle>Repayment from {receivable.counterparty_name}</DialogTitle>
+        <DialogDescription className="sr-only">
+          Record money {receivable.counterparty_name} paid back.
         </DialogDescription>
       </DialogHeader>
+
+      <div className="flex items-center gap-3">
+        <PersonAvatar
+          name={receivable.counterparty_name}
+          personKey={receivable.counterparty_key}
+        />
+        <div className="min-w-0 text-sm">
+          <p className="truncate font-medium">
+            {receivable.transaction?.description || "Owed to you"}
+          </p>
+          <p className="text-muted-foreground text-xs">
+            {formatMoney(receivable.outstanding, currency)} outstanding
+          </p>
+        </div>
+      </div>
+
+      <div className="flex flex-col gap-2">
+        <Label htmlFor="settle-amount">Amount</Label>
+        <CurrencyInput
+          id="settle-amount"
+          value={amount}
+          onChange={setAmount}
+          currency={currency}
+          disabled={settle.isPending}
+        />
+        <ChoiceChips
+          label="Quick amount"
+          value={quickValue}
+          onValueChange={(v) => {
+            if (v === "full") setAmount(quick.full);
+            else if (v === "half" && quick.half !== null) setAmount(quick.half);
+            else document.getElementById("settle-amount")?.focus();
+          }}
+          options={[
+            { value: "full", label: `Full ${formatMoney(quick.full, currency)}` },
+            ...(quick.half !== null
+              ? [{ value: "half", label: `Half ${formatMoney(quick.half, currency)}` }]
+              : []),
+            { value: "other", label: "Other" },
+          ]}
+          disabled={settle.isPending}
+        />
+      </div>
 
       <div className="flex flex-col gap-1.5">
         <Label htmlFor="settle-account">Received into</Label>
@@ -194,27 +238,15 @@ function SettleForm({
         </Select>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-2">
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor="settle-amount">Amount</Label>
-          <CurrencyInput
-            id="settle-amount"
-            value={amount}
-            onChange={setAmount}
-            currency={currency}
-            disabled={settle.isPending}
-          />
-        </div>
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor="settle-date">Date</Label>
-          <Input
-            id="settle-date"
-            type="date"
-            value={date}
-            onChange={(e) => setDate(e.target.value)}
-            disabled={settle.isPending}
-          />
-        </div>
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor="settle-date">Date</Label>
+        <Input
+          id="settle-date"
+          type="date"
+          value={date}
+          onChange={(e) => setDate(e.target.value)}
+          disabled={settle.isPending}
+        />
       </div>
 
       {received.needed && (
@@ -250,6 +282,15 @@ function SettleForm({
         </div>
       )}
 
+      {amountValid && (
+        <p className="text-muted-foreground text-xs">
+          {remainder > 0 && !writeOffRest
+            ? `${formatMoney(remainder, currency)} will still be owed. `
+            : ""}
+          This is recorded as a repayment, not income.
+        </p>
+      )}
+
       {error && (
         <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
           {error}
@@ -266,7 +307,11 @@ function SettleForm({
           Cancel
         </Button>
         <Button type="submit" disabled={settle.isPending || !amountValid}>
-          {settle.isPending ? "Saving..." : "Record repayment"}
+          {settle.isPending
+            ? "Saving..."
+            : amountValid
+              ? `Record ${formatMoney(amount, currency)}`
+              : "Record repayment"}
         </Button>
       </DialogFooter>
     </form>

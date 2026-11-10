@@ -44,6 +44,8 @@ function buildCsp(nonce: string, request: NextRequest): string {
     "style-src 'self' 'unsafe-inline'",
     "img-src 'self' data: blob:",
     "font-src 'self' data:",
+    // The web app manifest (and the icons it names) are same-origin.
+    "manifest-src 'self'",
     `connect-src 'self' ${apiOrigin(request)}`,
     "object-src 'none'",
     "base-uri 'none'",
@@ -108,9 +110,11 @@ export const config = {
      * Match all request paths except:
      * - _next/static (static files)
      * - _next/image (image optimization)
-     * - favicon.ico, sitemap.xml, robots.txt (metadata files)
+     * - favicon.ico, icon.svg, apple-icon.png, the PWA icons, the web
+     *   manifest, sitemap.xml, robots.txt (metadata files; the login page
+     *   needs the icons while signed out)
      * - api routes (handled by backend)
      */
-    "/((?!_next/static|_next/image|favicon\\.ico|sitemap\\.xml|robots\\.txt|api).*)",
+    "/((?!_next/static|_next/image|favicon\\.ico|icon\\.svg|apple-icon\\.png|icon-[a-z0-9-]+\\.png|manifest\\.webmanifest|sitemap\\.xml|robots\\.txt|api).*)",
   ],
 };

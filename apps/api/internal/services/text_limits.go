@@ -15,6 +15,10 @@ import (
 const (
 	// MaxDescriptionLen bounds transaction, receivable and category descriptions.
 	MaxDescriptionLen = 500
+	// MaxNotesLen bounds a transaction's notes (also the result of appending to them).
+	MaxNotesLen = 2000
+	// MaxSearchLen bounds the free-text transaction search term.
+	MaxSearchLen = 100
 	// MaxNameLen bounds category and budget names.
 	MaxNameLen = 100
 	// MaxIconLen bounds a category's icon name.

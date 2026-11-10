@@ -4,6 +4,7 @@ import { useEffect, useState, forwardRef, useImperativeHandle } from "react";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import type { QuickAction } from "./command-palette-menu";
+import type { Transaction } from "@/types/models";
 
 // Everything behind the palette is loaded on first use. The create dialogs
 // fetch accounts/categories when mounted, so mounting them eagerly in the
@@ -40,8 +41,20 @@ const CreateCategoryDialog = dynamic(
   { ssr: false }
 );
 
+const EditTransactionDialog = dynamic(
+  () =>
+    import("@/components/transactions/edit-transaction-dialog").then(
+      (m) => m.EditTransactionDialog
+    ),
+  { ssr: false }
+);
+
 export interface CommandPaletteRef {
   toggle: () => void;
+  /** Opens the palette (no-op when already open). */
+  open: () => void;
+  /** Opens one of the quick-action dialogs directly (e.g. add transaction). */
+  openAction: (action: QuickAction) => void;
 }
 
 export const CommandPalette = forwardRef<CommandPaletteRef>(
@@ -52,6 +65,9 @@ export const CommandPalette = forwardRef<CommandPaletteRef>(
     // still animate out.
     const [menuUsed, setMenuUsed] = useState(false);
     const [activeAction, setActiveAction] = useState<QuickAction | null>(null);
+    // A transaction picked from the search results opens in its edit dialog.
+    const [pickedTx, setPickedTx] = useState<Transaction | null>(null);
+    const [pickedOpen, setPickedOpen] = useState(false);
     const [usedActions, setUsedActions] = useState<ReadonlySet<QuickAction>>(
       () => new Set()
     );
@@ -61,9 +77,18 @@ export const CommandPalette = forwardRef<CommandPaletteRef>(
       setOpen(next);
     };
 
-    // Expose toggle method to parent components
+    const openAction = (action: QuickAction) => {
+      setOpen(false);
+      setUsedActions((prev) => new Set(prev).add(action));
+      setActiveAction(action);
+    };
+
+    // Expose the palette and quick actions to the shell (header, tab bar,
+    // keyboard shortcuts).
     useImperativeHandle(ref, () => ({
       toggle: () => setPaletteOpen((prev) => !prev),
+      open: () => setPaletteOpen(true),
+      openAction,
     }));
 
     // Keyboard listener for Cmd+K / Ctrl+K
@@ -85,10 +110,10 @@ export const CommandPalette = forwardRef<CommandPaletteRef>(
       router.push(path);
     };
 
-    const openAction = (action: QuickAction) => {
+    const openTransaction = (tx: Transaction) => {
       setOpen(false);
-      setUsedActions((prev) => new Set(prev).add(action));
-      setActiveAction(action);
+      setPickedTx(tx);
+      setPickedOpen(true);
     };
 
     const dialogProps = (action: QuickAction) => ({
@@ -104,6 +129,15 @@ export const CommandPalette = forwardRef<CommandPaletteRef>(
             onOpenChange={setOpen}
             onNavigate={navigateTo}
             onAction={openAction}
+            onTransaction={openTransaction}
+          />
+        )}
+
+        {pickedTx && (
+          <EditTransactionDialog
+            open={pickedOpen}
+            onOpenChange={setPickedOpen}
+            transaction={pickedTx}
           />
         )}
 

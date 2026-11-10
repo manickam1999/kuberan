@@ -113,7 +113,7 @@ func TestRequireBearer(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			nextCalled = false
-			h := withWWWAuthenticate(requireBearer(next, tt.validator, nil), testOAuthConfig)
+			h := withWWWAuthenticate(requireBearer(next, tt.validator, nil, nil), testOAuthConfig)
 
 			req := httptest.NewRequest("POST", "/mcp", http.NoBody)
 			if tt.authHeader != "" {
@@ -156,7 +156,7 @@ func TestRequireBearerValidatesOnce(t *testing.T) {
 	})
 	req := httptest.NewRequest("POST", "/mcp", http.NoBody)
 	req.Header.Set("Authorization", "Bearer tok")
-	requireBearer(next, v, nil).ServeHTTP(httptest.NewRecorder(), req)
+	requireBearer(next, v, nil, nil).ServeHTTP(httptest.NewRecorder(), req)
 
 	if v.calls != 1 {
 		t.Fatalf("token validated %d times, want 1", v.calls)
@@ -210,7 +210,7 @@ func TestRequireBearerRejectsInactiveUser(t *testing.T) {
 	next := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
 
 	serve := func(sub string) int {
-		h := withWWWAuthenticate(requireBearer(next, fakeValidator{claims: &AccessClaims{Subject: sub}}, active), testOAuthConfig)
+		h := withWWWAuthenticate(requireBearer(next, fakeValidator{claims: &AccessClaims{Subject: sub}}, active, nil), testOAuthConfig)
 		req := httptest.NewRequest("POST", "/mcp", http.NoBody)
 		req.Header.Set("Authorization", "Bearer tok")
 		rec := httptest.NewRecorder()
