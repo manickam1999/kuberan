@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Check, Monitor, Moon, Sun } from "lucide-react";
+import { Check, Loader2, Monitor, Moon, Sun } from "lucide-react";
 import { useTheme } from "next-themes";
 import {
   Card,
@@ -216,7 +216,7 @@ function PaletteCard() {
               onClick={() => setPalette(tile.choice)}
               aria-pressed={active}
               className={cn(
-                "relative flex flex-col gap-3 rounded-lg border p-3 text-left transition-colors",
+                "relative flex flex-col gap-3 rounded-lg border p-3 text-left transition-[border-color,box-shadow,transform] duration-150 motion-safe:active:scale-[0.98]",
                 active
                   ? "border-primary ring-1 ring-primary"
                   : "border-border hover:border-primary/40"
@@ -335,9 +335,55 @@ function DisplayCard() {
   );
 }
 
+/**
+ * A quiet line showing that a change is being saved to the account. Changes
+ * apply at once; this only reports the background save.
+ */
+function SaveStatusNote() {
+  const { saveStatus } = useAppearance();
+  const [visible, setVisible] = useState(false);
+  useEffect(() => {
+    if (saveStatus === "idle") return;
+    setVisible(true);
+    if (saveStatus !== "saved") return;
+    const t = setTimeout(() => setVisible(false), 2000);
+    return () => clearTimeout(t);
+  }, [saveStatus]);
+
+  return (
+    <p
+      role="status"
+      aria-live="polite"
+      className={cn(
+        "flex h-5 items-center justify-end gap-1.5 text-xs text-muted-foreground transition-opacity duration-300",
+        visible ? "opacity-100" : "opacity-0"
+      )}
+    >
+      {saveStatus === "saving" && (
+        <>
+          <Loader2 className="size-3.5 animate-spin" aria-hidden />
+          Saving to your account…
+        </>
+      )}
+      {saveStatus === "saved" && (
+        <>
+          <Check className="size-3.5 text-positive" aria-hidden />
+          Saved to your account
+        </>
+      )}
+      {saveStatus === "error" && (
+        <span className="text-negative">
+          Couldn&apos;t save. Your previous look is back.
+        </span>
+      )}
+    </p>
+  );
+}
+
 export function AppearanceSettings() {
   return (
     <div className="space-y-4">
+      <SaveStatusNote />
       <PaletteCard />
       <ColourModeCard />
       <ChartStyleCard />
