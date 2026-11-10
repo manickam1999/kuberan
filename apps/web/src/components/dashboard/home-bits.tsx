@@ -69,13 +69,15 @@ export function HomeCard({
 export function CategoryTile({
   category,
   type,
+  size,
 }: {
   category?: Pick<Category, "color" | "icon" | "name"> | null;
   type?: TransactionType;
+  size?: "sm" | "md";
 }) {
   if (category) {
     return (
-      <Tile color={category.color}>
+      <Tile color={category.color} size={size}>
         <CategoryIcon icon={category.icon} name={category.name} />
       </Tile>
     );
@@ -83,7 +85,7 @@ export function CategoryTile({
   const v = transactionVisual(type ?? "expense");
   const Icon = v.icon;
   return (
-    <Tile tone="neutral">
+    <Tile tone="neutral" size={size}>
       <Icon />
     </Tile>
   );
