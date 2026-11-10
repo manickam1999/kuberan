@@ -1319,3 +1319,51 @@ html.palette-transition *::after {
 [data-drawing] .chart-marker {
   transition: opacity 180ms ease-out;
 }
+
+/* ===== Background refresh bar (components/layout/refresh-indicator.tsx) =====
+   A 2px indeterminate sweep on the header's bottom edge while on-screen data
+   is refetched. Fades in/out; under reduced motion it pulses instead. */
+.refresh-bar {
+  opacity: 0;
+  transition: opacity 200ms ease;
+}
+.refresh-bar[data-state="active"] {
+  opacity: 1;
+}
+.refresh-bar::before {
+  content: "";
+  position: absolute;
+  inset-block: 0;
+  left: 0;
+  width: 40%;
+  border-radius: 9999px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    var(--primary) 30%,
+    var(--primary) 70%,
+    transparent
+  );
+  animation: refresh-sweep 1.1s ease-in-out infinite;
+  animation-play-state: paused;
+}
+.refresh-bar[data-state="active"]::before {
+  animation-play-state: running;
+}
+@keyframes refresh-sweep {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(250%); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .refresh-bar::before {
+    width: 100%;
+    background: var(--primary);
+    animation: refresh-pulse 1.4s ease-in-out infinite;
+    animation-play-state: paused;
+  }
+  @keyframes refresh-pulse {
+    0%, 100% { opacity: 0.35; }
+    50% { opacity: 1; }
+  }
+}
+/* ===== end refresh bar ===== */
