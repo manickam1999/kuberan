@@ -111,9 +111,10 @@ export default function CommandPaletteMenu({
       <CommandInput
         value={query}
         onValueChange={setQuery}
-        placeholder="Search transactions, jump to a page or run an action..."
+        placeholder="Search or jump to..."
       />
-      <CommandList className="max-h-[min(420px,60vh)]">
+      {/* Phones: the list fills the sheet and scrolls; desktop keeps a cap. */}
+      <CommandList className="max-h-none flex-1 overscroll-contain pb-2 sm:max-h-[min(420px,60vh)] sm:flex-none">
         <CommandEmpty>
           {searching && pending ? "Searching..." : "No results found."}
         </CommandEmpty>
@@ -215,9 +216,13 @@ export default function CommandPaletteMenu({
           </CommandItem>
         </CommandGroup>
 
-        <CommandSeparator />
+        <CommandSeparator className="pointer-coarse:hidden" />
 
-        <CommandGroup heading="Keyboard shortcuts">
+        {/* Touch screens have no keyboard to use these with. */}
+        <CommandGroup
+          heading="Keyboard shortcuts"
+          className="pointer-coarse:hidden"
+        >
           {OTHER_SHORTCUTS.map(({ label, keys }) => (
             <CommandItem
               key={label}

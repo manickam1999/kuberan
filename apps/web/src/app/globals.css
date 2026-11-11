@@ -1306,6 +1306,16 @@ body {
 :root {
   --safe-bottom: env(safe-area-inset-bottom, 0px);
   --tabbar-h: 0px;
+  /* Set by <ViewportInsets>: the on-screen keyboard's height and the visible
+     height. The phone dialog sheet sits on the keyboard and fits above it;
+     the home-indicator inset is dropped while the keyboard covers it. */
+  --kb-inset: 0px;
+  --vv-height: 100dvh;
+  --sheet-max-h: min(92dvh, calc(var(--vv-height) - env(safe-area-inset-top, 0px) - 0.5rem));
+  --sheet-safe-bottom: var(--safe-bottom);
+}
+:root[data-keyboard] {
+  --sheet-safe-bottom: 0px;
 }
 @media (max-width: 767.98px) {
   :root:has([data-slot="mobile-tab-bar"]) {
